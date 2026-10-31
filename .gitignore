@@ -1,0 +1,24 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.artifacts/
+.expo/
+.claude/settings.local.json
+.DS_Store
+
+# 原生工程由 expo prebuild 生成
+apps/mobile/android/
+apps/mobile/ios/
+
+# 签名和构建产物
+*.keystore
+*.jks
+*.apk
+*.aab
+google-services.json
+GoogleService-Info.plist
