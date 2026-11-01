@@ -112,16 +112,53 @@ def build(source: Path, weight_name: str, weight: int, text_file: Path, work: Pa
         "--desubroutinize",
         f"--output-file={output}",
     )
+    set_names(output, weight_name, weight)
     size = output.stat().st_size
     print(f"{output.name}: {size / 1_000_000:.2f} MB")
     if size > MAX_BYTES:
         sys.exit(f"{output.name} 超过了 {MAX_BYTES} 字节，减少 NAME_CHARS")
 
 
+def set_names(path: Path, weight_name: str, weight: int) -> None:
+    """每个字重要有自己的名字。
+
+    实例化后的文件都还叫 NotoSerifSC-ExtraLight。iOS 按 PostScript 名字注册字体，同名的第二个文件
+    注册不上，两个字重显示成同一个，也不报错。Android 按文件加载，看不出来。
+    """
+    font = TTFont(path, recalcTimestamp=False)
+    names = font["name"]
+    family = f"Noto Serif SC {weight_name}"
+    postscript = f"NotoSerifSC-{weight_name}"
+    for name_id, value in (
+        (1, family),
+        (2, "Regular"),
+        (3, f"{postscript};subset"),
+        (4, family),
+        (6, postscript),
+        (16, "Noto Serif SC"),
+        (17, weight_name),
+    ):
+        names.setName(value, name_id, 3, 1, 0x409)
+        names.setName(value, name_id, 1, 0, 0)
+    font["OS/2"].usWeightClass = weight
+    font.save(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="重新生成 Noto Serif SC 子集字体")
-    parser.add_argument("source", type=Path, help="可变字体 NotoSerifSC[wght].ttf 的路径")
+    parser.add_argument(
+        "source", type=Path, nargs="?", help="可变字体 NotoSerifSC[wght].ttf 的路径"
+    )
+    parser.add_argument(
+        "--rename-only", action="store_true", help="不重新生成，只改现有子集字体里的名字"
+    )
     args = parser.parse_args()
+    if args.rename_only:
+        for weight_name, weight in WEIGHTS.items():
+            set_names(OUT_DIR / f"NotoSerifSC-{weight_name}.subset.ttf", weight_name, weight)
+        return
+    if args.source is None:
+        parser.error("需要可变字体的路径，或者 --rename-only")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         text_file = work / "chars.txt"
