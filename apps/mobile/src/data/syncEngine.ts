@@ -16,7 +16,10 @@ export interface SyncTransport {
 export type SyncStatus = 'idle' | 'syncing' | 'offline';
 
 export interface SyncEvents {
-  /** 同步到了其他家人的新记录（不含自己刚上传的）。 */
+  /**
+   * 这一轮同步拿到了其他家人的新记录（不含自己刚上传的）。分几页拉取也只调用一次。
+   * 第一次拉取和权限升级后重新拉取的历史不算。
+   */
   onRemote?(records: ServerRecord[]): void;
   onStatus?(status: SyncStatus): void;
   /** 有记录被服务端拒绝（比如权限变了）。 */
@@ -64,6 +67,8 @@ export class SyncEngine {
   private stopped = true;
   /** 每次 stop 加一。请求发出后才退出登录的话，响应属于上一个会话，不能写进本地。 */
   private session = 0;
+  /** 这次启动后是否同步成功过。游标为 0 也可能只是家庭还是空的，不一定是在拉历史。 */
+  private hasSynced = false;
   private cursor = 0;
   private lastSentIds = new Set<string>();
   private lastRole: Role | null = null;
@@ -90,6 +95,7 @@ export class SyncEngine {
   stop(): void {
     this.stopped = true;
     this.session += 1;
+    this.hasSynced = false;
     this.live?.abort();
     this.live = null;
     if (this.retryTimer) this.scheduler.clearTimeout(this.retryTimer);
@@ -145,6 +151,11 @@ export class SyncEngine {
     if (!this.online) return;
     const session = this.session;
     this.events.onStatus?.('syncing');
+    let pullingHistory = this.cursor === 0 && !this.hasSynced;
+    const arrived: ServerRecord[] = [];
+    const announce = () => {
+      if (arrived.length > 0 && session === this.session) this.events.onRemote?.(arrived);
+    };
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
         const sent = batchWithinBytes(this.store.dirtyRecords(OUTBOX_BATCH), OUTBOX_MAX_BYTES);
@@ -169,18 +180,23 @@ export class SyncEngine {
         );
         this.cursor = response.cursor;
         const fromOthers = applied.filter((r) => !this.lastSentIds.has(r.id));
-        if (fromOthers.length > 0) this.events.onRemote?.(fromOthers);
+        if (!pullingHistory) arrived.push(...fromOthers);
         for (const record of sent) this.lastSentIds.delete(record.id);
         if (response.rejected.length > 0) this.events.onRejected?.(response.rejected.length);
         const resync = await this.applyRole(response.role);
+        if (resync) pullingHistory = true;
         const moreToSend = this.store.dirtyRecords(1).length > 0;
         if (!response.hasMore && !moreToSend && !resync) break;
       }
+      announce();
+      this.hasSynced = true;
       this.retryMs = MIN_RETRY_MS;
       await this.db.setMeta(LAST_SYNC_KEY, String(Date.now()));
       this.events.onStatus?.('idle');
       this.events.onSynced?.();
     } catch {
+      // 前面几页已经写进本地，游标也过去了，这时不说就再也不会说了。
+      announce();
       this.events.onStatus?.('offline');
       this.scheduleRetry();
     }

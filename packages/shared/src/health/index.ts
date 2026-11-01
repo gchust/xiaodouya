@@ -99,6 +99,11 @@ export interface Insight {
 
 /** 至少连续记录这么久，才对数量下判断，否则分不清是“少”还是“还没开始记”。 */
 const MIN_COVERAGE_MS = 20 * 3_600_000;
+/**
+ * 可以补记以前的记录之后，“最早一条很久以前”不再说明这家人一直在记。
+ * 要看大约一天前有没有在记日常；疫苗和身高体重本来就不是每天记的，常常是补的，不算。
+ */
+const COVERAGE_LOOKBACK_MS = 48 * 3_600_000;
 
 export function todayInsight(
   events: readonly EventData[],
@@ -113,8 +118,14 @@ export function todayInsight(
 
   const summary = summarize24h(logged, now);
   const estimate = estimateNextFeed(logged, now);
-  const earliest = Math.min(...logged.map((e) => e.at));
-  const hasFullDay = now - earliest >= MIN_COVERAGE_MS;
+  const hasFullDay = logged.some(
+    (e) =>
+      e.type !== 'vaccine' &&
+      e.type !== 'growth' &&
+      e.at >= birthAt &&
+      now - e.at >= MIN_COVERAGE_MS &&
+      now - e.at <= COVERAGE_LOOKBACK_MS,
+  );
 
   const facts = [`过去 24 小时喂了 ${summary.feeds} 次`];
   if (estimate.isLearned) facts.push(`平均间隔 ${formatDuration(estimate.intervalMs)}`);

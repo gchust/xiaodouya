@@ -1,10 +1,17 @@
 import { createRequire } from 'node:module';
-import type {
-  BabyData,
-  EventData,
-  SyncRequest,
-  SyncResponse,
-  WidgetSession,
+import {
+  type BabyData,
+  buildWidgetView,
+  type EventData,
+  type FormulaData,
+  formulaSnapshot,
+  metricUnits,
+  type SyncRequest,
+  type SyncResponse,
+  sleepState,
+  startOfLocalDay,
+  summarizeDay,
+  type WidgetSession,
 } from '@xiaodouya/shared';
 import { describe, expect, it } from 'vitest';
 import { type LocalDb, RecordStore, type StoredRecord } from '../src/data/store';
@@ -132,6 +139,72 @@ describe('小工具写入', () => {
     const sleeps = store.getSnapshot().events.filter((e) => e.data.type === 'sleep');
     expect(sleeps).toHaveLength(1);
     expect(sleeps[0]?.data).toMatchObject({ at: now - HOUR, endAt: now });
+  });
+});
+
+describe('奶粉配置和小工具', () => {
+  // 配置存在 event 集合里，但没有 at，也不是一次喂奶。
+  const formula: FormulaData = {
+    type: 'formula',
+    name: '虚构奶粉',
+    basis: 'per100ml',
+    values: { energyKcal: 67 },
+  };
+
+  it('小工具记的喂奶沿用奶类型，快照用奶粉现在的数值', async () => {
+    const { db, store } = await setup({
+      old: {
+        type: 'feed',
+        at: now - HOUR,
+        ml: 90,
+        milkType: 'formula',
+        formulaId: 'f1',
+        formula: { name: '虚构奶粉', per100ml: { energyKcal: 60 } },
+      },
+    });
+    await store.write('event', 'f1', formula);
+    await runWidgetAction({ type: 'feed', id: 'new' }, store, session, now);
+    expect(db.records.get('new')?.data).toEqual({
+      type: 'feed',
+      at: now,
+      ml: 90,
+      milkType: 'formula',
+      formulaId: 'f1',
+      formula: formulaSnapshot(formula),
+      byName: '爸爸',
+    });
+  });
+
+  it('配置不会被当成喂奶、睡眠，也不计入今日汇总', async () => {
+    const { store } = await setup();
+    await store.write('event', 'f1', formula);
+    const { events, formulas } = store.getSnapshot();
+    expect(formulas.map((f) => f.id)).toEqual(['f1']);
+    const view = buildWidgetView({
+      session,
+      baby,
+      entries: events,
+      units: metricUnits,
+      now,
+      dayStart: startOfLocalDay(now),
+      syncedAt: null,
+    });
+    expect(view).toMatchObject({
+      kind: 'ready',
+      lastFeed: null,
+      canQuickFeed: false,
+      sleep: { status: 'awake', lastEnd: null },
+      today: { feeds: 0, ml: 0, diapers: 0, sleepMs: 0 },
+    });
+    const plan = await runWidgetAction({ type: 'feed', id: 'new' }, store, session, now);
+    expect(plan.kind).toBe('needsAmount');
+  });
+
+  it('就算配置混进了记录列表，判断也不受影响', () => {
+    // 防御：store 现在会把它分开，但这些函数接收的是外部数据。
+    const mixed = [formula as unknown as EventData];
+    expect(sleepState(mixed, now)).toEqual({ status: 'awake' });
+    expect(summarizeDay(mixed, startOfLocalDay(now), now)).toMatchObject({ feeds: 0, sleepMs: 0 });
   });
 });
 

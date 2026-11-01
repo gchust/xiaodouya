@@ -19,6 +19,59 @@ export function doseTimestamp(picked: Date, now: number): number {
   return Math.min(noon, now);
 }
 
+/** 手机时区里这一天的范围。过夏令时的那天不是 24 小时，不能用加减毫秒算。 */
+export function localDayBounds(ms: number, offsetDays = 0): { start: number; end: number } {
+  const day = new Date(ms);
+  const y = day.getFullYear();
+  const m = day.getMonth();
+  const d = day.getDate() + offsetDays;
+  return { start: new Date(y, m, d).getTime(), end: new Date(y, m, d + 1).getTime() };
+}
+
+/** 改接种日期：日期没变就保留原来的时刻，只改备注不能把时间线上的位置挪走。 */
+export function editedDoseTimestamp(originalAt: number, picked: Date, now: number): number {
+  return picked.toDateString() === new Date(originalAt).toDateString()
+    ? originalAt
+    : doseTimestamp(picked, now);
+}
+
+/** 记录时间的选择：相对现在的几个偏移（保存时才算成时间），或者一个确定的时刻。 */
+export type TimeChoice = { kind: 'offset'; minutes: number } | { kind: 'exact'; at: number };
+
+export function resolveTimeChoice(choice: TimeChoice, now: number): number {
+  return choice.kind === 'exact' ? choice.at : now - choice.minutes * 60_000;
+}
+
+/**
+ * 换日期时保留时刻。今天的日期配上比现在晚的时刻时退回现在：
+ * 用户选的是“哪一天”，不该因为原来的时刻而看到“时间还没到”。
+ */
+export function withDate(at: number, picked: Date, now: number): number {
+  const d = new Date(at);
+  d.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+  return Math.min(d.getTime(), now);
+}
+
+/** 换时刻时保留日期。时刻可能选到未来，由 checkRecordTime 提示，这里不改用户选的值。 */
+export function withClock(at: number, picked: Date): number {
+  const d = new Date(at);
+  d.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+  return d.getTime();
+}
+
+/** 今天、昨天、前天这几个快捷日期。 */
+export function withDaysAgo(at: number, daysAgo: number, now: number): number {
+  const day = new Date(now);
+  day.setDate(day.getDate() - daysAgo);
+  return withDate(at, day, now);
+}
+
+export function isDaysAgo(at: number, daysAgo: number, now: number): boolean {
+  const day = new Date(now);
+  day.setDate(day.getDate() - daysAgo);
+  return day.toDateString() === new Date(at).toDateString();
+}
+
 /** 成员状态：刚刚活跃算在线，否则显示大致时间。 */
 export function formatLastSeen(
   lastSeenAt: number | null,

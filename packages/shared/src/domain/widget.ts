@@ -4,11 +4,18 @@ import {
   canReadCollection,
   canWriteCollection,
   type EventData,
+  type FormulaData,
   type Role,
 } from '../schemas';
 import { formatClock } from './age';
 import { type DaySummary, summarizeDay } from './events';
-import { feedsNewestFirst, sleepState } from './feeding';
+import {
+  type FeedDefaults,
+  feedMilkFields,
+  feedsNewestFirst,
+  lastFeedDefaults,
+  sleepState,
+} from './feeding';
 import { formatVolume, type Units } from './units';
 
 /**
@@ -78,6 +85,8 @@ export interface WidgetPlanInput {
   hasBaby: boolean;
   /** 按发生时间倒序。 */
   entries: readonly WidgetEntry[];
+  /** 家庭的奶粉配置。上一次用的奶粉要按现在的数值生成快照，和喂奶弹层一样。 */
+  formulas: readonly { id: string; data: FormulaData }[];
   /** 这个 id 是否已经存在，已删除的也算：撤销之后，迟到的重试不能把记录变回来。 */
   isKnownId(id: string): boolean;
   now: number;
@@ -85,13 +94,13 @@ export interface WidgetPlanInput {
 
 const events = (entries: readonly WidgetEntry[]) => entries.map((e) => e.data);
 
-function quickFeedSource(entries: readonly WidgetEntry[], now: number) {
-  const last = feedsNewestFirst(events(entries), now)[0];
-  return last && last.ml > 0 ? last : null;
+/** 能一键记的奶量。上一次是 0 或者没有记录时不能沿用，要去 App 里选。 */
+function quickFeedMl(defaults: FeedDefaults): number | null {
+  return defaults.ml !== undefined && defaults.ml > 0 ? defaults.ml : null;
 }
 
 export function planWidgetAction(action: WidgetAction, input: WidgetPlanInput): WidgetPlan {
-  const { session, hasBaby, entries, isKnownId, now } = input;
+  const { session, hasBaby, entries, formulas, isKnownId, now } = input;
   if (blockReason(session, hasBaby)) return { kind: 'blocked' };
   const byName = session.label ? { byName: session.label } : {};
   const state = sleepState(events(entries), now);
@@ -99,11 +108,14 @@ export function planWidgetAction(action: WidgetAction, input: WidgetPlanInput): 
   switch (action.type) {
     case 'feed': {
       if (isKnownId(action.id)) return { kind: 'noop' };
-      const last = quickFeedSource(entries, now);
-      if (!last) return { kind: 'needsAmount' };
-      // 奶量之外的字段（比如以后加的奶类型）一起沿用；备注和记录人说的是上一次，不能带过来。
-      const { note: _note, byName: _byName, ...kept } = last;
-      return { kind: 'write', id: action.id, data: { ...kept, at: now, ...byName } };
+      const defaults = lastFeedDefaults(events(entries), formulas, now);
+      const ml = quickFeedMl(defaults);
+      if (ml === null) return { kind: 'needsAmount' };
+      return {
+        kind: 'write',
+        id: action.id,
+        data: { type: 'feed', at: now, ml, ...feedMilkFields(defaults), ...byName },
+      };
     }
     case 'sleepStart':
       if (isKnownId(action.id) || state.status !== 'awake') return { kind: 'noop' };
@@ -178,7 +190,7 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     babyName: baby.name,
     lastFeed: last && lastEntry ? { id: lastEntry.id, at: last.at, ml: last.ml } : null,
     lastFeedAmount: last ? formatVolume(last.ml, units.volume) : null,
-    canQuickFeed: quickFeedSource(entries, now) !== null,
+    canQuickFeed: quickFeedMl(lastFeedDefaults(events(entries), [], now)) !== null,
     sleep: widgetSleep(entries, now),
     today,
     todayAmount: formatVolume(today.ml, units.volume),

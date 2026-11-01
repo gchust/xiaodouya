@@ -1,6 +1,5 @@
-import { type EventData, estimateNextFeed } from '@xiaodouya/shared';
+import { type EventData, feedReminderDelayMs } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
@@ -45,34 +44,17 @@ async function deviceId(): Promise<string> {
   return id;
 }
 
-/**
- * 注册家人记录的远程推送。没有配置 FCM 的构建拿不到 token，这里静默跳过：
- * 喂奶提醒是本机通知，App 内的横幅也不依赖推送，核心功能都不受影响。
- */
-export async function registerPushToken(api: Api): Promise<void> {
-  try {
-    if (!Device.isDevice) return;
-    await ensureChannels();
-    const current = await Notifications.getPermissionsAsync();
-    if (!current.granted) return;
-    const token = await Notifications.getExpoPushTokenAsync();
-    await api.registerPushToken(token.data, await deviceId());
-  } catch {
-    // 见上方说明。
-  }
-}
-
+/** 不再注册推送，但 v0.1.0 升级上来的手机在服务端可能还留着令牌，退出时要清掉。 */
 export async function unregisterPushToken(api: Api): Promise<void> {
   await api.unregisterPushToken(await deviceId());
 }
 
-/** 只在已经学到喂奶规律时才提醒，默认间隔不够可靠，不应该半夜吵醒人。 */
 export async function scheduleFeedReminder(events: EventData[], enabled: boolean): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(FEED_REMINDER_ID);
     if (!enabled) return;
-    const estimate = estimateNextFeed(events, Date.now());
-    if (!estimate.last || !estimate.isLearned || estimate.remainingMs <= 0) return;
+    const delayMs = feedReminderDelayMs(events, Date.now());
+    if (delayMs === null) return;
     const current = await Notifications.getPermissionsAsync();
     if (!current.granted) return;
     await ensureChannels();
@@ -81,7 +63,7 @@ export async function scheduleFeedReminder(events: EventData[], enabled: boolean
       content: { title: '差不多该喂奶了', body: '已到平时的喂奶间隔。' },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(60, Math.round(estimate.remainingMs / 1000)),
+        seconds: Math.max(60, Math.round(delayMs / 1000)),
         channelId: 'feed',
       },
     });

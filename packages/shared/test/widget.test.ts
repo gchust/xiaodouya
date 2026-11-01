@@ -11,7 +11,8 @@ import {
   type WidgetEntry,
   type WidgetSession,
 } from '../src/domain/widget';
-import type { BabyData, EventData } from '../src/schemas';
+import { formulaSnapshot } from '../src/health/nutrition';
+import type { BabyData, EventData, FormulaData } from '../src/schemas';
 
 const HOUR = 3_600_000;
 const now = new Date(2026, 5, 15, 12, 0, 0).getTime();
@@ -29,27 +30,81 @@ const sleep = (id: string, at: number, endAt?: number) =>
 const plan = (
   action: Parameters<typeof planWidgetAction>[0],
   entries: WidgetEntry[],
-  options: { session?: WidgetSession; hasBaby?: boolean; known?: string[] } = {},
+  options: {
+    session?: WidgetSession;
+    hasBaby?: boolean;
+    known?: string[];
+    formulas?: { id: string; data: FormulaData }[];
+  } = {},
 ) =>
   planWidgetAction(action, {
     session: options.session ?? member,
     hasBaby: options.hasBaby ?? true,
     entries,
+    formulas: options.formulas ?? [],
     isKnownId: (id) => (options.known ?? []).includes(id),
     now,
   });
 
 describe('小工具记录喂奶', () => {
-  it('沿用上一次的奶量和其他字段，不带备注，时间用现在', () => {
+  it('沿用上一次的奶量，不带备注和记录人，时间用现在', () => {
     const result = plan({ type: 'feed', id: 'new' }, [
-      feed('old', now - HOUR, 90, { note: '吐奶了', formula: 'fictional-brand', byName: '妈妈' }),
+      feed('old', now - HOUR, 90, { note: '吐奶了', byName: '妈妈' }),
       feed('older', now - 3 * HOUR, 60),
     ]);
     expect(result).toEqual({
       kind: 'write',
       id: 'new',
-      data: { type: 'feed', at: now, ml: 90, formula: 'fictional-brand', byName: '爸爸' },
+      data: { type: 'feed', at: now, ml: 90, byName: '爸爸' },
     });
+  });
+
+  const brand: FormulaData = {
+    type: 'formula',
+    name: '虚构奶粉',
+    basis: 'per100ml',
+    values: { energyKcal: 67 },
+  };
+  const oldSnapshot = { name: '虚构奶粉', per100ml: { energyKcal: 60 } };
+
+  it('沿用奶类型，快照用奶粉现在的数值', () => {
+    const result = plan(
+      { type: 'feed', id: 'new' },
+      [feed('old', now - HOUR, 90, { milkType: 'formula', formulaId: 'f1', formula: oldSnapshot })],
+      { formulas: [{ id: 'f1', data: brand }] },
+    );
+    expect(result).toEqual({
+      kind: 'write',
+      id: 'new',
+      data: {
+        type: 'feed',
+        at: now,
+        ml: 90,
+        milkType: 'formula',
+        formulaId: 'f1',
+        formula: formulaSnapshot(brand),
+        byName: '爸爸',
+      },
+    });
+  });
+
+  it('奶粉被删了就不再沿用，也不用旧快照', () => {
+    const result = plan({ type: 'feed', id: 'new' }, [
+      feed('old', now - HOUR, 90, { milkType: 'formula', formulaId: 'f1', formula: oldSnapshot }),
+    ]);
+    expect(result).toEqual({
+      kind: 'write',
+      id: 'new',
+      data: { type: 'feed', at: now, ml: 90, milkType: 'formula', byName: '爸爸' },
+    });
+  });
+
+  it('家人用旧版记的没有奶类型，奶量跟最新的，奶类型跟最近标过的', () => {
+    const result = plan({ type: 'feed', id: 'new' }, [
+      feed('newest', now - HOUR, 120),
+      feed('marked', now - 2 * HOUR, 90, { milkType: 'breast' }),
+    ]);
+    expect(result).toMatchObject({ data: { ml: 120, milkType: 'breast' } });
   });
 
   it('没有喂奶记录时不编奶量，要去 App 里选', () => {

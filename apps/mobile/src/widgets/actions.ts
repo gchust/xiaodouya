@@ -17,11 +17,12 @@ export async function runWidgetAction(
   session: WidgetSession,
   now: number,
 ): Promise<WidgetPlan> {
-  const { baby, events } = store.getSnapshot();
+  const { baby, events, formulas } = store.getSnapshot();
   const plan = planWidgetAction(action, {
     session,
     hasBaby: Boolean(baby),
     entries: events,
+    formulas,
     isKnownId: (id) => store.has(id),
     now,
   });

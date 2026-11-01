@@ -3,8 +3,6 @@ import {
   type Collection,
   type CollectionData,
   defaultPrefs,
-  describeEvent,
-  type EventData,
   effectiveUnits,
   type MeResponse,
   type Prefs,
@@ -42,7 +40,8 @@ import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
 import { clearLocalMedia, createUploadTransport } from './media';
-import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 import { ME_KEY, OWNER_KEY, SERVER_KEY, TOKEN_KEY } from './storedSession';
 
@@ -165,13 +164,18 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       const uploads = new UploadQueue(db, createUploadTransport(api));
       Object.assign(syncEvents, {
         onStatus: setSyncStatus,
-        onRemote: (records: ServerRecord[]) =>
-          announceRemote(
-            records,
-            meRef.current,
-            effectiveUnits(meRef.current?.prefs.units, store.getSnapshot().baby?.data.region),
-            feedbackRef.current.banner,
-          ),
+        onRemote: (records: ServerRecord[]) => {
+          const summary = summarizeRemote(records, {
+            selfId: meRef.current?.user.id,
+            members: meRef.current?.members ?? [],
+            units: effectiveUnits(
+              meRef.current?.prefs.units,
+              store.getSnapshot().baby?.data.region,
+            ),
+            now: Date.now(),
+          });
+          if (summary) feedbackRef.current.banner(summary.initial, summary.message);
+        },
         onRejected: (count: number) =>
           feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
         onSynced: () => {
@@ -306,12 +310,6 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   useEffect(() => {
     if (booted) void refreshMe();
   }, [booted, refreshMe]);
-
-  useEffect(() => {
-    if (services && hasFamily && me?.role !== 'viewer') {
-      void registerPushToken(services.api);
-    }
-  }, [services, hasFamily, me?.role]);
 
   const prefs = me?.prefs ?? defaultPrefs;
 
@@ -473,27 +471,4 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     else sessionState = hasSynced ? 'noBaby' : 'syncing';
   }
   return <AppContext.Provider value={{ ...value, sessionState }}>{children}</AppContext.Provider>;
-}
-
-function announceRemote(
-  records: ServerRecord[],
-  me: MeResponse | null,
-  units: Units,
-  banner: (initial: string, message: string) => void,
-) {
-  const now = Date.now();
-  const fresh = records
-    .filter((r) => !r.deleted && (r.collection === 'event' || r.collection === 'moment'))
-    .filter((r) => now - ((r.data as { at?: number }).at ?? 0) < 3_600_000);
-  const latest = fresh[fresh.length - 1];
-  if (!latest) return;
-  const author =
-    me?.members.find((m) => m.userId === latest.createdBy)?.label ??
-    (latest.data as { byName?: string }).byName ??
-    '家人';
-  const text =
-    latest.collection === 'event'
-      ? describeEvent(latest.data as EventData, now, units)
-      : (latest.data as { title?: string }).title || '新的一刻';
-  banner(author.slice(0, 1), `${author} 记录了 ${text}`);
 }

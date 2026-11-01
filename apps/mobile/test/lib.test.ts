@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { bookFileName, bookPage, buildBookHtml } from '../src/lib/bookHtml';
-import { doseTimestamp, formatLastSeen, isBirthInFuture } from '../src/lib/dates';
+import {
+  doseTimestamp,
+  editedDoseTimestamp,
+  formatLastSeen,
+  isBirthInFuture,
+  isDaysAgo,
+  resolveTimeChoice,
+  withClock,
+  withDate,
+  withDaysAgo,
+} from '../src/lib/dates';
 import {
   createExclusivePlayback,
   downsamplePeaks,
@@ -17,6 +27,63 @@ describe('出生时间', () => {
     expect(isBirthInFuture(1001, 1000)).toBe(true);
     expect(isBirthInFuture(1000, 1000)).toBe(false);
     expect(isBirthInFuture(999, 1000)).toBe(false);
+  });
+});
+
+describe('选记录时间', () => {
+  const now = new Date(2026, 2, 10, 14, 30, 20).getTime();
+
+  it('偏移保存时才按当时的时间算，确定的时刻不变', () => {
+    expect(resolveTimeChoice({ kind: 'offset', minutes: 15 }, now)).toBe(now - 15 * 60_000);
+    expect(resolveTimeChoice({ kind: 'exact', at: 123 }, now)).toBe(123);
+  });
+
+  it('换日期保留时刻', () => {
+    const at = new Date(2026, 2, 10, 9, 5).getTime();
+    expect(withDate(at, new Date(2026, 1, 28), now)).toBe(new Date(2026, 1, 28, 9, 5).getTime());
+  });
+
+  it('换到今天时，比现在晚的时刻退回现在', () => {
+    const at = new Date(2026, 2, 8, 23, 0).getTime();
+    expect(withDate(at, new Date(2026, 2, 10), now)).toBe(now);
+  });
+
+  it('换时刻保留日期，选到未来也不改，由校验提示', () => {
+    const at = new Date(2026, 2, 10, 9, 5, 33).getTime();
+    expect(withClock(at, new Date(2000, 0, 1, 20, 15))).toBe(
+      new Date(2026, 2, 10, 20, 15).getTime(),
+    );
+  });
+
+  it('今天、昨天、前天', () => {
+    const at = new Date(2026, 2, 10, 9, 5).getTime();
+    expect(withDaysAgo(at, 1, now)).toBe(new Date(2026, 2, 9, 9, 5).getTime());
+    expect(withDaysAgo(at, 2, now)).toBe(new Date(2026, 2, 8, 9, 5).getTime());
+    expect(isDaysAgo(new Date(2026, 2, 9, 23, 59).getTime(), 1, now)).toBe(true);
+    expect(isDaysAgo(new Date(2026, 2, 9, 23, 59).getTime(), 0, now)).toBe(false);
+  });
+
+  it('跨月的昨天', () => {
+    const first = new Date(2026, 2, 1, 8).getTime();
+    expect(withDaysAgo(first, 1, first)).toBe(new Date(2026, 1, 28, 8).getTime());
+  });
+});
+
+describe('改接种日期', () => {
+  const now = new Date(2026, 2, 10, 14, 30).getTime();
+  it('日期没变就保留原来的时刻', () => {
+    const at = new Date(2026, 2, 1, 9, 5).getTime();
+    expect(editedDoseTimestamp(at, new Date(2026, 2, 1, 22), now)).toBe(at);
+  });
+  it('换了日期放在那天中午', () => {
+    const at = new Date(2026, 2, 1, 9, 5).getTime();
+    expect(editedDoseTimestamp(at, new Date(2026, 1, 20), now)).toBe(
+      new Date(2026, 1, 20, 12).getTime(),
+    );
+  });
+  it('换到今天用现在', () => {
+    const at = new Date(2026, 2, 1, 9, 5).getTime();
+    expect(editedDoseTimestamp(at, new Date(2026, 2, 10), now)).toBe(now);
   });
 });
 

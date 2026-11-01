@@ -1,5 +1,6 @@
 import { metricUnits } from '../domain/units';
 import { defineSchedule } from '../domain/vaccines';
+import { nutritionReferenceFallback } from '../health/nutritionReferences';
 import type { RegionDefinition } from './types';
 
 const JE = '减毒活疫苗和灭活疫苗二选一，由接种单位安排';
@@ -150,6 +151,7 @@ export const CN: RegionDefinition = {
   reviewStatus: 'primary-source',
   disclaimer:
     '按《国家免疫规划疫苗儿童免疫程序及说明（2026 年版）》排列，只含国家免疫规划疫苗，以诊所安排和健康手册为准。',
+  nutrition: nutritionReferenceFallback('中国营养学会的 DRIs 还没有核对原文'),
   documentSuggestions: [
     '出生医学证明',
     '户口本',

@@ -1,51 +1,75 @@
-import { formatMediaDuration, type MediaRef } from '@xiaodouya/shared';
+import {
+  formatMediaDuration,
+  type LetterData,
+  type MediaRef,
+  type MomentData,
+  mergeEdit,
+  mergeMediaEdit,
+} from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import { type PickedFile, pickFromLibrary, queueForUpload } from '../lib/media';
-import { LocalThumb, useRecorder } from '../lib/mediaViews';
+import { ExistingThumb, LocalThumb, useRecorder } from '../lib/mediaViews';
 import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Mono, Muted, SoftInput, Toggle } from '../ui/primitives';
+import { RecordTimeField, useRecordTime } from '../ui/TimeField';
 
 export type MomentKind = 'moment' | 'letter';
+
+/** 和 MomentData 的上限一致。超过了记录过不了校验，会整条显示不出来。 */
+const MAX_MEDIA = 100;
+const NOW_ONLY = [{ minutes: 0, label: '现在' }] as const;
 
 export function MomentSheet({
   initialKind = 'moment',
   initialMilestone = false,
   initialTitle = '',
   onSaved,
+  editMoment,
+  editLetter,
 }: {
   initialKind?: MomentKind;
   initialMilestone?: boolean;
   initialTitle?: string;
   /** 保存后由回忆页切到能看到这条内容的子标签。 */
   onSaved?: (kind: MomentKind) => void;
+  /** 修改已有的回忆。类型不能换：回忆和信是两个集合。 */
+  editMoment?: { id: string; data: MomentData };
+  editLetter?: { id: string; data: LetterData };
 }) {
   const app = useApp();
   const sheet = useSheet();
   const router = useRouter();
   const { toast } = useFeedback();
-  const [kind, setKind] = useState<MomentKind>(initialKind);
-  const [title, setTitle] = useState(initialTitle);
-  const [text, setText] = useState('');
-  const [milestone, setMilestone] = useState(initialMilestone);
+  const editing = editMoment ?? editLetter;
+  const [kind, setKind] = useState<MomentKind>(
+    editLetter ? 'letter' : editMoment ? 'moment' : initialKind,
+  );
+  const [title, setTitle] = useState(editing?.data.title ?? initialTitle);
+  const [text, setText] = useState(editing?.data.text ?? '');
+  const [milestone, setMilestone] = useState(editMoment?.data.milestone ?? initialMilestone);
+  const [kept, setKept] = useState<MediaRef[]>(editMoment?.data.media ?? []);
   const [files, setFiles] = useState<PickedFile[]>([]);
   const [saving, setSaving] = useState(false);
   const [picking, setPicking] = useState(false);
   const recorder = useRecorder();
+  const time = useRecordTime({ at: editing?.data.at, subject: 'memory' });
 
   const isLetter = kind === 'letter';
   const { setTitle: setSheetTitle } = sheet;
   useEffect(() => {
-    setSheetTitle(isLetter ? '写给宝宝的信' : '记下这一刻');
-  }, [isLetter, setSheetTitle]);
-  const canSave = isLetter
+    if (editing) setSheetTitle(isLetter ? '修改这封信' : '修改这一刻');
+    else setSheetTitle(isLetter ? '写给宝宝的信' : '记下这一刻');
+  }, [editing, isLetter, setSheetTitle]);
+  const hasContent = isLetter
     ? Boolean(title.trim() || text.trim())
     : // 只录音也能保存：保存时会自动停止录音。
-      Boolean(title.trim() || text.trim() || files.length || recorder.recording);
+      Boolean(title.trim() || text.trim() || kept.length || files.length || recorder.recording);
+  const canSave = hasContent && !time.check.error;
 
   const pick = async () => {
     setPicking(true);
@@ -78,17 +102,27 @@ export function MomentSheet({
         const last = await recorder.stop();
         if (last) files.push(last);
       }
-      const now = Date.now();
+      const at = time.resolve();
+      if (!isLetter && kept.length + files.length > MAX_MEDIA) {
+        toast(`一条回忆最多放 ${MAX_MEDIA} 个文件，可以再记一条。`);
+        return;
+      }
       if (isLetter) {
-        await app.write('letter', {
-          title: title.trim() || '无题',
-          text: text.trim(),
-          at: now,
-          byName: app.label,
-        });
+        const fields = { title: title.trim() || '无题', text: text.trim(), at };
+        if (editLetter) {
+          const { id, data } = editLetter;
+          // 弹层可能开了一会儿，只改用户动过的字段，不要盖掉家人刚改的内容。
+          const latest = app.store.getSnapshot().letters.find((l) => l.id === id)?.data ?? data;
+          await app.write('letter', mergeEdit(data, latest, fields), id);
+          sheet.close();
+          toast('已保存', { undo: () => void app.write('letter', latest, id) });
+          return;
+        }
+        await app.write('letter', { ...fields, byName: app.label });
         sheet.close();
         toast('信已保存');
       } else {
+        // 先进上传队列再写记录，文件传不上去也不会丢：队列会一直重试，记录里已经有引用。
         const refs: MediaRef[] = [];
         for (const file of files) {
           refs.push(
@@ -99,14 +133,18 @@ export function MomentSheet({
             }),
           );
         }
-        await app.write('moment', {
-          title: title.trim(),
-          text: text.trim(),
-          at: now,
-          milestone,
-          media: refs,
-          byName: app.label,
-        });
+        const fields = { title: title.trim(), text: text.trim(), at, milestone };
+        if (editMoment) {
+          const { id, data } = editMoment;
+          const latest = app.store.getSnapshot().moments.find((m) => m.id === id)?.data ?? data;
+          // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。
+          const media = mergeMediaEdit(data.media, latest.media, [...kept, ...refs]);
+          await app.write('moment', mergeEdit(data, latest, { ...fields, media }), id);
+          sheet.close();
+          toast('已保存', { undo: () => void app.write('moment', latest, id) });
+          return;
+        }
+        await app.write('moment', { ...fields, media: refs, byName: app.label });
         sheet.close();
         if (refs.length === 0) toast('已保存到回忆');
       }
@@ -121,22 +159,24 @@ export function MomentSheet({
 
   return (
     <>
-      <View style={s.kinds}>
-        <Chip
-          testID="kind-moment"
-          label="这一刻"
-          selected={kind === 'moment'}
-          onPress={() => setKind('moment')}
-          style={s.kindChip}
-        />
-        <Chip
-          testID="kind-letter"
-          label="写给宝宝的信"
-          selected={kind === 'letter'}
-          onPress={() => setKind('letter')}
-          style={s.kindChip}
-        />
-      </View>
+      {editing ? null : (
+        <View style={s.kinds}>
+          <Chip
+            testID="kind-moment"
+            label="这一刻"
+            selected={kind === 'moment'}
+            onPress={() => setKind('moment')}
+            style={s.kindChip}
+          />
+          <Chip
+            testID="kind-letter"
+            label="写给宝宝的信"
+            selected={kind === 'letter'}
+            onPress={() => setKind('letter')}
+            style={s.kindChip}
+          />
+        </View>
+      )}
       {isLetter ? null : (
         <>
           <View style={s.pickers}>
@@ -179,12 +219,19 @@ export function MomentSheet({
               )}
             </Pressable>
           </View>
-          {files.length > 0 ? (
+          {kept.length + files.length > 0 ? (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={{ gap: 8 }}
             >
+              {kept.map((media) => (
+                <ExistingThumb
+                  key={media.id}
+                  media={media}
+                  onRemove={() => setKept((prev) => prev.filter((m) => m.id !== media.id))}
+                />
+              ))}
               {files.map((file) => (
                 <LocalThumb
                   key={file.uri}
@@ -215,6 +262,7 @@ export function MomentSheet({
         textAlignVertical="top"
         style={s.textArea}
       />
+      <RecordTimeField time={time} offsets={NOW_ONLY} />
       {isLetter ? null : (
         <View>
           <Toggle
@@ -226,7 +274,7 @@ export function MomentSheet({
           />
         </View>
       )}
-      {!canSave ? (
+      {!hasContent ? (
         <Muted style={{ fontSize: 11, marginBottom: -8 }}>写点什么，或者选一张照片。</Muted>
       ) : null}
       <Button

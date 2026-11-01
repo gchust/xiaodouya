@@ -1,4 +1,5 @@
 import { defineSchedule } from '../domain/vaccines';
+import { nutritionReferenceIom } from '../health/nutritionReferences';
 import type { RegionDefinition } from './types';
 
 /**
@@ -139,6 +140,7 @@ export const US: RegionDefinition = {
   reviewStatus: 'primary-source',
   disclaimer:
     '按美国儿科学会（AAP）2026 版排列。不同机构的建议可能不同，打哪些、什么时候打请问儿科医生，以诊所安排和健康手册为准。',
+  nutrition: nutritionReferenceIom,
   documentSuggestions: [
     '出生证明',
     '社会安全卡 SSN',

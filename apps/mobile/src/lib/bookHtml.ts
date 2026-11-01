@@ -1,6 +1,6 @@
 import {
   type BabyData,
-  dayNumber,
+  dayLabel,
   formatFullDate,
   type LetterData,
   type MomentData,
@@ -31,7 +31,7 @@ export function buildBookHtml(
       const images = photos.map((p) => `<img src="${p.src}" />`).join('');
       return `<article>
   <h2>${escapeHtml(data.title || '这一刻')}</h2>
-  <p class="meta">${formatFullDate(data.at)} · 第 ${dayNumber(baby.birthAt, data.at)} 天${data.milestone ? ' · 里程碑' : ''}</p>
+  <p class="meta">${formatFullDate(data.at)} · ${dayLabel(baby.birthAt, data.at)}${data.milestone ? ' · 里程碑' : ''}</p>
   ${images ? `<div class="photos">${images}</div>` : ''}
   ${data.text ? `<p class="text">${escapeHtml(data.text)}</p>` : ''}
   ${data.byName ? `<p class="by">${escapeHtml(data.byName)}写</p>` : ''}
