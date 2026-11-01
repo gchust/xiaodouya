@@ -1,0 +1,94 @@
+# 退出登录：有没传完的记录时要警告；退出后回到欢迎页；重新登录后数据从服务器同步回来。
+# 结束时仍然是管理员，流程 17 接着用。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+# 断网记一条，这时退出会丢数据
+- setAirplaneMode: enabled
+- tapOn: { id: action-feed }
+- tapOn: { id: ml-chip-80 }
+- tapOn: { id: ml-dec }
+- assertVisible: "70"
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 喂奶 70ml
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: sign-out }
+- tapOn: { id: sign-out }
+- assertVisible:
+    text: 还有.*没有传到服务器.*
+- assertVisible: 仍然退出
+- takeScreenshot: .artifacts/e2e-16-unsynced-warning
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: signout-confirm }
+    timeout: 10000
+# 联网传完
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible: { id: sync-status }
+    timeout: 90000
+# 都传完了，真的退出
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: sign-out }
+- tapOn: { id: sign-out }
+- assertVisible:
+    text: 退出后手机上的数据会被清除.*
+- takeScreenshot: .artifacts/e2e-16-clean-warning
+- tapOn: { id: signout-confirm }
+- extendedWaitUntil:
+    visible: { id: welcome-screen }
+    timeout: 20000
+- takeScreenshot: .artifacts/e2e-16-signed-out
+# 重新登录
+- tapOn: { id: welcome-login }
+- tapOn: { id: field-email }
+- inputText: admin-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-1
+- hideKeyboard
+- tapOn: { id: auth-submit }
+# 本地已清空，要先等第一次同步
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 60000
+- extendedWaitUntil:
+    visible: 喂奶 70ml
+    timeout: 40000
+- assertVisible:
+    text: Sprout2的第.*
+# 流程 11 删掉的记录不能回来
+- assertNotVisible: 喂奶 140ml
+- takeScreenshot: .artifacts/e2e-16-today-restored
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertVisible: KK Hospital
+- scrollUntilVisible:
+    element: { id: doc-card-护照 }
+- assertVisible: 2 个文件
+- scrollUntilVisible:
+    element: { id: vaccine-row-bcg }
+- assertVisible:
+    text: 已接种 .*
+- takeScreenshot: .artifacts/e2e-16-info-restored
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: First smile ${RUN_ID}
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-16-recall-restored

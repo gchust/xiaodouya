@@ -1,0 +1,73 @@
+# 只看回忆的家人：脚本走真实接口加入，再在 App 里用这个账号登录。
+# 必须是最后一个流程：跑完 App 里登录的是外公，不是管理员。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- runScript:
+    file: ../helpers/viewer-joins.js
+    env:
+      EMAIL: admin-${RUN_ID}@example.test
+      RUN_ID: ${RUN_ID}
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: sign-out }
+- tapOn: { id: sign-out }
+- tapOn: { id: signout-confirm }
+- extendedWaitUntil:
+    visible: { id: welcome-screen }
+    timeout: 20000
+- tapOn: { id: welcome-login }
+- tapOn: { id: field-email }
+- inputText: viewer-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-3
+- hideKeyboard
+- tapOn: { id: auth-submit }
+# 直接进回忆页，能看到全家的回忆
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 30000
+- extendedWaitUntil:
+    visible: First smile ${RUN_ID}
+    timeout: 30000
+- assertVisible: { id: tab-recall }
+- assertVisible: { id: tab-family }
+- assertNotVisible: { id: tab-today }
+- assertNotVisible: { id: tab-info }
+- assertNotVisible: { id: recall-fab }
+- takeScreenshot: .artifacts/e2e-17-viewer-recall
+# 能看大图
+- tapOn:
+    id: moment-cover-.*
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-17-viewer-photo
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+# 能读信，也不能写
+- tapOn: { id: recall-tab-letters }
+- assertVisible: Hello little one
+- assertNotVisible: { id: recall-fab }
+- takeScreenshot: .artifacts/e2e-17-viewer-letters
+# 家人页没有管理入口
+- tapOn: { id: tab-family }
+- extendedWaitUntil:
+    visible: { id: member-外公 }
+    timeout: 15000
+- assertNotVisible: { id: invite-open }
+- assertNotVisible: { id: pref-feed }
+- takeScreenshot: .artifacts/e2e-17-viewer-family
+- scrollUntilVisible:
+    element: { id: sign-out }
+- assertVisible: { id: export-book }
+- assertNotVisible: { id: open-storage }
+- assertNotVisible: { id: pref-doc-lock }

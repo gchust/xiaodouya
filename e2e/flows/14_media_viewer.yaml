@@ -1,0 +1,41 @@
+# 全屏查看：从时间线和照片墙打开流程 03 上传的照片，再关掉。
+# testID 带随机 id，用正则选。这个家庭只有一条带图的回忆。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: First smile ${RUN_ID}
+    timeout: 15000
+# 从时间线打开
+- tapOn:
+    id: moment-cover-.*
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: First smile ${RUN_ID} · .*
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-14-viewer
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible: { id: recall-screen }
+# 从照片墙打开
+- tapOn: { id: recall-tab-photos }
+- tapOn:
+    id: photo-.*
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-14-viewer-from-photos
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible: { id: recall-screen }

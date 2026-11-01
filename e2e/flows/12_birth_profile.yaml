@@ -1,0 +1,87 @@
+# 出生档案：查看和修改，错误的体重不能保存，重启后还在。
+# 这里改的内容在流程 16 重新登录后还要再查一遍。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertVisible: 出生时间
+- takeScreenshot: .artifacts/e2e-12-profile-before
+# 名字
+- tapOn: { id: birth-name }
+- tapOn: { id: edit-text }
+- eraseText: 20
+- inputText: Sprout2
+- hideKeyboard
+- tapOn: { id: edit-save }
+- extendedWaitUntil:
+    notVisible: { id: edit-save }
+    timeout: 10000
+- assertVisible: Sprout2
+# 体重和身长：先填一个不合理的体重，不能保存
+- tapOn: { id: birth-measures }
+- tapOn: { id: edit-length }
+- inputText: "50"
+- hideKeyboard
+- tapOn: { id: edit-weight }
+- inputText: "99"
+- hideKeyboard
+- tapOn: { id: edit-save }
+- assertVisible:
+    text: 体重看起来不太对.*
+- assertVisible: { id: edit-save }
+- tapOn: { id: edit-weight }
+- eraseText: 5
+- inputText: "3.2"
+- hideKeyboard
+- tapOn: { id: edit-save }
+- extendedWaitUntil:
+    notVisible: { id: edit-save }
+    timeout: 10000
+- assertVisible: 3.2 kg · 50 cm
+# 医院
+- tapOn: { id: birth-hospital }
+- tapOn: { id: edit-text }
+- inputText: KK Hospital
+- hideKeyboard
+- tapOn: { id: edit-save }
+- extendedWaitUntil:
+    notVisible: { id: edit-save }
+    timeout: 10000
+- assertVisible: KK Hospital
+# 血型
+- tapOn: { id: birth-blood }
+- tapOn: { id: edit-text }
+- inputText: AB
+- hideKeyboard
+- tapOn: { id: edit-save }
+- extendedWaitUntil:
+    notVisible: { id: edit-save }
+    timeout: 10000
+- assertVisible: AB
+- takeScreenshot: .artifacts/e2e-12-profile-after
+# 出生体重也会成为柱状图的第一根。“出生”两个字疫苗本里也有，所以看数值。
+- scrollUntilVisible:
+    element: { id: growth-chart }
+- assertVisible: "3.2"
+- takeScreenshot: .artifacts/e2e-12-chart-with-birth
+# 重启后还在，今天页的标题也跟着变
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible:
+    text: Sprout2的第.*
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertVisible: Sprout2
+- assertVisible: 3.2 kg · 50 cm
+- assertVisible: KK Hospital
+- assertVisible: AB

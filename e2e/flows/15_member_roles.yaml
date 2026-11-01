@@ -1,0 +1,45 @@
+# 成员管理：调整流程 05 加入的妈妈的角色，再把她移出家庭。
+# 待接受邀请那一行写的是“已发送邀请 · 只看回忆和照片”，整串匹配不会选到它。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- extendedWaitUntil:
+    visible: { id: member-妈妈 }
+    timeout: 20000
+- assertVisible: 一起记录
+- assertNotVisible: 只看回忆和照片
+# 降为只看
+- tapOn: { id: member-妈妈 }
+- takeScreenshot: .artifacts/e2e-15-member-sheet
+- tapOn: { id: role-viewer }
+- tapOn: { id: member-save }
+- extendedWaitUntil:
+    notVisible: { id: member-save }
+    timeout: 15000
+- assertVisible: 只看回忆和照片
+- assertNotVisible: 一起记录
+- takeScreenshot: .artifacts/e2e-15-role-viewer
+# 改回来
+- tapOn: { id: member-妈妈 }
+- tapOn: { id: role-caregiver }
+- tapOn: { id: member-save }
+- extendedWaitUntil:
+    notVisible: { id: member-save }
+    timeout: 15000
+- assertVisible: 一起记录
+- assertNotVisible: 只看回忆和照片
+# 移出家庭要点两次
+- tapOn: { id: member-妈妈 }
+- tapOn: { id: member-remove }
+- assertVisible: 确定把妈妈移出家庭？
+- takeScreenshot: .artifacts/e2e-15-remove-confirm
+- tapOn: { id: member-remove }
+- extendedWaitUntil:
+    notVisible: { id: member-remove }
+    timeout: 15000
+- assertNotVisible: { id: member-妈妈 }
+- takeScreenshot: .artifacts/e2e-15-removed

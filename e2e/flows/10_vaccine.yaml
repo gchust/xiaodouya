@@ -1,0 +1,42 @@
+# 疫苗：记一剂之后，疫苗本显示已接种，待接种列表里不再有它。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- tapOn: { id: action-more }
+- tapOn: { id: more-vaccine }
+- tapOn: { id: vaccine-bcg }
+- takeScreenshot: .artifacts/e2e-10-vaccine-sheet
+# 13 剂的列表比弹层高，保存按钮在下面
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 接种 卡介苗 BCG
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-10-after-vaccine
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-row-6in1-1 }
+# 带空格的写法不会匹配到弹层按钮上的“已接种”
+- assertVisible:
+    text: 已接种 .*
+- assertVisible: { id: vaccine-row-bcg }
+- assertVisible: 可以预约了
+- takeScreenshot: .artifacts/e2e-10-vaccine-book
+# 打过的不再出现在待接种列表
+- tapOn: { id: vaccine-row-hepb-1 }
+- assertVisible: { id: vaccine-hepb-1 }
+- assertNotVisible: { id: vaccine-bcg }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-hepb-1 }
+    timeout: 10000
