@@ -279,6 +279,8 @@ export interface PendingInvite {
 
 export interface MeResponse {
   user: PublicUser;
+  /** 服务器没有配置邮件时无从验证，也算 true，App 不用再判断一次。 */
+  emailVerified: boolean;
   family: { id: string; name: string } | null;
   role: Role | null;
   label: string | null;
@@ -437,6 +439,10 @@ export interface StorageUsage {
 export interface PublicConfig {
   /** false 时普通用户只能用平台托管的存储，App 不显示 S3 表单。 */
   allowCustomStorage: boolean;
+  /** 配置了邮件：登录页显示“忘记密码”。 */
+  passwordReset: boolean;
+  /** 配置了邮件：注册后引导验证邮箱。 */
+  emailVerification: boolean;
 }
 
 export interface ApiError {

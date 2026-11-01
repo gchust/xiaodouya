@@ -125,27 +125,28 @@ Except for the files described below, we currently have no rule that deletes dat
 | Password-guessing counters | 15 minutes |
 | Database backups | One a day, encrypted, kept for 30 days. So content you delete may remain in backups for up to 30 days. Backups do not include the files themselves |
 | Provider logs | Set by each provider `〔To do: find out and add here〕` |
-| Copies on your phone | Cleared when you sign out, including file copies and image cache. Kept if your sign-in expires or you are removed from the family, so you can carry on if you return to the same family |
+| Copies on your phone | Cleared when you sign out or delete your account on that phone, including file copies and image cache. Kept if your sign-in expires or you are removed from the family, so you can carry on if you return to the same family. If you delete your account on another phone, the copy on this phone stays until someone signs in with a different account |
 
 ## 9. Deletion
 
 **Single records:** delete them in the app, with undo available. Section 8 explains what this does.
 
-**Account and all data `〔In development〕`:** you can start deletion in the app or request it at `[Account deletion URL]`. We will delete the account and related data, including files in storage, within `[Deletion period]` and confirm when it's done. Content in backups disappears within 30 days as backups expire. We keep only what the law requires us to keep, and we will tell you what that is and why.
+**Account and all data:** you can delete your account on the Family tab of the app by entering your password. The data on that phone is cleared at the same time. Your account and database content are deleted immediately, and files in storage are cleaned up afterwards, normally within `[Deletion period]`. `〔To do: web option before launch〕` You can also request deletion at `[Account deletion URL]`. Content in backups disappears within 30 days as backups expire. We keep only what the law requires us to keep, and we will tell you what that is and why.
 
 Because content is shared by the family:
 
-- **If you are a regular member:** your account is deleted. What you entered is part of the family's records. `〔In development: to be decided〕` We will tell you clearly how it is handled before you delete.
-- **If you are the only admin:** `〔In development: to be decided〕` you first hand admin to someone else, or choose to delete the whole family and all its content.
+- **If others remain and you are not the only admin:** only your account, sign-ins and membership are deleted. What you recorded and uploaded stays with the family, and they can still see it, but it is no longer linked to your account. Names and text written in the content are not changed.
+- **If you are the only admin and others remain:** you first need to make another family member an admin or remove the other members.
+- **If you are the last member:** the family and all its content are deleted, including the baby's profile, records, moments, documents, invites and files in storage.
 
 Uninstalling the app does not delete your account. The data stays on the server.
 
 ## 10. Viewing, correcting and exporting
 
 - **Viewing and correcting:** you can view and change what you entered in the app, depending on your role.
-- **Export (today):** you can export a growth book PDF with moments and letters, up to 6 photos per moment. It does not include daily records, documents, videos or recordings.
-- **Full export `〔In development〕`:** you can export all your family's records and files.
-- Until then, contact us at `[Contact email]` if you need a copy.
+- **Growth book:** you can export a growth book PDF with moments and letters, up to 6 photos per moment. It does not include daily records, documents, videos or recordings.
+- **Family data:** on the Family tab you can export a JSON file with all the records your role can read, plus the name, type and size of each file. The files themselves (photos, videos, recordings, document scans) are not included.
+- Contact us at `[Contact email]` if you need a copy of the files themselves.
 
 ## 11. Security
 
@@ -165,7 +166,7 @@ Limits you should know about:
 - **This is not end-to-end encryption.** Supabase and Cloudflare state that they encrypt stored data (AES-256) with keys they manage. That protects against loss of physical media such as disks, but not against someone with access to the database or storage reading the contents. The operator is technically able to read your data. `〔To do〕` We access it only to investigate faults, handle your requests or meet legal requirements, and we log that access.
 - **The database on your phone has no separate encryption.** It relies on your phone's own protection, so please set a screen lock.
 - **The document lock is an on-screen safeguard.** It is off by default and checks you only when you open the document screen. If your phone has no screen lock, it cannot lock, and the app tells you so.
-- We do not offer two-factor authentication. `〔In development〕` Email verification and self-service password reset are still being built. Today, if you forget your password, you have to contact the operator.
+- We do not offer two-factor authentication. `〔To do: turn on email before launch〕` Once email is on, you can verify your address and reset a forgotten password with a code sent by email, after which every device has to sign in again. Until then, if you forget your password, you have to contact the operator.
 - The service has not had an independent third-party security audit.
 
 No system is perfectly secure. If a breach affects your data, we will notify you and regulators as the applicable law requires. `〔To do: response procedure〕`

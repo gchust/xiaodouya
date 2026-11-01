@@ -3,6 +3,7 @@ import {
   AcceptInviteRequest,
   type ApiError,
   type AuthResponse,
+  accountDeletionOutcome,
   type BabyData,
   CompleteUploadRequest,
   CreateFamilyRequest,
@@ -11,11 +12,15 @@ import {
   canReadMediaScope,
   canWriteCollection,
   collections,
+  DeleteAccountRequest,
   defaultPrefs,
   describeEvent,
+  EMAIL_CODE_COOLDOWN_SECONDS,
   type EventData,
   effectiveUnits,
+  type FamilyExport,
   type FamilyMember,
+  ForgotPasswordRequest,
   formatBytes,
   isAllowedMime,
   isVaccinePlanData,
@@ -30,7 +35,9 @@ import {
   PushTokenRequest,
   parseCollectionData,
   RegisterRequest,
+  ResetPasswordRequest,
   type Role,
+  type SendEmailCodeResponse,
   type ServerRecord,
   StorageConfigInput,
   type StorageConfigView,
@@ -41,6 +48,7 @@ import {
   UpdateMemberRequest,
   UploadUrlRequest,
   type UploadUrlResponse,
+  VerifyEmailRequest,
 } from '@xiaodouya/shared';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -49,6 +57,7 @@ import type { z } from 'zod';
 import { clientIpFrom } from './client-ip';
 import type { Config } from './config';
 import {
+  burnPasswordCheck,
   encryptSecret,
   hashPassword,
   newInviteCode,
@@ -57,7 +66,17 @@ import {
   verifyPassword,
 } from './crypto';
 import type { Sql } from './db';
+import {
+  type CodePurpose,
+  consumeEmailCode,
+  emailCodeCooldown,
+  issueEmailCode,
+  matchEmailCode,
+} from './emailCodes';
+import type { Mailer } from './mailer';
+import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
 import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './notifier';
+import { enqueueFamilyObjects, processPendingDeletions } from './objectDeletions';
 import { countedBytes, familyQuotaBytes, liveReferences, platformUsage, uuidsIn } from './quota';
 import {
   activeStorage,
@@ -92,6 +111,9 @@ const SYNC_BODY_BYTES = 5 * 1024 * 1024;
  * 请求体上限挡不住这个：校验用的是 looseObject，多余字段会原样入库，而数据库是最贵的资源。
  */
 const MAX_RECORD_BYTES = 512 * 1024;
+const HOUR_MS = 3_600_000;
+const INVALID_CODE_MESSAGE = '验证码不正确或已过期';
+const MAIL_DISABLED_MESSAGE = '这台服务器没有配置邮件，请联系部署它的人';
 /** 每次检查只是一条很轻的查询，但每台前台手机都在轮询，不能再密了。 */
 const DEFAULT_LONG_POLL = { intervalMs: 2_000, timeoutMs: 25_000 };
 
@@ -99,6 +121,8 @@ interface AppContext {
   sql: Sql;
   config: Config;
   notifier?: Notifier;
+  /** null 表示这台服务器不发邮件：跳过邮箱验证，也不能自助找回密码。 */
+  mailer?: Mailer | null;
   /** 路径前缀。Edge Function 收到的路径带函数名，比如 /api/v1/me。 */
   basePath?: string;
   longPoll?: { intervalMs: number; timeoutMs: number };
@@ -114,6 +138,7 @@ interface AuthedUser {
   email: string;
   displayName: string;
   prefs: Prefs;
+  emailVerified: boolean;
 }
 
 interface Membership {
@@ -248,6 +273,7 @@ export function createApp({
   sql,
   config,
   notifier = noopNotifier,
+  mailer = null,
   basePath = '/',
   longPoll = DEFAULT_LONG_POLL,
   background = () => {},
@@ -281,10 +307,42 @@ export function createApp({
   });
 
   app.get('/v1/config', (c) =>
-    c.json<PublicConfig>({ allowCustomStorage: config.allowCustomStorage }),
+    c.json<PublicConfig>({
+      allowCustomStorage: config.allowCustomStorage,
+      passwordReset: Boolean(mailer),
+      emailVerification: Boolean(mailer),
+    }),
   );
 
   // ─── 账号 ─────────────────────────────────────────────
+
+  /**
+   * 生成验证码和发信都在响应之后做：查账号、写库、调邮件 API 都会花时间，
+   * 放在响应之前的话，从响应时间就能看出邮箱有没有注册。
+   */
+  function sendCodeLater(
+    purpose: CodePurpose,
+    target: () => Promise<{ id: string; email: string } | undefined>,
+  ) {
+    if (!mailer) return;
+    const task = async () => {
+      const user = await target();
+      if (!user) return;
+      const code = await issueEmailCode(sql, config.appSecret, user.id, purpose);
+      if (!code) return;
+      await mailer.send(
+        purpose === 'verify_email'
+          ? verifyEmailMail(user.email, code)
+          : resetPasswordMail(user.email, code),
+      );
+    };
+    background(
+      task().catch((error: unknown) => {
+        // 只记错误原因，不记收件人和验证码。
+        console.error('验证码邮件发送失败', error instanceof Error ? error.message : 'unknown');
+      }),
+    );
+  }
 
   async function createSession(userId: string): Promise<string> {
     const token = newToken();
@@ -306,6 +364,9 @@ export function createApp({
 
   const clientIp = (c: { req: { header(name: string): string | undefined } }) =>
     clientIpFrom((name) => c.req.header(name), config.clientIp);
+  /** 带着邮箱，拿不到来源时共用 unknown 也只影响这一个邮箱。找回密码后要清除同一个键。 */
+  const loginIpKey = (c: Parameters<typeof clientIp>[0], email: string) =>
+    `login:${clientIp(c) ?? 'unknown'}:${email}`;
 
   app.post('/v1/auth/register', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
     const body = await parseBody(c, RegisterRequest);
@@ -336,6 +397,11 @@ export function createApp({
       ON CONFLICT (email) DO NOTHING RETURNING id`;
     if (inserted.length === 0) fail(409, 'email_taken', '这个邮箱已经注册过了，可以直接登录');
     const token = await createSession(id);
+    // 超过上限只是不发信，注册本身成功，App 的验证页可以重发。否则注册接口就成了给陌生邮箱群发的工具。
+    // 拿不到来源时跳过这一条，只剩上面不看来源的注册总量限制。
+    if (mailer && (!ip || (await allowAttempt(sql, `register-mail:${ip}`, 20, HOUR_MS)))) {
+      sendCodeLater('verify_email', async () => ({ id, email }));
+    }
     return c.json<AuthResponse>({ token, user: { id, email, displayName: body.displayName } }, 201);
   });
 
@@ -345,16 +411,13 @@ export function createApp({
     // 第二条不看来源：部署配错时来源可能是客户端自己填的，换着填就能绕过第一条。
     // 代价是有人能让某个邮箱 15 分钟内登录不了，已登录的设备不受影响。
     const allowed =
-      (await allowAttempt(
-        sql,
-        `login:${clientIp(c) ?? 'unknown'}:${email}`,
-        10,
-        LOGIN_WINDOW_MS,
-      )) && (await allowAttempt(sql, `login:${email}`, 50, LOGIN_WINDOW_MS));
+      (await allowAttempt(sql, loginIpKey(c, email), 10, LOGIN_WINDOW_MS)) &&
+      (await allowAttempt(sql, `login:${email}`, 50, LOGIN_WINDOW_MS));
     if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
     const [user] = await sql<
       { id: string; password_hash: string; display_name: string }[]
     >`SELECT id, password_hash, display_name FROM users WHERE email = ${email}`;
+    if (!user) await burnPasswordCheck(body.password);
     const valid = user ? await verifyPassword(body.password, user.password_hash) : false;
     if (!user || !valid) fail(401, 'bad_credentials', '邮箱或密码不正确');
     const token = await createSession(user.id);
@@ -362,6 +425,61 @@ export function createApp({
       token,
       user: { id: user.id, email, displayName: user.display_name },
     });
+  });
+
+  // 找回密码的两个接口，响应都不能泄露邮箱是否存在：限流只看来源和邮箱字符串，真假邮箱计数相同。
+  app.post('/v1/auth/password/forgot', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const body = await parseBody(c, ForgotPasswordRequest);
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const email = normalizeEmail(body.email);
+    // 拿不到来源时跳过这一条：所有人共用一个计数的话，一个人就能挡住全部用户找回密码。
+    const ip = clientIp(c);
+    if (ip && !(await allowAttempt(sql, `forgot:${ip}`, 20, LOGIN_WINDOW_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    }
+    // 超过发送上限只是不发信，响应不变：这条限制防的是轰炸别人的邮箱，也限制了换验证码继续猜的次数。
+    const allowed =
+      (await allowAttempt(sql, `forgot-hour:${email}`, 5, HOUR_MS)) &&
+      (await allowAttempt(sql, `forgot-day:${email}`, 10, 24 * HOUR_MS));
+    if (allowed) {
+      sendCodeLater('reset_password', async () => {
+        const [user] = await sql<{ id: string }[]>`SELECT id FROM users WHERE email = ${email}`;
+        return user ? { id: user.id, email } : undefined;
+      });
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post('/v1/auth/password/reset', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const body = await parseBody(c, ResetPasswordRequest);
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const email = normalizeEmail(body.email);
+    const allowed =
+      (await allowAttempt(sql, `reset:${clientIp(c) ?? 'unknown'}:${email}`, 20, HOUR_MS)) &&
+      (await allowAttempt(sql, `reset:${email}`, 20, HOUR_MS));
+    if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    const matched = await matchEmailCode(sql, config.appSecret, email, 'reset_password', body.code);
+    if (!matched) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    // 哈希放在事务外：scrypt 很慢，连接池可能只有 1 个连接。
+    const passwordHash = await hashPassword(body.newPassword);
+    const changed = await sql.begin(async (tx) => {
+      if (!(await consumeEmailCode(tx, 'reset_password', matched))) return false;
+      await tx`UPDATE users SET
+          password_hash = ${passwordHash},
+          email_verified_at = COALESCE(email_verified_at, now())
+        WHERE id = ${matched.userId}`;
+      // 和命令行重置一样：旧设备上的登录全部失效，防止遗失的手机继续访问。
+      await tx`DELETE FROM sessions WHERE user_id = ${matched.userId}`;
+      await tx`DELETE FROM email_codes WHERE user_id = ${matched.userId}`;
+      // 本人往往是猜错太多次才来改密码的，不解除的话改完还是登录不了。
+      await tx`DELETE FROM rate_limits WHERE key_hash = ANY(${[
+        sha256(loginIpKey(c, email)),
+        sha256(`login:${email}`),
+      ]})`;
+      return true;
+    });
+    if (!changed) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    return c.json({ ok: true });
   });
 
   // ─── 需要登录 ──────────────────────────────────────────
@@ -377,11 +495,12 @@ export function createApp({
         email: string;
         display_name: string;
         prefs: unknown;
+        email_verified_at: Date | null;
         family_id: string | null;
         role: Role | null;
         label: string | null;
       }[]
-    >`SELECT u.id, u.email, u.display_name, u.prefs, m.family_id, m.role, m.label
+    >`SELECT u.id, u.email, u.display_name, u.prefs, u.email_verified_at, m.family_id, m.role, m.label
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       LEFT JOIN memberships m ON m.user_id = u.id
@@ -395,6 +514,7 @@ export function createApp({
       email: row.email,
       displayName: row.display_name,
       prefs: mergePrefs(row.prefs),
+      emailVerified: row.email_verified_at !== null,
     });
     c.set(
       'membership',
@@ -456,6 +576,7 @@ export function createApp({
     }
     return {
       user: { id: user.id, email: user.email, displayName: user.displayName },
+      emailVerified: user.emailVerified || !mailer,
       family,
       role: m?.role ?? null,
       label: m?.label ?? null,
@@ -466,6 +587,52 @@ export function createApp({
   }
 
   v1.get('/me', async (c) => c.json(await buildMe(c.get('user'), c.get('membership'))));
+
+  v1.post('/me/email/send-code', async (c) => {
+    const user = c.get('user');
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    if (user.emailVerified) {
+      return c.json<SendEmailCodeResponse>({ emailVerified: true, retryAfterSeconds: 0 });
+    }
+    const wait = await emailCodeCooldown(sql, user.id, 'verify_email');
+    if (wait > 0) {
+      return c.json<SendEmailCodeResponse>({ emailVerified: false, retryAfterSeconds: wait });
+    }
+    if (!(await allowAttempt(sql, `verify-send:${user.id}`, 5, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '发送次数太多了，请稍后再试');
+    }
+    sendCodeLater('verify_email', async () => ({ id: user.id, email: user.email }));
+    return c.json<SendEmailCodeResponse>({
+      emailVerified: false,
+      retryAfterSeconds: EMAIL_CODE_COOLDOWN_SECONDS,
+    });
+  });
+
+  v1.post('/me/email/verify', async (c) => {
+    const user = c.get('user');
+    const membership = c.get('membership');
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const body = await parseBody(c, VerifyEmailRequest);
+    if (user.emailVerified) return c.json(await buildMe(user, membership));
+    if (!(await allowAttempt(sql, `verify:${user.id}`, 20, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    }
+    const matched = await matchEmailCode(
+      sql,
+      config.appSecret,
+      user.email,
+      'verify_email',
+      body.code,
+    );
+    if (!matched) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    const verified = await sql.begin(async (tx) => {
+      if (!(await consumeEmailCode(tx, 'verify_email', matched))) return false;
+      await tx`UPDATE users SET email_verified_at = now() WHERE id = ${user.id}`;
+      return true;
+    });
+    if (!verified) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    return c.json(await buildMe({ ...user, emailVerified: true }, membership));
+  });
 
   v1.put('/me/prefs', async (c) => {
     const prefs = await parseBody(c, Prefs);
@@ -486,7 +653,127 @@ export function createApp({
     return c.json({ ok: true });
   });
 
+  // 用 POST 而不是带请求体的 DELETE：有些代理和客户端会丢掉 DELETE 的请求体。
+  v1.post('/me/delete', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const user = c.get('user');
+    const body = await parseBody(c, DeleteAccountRequest);
+    if (!(await allowAttempt(sql, `delete-account:${user.id}`, 10, LOGIN_WINDOW_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
+    }
+    const [row] = await sql<
+      { password_hash: string }[]
+    >`SELECT password_hash FROM users WHERE id = ${user.id}`;
+    // 不能用 401：App 收到 unauthenticated 会回到登录页。
+    if (!row || !(await verifyPassword(body.password, row.password_hash))) {
+      fail(403, 'wrong_password', '密码不正确');
+    }
+    const outcome = await sql.begin(async (tx) => {
+      const [mine] = await tx<
+        { family_id: string }[]
+      >`SELECT family_id FROM memberships WHERE user_id = ${user.id}`;
+      if (mine) {
+        // 锁住家庭再看成员：两个人同时删除时，不锁的话都以为对方还在，
+        // 会留下没有管理员的家庭，或者没有成员、文件再也删不掉的家庭。
+        await tx`SELECT id FROM families WHERE id = ${mine.family_id} FOR UPDATE`;
+        const members = await tx<{ user_id: string; role: Role }[]>`
+          SELECT user_id, role FROM memberships WHERE family_id = ${mine.family_id}`;
+        const decision = accountDeletionOutcome(
+          user.id,
+          members.map((m) => ({ userId: m.user_id, role: m.role })),
+        );
+        if (decision === 'blocked_only_admin') return decision;
+        if (decision === 'delete_family') {
+          // 顺序不能换：记录、文件记录、存储配置都随家庭级联删除，之后就不知道文件在哪了。
+          await enqueueFamilyObjects(tx, mine.family_id, UPLOAD_URL_TTL);
+          await tx`DELETE FROM families WHERE id = ${mine.family_id}`;
+        }
+      }
+      // 登录、推送令牌、成员关系、验证码随账号级联删除，记录的 created_by 置空后留给家庭。
+      await tx`DELETE FROM users WHERE id = ${user.id}`;
+      return 'deleted' as const;
+    });
+    if (outcome === 'blocked_only_admin') {
+      fail(
+        409,
+        'only_admin',
+        '你是这个家庭唯一的管理员。请先把另一位家人设为管理员，或者把其他家人都移出家庭，再删除账号。',
+      );
+    }
+    // 也会顺带处理之前失败的。没做完的留在队列里，由每天的 cli maintenance 兜底。
+    background(
+      processPendingDeletions(sql, config)
+        .then(() => {})
+        .catch((error: unknown) => {
+          console.error('清理文件失败', error instanceof Error ? error.message : 'unknown');
+        }),
+    );
+    return c.json({ ok: true });
+  });
+
   // ─── 家庭和邀请 ─────────────────────────────────────────
+
+  v1.get('/family/export', async (c) => {
+    const m = requireFamily(c);
+    const user = c.get('user');
+    if (!(await allowAttempt(sql, `export:${user.id}`, 10, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '导出太频繁了，请稍后再试');
+    }
+    const readable = collections.filter((name) => canReadCollection(m.role, name));
+    const [family] = await sql<
+      { id: string; name: string }[]
+    >`SELECT id, name FROM families WHERE id = ${m.familyId}`;
+    const members = await sql<{ user_id: string; label: string; role: Role }[]>`
+      SELECT user_id, label, role FROM memberships WHERE family_id = ${m.familyId} ORDER BY created_at`;
+    const records = await sql<RecordRow[]>`
+      SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
+      WHERE family_id = ${m.familyId} AND NOT deleted AND collection = ANY(${readable})
+      ORDER BY seq`;
+    // 字段逐个列出，不用 SELECT *：object_key 和存储配置不能出现在导出文件里。
+    const media = await sql<
+      {
+        id: string;
+        variant: FamilyExport['media'][number]['variant'];
+        scope: FamilyExport['media'][number]['scope'];
+        mime: string;
+        size: string;
+        filename: string | null;
+        created_at: Date;
+      }[]
+    >`SELECT id, variant, scope, mime, size, filename, created_at FROM media
+      WHERE family_id = ${m.familyId} AND status = 'ready' AND unreferenced_at IS NULL
+      ORDER BY created_at, id, variant`;
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 10).replaceAll('-', '');
+    c.header('content-disposition', `attachment; filename="xiaodouya-export-${stamp}.json"`);
+    c.header('cache-control', 'no-store');
+    return c.json<FamilyExport>({
+      format: 'xiaodouya-export',
+      version: 1,
+      exportedAt: now.getTime(),
+      account: { id: user.id, email: user.email, displayName: user.displayName },
+      family: { id: m.familyId, name: family?.name ?? '' },
+      role: m.role,
+      members: members.map((r) => ({ userId: r.user_id, label: r.label, role: r.role })),
+      records: records.map((r) => ({
+        id: r.id,
+        collection: r.collection,
+        data: r.data,
+        updatedAt: Number(r.updated_at_client),
+        createdBy: r.created_by,
+      })),
+      media: media
+        .filter((r) => canReadMediaScope(m.role, r.scope))
+        .map((r) => ({
+          id: r.id,
+          variant: r.variant,
+          scope: r.scope,
+          mime: r.mime,
+          size: Number(r.size),
+          filename: r.filename,
+          createdAt: r.created_at.getTime(),
+        })),
+    });
+  });
 
   v1.post('/families', async (c) => {
     const user = c.get('user');

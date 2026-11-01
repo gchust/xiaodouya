@@ -16,9 +16,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { accountText } from '../lib/accountText';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
+import { exportFamilyData } from '../lib/familyExport';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -35,6 +37,7 @@ import {
   SoftInput,
   Toggle,
 } from '../ui/primitives';
+import { DeleteAccountSheet, VerifyEmailSheet } from './AccountPanels';
 
 export function FamilyScreen() {
   const insets = useSafeAreaInsets();
@@ -50,6 +53,7 @@ export function FamilyScreen() {
   const now = useNow(60_000);
   const [storageSummary, setStorageSummary] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const { me, role, prefs } = app;
   const isAdmin = role === 'admin';
   const canRecord = role !== 'viewer';
@@ -253,10 +257,39 @@ export function FamilyScreen() {
             }}
           />
           <NavRow
+            testID="export-data"
+            label={exportingData ? accountText.exportRowBusy : accountText.exportRow}
+            sub={accountText.exportRowSub}
+            onPress={() => {
+              if (exportingData) return;
+              setExportingData(true);
+              exportFamilyData(app.api)
+                .catch((e: Error) => toast(e.message || accountText.exportFailed))
+                .finally(() => setExportingData(false));
+            }}
+          />
+          {me?.emailVerified === false ? (
+            <NavRow
+              testID="verify-email"
+              label={accountText.verifyRow}
+              sub={accountText.verifyRowSub}
+              onPress={() => sheet.open(accountText.verifyTitle, () => <VerifyEmailSheet />)}
+            />
+          ) : null}
+          <NavRow
             testID="sign-out"
             label="退出登录"
             sub={me?.user.email ?? ''}
             onPress={signOut}
+            last
+          />
+        </ListCard>
+        <ListCard>
+          <NavRow
+            testID="delete-account"
+            label={accountText.deleteRow}
+            sub={accountText.deleteRowSub}
+            onPress={() => sheet.open(accountText.deleteTitle, () => <DeleteAccountSheet />)}
             last
           />
         </ListCard>

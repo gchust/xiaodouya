@@ -1,6 +1,6 @@
 name: 定时维护
 
-# 清理放弃的上传和宽限期已过的文件（cli maintenance）。Docker 部署用 crontab，见 docs/DEPLOYMENT.md。
+# 清理放弃的上传、宽限期已过的文件和账号删除留下的文件（cli maintenance）。Docker 部署用 crontab，见 docs/DEPLOYMENT.md。
 # 只由定时和手动触发，所以 PR 碰不到这些 Secret。日志不打印文件名以外的内容，命令只输出计数。
 # 设置仓库变量 MAINTENANCE_ENABLED=true 才会运行。
 on:
@@ -45,4 +45,7 @@ jobs:
           S3_FORCE_PATH_STYLE: "true"
           # 要和函数的设置一致，否则宽限期不一样。
           MEDIA_TRASH_DAYS: ${{ vars.MEDIA_TRASH_DAYS || '30' }}
+          # 可选，和函数里的相同。只有删除家庭自带存储里的文件时才用到，
+          # 没设置时那部分留在队列里（日志写明条数），平台存储照常清理。
+          APP_SECRET: ${{ secrets.APP_SECRET }}
         run: pnpm --filter @xiaodouya/server cli maintenance
