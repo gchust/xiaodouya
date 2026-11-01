@@ -44,6 +44,7 @@ export function DocumentScreen({ id }: { id: string }) {
   const [showNumber, setShowNumber] = useState(false);
   const [unlocked, setUnlocked] = useState(!app.prefs.documentLock);
   const [authFailed, setAuthFailed] = useState(false);
+  const [preparing, setPreparing] = useState<'scan' | 'upload' | null>(null);
   const entry = documents.find((d) => d.id === id);
 
   const authenticate = async () => {
@@ -123,11 +124,14 @@ export function DocumentScreen({ id }: { id: string }) {
     await update({ files: [...data.files, ...refs] });
   };
 
-  const guard = (run: () => Promise<PickedFile[]>) => async () => {
+  const guard = (kind: 'scan' | 'upload', run: () => Promise<PickedFile[]>) => async () => {
+    setPreparing(kind);
     try {
       await addFiles(await run());
     } catch (error) {
       toast(error instanceof Error ? error.message : '添加失败，请再试一次');
+    } finally {
+      setPreparing(null);
     }
   };
 
@@ -156,28 +160,24 @@ export function DocumentScreen({ id }: { id: string }) {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {back}
-        <View style={{ gap: 4 }}>
-          <PageTitle testID="doc-title">{data.name}</PageTitle>
-          {data.subtitle ? <Muted>{data.subtitle}</Muted> : null}
+        <View style={{ gap: 8 }}>
+          {back}
+          <View style={{ gap: 4 }}>
+            <PageTitle testID="doc-title">{data.name}</PageTitle>
+            {data.subtitle ? <Muted>{data.subtitle}</Muted> : null}
+          </View>
         </View>
 
         <ListCard>
           <Row
             label="证件号码"
-            testID="doc-number"
+            testID="doc-number-toggle"
+            accessibilityLabel={showNumber ? '隐藏证件号码' : '显示证件号码'}
+            onPress={() => setShowNumber((v) => !v)}
             value={
-              <Pressable
-                testID="doc-number-toggle"
-                accessibilityRole="button"
-                accessibilityLabel={showNumber ? '隐藏证件号码' : '显示证件号码'}
-                hitSlop={8}
-                onPress={() => setShowNumber((v) => !v)}
-              >
-                <Mono style={{ fontSize: 13 }} testID="doc-number-value">
-                  {number}
-                </Mono>
-              </Pressable>
+              <Mono style={{ fontSize: 13 }} testID="doc-number-value">
+                {number}
+              </Mono>
             }
           />
           <Row
@@ -201,6 +201,7 @@ export function DocumentScreen({ id }: { id: string }) {
           testID="doc-edit"
           accessibilityRole="button"
           accessibilityLabel="编辑证件信息"
+          hitSlop={{ top: 8, bottom: 20 }}
           onPress={() =>
             sheet.open('编辑证件信息', () => <DocumentEditSheet id={id} data={data} />)
           }
@@ -256,15 +257,21 @@ export function DocumentScreen({ id }: { id: string }) {
             tone="outline"
             height={52}
             label="拍照 / 扫描"
+            labelStyle={s.actionLabel}
+            busy={preparing === 'scan'}
+            disabled={preparing === 'upload'}
             style={{ flex: 1, borderRadius: 14 }}
-            onPress={() => void guard(takePhoto)()}
+            onPress={() => void guard('scan', takePhoto)()}
           />
           <Button
             testID="doc-upload"
             height={52}
             label="上传文件"
+            labelStyle={s.actionLabel}
+            busy={preparing === 'upload'}
+            disabled={preparing === 'scan'}
             style={{ flex: 1, borderRadius: 14 }}
-            onPress={() => void guard(pickDocument)()}
+            onPress={() => void guard('upload', pickDocument)()}
           />
         </View>
         <Muted style={{ fontSize: 11, lineHeight: 18 }}>
@@ -379,4 +386,5 @@ const s = StyleSheet.create({
   },
   pdfBadge: { alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', gap: 8 },
+  actionLabel: { fontSize: 14, fontWeight: '400' },
 });
