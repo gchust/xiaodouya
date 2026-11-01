@@ -1,0 +1,60 @@
+# 存储设置：连接测试真的会连存储，Secret 不会回显。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-storage }
+- tapOn: { id: open-storage }
+- extendedWaitUntil:
+    visible: { id: storage-screen }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      text: 共 .*文件从手机直传.*
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-07-storage
+- tapOn: { id: provider-other }
+- tapOn: { id: field-endpoint }
+- inputText: http://localhost:59000
+- hideKeyboard
+- tapOn: { id: field-region }
+- inputText: us-east-1
+- hideKeyboard
+- tapOn: { id: field-bucket }
+- inputText: xiaodouya-dev
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: field-secret }
+- tapOn: { id: field-key }
+- inputText: devaccesskey
+- hideKeyboard
+- tapOn: { id: field-secret }
+- inputText: wrong-secret
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: storage-test }
+- tapOn: { id: storage-test }
+- extendedWaitUntil:
+    visible:
+      text: 连接失败.*密钥.*
+    timeout: 20000
+- takeScreenshot: .artifacts/e2e-07-test-failed
+- scrollUntilVisible:
+    element: { id: field-secret }
+    direction: UP
+- tapOn: { id: field-secret }
+- eraseText: 20
+- inputText: devsecretkey
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: storage-test }
+- tapOn: { id: storage-test }
+- extendedWaitUntil:
+    visible:
+      text: 连接成功.*
+    timeout: 20000
+- takeScreenshot: .artifacts/e2e-07-test-ok

@@ -1,0 +1,56 @@
+# 核心记录流程：喂奶、尿布、睡眠、撤销、发烧提示。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- tapOn: { id: action-feed }
+- assertVisible: 喂奶
+- takeScreenshot: .artifacts/e2e-02-feed-sheet
+- tapOn: { id: ml-chip-120 }
+- tapOn: { id: ml-inc }
+- assertVisible: "130"
+- tapOn: { id: feed-save }
+- assertVisible: 喂奶 130ml
+- assertVisible:
+    text: .*已记录.*
+- takeScreenshot: .artifacts/e2e-02-after-feed
+# 撤销
+- tapOn: { id: action-diaper }
+- tapOn: { id: diaper-poo }
+- assertVisible: 换尿布 · 便便
+- tapOn: { id: toast-undo }
+- assertNotVisible: 换尿布 · 便便
+# 尿布：一下就记好
+- tapOn: { id: action-diaper }
+- tapOn: { id: offset-15 }
+- tapOn: { id: diaper-wee }
+- assertVisible: 换尿布 · 尿尿
+# 睡眠计时
+- tapOn: { id: action-sleep }
+- assertVisible: 醒了
+- assertVisible:
+    text: .*睡觉中.*
+- takeScreenshot: .artifacts/e2e-02-sleeping
+- tapOn: { id: action-sleep }
+- assertVisible: 睡眠
+- assertVisible:
+    text: 睡了.*
+# 发烧提示必须出现
+- tapOn: { id: action-more }
+- takeScreenshot: .artifacts/e2e-02-more
+- tapOn: { id: more-temp }
+- repeat:
+    times: 12
+    commands:
+      - tapOn: { id: temp-inc }
+- assertVisible: "38.0"
+- assertVisible:
+    text: .*请尽快就医.*
+- takeScreenshot: .artifacts/e2e-02-fever
+- tapOn: { id: temp-save }
+- assertVisible: 体温 38.0℃
+- scrollUntilVisible:
+    element: { id: vaccine-reminder }
+- takeScreenshot: .artifacts/e2e-02-today-full

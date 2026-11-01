@@ -1,0 +1,50 @@
+# 记下一刻并上传：复制、缩略图、预签名直传、完成校验全部走真实代码。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- assertVisible: 第一个瞬间，从今天开始
+- takeScreenshot: .artifacts/e2e-03-recall-empty
+- tapOn: { id: recall-fab }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: First smile ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: Looked at me and smiled
+- hideKeyboard
+- tapOn: { id: moment-milestone }
+- takeScreenshot: .artifacts/e2e-03-moment-sheet
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: First smile ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-03-timeline
+- tapOn: { id: recall-tab-photos }
+- takeScreenshot: .artifacts/e2e-03-photos
+- tapOn: { id: recall-tab-milestones }
+- assertVisible: First smile ${RUN_ID}
+- assertVisible: 第一次抬头
+- takeScreenshot: .artifacts/e2e-03-milestones
+- tapOn: { id: recall-tab-letters }
+- assertVisible: 写一封信给长大后的宝宝
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Hello little one
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: Welcome to our family
+- hideKeyboard
+- tapOn: { id: moment-save }
+- assertVisible: Hello little one
+- takeScreenshot: .artifacts/e2e-03-letters

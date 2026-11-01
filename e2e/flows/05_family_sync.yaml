@@ -1,0 +1,34 @@
+# 家人协作：脚本扮演妈妈，通过真实接口加入并写入记录；App 要实时显示。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- takeScreenshot: .artifacts/e2e-05-family
+- tapOn: { id: invite-open }
+- tapOn: { id: label-外婆 }
+- tapOn: { id: role-viewer }
+- takeScreenshot: .artifacts/e2e-05-invite
+- tapOn: { id: invite-create }
+- extendedWaitUntil:
+    visible: { id: invite-code }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-05-invite-code
+- tapOn: { id: sheet-cancel }
+- assertVisible: 外婆
+- tapOn: { id: tab-today }
+- runScript:
+    file: ../helpers/mom-joins.js
+    env:
+      EMAIL: admin-${RUN_ID}@example.test
+      RUN_ID: ${RUN_ID}
+- extendedWaitUntil:
+    visible:
+      text: 妈妈 记录了.*
+    timeout: 40000
+- takeScreenshot: .artifacts/e2e-05-banner
+- assertVisible: 喂奶 75ml
+- assertVisible:
+    text: .*妈妈记录.*

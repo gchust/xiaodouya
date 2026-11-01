@@ -1,0 +1,378 @@
+import { z } from 'zod';
+
+/** 所有时间都是毫秒时间戳（UTC）。 */
+const timestamp = z.number().int().nonnegative();
+const shortText = z.string().max(200);
+const longText = z.string().max(20_000);
+
+export const mediaKinds = ['image', 'video', 'audio', 'pdf'] as const;
+export type MediaKind = (typeof mediaKinds)[number];
+
+export const MediaRef = z.looseObject({
+  id: z.uuid(),
+  kind: z.enum(mediaKinds),
+  name: shortText.optional(),
+  mime: shortText,
+  size: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  /** 录音波形，0–1，最多 64 个点。 */
+  peaks: z.array(z.number().min(0).max(1)).max(64).optional(),
+  hasThumb: z.boolean().optional(),
+});
+export type MediaRef = z.infer<typeof MediaRef>;
+
+const eventBase = {
+  at: timestamp,
+  note: shortText.optional(),
+  byName: shortText.optional(),
+};
+
+export const diaperKinds = ['wee', 'poo', 'both'] as const;
+export type DiaperKind = (typeof diaperKinds)[number];
+
+/** 喂奶、尿布等“今天”页的记录。 */
+export const EventData = z.discriminatedUnion('type', [
+  z.looseObject({ ...eventBase, type: z.literal('feed'), ml: z.number().int().min(0).max(1000) }),
+  z.looseObject({ ...eventBase, type: z.literal('diaper'), kind: z.enum(diaperKinds) }),
+  z.looseObject({ ...eventBase, type: z.literal('sleep'), endAt: timestamp.optional() }),
+  z.looseObject({ ...eventBase, type: z.literal('temp'), celsius: z.number().min(30).max(45) }),
+  z.looseObject({
+    ...eventBase,
+    type: z.literal('med'),
+    name: shortText.min(1),
+    dose: shortText.optional(),
+  }),
+  z.looseObject({ ...eventBase, type: z.literal('bath') }),
+  z.looseObject({ ...eventBase, type: z.literal('solids'), food: shortText.min(1) }),
+  z.looseObject({
+    ...eventBase,
+    type: z.literal('growth'),
+    weightKg: z.number().min(0.3).max(100),
+    lengthCm: z.number().min(20).max(250),
+  }),
+  z.looseObject({
+    ...eventBase,
+    type: z.literal('vaccine'),
+    vaccineId: shortText,
+    name: shortText,
+  }),
+]);
+export type EventData = z.infer<typeof EventData>;
+export type EventType = EventData['type'];
+
+export const MomentData = z.looseObject({
+  title: shortText,
+  text: longText,
+  at: timestamp,
+  milestone: z.boolean(),
+  media: z.array(MediaRef).max(100),
+  byName: shortText.optional(),
+});
+export type MomentData = z.infer<typeof MomentData>;
+
+export const LetterData = z.looseObject({
+  title: shortText,
+  text: longText,
+  at: timestamp,
+  byName: shortText.optional(),
+});
+export type LetterData = z.infer<typeof LetterData>;
+
+export const DocumentData = z.looseObject({
+  name: shortText.min(1),
+  subtitle: shortText.optional(),
+  number: shortText.optional(),
+  issuedOn: shortText.optional(),
+  expiresOn: shortText.optional(),
+  files: z.array(MediaRef).max(100),
+});
+export type DocumentData = z.infer<typeof DocumentData>;
+
+export const BabyData = z.looseObject({
+  name: shortText.min(1),
+  birthAt: timestamp,
+  birthWeightKg: z.number().min(0.3).max(10).optional(),
+  birthLengthCm: z.number().min(20).max(80).optional(),
+  hospital: shortText.optional(),
+  bloodType: shortText.optional(),
+  avatar: MediaRef.optional(),
+});
+export type BabyData = z.infer<typeof BabyData>;
+
+export const collectionSchemas = {
+  baby: BabyData,
+  event: EventData,
+  moment: MomentData,
+  letter: LetterData,
+  document: DocumentData,
+} as const;
+
+export const collections = ['baby', 'event', 'moment', 'letter', 'document'] as const;
+export type Collection = (typeof collections)[number];
+
+export interface CollectionData {
+  baby: BabyData;
+  event: EventData;
+  moment: MomentData;
+  letter: LetterData;
+  document: DocumentData;
+}
+
+/** 把未知数据按集合校验；失败时返回 null，由调用方决定如何处理。 */
+export function parseCollectionData<C extends Collection>(
+  collection: C,
+  data: unknown,
+): CollectionData[C] | null {
+  const parsed = collectionSchemas[collection].safeParse(data);
+  return parsed.success ? (parsed.data as CollectionData[C]) : null;
+}
+
+// ─── 角色和权限 ──────────────────────────────────────────────
+
+export const roles = ['admin', 'caregiver', 'viewer'] as const;
+export const Role = z.enum(roles);
+export type Role = z.infer<typeof Role>;
+
+export const roleLabels: Record<Role, string> = {
+  admin: '管理员',
+  caregiver: '一起记录',
+  viewer: '只看回忆和照片',
+};
+
+const viewerCollections: readonly Collection[] = ['baby', 'moment', 'letter'];
+
+export function canReadCollection(role: Role, collection: Collection): boolean {
+  return role !== 'viewer' || viewerCollections.includes(collection);
+}
+
+export function canWriteCollection(role: Role, _collection: Collection): boolean {
+  return role !== 'viewer';
+}
+
+export const mediaScopes = ['memory', 'document', 'avatar'] as const;
+export const MediaScope = z.enum(mediaScopes);
+export type MediaScope = z.infer<typeof MediaScope>;
+
+export function canReadMediaScope(role: Role, scope: MediaScope): boolean {
+  return role !== 'viewer' || scope !== 'document';
+}
+
+// ─── 同步 ───────────────────────────────────────────────────
+
+export const SyncChange = z.object({
+  id: z.uuid(),
+  collection: z.enum(collections),
+  data: z.unknown(),
+  deleted: z.boolean(),
+  /** 客户端修改时间，用于后写胜出。 */
+  updatedAt: timestamp,
+});
+export type SyncChange = z.infer<typeof SyncChange>;
+
+export const SyncRequest = z.object({
+  cursor: z.number().int().nonnegative(),
+  changes: z.array(SyncChange).max(500),
+});
+export type SyncRequest = z.infer<typeof SyncRequest>;
+
+export const ServerRecord = SyncChange.extend({
+  seq: z.number().int().positive(),
+  createdBy: z.uuid().nullable(),
+});
+export type ServerRecord = z.infer<typeof ServerRecord>;
+
+export const SyncResponse = z.object({
+  cursor: z.number().int().nonnegative(),
+  hasMore: z.boolean(),
+  records: z.array(ServerRecord),
+  /** 被拒绝的改动：客户端应丢弃它们，防止发件箱卡死。 */
+  rejected: z.array(z.object({ id: z.uuid(), reason: z.string() })),
+});
+export type SyncResponse = z.infer<typeof SyncResponse>;
+
+// ─── 账号和家庭 ──────────────────────────────────────────────
+
+const email = z.email().max(200);
+const password = z.string().min(8).max(200);
+const displayName = z.string().trim().min(1).max(40);
+
+export const RegisterRequest = z.object({
+  email,
+  password,
+  displayName,
+  inviteCode: z.string().trim().max(32).optional(),
+});
+export const LoginRequest = z.object({ email, password: z.string().max(200) });
+export const CreateFamilyRequest = z.object({
+  name: z.string().trim().min(1).max(60),
+  label: displayName,
+});
+export const CreateInviteRequest = z.object({
+  role: Role,
+  label: displayName,
+});
+export const AcceptInviteRequest = z.object({
+  code: z.string().trim().min(4).max(32),
+});
+export const UpdateMemberRequest = z.object({
+  role: Role.optional(),
+  label: displayName.optional(),
+});
+
+export interface PublicUser {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
+export interface FamilyMember {
+  userId: string;
+  label: string;
+  role: Role;
+  /** 毫秒时间戳；null 表示还没有上线过。 */
+  lastSeenAt: number | null;
+}
+
+export interface PendingInvite {
+  id: string;
+  label: string;
+  role: Role;
+  expiresAt: number;
+}
+
+export interface MeResponse {
+  user: PublicUser;
+  family: { id: string; name: string } | null;
+  role: Role | null;
+  label: string | null;
+  members: FamilyMember[];
+  invites: PendingInvite[];
+  prefs: Prefs;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: PublicUser;
+}
+
+export const Prefs = z.object({
+  feedReminder: z.boolean(),
+  familyNotify: z.boolean(),
+  quietNight: z.boolean(),
+  timezone: z.string().max(64),
+  documentLock: z.boolean(),
+  videoWifiOnly: z.boolean(),
+});
+export type Prefs = z.infer<typeof Prefs>;
+
+export const defaultPrefs: Prefs = {
+  feedReminder: true,
+  familyNotify: true,
+  quietNight: true,
+  timezone: 'Asia/Singapore',
+  documentLock: false,
+  videoWifiOnly: true,
+};
+
+export const PushTokenRequest = z.object({
+  token: z.string().min(1).max(300),
+  deviceId: z.string().min(1).max(100),
+});
+
+// ─── 文件 ───────────────────────────────────────────────────
+
+export const mediaVariants = ['original', 'thumb'] as const;
+export const MediaVariant = z.enum(mediaVariants);
+export type MediaVariant = z.infer<typeof MediaVariant>;
+
+/** 上传白名单：其他类型一律拒绝，避免存储被当成任意文件托管。 */
+export function isAllowedMime(mime: string, scope: MediaScope): boolean {
+  const lower = mime.toLowerCase();
+  if (scope === 'document') return lower.startsWith('image/') || lower === 'application/pdf';
+  if (scope === 'avatar') return lower.startsWith('image/');
+  return lower.startsWith('image/') || lower.startsWith('video/') || lower.startsWith('audio/');
+}
+
+export const UploadUrlRequest = z.object({
+  id: z.uuid(),
+  scope: MediaScope,
+  variant: MediaVariant,
+  mime: z.string().min(1).max(120),
+  size: z.number().int().positive(),
+  filename: z.string().max(200).optional(),
+});
+export type UploadUrlRequest = z.infer<typeof UploadUrlRequest>;
+
+export interface UploadUrlResponse {
+  url: string;
+  headers: Record<string, string>;
+  expiresIn: number;
+}
+
+export const CompleteUploadRequest = z.object({ variant: MediaVariant });
+
+export const MediaUrlsRequest = z.object({
+  items: z.array(z.object({ id: z.uuid(), variant: MediaVariant })).max(200),
+});
+
+export interface MediaUrlsResponse {
+  urls: { id: string; variant: MediaVariant; url: string | null; expiresIn: number }[];
+}
+
+// ─── 存储配置 ───────────────────────────────────────────────
+
+export const storageProviders = ['r2', 's3', 'other'] as const;
+export const StorageProvider = z.enum(storageProviders);
+export type StorageProvider = z.infer<typeof StorageProvider>;
+
+export const storageProviderNames: Record<StorageProvider, string> = {
+  r2: 'Cloudflare R2',
+  s3: 'AWS S3',
+  other: 'S3 兼容存储',
+};
+
+/** 写入配置。secret 省略表示沿用已保存的值。 */
+export const StorageConfigInput = z.object({
+  provider: StorageProvider,
+  accountId: z.string().trim().max(100).optional(),
+  endpoint: z.url().max(300).optional(),
+  region: z.string().trim().max(60).optional(),
+  bucket: z.string().trim().min(1).max(100),
+  accessKeyId: z.string().trim().min(1).max(200),
+  secretAccessKey: z.string().min(1).max(300).optional(),
+  publicBaseUrl: z.url().max(300).optional(),
+});
+export type StorageConfigInput = z.infer<typeof StorageConfigInput>;
+
+/** 读回配置：永远不包含 Secret。 */
+export interface StorageConfigView {
+  source: 'family' | 'server' | 'none';
+  provider: StorageProvider | null;
+  accountId: string | null;
+  endpoint: string | null;
+  region: string | null;
+  bucket: string | null;
+  accessKeyId: string | null;
+  hasSecret: boolean;
+  publicBaseUrl: string | null;
+}
+
+export interface StorageTestResult {
+  ok: boolean;
+  latencyMs: number;
+  message: string;
+}
+
+export interface StorageUsage {
+  image: number;
+  video: number;
+  audio: number;
+  document: number;
+  total: number;
+}
+
+export interface ApiError {
+  error: { code: string; message: string };
+}

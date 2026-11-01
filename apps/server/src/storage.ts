@@ -1,0 +1,259 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import type { StorageConfigInput, StorageProvider, StorageTestResult } from '@xiaodouya/shared';
+import type { Config } from './config';
+import { decryptSecret } from './crypto';
+import type { Sql } from './db';
+
+export interface ResolvedStorage {
+  /** null 表示服务端环境变量里的默认存储。 */
+  configId: string | null;
+  /** 服务端自己访问用的地址（可以是容器内部地址）。 */
+  endpoint: string | undefined;
+  /** 手机访问用的地址。SigV4 签名包含 Host，所以预签名必须用这个地址。 */
+  publicEndpoint: string | undefined;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  forcePathStyle: boolean;
+  publicBaseUrl: string | null;
+}
+
+export interface StorageRow {
+  id: string;
+  provider: string;
+  account_id: string | null;
+  endpoint: string | null;
+  region: string | null;
+  bucket: string;
+  access_key_id: string;
+  secret_encrypted: string;
+  public_base_url: string | null;
+}
+
+export function endpointForProvider(
+  provider: StorageProvider,
+  input: { accountId?: string | null; endpoint?: string | null },
+): string | undefined {
+  if (provider === 'r2') {
+    return input.accountId ? `https://${input.accountId}.r2.cloudflarestorage.com` : undefined;
+  }
+  if (provider === 'other') return input.endpoint ?? undefined;
+  return undefined;
+}
+
+export function regionForProvider(provider: StorageProvider, region?: string | null): string {
+  if (provider === 'r2') return 'auto';
+  return region || (provider === 's3' ? 'ap-southeast-1' : 'auto');
+}
+
+function fromRow(row: StorageRow, key: Buffer): ResolvedStorage {
+  const provider = row.provider as StorageProvider;
+  const endpoint = endpointForProvider(provider, {
+    accountId: row.account_id,
+    endpoint: row.endpoint,
+  });
+  return {
+    configId: row.id,
+    endpoint,
+    publicEndpoint: endpoint,
+    region: regionForProvider(provider, row.region),
+    bucket: row.bucket,
+    accessKeyId: row.access_key_id,
+    secretAccessKey: decryptSecret(row.secret_encrypted, key),
+    // AWS 用虚拟主机风格；R2 和大多数兼容存储用路径风格最稳妥。
+    forcePathStyle: provider !== 's3',
+    publicBaseUrl: row.public_base_url,
+  };
+}
+
+function fromEnv(config: Config): ResolvedStorage | null {
+  const s = config.serverStorage;
+  if (!s) return null;
+  return {
+    configId: null,
+    endpoint: s.endpoint,
+    publicEndpoint: s.publicEndpoint,
+    region: s.region,
+    bucket: s.bucket,
+    accessKeyId: s.accessKeyId,
+    secretAccessKey: s.secretAccessKey,
+    forcePathStyle: s.forcePathStyle,
+    publicBaseUrl: null,
+  };
+}
+
+export async function activeStorage(
+  sql: Sql,
+  config: Config,
+  familyId: string,
+): Promise<ResolvedStorage | null> {
+  const [row] = await sql<StorageRow[]>`
+    SELECT * FROM storage_configs WHERE family_id = ${familyId} AND active`;
+  return row ? fromRow(row, config.appSecret) : fromEnv(config);
+}
+
+export async function storageById(
+  sql: Sql,
+  config: Config,
+  familyId: string,
+  configId: string | null,
+): Promise<ResolvedStorage | null> {
+  if (!configId) return fromEnv(config);
+  const [row] = await sql<StorageRow[]>`
+    SELECT * FROM storage_configs WHERE family_id = ${familyId} AND id = ${configId}`;
+  return row ? fromRow(row, config.appSecret) : null;
+}
+
+function client(s: ResolvedStorage, endpoint: string | undefined): S3Client {
+  return new S3Client({
+    region: s.region,
+    endpoint,
+    forcePathStyle: s.forcePathStyle,
+    credentials: { accessKeyId: s.accessKeyId, secretAccessKey: s.secretAccessKey },
+    // 新版 SDK 默认附加校验和，部分 S3 兼容存储和预签名直传都不接受。
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+    maxAttempts: 2,
+  });
+}
+
+export async function presignUpload(
+  s: ResolvedStorage,
+  key: string,
+  mime: string,
+  expiresIn: number,
+): Promise<string> {
+  return getSignedUrl(
+    client(s, s.publicEndpoint),
+    new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime }),
+    { expiresIn },
+  );
+}
+
+export async function presignDownload(
+  s: ResolvedStorage,
+  key: string,
+  expiresIn: number,
+): Promise<string> {
+  return getSignedUrl(
+    client(s, s.publicEndpoint),
+    new GetObjectCommand({ Bucket: s.bucket, Key: key }),
+    { expiresIn },
+  );
+}
+
+export async function headObject(
+  s: ResolvedStorage,
+  key: string,
+): Promise<{ size: number } | null> {
+  try {
+    const r = await client(s, s.endpoint).send(
+      new HeadObjectCommand({ Bucket: s.bucket, Key: key }),
+    );
+    return { size: r.ContentLength ?? 0 };
+  } catch (error) {
+    const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+    if (status === 404) return null;
+    throw error;
+  }
+}
+
+export async function deleteObject(s: ResolvedStorage, key: string): Promise<void> {
+  await client(s, s.endpoint).send(new DeleteObjectCommand({ Bucket: s.bucket, Key: key }));
+}
+
+function isPrivateAddress(address: string): boolean {
+  if (address === '::1' || address === '::') return true;
+  const lower = address.toLowerCase();
+  if (lower.startsWith('fe80') || lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  const v4 = lower.startsWith('::ffff:') ? lower.slice(7) : lower;
+  const parts = v4.split('.').map(Number);
+  if (parts.length !== 4) return false;
+  const [a, b] = parts as [number, number, number, number];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    a >= 224
+  );
+}
+
+/**
+ * 存储地址由用户填写，服务端会去连接它。不校验的话，任何家庭管理员都能用“测试连接”
+ * 探测服务器内网（SSRF）。自建内网 MinIO 时用 ALLOW_PRIVATE_STORAGE_ENDPOINTS 放开。
+ */
+export async function assertEndpointAllowed(endpoint: string, config: Config): Promise<void> {
+  if (config.allowPrivateEndpoints) return;
+  const url = new URL(endpoint);
+  if (url.protocol !== 'https:') throw new Error('存储地址必须使用 https');
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  const addresses = isIP(host) ? [host] : (await lookup(host, { all: true })).map((r) => r.address);
+  if (addresses.length === 0 || addresses.some(isPrivateAddress)) {
+    throw new Error('不能使用内网地址作为存储地址');
+  }
+}
+
+export function resolvedFromInput(
+  input: StorageConfigInput,
+  secretAccessKey: string,
+): ResolvedStorage {
+  const endpoint = endpointForProvider(input.provider, input);
+  return {
+    configId: null,
+    endpoint,
+    publicEndpoint: endpoint,
+    region: regionForProvider(input.provider, input.region),
+    bucket: input.bucket,
+    accessKeyId: input.accessKeyId,
+    secretAccessKey,
+    forcePathStyle: input.provider !== 's3',
+    publicBaseUrl: input.publicBaseUrl ?? null,
+  };
+}
+
+/** 真实地写入、读回、删除一个小文件，只要有一步失败就算不通过。 */
+export async function testStorage(s: ResolvedStorage): Promise<StorageTestResult> {
+  const started = Date.now();
+  const key = `.xiaodouya-connection-test-${crypto.randomUUID()}`;
+  const body = 'xiaodouya';
+  const c = client(s, s.endpoint);
+  try {
+    await c.send(
+      new PutObjectCommand({ Bucket: s.bucket, Key: key, Body: body, ContentType: 'text/plain' }),
+    );
+    const read = await c.send(new GetObjectCommand({ Bucket: s.bucket, Key: key }));
+    const text = await read.Body?.transformToString();
+    await c.send(new DeleteObjectCommand({ Bucket: s.bucket, Key: key }));
+    if (text !== body) throw new Error('读回的内容不一致');
+    return { ok: true, latencyMs: Date.now() - started, message: '读写正常' };
+  } catch (error) {
+    return { ok: false, latencyMs: Date.now() - started, message: describeStorageError(error) };
+  }
+}
+
+export function describeStorageError(error: unknown): string {
+  const e = error as { name?: string; $metadata?: { httpStatusCode?: number }; code?: string };
+  const status = e.$metadata?.httpStatusCode;
+  if (e.name === 'NoSuchBucket' || status === 404) return '找不到这个 Bucket，请检查名称和区域';
+  if (status === 401 || status === 403 || e.name === 'SignatureDoesNotMatch') {
+    return '密钥不正确，或没有这个 Bucket 的读写权限';
+  }
+  if (e.code === 'ENOTFOUND' || e.code === 'ECONNREFUSED' || e.code === 'ETIMEDOUT') {
+    return '连接不上存储地址，请检查 Endpoint 或 Account ID';
+  }
+  return '连接失败，请检查配置是否填写完整';
+}

@@ -33,20 +33,20 @@ docs/              DEPLOYMENT.md（部署文档）、design/SPEC.md（设计规�
 
 工具版本由 `.mise.toml` 固定（Node、Java）。在仓库根目录执行：
 
-| 目的 | 命令 |
-|---|---|
-| 安装依赖 | `pnpm install` |
-| 启动开发依赖（Postgres + MinIO） | `pnpm dev:infra` |
-| 启动服务端 | `pnpm dev:server` |
-| 启动 App 的 Metro | `pnpm dev:mobile` |
-| 全部静态检查 + 单元测试 | `pnpm check` |
-| 服务端集成测试（需要 dev:infra） | `pnpm test:server` |
-| 编译 Android | `pnpm android:build`（debug APK） |
-| 启动无窗口模拟器 | `pnpm emulator` |
-| 端到端测试 | `pnpm e2e` |
-| 模拟器截图 | `pnpm screenshot <名字>`（存到 `.artifacts/`） |
+| 目的                                             | 命令                                           |
+| ------------------------------------------------ | ---------------------------------------------- |
+| 安装依赖                                         | `pnpm install`                                 |
+| 启动开发依赖（Postgres + S3 兼容服务 SeaweedFS） | `pnpm dev:infra`                               |
+| 启动服务端                                       | `pnpm dev:server`                              |
+| 启动 App 的 Metro                                | `pnpm dev:mobile`                              |
+| 全部静态检查 + 单元测试                          | `pnpm check`                                   |
+| 服务端集成测试（需要 dev:infra）                 | `pnpm test:server`                             |
+| 编译 Android                                     | `pnpm android:build`（debug APK）              |
+| 启动无窗口模拟器                                 | `pnpm emulator`                                |
+| 端到端测试                                       | `pnpm e2e`                                     |
+| 模拟器截图                                       | `pnpm screenshot <名字>`（存到 `.artifacts/`） |
 
-本地端口（避开已有服务）：Postgres `55432`、MinIO `59000`（控制台 `59001`）、服务端 `8787`。
+本地端口（避开已有服务）：Postgres `55432`、S3 `59000`、服务端 `8787`。
 模拟器里访问宿主机要用 `10.0.2.2`。
 
 ## 4. 完成的定义
@@ -109,4 +109,6 @@ App 不是医疗器械，健康内容错了会伤人。
 
 - **R2 预签名链接不能用于自定义域名**，只能走 `<account>.r2.cloudflarestorage.com`。私有文件不要拼 CDN 域名。
 - **SigV4 签名包含 Host**：给手机用的预签名链接必须用手机能访问到的地址生成（`S3_PUBLIC_ENDPOINT`），不能用容器内部地址。
+- **`minio/minio` 镜像已无法公开拉取**：本地和 CI 的 S3 用 `chrislusf/seaweedfs`。
+- **pnpm 11 有发布冷却期**：拒绝发布不足 24 小时的包。不要关闭它，把版本固定到更早的发布；改版本后若还报错，删掉 `node_modules` 再装（旧锁文件缓存在里面）。
 - **模拟器内存紧张时**，不要让 Gradle 和模拟器同时高负载；本机 Gradle 内存已在 `gradle.properties` 限制。

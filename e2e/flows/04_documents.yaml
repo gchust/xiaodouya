@@ -1,0 +1,45 @@
+# 证件夹：创建、上传 PDF、证件号默认打码。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- takeScreenshot: .artifacts/e2e-04-info
+- tapOn: { id: doc-add }
+- takeScreenshot: .artifacts/e2e-04-doc-add
+- tapOn: { id: doc-chip-护照 }
+- tapOn: { id: doc-create }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- assertVisible: 还没有文件。拍一张或上传 PDF。
+- tapOn: { id: doc-edit }
+- tapOn: { id: doc-edit-number }
+- inputText: E0000000X
+- hideKeyboard
+- tapOn: { id: doc-edit-save }
+# 默认打码，点一下才显示
+- assertVisible: E00•••••X
+- assertNotVisible: E0000000X
+- tapOn: { id: doc-number-toggle }
+- assertVisible: E0000000X
+- tapOn: { id: doc-number-toggle }
+- tapOn: { id: doc-upload }
+- extendedWaitUntil:
+    visible: sample-certificate.pdf
+    timeout: 15000
+- assertVisible: 1 个
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-04-document
+- tapOn: { id: doc-scan }
+- extendedWaitUntil:
+    visible: 2 个
+    timeout: 15000
+- tapOn: { id: doc-back }
+- assertVisible: 2 个文件
+- takeScreenshot: .artifacts/e2e-04-info-with-doc

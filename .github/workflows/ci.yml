@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.21.0"
+
+jobs:
+  check:
+    name: 静态检查和单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  server:
+    name: 服务端集成测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 启动 Postgres 和 S3
+        run: docker compose -f deploy/docker-compose.dev.yml up -d --wait
+      - run: pnpm test:server
+      - name: 构建服务端镜像
+        run: docker build -f deploy/server.Dockerfile -t xiaodouya-server:ci .
+      - name: 冒烟测试镜像
+        run: |
+          docker run -d --name smoke --network host \
+            -e DATABASE_URL=postgres://xiaodouya:devpassword@localhost:55432/xiaodouya \
+            -e APP_SECRET="$(openssl rand -base64 32)" \
+            -e PORT=18787 \
+            xiaodouya-server:ci
+          for _ in $(seq 1 30); do
+            curl -fs http://localhost:18787/healthz && exit 0
+            sleep 1
+          done
+          docker logs smoke
+          exit 1
+
+  android-e2e:
+    name: Android 构建和端到端测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - name: 释放磁盘空间
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - name: 构建 E2E APK
+        env:
+          GRADLE_WORKERS: "4"
+          GRADLE_HEAP: 6g
+        run: bash scripts/android-build.sh e2e --clean
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaodouya-e2e-apk
+          path: .artifacts/xiaodouya-e2e.apk
+          retention-days: 7
+      - name: 启动 Postgres 和 S3
+        run: |
+          cp apps/server/.env.example apps/server/.env
+          docker compose -f deploy/docker-compose.dev.yml up -d --wait
+          pnpm --filter @xiaodouya/server dev:bucket
+      - run: bash scripts/install-maestro.sh
+      - name: 启用 KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: 运行端到端测试
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: |
+            .artifacts/*.png
+            .artifacts/maestro
+            .artifacts/server.log
+          retention-days: 14
+          if-no-files-found: ignore

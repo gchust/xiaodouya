@@ -1,0 +1,8 @@
+# Caddy 自动申请和续期 HTTPS 证书。
+{$DOMAIN} {
+	encode gzip
+	# 长轮询最长 25 秒，默认超时足够，不需要特殊配置。
+	reverse_proxy server:8787 {
+		header_up X-Forwarded-For {remote_host}
+	}
+}
