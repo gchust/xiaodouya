@@ -201,9 +201,10 @@ describe('云端备份', () => {
     });
     const key = /已备份：(\S+)（/.exec(stdout)?.[1];
     if (key) created.push(key);
-    expect(stdout).toContain('::add-mask::xiaodouya\n');
-    expect(stdout).toContain('::add-mask::localhost\n');
-    expect(`${stdout}${stderr}`).not.toContain('devpassword');
+    const { username, hostname, password } = new URL(sourceUrl);
+    expect(stdout).toContain(`::add-mask::${username}\n`);
+    expect(stdout).toContain(`::add-mask::${hostname}\n`);
+    expect(`${stdout}${stderr}`).not.toContain(password);
     expect(`${stdout}${stderr}`).not.toContain(PASSPHRASE);
   }, 120_000);
 
