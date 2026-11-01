@@ -6,13 +6,21 @@ import {
   milestoneTemplates,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useRef, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  type ScrollViewInstance,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
-import { MomentSheet } from '../sheets/MomentSheet';
+import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/primitives';
@@ -34,6 +42,13 @@ export function RecallScreen() {
   const [tab, setTab] = useState<SubTab>('timeline');
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
+  const scroll = useRef<ScrollViewInstance>(null);
+
+  // 新内容排在最前面，切到对应子标签后还要回到顶部才看得到。
+  const showSaved = (kind: MomentKind) => {
+    setTab(kind === 'letter' ? 'letters' : 'timeline');
+    scroll.current?.scrollTo({ y: 0, animated: false });
+  };
 
   return (
     <View style={s.root} testID="recall-screen">
@@ -67,6 +82,7 @@ export function RecallScreen() {
         </View>
       </View>
       <ScrollView
+        ref={scroll}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -74,7 +90,11 @@ export function RecallScreen() {
         {tab === 'timeline' ? <Timeline birthAt={birthAt} /> : null}
         {tab === 'photos' ? <Photos /> : null}
         {tab === 'milestones' ? (
-          <Milestones birthAt={birthAt} onSeeTimeline={() => setTab('timeline')} />
+          <Milestones
+            birthAt={birthAt}
+            onSeeTimeline={() => setTab('timeline')}
+            onSaved={showSaved}
+          />
         ) : null}
         {tab === 'letters' ? <Letters /> : null}
       </ScrollView>
@@ -89,6 +109,7 @@ export function RecallScreen() {
               <MomentSheet
                 initialKind={letter ? 'letter' : 'moment'}
                 initialMilestone={tab === 'milestones'}
+                onSaved={showSaved}
               />
             ));
           }}
@@ -251,7 +272,15 @@ function Photos() {
   );
 }
 
-function Milestones({ birthAt, onSeeTimeline }: { birthAt: number; onSeeTimeline: () => void }) {
+function Milestones({
+  birthAt,
+  onSeeTimeline,
+  onSaved,
+}: {
+  birthAt: number;
+  onSeeTimeline: () => void;
+  onSaved: (kind: MomentKind) => void;
+}) {
   const { moments } = useRecords();
   const { role } = useApp();
   const sheet = useSheet();
@@ -288,7 +317,12 @@ function Milestones({ birthAt, onSeeTimeline }: { birthAt: number; onSeeTimeline
           disabled={role === 'viewer'}
           onPress={() =>
             sheet.open('记下这一刻', () => (
-              <MomentSheet initialKind="moment" initialMilestone initialTitle={t.title} />
+              <MomentSheet
+                initialKind="moment"
+                initialMilestone
+                initialTitle={t.title}
+                onSaved={onSaved}
+              />
             ))
           }
           style={s.milestoneRow}

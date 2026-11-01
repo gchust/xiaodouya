@@ -17,6 +17,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -28,6 +29,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IS_E2E } from '../lib/config';
+import { keyboardLift, sheetMaxHeight } from '../lib/layout';
 import { colors, fonts, motion, spacing } from '../theme';
 
 /** CI 的模拟器取一次界面就要好几秒，E2E 构建放长一些，避免点撤销时已经消失、点到下面的内容。 */
@@ -39,6 +41,8 @@ interface SheetApi {
   open(title: string, render: () => ReactNode): void;
   /** 替换当前弹层内容（比如从“更多”进入“体温”），不需要关再开。 */
   replace(title: string, render: () => ReactNode): void;
+  /** 只改标题，弹层内容不动。 */
+  setTitle(title: string): void;
   close(): void;
 }
 
@@ -66,6 +70,20 @@ function SheetLayer({
   const drag = useSharedValue(0);
   const height = useSharedValue(800);
   const keyboard = useSharedValue(0);
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [layerHeight, setLayerHeight] = useState(windowHeight);
+  // 量到过的最大高度就是键盘收起时的高度。不能在键盘收起时才记：缩小后的布局事件可能比键盘事件先到。
+  // 只在宽度变化（折叠屏）时重新量，窗口高度可能因为键盘而变，那时重量就会把键盘算两次。
+  const fullHeight = useRef({ windowWidth, value: 0 });
+  if (fullHeight.current.windowWidth !== windowWidth) {
+    fullHeight.current = { windowWidth, value: 0 };
+  }
+  const lift = keyboardLift(keyboardHeight, fullHeight.current.value, layerHeight);
+
+  useEffect(() => {
+    keyboard.value = withTiming(lift, { duration: 220 });
+  }, [lift, keyboard]);
 
   useEffect(() => {
     drag.value = 0;
@@ -78,16 +96,16 @@ function SheetLayer({
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const show = Keyboard.addListener(showEvent, (e) => {
-      keyboard.value = withTiming(e.endCoordinates.height, { duration: 220 });
+      setKeyboardHeight(e.endCoordinates.height);
     });
     const hide = Keyboard.addListener(hideEvent, () => {
-      keyboard.value = withTiming(0, { duration: 220 });
+      setKeyboardHeight(0);
     });
     return () => {
       show.remove();
       hide.remove();
     };
-  }, [keyboard]);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
@@ -118,53 +136,72 @@ function SheetLayer({
     ],
   }));
 
-  if (!sheet) return null;
+  // 没有弹层时也挂着这一层：要在键盘打开之前就量到完整高度。
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={visible ? 'box-none' : 'none'}>
-      <Animated.View
-        style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }, scrimStyle]}
-      >
-        <Pressable
-          style={StyleSheet.absoluteFill}
-          onPress={onClose}
-          testID="sheet-scrim"
-          accessibilityLabel="关闭"
-        />
-      </Animated.View>
-      <Animated.View
-        style={[s.panel, { paddingBottom: Math.max(insets.bottom, 12) + 14 }, panelStyle]}
-        onLayout={(e) => {
-          height.value = e.nativeEvent.layout.height;
-        }}
-      >
-        <GestureDetector gesture={pan}>
-          <View style={s.handleArea}>
-            <View style={s.handle} />
-            <View style={s.header}>
-              <Text accessibilityRole="header" style={s.title}>
-                {sheet.title}
-              </Text>
-              <Pressable
-                onPress={onClose}
-                hitSlop={12}
-                testID="sheet-cancel"
-                accessibilityRole="button"
-                accessibilityLabel="取消"
-              >
-                <Text style={s.cancel}>取消</Text>
-              </Pressable>
-            </View>
-          </View>
-        </GestureDetector>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={s.sheetBody}
-          bounces={false}
-        >
-          {sheet.render()}
-        </ScrollView>
-      </Animated.View>
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents={sheet && visible ? 'box-none' : 'none'}
+      onLayout={(e) => {
+        const measured = e.nativeEvent.layout.height;
+        fullHeight.current.value = Math.max(fullHeight.current.value, measured);
+        setLayerHeight(measured);
+      }}
+    >
+      {sheet ? (
+        <>
+          <Animated.View
+            style={[StyleSheet.absoluteFill, { backgroundColor: colors.scrim }, scrimStyle]}
+          >
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={onClose}
+              testID="sheet-scrim"
+              accessibilityLabel="关闭"
+            />
+          </Animated.View>
+          <Animated.View
+            style={[
+              s.panel,
+              {
+                maxHeight: sheetMaxHeight(layerHeight, lift, insets.top),
+                paddingBottom: Math.max(insets.bottom, 12) + 14,
+              },
+              panelStyle,
+            ]}
+            onLayout={(e) => {
+              height.value = e.nativeEvent.layout.height;
+            }}
+          >
+            <GestureDetector gesture={pan}>
+              <View style={s.handleArea}>
+                <View style={s.handle} />
+                <View style={s.header}>
+                  <Text accessibilityRole="header" style={s.title} numberOfLines={2}>
+                    {sheet.title}
+                  </Text>
+                  <Pressable
+                    onPress={onClose}
+                    hitSlop={12}
+                    testID="sheet-cancel"
+                    accessibilityRole="button"
+                    accessibilityLabel="取消"
+                  >
+                    <Text style={s.cancel}>取消</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </GestureDetector>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={s.sheetBody}
+              bounces={false}
+            >
+              {sheet.render()}
+            </ScrollView>
+          </Animated.View>
+        </>
+      ) : null}
     </View>
   );
 }
@@ -324,6 +361,11 @@ export function SheetProvider({ children }: { children: ReactNode }) {
         setSheet({ title, render });
         setVisible(true);
       },
+      setTitle(title) {
+        setSheet((current) =>
+          current && current.title !== title ? { ...current, title } : current,
+        );
+      },
       close,
     }),
     [close],
@@ -343,7 +385,6 @@ const s = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '88%',
     backgroundColor: colors.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -357,8 +398,13 @@ const s = StyleSheet.create({
     backgroundColor: colors.handle,
     alignSelf: 'center',
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  title: { fontFamily: fonts.serifBold, fontSize: 20, color: colors.ink },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+  },
+  title: { flexShrink: 1, fontFamily: fonts.serifBold, fontSize: 20, color: colors.ink },
   cancel: { fontSize: 13, color: colors.muted, padding: 4 },
   sheetBody: { gap: 16 },
   toast: {

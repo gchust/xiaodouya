@@ -1,7 +1,7 @@
 import { formatMediaDuration, type MediaRef } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import { type PickedFile, pickFromLibrary, queueForUpload } from '../lib/media';
@@ -10,22 +10,25 @@ import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Mono, Muted, SoftInput, Toggle } from '../ui/primitives';
 
-type Kind = 'moment' | 'letter';
+export type MomentKind = 'moment' | 'letter';
 
 export function MomentSheet({
   initialKind = 'moment',
   initialMilestone = false,
   initialTitle = '',
+  onSaved,
 }: {
-  initialKind?: Kind;
+  initialKind?: MomentKind;
   initialMilestone?: boolean;
   initialTitle?: string;
+  /** 保存后由回忆页切到能看到这条内容的子标签。 */
+  onSaved?: (kind: MomentKind) => void;
 }) {
   const app = useApp();
   const sheet = useSheet();
   const router = useRouter();
   const { toast } = useFeedback();
-  const [kind, setKind] = useState<Kind>(initialKind);
+  const [kind, setKind] = useState<MomentKind>(initialKind);
   const [title, setTitle] = useState(initialTitle);
   const [text, setText] = useState('');
   const [milestone, setMilestone] = useState(initialMilestone);
@@ -35,6 +38,10 @@ export function MomentSheet({
   const recorder = useRecorder();
 
   const isLetter = kind === 'letter';
+  const { setTitle: setSheetTitle } = sheet;
+  useEffect(() => {
+    setSheetTitle(isLetter ? '写给宝宝的信' : '记下这一刻');
+  }, [isLetter, setSheetTitle]);
   const canSave = isLetter
     ? Boolean(title.trim() || text.trim())
     : Boolean(title.trim() || text.trim() || files.length);
@@ -102,6 +109,7 @@ export function MomentSheet({
         sheet.close();
         if (refs.length === 0) toast('已保存到回忆');
       }
+      onSaved?.(kind);
       router.navigate('/recall');
     } catch (error) {
       toast(error instanceof Error ? error.message : '保存失败，请再试一次');
