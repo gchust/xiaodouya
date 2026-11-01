@@ -6,20 +6,13 @@ import {
   milestoneTemplates,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  type ScrollViewInstance,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
+import { useTabScrollRef } from '../lib/tabScroll';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -42,7 +35,7 @@ export function RecallScreen() {
   const [tab, setTab] = useState<SubTab>('timeline');
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
-  const scroll = useRef<ScrollViewInstance>(null);
+  const scroll = useTabScrollRef('recall');
 
   // 新内容排在最前面，切到对应子标签后还要回到顶部才看得到。
   const showSaved = (kind: MomentKind) => {
@@ -65,17 +58,21 @@ export function RecallScreen() {
                 accessibilityLabel={t.label}
                 accessibilityState={{ selected: on }}
                 onPress={() => setTab(t.key)}
-                style={[s.tab, { borderBottomColor: on ? colors.accent : 'transparent' }]}
+                style={s.tab}
               >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: on ? colors.ink : colors.muted,
-                    fontWeight: on ? '700' : '400',
-                  }}
+                <View
+                  style={[s.tabLabel, { borderBottomColor: on ? colors.accent : 'transparent' }]}
                 >
-                  {t.label}
-                </Text>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: on ? colors.ink : colors.muted,
+                      fontWeight: on ? '700' : '400',
+                    }}
+                  >
+                    {t.label}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
@@ -136,6 +133,25 @@ function Timeline({ birthAt }: { birthAt: number }) {
       />
     );
   }
+  const canDelete = app.role !== 'viewer';
+  const openActions = (m: (typeof moments)[number]) =>
+    sheet.open(m.data.title || '这一刻', () => (
+      <>
+        <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这条回忆了。</Muted>
+        <Button
+          testID="moment-delete"
+          tone="ghost"
+          label="删除这条回忆"
+          onPress={() => {
+            void app.remove(m.id);
+            sheet.close();
+            toast('已删除这条回忆', {
+              undo: () => void app.write('moment', m.data, m.id),
+            });
+          }}
+        />
+      </>
+    ));
   return (
     <View style={s.timeline}>
       {moments.map((m) => {
@@ -144,43 +160,36 @@ function Timeline({ birthAt }: { birthAt: number }) {
         const cover = visual[0];
         return (
           <View key={m.id} style={{ gap: 10 }} testID={`moment-${m.id}`}>
-            <Pressable
-              style={s.momentHead}
-              accessibilityRole="button"
-              accessibilityLabel={m.data.title || '这一刻'}
-              onLongPress={
-                app.role === 'viewer'
-                  ? undefined
-                  : () =>
-                      sheet.open(m.data.title || '这一刻', () => (
-                        <>
-                          <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这条回忆了。</Muted>
-                          <Button
-                            testID="moment-delete"
-                            tone="ghost"
-                            label="删除这条回忆"
-                            onPress={() => {
-                              void app.remove(m.id);
-                              sheet.close();
-                              toast('已删除这条回忆', {
-                                undo: () => void app.write('moment', m.data, m.id),
-                              });
-                            }}
-                          />
-                        </>
-                      ))
-              }
-            >
-              <Text style={s.momentTitle}>{m.data.title || '这一刻'}</Text>
-              <Mono style={s.momentMeta}>
-                {formatMonthDay(m.data.at)} · 第 {dayNumber(birthAt, m.data.at)} 天
-              </Mono>
-              {m.data.milestone ? (
-                <View style={s.milestoneTag}>
-                  <Text style={s.milestoneTagText}>里程碑</Text>
-                </View>
+            <View style={s.momentHeadRow}>
+              <Pressable
+                testID={`moment-head-${m.id}`}
+                style={s.momentHead}
+                accessibilityRole="button"
+                accessibilityLabel={m.data.title || '这一刻'}
+                onLongPress={canDelete ? () => openActions(m) : undefined}
+              >
+                <Text style={s.momentTitle}>{m.data.title || '这一刻'}</Text>
+                <Mono style={s.momentMeta}>
+                  {formatMonthDay(m.data.at)} · 第 {dayNumber(birthAt, m.data.at)} 天
+                </Mono>
+                {m.data.milestone ? (
+                  <View style={s.milestoneTag}>
+                    <Text style={s.milestoneTagText}>里程碑</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+              {canDelete ? (
+                <Pressable
+                  testID={`moment-more-${m.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${m.data.title || '这一刻'}的更多操作`}
+                  hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+                  onPress={() => openActions(m)}
+                >
+                  <Text style={s.momentMore}>⋯</Text>
+                </Pressable>
               ) : null}
-            </Pressable>
+            </View>
             {cover ? (
               <Pressable
                 testID={`moment-cover-${m.id}`}
@@ -291,14 +300,20 @@ function Milestones({
       {done.map((m) => (
         <Pressable
           key={m.id}
+          testID={`milestone-done-${m.id}`}
           accessibilityRole="button"
           accessibilityLabel={`${m.data.title}，查看`}
           onPress={onSeeTimeline}
           style={s.milestoneRow}
         >
-          <View
-            style={[s.milestoneDot, { borderColor: colors.accent, backgroundColor: colors.accent }]}
-          />
+          <View style={s.milestoneDotColumn}>
+            <View
+              style={[
+                s.milestoneDot,
+                { borderColor: colors.accent, backgroundColor: colors.accent },
+              ]}
+            />
+          </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ fontSize: 14, color: colors.ink }}>{m.data.title || '这一刻'}</Text>
             <Muted style={{ fontSize: 11 }}>
@@ -327,7 +342,9 @@ function Milestones({
           }
           style={s.milestoneRow}
         >
-          <View style={[s.milestoneDot, { borderColor: colors.hint }]} />
+          <View style={s.milestoneDotColumn}>
+            <View style={[s.milestoneDot, { borderColor: colors.hint }]} />
+          </View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ fontSize: 14, color: colors.muted }}>{t.title}</Text>
             <Muted style={{ fontSize: 11 }}>{t.typical}</Muted>
@@ -369,13 +386,18 @@ function Letters() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
-  header: { paddingHorizontal: spacing.page, gap: 12 },
-  tabs: { flexDirection: 'row', gap: 18 },
-  tab: { borderBottomWidth: 2, paddingBottom: 4 },
+  // zIndex：子标签的点击区伸到了头部下方，要压过后面的滚动区。
+  header: { paddingHorizontal: spacing.page, gap: 12, zIndex: 1 },
+  // 上下各 9 的内边距把点击区撑到 44，负外边距抵消，看起来位置不变。
+  tabs: { flexDirection: 'row', gap: 18, marginVertical: -9 },
+  tab: { minHeight: 44, paddingVertical: 9, justifyContent: 'center' },
+  tabLabel: { borderBottomWidth: 2, paddingBottom: 4 },
   timeline: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 28 },
-  momentHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
+  momentHeadRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  momentHead: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
   momentTitle: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   momentMeta: { fontSize: 12, color: colors.muted },
+  momentMore: { fontSize: 16, lineHeight: 26, color: colors.muted },
   milestoneTag: {
     borderWidth: 1,
     borderColor: colors.accent,
@@ -427,6 +449,7 @@ const s = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#efe7dc',
   },
+  milestoneDotColumn: { width: 22 },
   milestoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
   milestoneAction: { fontSize: 12, color: colors.accent },
   letters: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 12 },
@@ -448,7 +471,7 @@ const s = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 20,
-    bottom: 14,
+    bottom: 19,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 999,
