@@ -1,5 +1,5 @@
 # 退出登录：有没传完的记录时要警告；退出后回到欢迎页；重新登录后数据从服务器同步回来。
-# 结束时仍然是管理员，流程 17 接着用。
+# 结束时仍然是管理员，流程 20 接着用。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
@@ -26,7 +26,7 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     text: 还有.*没有传到服务器.*
 - assertVisible: 仍然退出
-- takeScreenshot: .artifacts/e2e-16-unsynced-warning
+- takeScreenshot: .artifacts/e2e-19-unsynced-warning
 - tapOn: { id: sheet-cancel }
 - extendedWaitUntil:
     notVisible: { id: signout-confirm }
@@ -47,12 +47,12 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: sign-out }
 - assertVisible:
     text: 退出后手机上的数据会被清除.*
-- takeScreenshot: .artifacts/e2e-16-clean-warning
+- takeScreenshot: .artifacts/e2e-19-clean-warning
 - tapOn: { id: signout-confirm }
 - extendedWaitUntil:
     visible: { id: welcome-screen }
     timeout: 20000
-- takeScreenshot: .artifacts/e2e-16-signed-out
+- takeScreenshot: .artifacts/e2e-19-signed-out
 # 重新登录
 - tapOn: { id: welcome-login }
 - tapOn: { id: field-email }
@@ -73,7 +73,7 @@ appId: com.gchust.xiaodouya
     text: Sprout2的第.*
 # 流程 11 删掉的记录不能回来
 - assertNotVisible: 喂奶 140ml
-- takeScreenshot: .artifacts/e2e-16-today-restored
+- takeScreenshot: .artifacts/e2e-19-today-restored
 - tapOn: { id: tab-info }
 - extendedWaitUntil:
     visible: { id: info-screen }
@@ -86,9 +86,9 @@ appId: com.gchust.xiaodouya
     element: { id: vaccine-row-bcg }
 - assertVisible:
     text: 已接种 .*
-- takeScreenshot: .artifacts/e2e-16-info-restored
+- takeScreenshot: .artifacts/e2e-19-info-restored
 - tapOn: { id: tab-recall }
 - extendedWaitUntil:
     visible: First smile ${RUN_ID}
     timeout: 15000
-- takeScreenshot: .artifacts/e2e-16-recall-restored
+- takeScreenshot: .artifacts/e2e-19-recall-restored

@@ -10,3 +10,11 @@ export function sessionOwner(userId: string, familyId: string | null): string {
 export function shouldClearLocalData(previousOwner: string | null, nextOwner: string): boolean {
   return previousOwner !== null && previousOwner !== nextOwner;
 }
+
+/**
+ * 夜间安静由服务端判断，它只能从这里知道用户在哪个时区。没有手动设置时区的界面，
+ * 所以手机的时区就是准的：新用户的默认值和出门换时区都走这一条。返回 null 表示不用改。
+ */
+export function timezoneToSync(current: string, device: string | null): string | null {
+  return device && device !== current ? device : null;
+}

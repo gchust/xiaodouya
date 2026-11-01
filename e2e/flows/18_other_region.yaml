@@ -1,0 +1,82 @@
+# 其他地区：没有疫苗表，疫苗本只有自己记的，今天页不提醒。之前的记录都还在。最后换回新加坡。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: region-row }
+- tapOn: { id: region-row }
+- tapOn: { id: region-OTHER }
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+- assertVisible: 其他地区
+- scrollUntilVisible:
+    element: { id: vaccine-empty-note }
+    timeout: 30000
+- assertNotVisible: { id: vaccine-row-bcg }
+- takeScreenshot: .artifacts/e2e-18-other-book
+# 流程 10 和 17 记的都在。新的排在前面，所以滚到较早的那一条
+- scrollUntilVisible:
+    element: 卡介苗 BCG
+- assertVisible: Typhoid
+# 没有表可选，弹层直接填名字
+- scrollUntilVisible:
+    element: { id: vaccine-add-custom }
+    direction: UP
+- tapOn: { id: vaccine-add-custom }
+- assertNotVisible: { id: vaccine-custom }
+- tapOn: { id: vaccine-custom-name }
+- inputText: Rabies
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: Rabies
+# 今天页没有疫苗提醒
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: summary }
+- assertNotVisible: { id: vaccine-reminder }
+- takeScreenshot: .artifacts/e2e-18-today-no-reminder
+# 换回新加坡，提醒回来
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: region-row }
+    direction: UP
+    timeout: 30000
+- tapOn: { id: region-row }
+- tapOn: { id: region-SG }
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+# Toast 可能盖住底部标签，等它消失再点
+- extendedWaitUntil:
+    notVisible: 已换成新加坡
+    timeout: 15000
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-reminder }
+    timeout: 30000
+- assertVisible: { id: vaccine-reminder }

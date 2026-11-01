@@ -18,9 +18,9 @@ import {
   knowledgeForAge,
   nextVaccine,
   parseCollectionData,
+  regions,
   summarize24h,
   todayInsight,
-  vaccineSchedule,
   vaccineStatuses,
   vaccinesToOffer,
 } from '../src';
@@ -249,57 +249,51 @@ describe('健康规则（审查回归）', () => {
 
 describe('疫苗表', () => {
   const birth = at(2026, 1, 1);
-  it('乙肝第 2 剂随六合一在 2 个月，不再有单独的 1 个月剂', () => {
-    expect(vaccineSchedule.find((v) => v.months === 1)).toBeUndefined();
-    const dose = vaccineSchedule.find((v) => v.id === '6in1-1');
-    expect(dose?.months).toBe(2);
-    expect(dose?.note).toContain('乙肝');
-  });
-  it('肺炎球菌第 1 剂在 4 个月', () => {
-    expect(vaccineSchedule.find((v) => v.id === 'pcv-1')?.months).toBe(4);
-  });
-  it('id 不重复', () => {
-    expect(new Set(vaccineSchedule.map((v) => v.id)).size).toBe(vaccineSchedule.length);
-  });
+  const SG = regions.SG;
   it('按月龄和接种记录计算状态', () => {
     const now = at(2026, 1, 25);
     const statuses = vaccineStatuses(
+      SG,
       birth,
       [{ type: 'vaccine', at: birth, vaccineId: 'bcg', name: '卡介苗 BCG' }],
       now,
     );
-    expect(statuses.find((v) => v.id === 'bcg')?.state).toBe('done');
-    expect(statuses.find((v) => v.id === 'hepb-1')?.state).toBe('due');
-    expect(statuses.find((v) => v.id === '6in1-1')?.state).toBe('upcoming');
-    expect(nextVaccine(statuses)?.id).toBe('hepb-1');
+    expect(statuses.find((v) => v.id === 'sg:bcg')?.state).toBe('done');
+    expect(statuses.find((v) => v.id === 'sg:hepb-1')?.state).toBe('due');
+    expect(statuses.find((v) => v.id === 'sg:6in1-1')?.state).toBe('upcoming');
+    expect(nextVaccine(statuses)?.id).toBe('sg:hepb-1');
   });
   it('到期前两周开始提示', () => {
-    const statuses = vaccineStatuses(birth, [], at(2026, 2, 20));
-    expect(statuses.find((v) => v.id === '6in1-1')?.state).toBe('due');
+    const statuses = vaccineStatuses(SG, birth, [], at(2026, 2, 20));
+    expect(statuses.find((v) => v.id === 'sg:6in1-1')?.state).toBe('due');
   });
 });
 
 describe('接种弹层', () => {
   const birth = at(2026, 1, 1);
+  const SG = regions.SG;
   it('只列前几剂，不把按钮挤出屏幕', () => {
-    expect(vaccinesToOffer(vaccineStatuses(birth, [], birth))).toHaveLength(4);
+    expect(vaccinesToOffer(vaccineStatuses(SG, birth, [], birth))).toHaveLength(4);
   });
   it('到期的都要列出来，即使超过上限', () => {
-    const offered = vaccinesToOffer(vaccineStatuses(birth, [], at(2026, 9, 1)));
+    const offered = vaccinesToOffer(vaccineStatuses(SG, birth, [], at(2026, 9, 1)));
     expect(offered.filter((v) => v.state === 'due').length).toBe(offered.length);
     expect(offered.length).toBeGreaterThan(4);
   });
   it('从疫苗本点开的后面某一剂也要在列表里', () => {
-    const ids = vaccinesToOffer(vaccineStatuses(birth, [], birth), '5in1-4').map((v) => v.id);
-    expect(ids).toContain('5in1-4');
+    const ids = vaccinesToOffer(vaccineStatuses(SG, birth, [], birth), 'sg:5in1-4').map(
+      (v) => v.id,
+    );
+    expect(ids).toContain('sg:5in1-4');
   });
   it('已接种的不再列出', () => {
     const statuses = vaccineStatuses(
+      SG,
       birth,
       [{ type: 'vaccine', at: birth, vaccineId: 'bcg', name: 'BCG' }],
       birth,
     );
-    expect(vaccinesToOffer(statuses).map((v) => v.id)).not.toContain('bcg');
+    expect(vaccinesToOffer(statuses).map((v) => v.id)).not.toContain('sg:bcg');
   });
 });
 

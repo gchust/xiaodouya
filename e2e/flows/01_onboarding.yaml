@@ -29,6 +29,13 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: field-baby-name }
 - inputText: Sprout
 - hideKeyboard
+# 默认地区按系统猜测，CI 模拟器是 en-US，会猜成美国。后面的流程都按新加坡和公制断言。
+- scrollUntilVisible:
+    element: { id: region-SG }
+- tapOn: { id: region-SG }
+- takeScreenshot: .artifacts/e2e-01-baby-setup
+- scrollUntilVisible:
+    element: { id: baby-submit }
 - tapOn: { id: baby-submit }
 - extendedWaitUntil:
     visible: { id: today-screen }

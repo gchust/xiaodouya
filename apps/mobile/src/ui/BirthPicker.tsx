@@ -49,6 +49,48 @@ export function BirthPicker({ value, onChange }: { value: Date; onChange: (next:
   );
 }
 
+/** 只选日期，不能选未来。用于补记接种：很多家庭是孩子出生后才开始用的。 */
+export function PastDatePicker({
+  label,
+  testID,
+  value,
+  onChange,
+}: {
+  label: string;
+  testID: string;
+  value: Date;
+  onChange: (next: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <View style={{ gap: 5 }}>
+        <Muted style={{ fontSize: 12 }}>{label}</Muted>
+        <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel={`选择${label}`}
+          onPress={() => setOpen(true)}
+          style={s.button}
+        >
+          <Text style={s.text}>{formatFullDate(value.getTime())}</Text>
+        </Pressable>
+      </View>
+      {open ? (
+        <DateTimePicker
+          value={value}
+          mode="date"
+          maximumDate={new Date()}
+          onChange={(_event, date) => {
+            setOpen(false);
+            if (date) onChange(date);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
 const s = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   button: {

@@ -1,0 +1,34 @@
+# 自定义疫苗：表里没有的也能记，进“其他接种记录”。
+# 系统日期选择器不好自动化，这里只确认日期按钮在并用默认的今天，补记以前的日期要在模拟器上手动看。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-add-custom }
+    timeout: 30000
+- tapOn: { id: vaccine-add-custom }
+- assertVisible: { id: vaccine-date }
+- takeScreenshot: .artifacts/e2e-17-custom-sheet
+- scrollUntilVisible:
+    element: { id: vaccine-custom-name }
+- tapOn: { id: vaccine-custom-name }
+- inputText: Typhoid
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: Typhoid
+    timeout: 30000
+- assertVisible: { id: vaccine-other-section }
+- takeScreenshot: .artifacts/e2e-17-custom-record

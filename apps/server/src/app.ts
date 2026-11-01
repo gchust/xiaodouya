@@ -2,6 +2,7 @@ import {
   AcceptInviteRequest,
   type ApiError,
   type AuthResponse,
+  type BabyData,
   CompleteUploadRequest,
   CreateFamilyRequest,
   CreateInviteRequest,
@@ -12,6 +13,7 @@ import {
   defaultPrefs,
   describeEvent,
   type EventData,
+  effectiveUnits,
   type FamilyMember,
   isAllowedMime,
   LoginRequest,
@@ -141,9 +143,34 @@ async function parseBody<T extends z.ZodType>(
   return parsed.data;
 }
 
+/**
+ * 没存过时区的账号按新加坡算。v0.1.0 不会上报时区，这些用户一直是按新加坡判断夜间安静的，
+ * 换成 UTC 会变成白天静音、半夜推送。新版 App 启动后马上写入手机的时区，不受这个值影响。
+ */
+const LEGACY_TIMEZONE = 'Asia/Singapore';
+
 function mergePrefs(stored: unknown): Prefs {
   const parsed = Prefs.partial().safeParse(stored);
-  return { ...defaultPrefs, ...(parsed.success ? parsed.data : {}) };
+  return { ...defaultPrefs, timezone: LEGACY_TIMEZONE, ...(parsed.success ? parsed.data : {}) };
+}
+
+/** 家庭当前的地区。档案和记录一样是后写胜出，所以取最新的一条，和客户端的规则一致。 */
+async function familyRegion(
+  db: Pick<Sql, 'unsafe'>,
+  familyId: string,
+): Promise<string | undefined> {
+  const rows = await db.unsafe<{ region: string | null }[]>(
+    `SELECT data->>'region' AS region FROM records
+     WHERE family_id = $1 AND collection = 'baby' AND deleted = false
+     ORDER BY updated_at_client DESC LIMIT 1`,
+    [familyId],
+  );
+  return rows[0]?.region ?? undefined;
+}
+
+function withRegion(baby: BabyData, region: string | undefined): BabyData {
+  const { region: _ignored, ...rest } = baby;
+  return region === undefined ? rest : { ...rest, region };
 }
 
 /** 等到时间到或客户端断开，两者都只是结束等待，不算错误。 */
@@ -550,9 +577,15 @@ export function createApp({
             conflicted.push(change.id);
             continue;
           }
+          // 地区只有管理员能改。其他家人保存档案（换头像、改名）不能算错，所以不拒绝，
+          // 只把地区换回当前的值。这样拿着旧版本保存也不会把管理员刚改的地区覆盖掉。
+          const payload =
+            change.collection === 'baby' && !change.deleted && m.role !== 'admin'
+              ? withRegion(data as BabyData, await familyRegion(tx, m.familyId))
+              : data;
           const [{ seq } = { seq: '0' }] = await tx<{ seq: string }[]>`
             UPDATE families SET seq = seq + 1 WHERE id = ${m.familyId} RETURNING seq`;
-          const json = tx.json(data as never);
+          const json = tx.json(payload as never);
           const [row] = await tx<RecordRow[]>`
             INSERT INTO records (id, family_id, collection, data, deleted, updated_at_client, seq, created_by, updated_by)
             VALUES (${change.id}, ${m.familyId}, ${change.collection}, ${json}, ${change.deleted}, ${change.updatedAt}, ${seq}, ${user.id}, ${user.id})
@@ -653,16 +686,19 @@ export function createApp({
       JOIN users u ON u.id = mb.user_id
       JOIN push_tokens p ON p.user_id = mb.user_id
       WHERE mb.family_id = ${m.familyId} AND mb.user_id <> ${authorId}`;
+    if (targets.length === 0) return;
+    const region = await familyRegion(sql, m.familyId);
     const messages: PushMessage[] = [];
     for (const target of targets) {
       const prefs = mergePrefs(target.prefs);
       if (!prefs.familyNotify) continue;
       if (prefs.quietNight && isQuietHour(now, prefs.timezone)) continue;
+      const units = effectiveUnits(prefs.units, region);
       for (const record of recent) {
         if (!canReadCollection(target.role, record.collection)) continue;
         const body =
           record.collection === 'event'
-            ? describeEvent(record.data as EventData, now)
+            ? describeEvent(record.data as EventData, now, units)
             : (record.data as { title?: string }).title || '记下了新的一刻';
         messages.push({ token: target.token, title: `${m.label} 刚刚记录了`, body });
       }

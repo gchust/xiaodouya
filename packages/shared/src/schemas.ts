@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
 
 /** 所有时间都是毫秒时间戳（UTC）。 */
 const timestamp = z.number().int().nonnegative();
@@ -98,6 +99,12 @@ export const BabyData = z.looseObject({
   hospital: shortText.optional(),
   bloodType: shortText.optional(),
   avatar: MediaRef.optional(),
+  /**
+   * 不用枚举：新版本写入的地区，旧版本要能读、能原样保存，界面按“其他地区”显示。
+   * 没有这个字段的是 v0.1.0 的档案，按新加坡处理（见 regionFor）。
+   * 格式不对也只丢掉这一项，不能让整份档案校验失败。
+   */
+  region: z.string().max(32).optional().catch(undefined),
 });
 export type BabyData = z.infer<typeof BabyData>;
 
@@ -259,6 +266,18 @@ export interface AuthResponse {
   user: PublicUser;
 }
 
+/**
+ * 只存用户自己改过的单位，没改过的跟随家庭的地区（见 effectiveUnits）。
+ * 不认识的值只丢掉这一项：`mergePrefs` 校验失败会把整份偏好退回默认值。
+ */
+export const UnitPrefs = z.object({
+  volume: z.enum(volumeUnits).optional().catch(undefined),
+  temperature: z.enum(temperatureUnits).optional().catch(undefined),
+  weight: z.enum(weightUnits).optional().catch(undefined),
+  length: z.enum(lengthUnits).optional().catch(undefined),
+});
+export type UnitPrefs = z.infer<typeof UnitPrefs>;
+
 export const Prefs = z.object({
   feedReminder: z.boolean(),
   familyNotify: z.boolean(),
@@ -266,6 +285,7 @@ export const Prefs = z.object({
   timezone: z.string().max(64),
   documentLock: z.boolean(),
   videoWifiOnly: z.boolean(),
+  units: UnitPrefs.optional().catch(undefined),
 });
 export type Prefs = z.infer<typeof Prefs>;
 
@@ -273,7 +293,8 @@ export const defaultPrefs: Prefs = {
   feedReminder: true,
   familyNotify: true,
   quietNight: true,
-  timezone: 'Asia/Singapore',
+  // 服务端不知道手机的时区。App 启动后会把手机的时区写上来（见 mobile 的 timezoneToSync）。
+  timezone: 'UTC',
   documentLock: false,
   videoWifiOnly: true,
 };

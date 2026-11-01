@@ -1,6 +1,11 @@
 import { ageParts, formatDuration } from '../domain/age';
 import { summarize24h } from '../domain/events';
 import { activeSleep, estimateNextFeed } from '../domain/feeding';
+import {
+  formatTemperatureRange,
+  formatTemperatureThreshold,
+  type TemperatureUnit,
+} from '../domain/units';
 import type { EventData } from '../schemas';
 
 /**
@@ -23,19 +28,25 @@ export interface TempAssessment {
   hint: string;
 }
 
-export function assessTemperature(celsius: number, ageMonths: number): TempAssessment {
+/** 判断永远用摄氏度，`unit` 只决定提示文字里阈值的写法（38℃ 就是 100.4°F）。 */
+export function assessTemperature(
+  celsius: number,
+  ageMonths: number,
+  unit: TemperatureUnit = 'c',
+): TempAssessment {
+  const threshold = (c: number) => formatTemperatureThreshold(c, unit);
   if (celsius >= 38 && ageMonths < 3) {
     return {
       level: 'urgent',
       note: '发烧，请尽快就医',
-      hint: '3 个月以下的宝宝 38℃ 及以上，请尽快就医。',
+      hint: `3 个月以下的宝宝 ${threshold(38)} 及以上，请尽快就医。`,
     };
   }
   if (celsius >= 39 && ageMonths < 6) {
     return {
       level: 'urgent',
       note: '高烧，请尽快联系医生',
-      hint: '6 个月以下的宝宝 39℃ 及以上，请尽快联系医生。',
+      hint: `6 个月以下的宝宝 ${threshold(39)} 及以上，请尽快联系医生。`,
     };
   }
   if (celsius >= 38) {
@@ -57,7 +68,7 @@ export function assessTemperature(celsius: number, ageMonths: number): TempAsses
       ? {
           level: 'urgent',
           note: '体温过低，请尽快联系医生',
-          hint: '体温低于 36℃。先给宝宝保暖，并尽快联系医生。',
+          hint: `体温低于 ${threshold(36)}。先给宝宝保暖，并尽快联系医生。`,
         }
       : {
           level: 'elevated',
@@ -72,7 +83,11 @@ export function assessTemperature(celsius: number, ageMonths: number): TempAsses
       hint: '有点偏低。给宝宝保暖，30 分钟后再量一次。',
     };
   }
-  return { level: 'normal', note: '正常', hint: '正常范围（36.5–37.5℃）。' };
+  return {
+    level: 'normal',
+    note: '正常',
+    hint: `正常范围（${formatTemperatureRange(36.5, 37.5, unit)}）。`,
+  };
 }
 
 export type InsightTone = 'neutral' | 'attention';
@@ -148,10 +163,10 @@ export interface KnowledgeCard {
 }
 
 /** 按月龄展示的常识，内容保守、指向医生。 */
-export function knowledgeForAge(months: number): KnowledgeCard[] {
+export function knowledgeForAge(months: number, unit: TemperatureUnit = 'c'): KnowledgeCard[] {
   const doctor: KnowledgeCard = {
     title: '什么时候要看医生',
-    body: '3 个月以下的宝宝体温到 38℃ 或以上，要尽快去医院。吃奶明显变少、精神很差、呼吸急促也一样。',
+    body: `3 个月以下的宝宝体温到 ${formatTemperatureThreshold(38, unit)} 或以上，要尽快去医院。吃奶明显变少、精神很差、呼吸急促也一样。`,
   };
   if (months < 3) {
     return [

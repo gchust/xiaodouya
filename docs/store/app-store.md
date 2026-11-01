@@ -31,7 +31,7 @@
 | 10 | **权限说明文字只有中文** | `app.config.ts` 里的相机、相册、麦克风、Face ID 说明是写死的中文 | 随 F-91 做 `InfoPlist.strings` 本地化。相册走系统选择器，确认是否需要 `NSPhotoLibraryUsageDescription` |
 | 11 | **录音指示** | 2.5.14 要求录制时有明确的视觉或声音提示 | 真机确认录音界面的状态足够清楚 |
 | 12 | **健康内容** | 1.4.1 对可能提供不准确信息的医疗 App 审查更严，也要提醒用户问医生 | 不声称准确度。提示都指向医生。医护复核（F-100）。不要说 App 能测量任何东西 |
-| 13 | **界面语言和地区** | 只有中文（F-91），只有新加坡疫苗表（F-90） | 同 Google Play。不要把英文资料放在中文界面上 |
+| 13 | **界面语言和地区** | 只有中文（F-91）；疫苗表只有新加坡、中国大陆、美国，且没有医护复核（F-90、F-100） | 同 Google Play。不要把英文资料放在中文界面上 |
 | 14 | **出口合规** | App 用 HTTPS 和 `expo-crypto`、`expo-secure-store` | App Store Connect 上传时要回答加密问题，设 `ITSAppUsesNonExemptEncryption`。这一条没有打开官方页核对 |
 | 15 | **公开用户内容** | 内容只在家庭内部，没有公开或陌生人分享 | 1.2 的 UGC 要求（过滤、举报、拉黑）应该不适用。在审核说明里写明。对外公布联系方式 |
 
@@ -83,7 +83,7 @@
 资料
 · 出生档案
 · 证件夹：保存证件照片和 PDF，证件号默认打码，可以打开面容或指纹验证
-· 体重图表和疫苗本（目前按新加坡国家儿童免疫计划排列，以诊所安排和健康手册为准）
+· 体重图表和疫苗本（内置新加坡、中国大陆和美国的疫苗表，以诊所安排和健康手册为准）
 
 家人
 · 用邀请码邀请家人
@@ -125,7 +125,7 @@ Memories
 Records
 - Birth profile
 - Document folder for document photos and PDFs. Document numbers are masked on screen by default, and you can turn on Face ID or fingerprint verification
-- Weight chart and vaccine record (currently follows Singapore's National Childhood Immunisation Schedule; follow your clinic's arrangements and health booklet)
+- Weight chart and vaccine record (built-in schedules for Singapore, mainland China and the United States; follow your clinic's arrangements and health booklet)
 
 Family
 - Invite family members with a code

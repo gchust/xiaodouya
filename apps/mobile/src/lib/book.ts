@@ -1,15 +1,9 @@
-import type { BabyData, LetterData, MomentData } from '@xiaodouya/shared';
+import { type BabyData, type LetterData, type MomentData, regionFor } from '@xiaodouya/shared';
 import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import type { Api } from './api';
-import {
-  BOOK_PAGE,
-  type BookMoment,
-  type BookPhoto,
-  bookFileName,
-  buildBookHtml,
-} from './bookHtml';
+import { type BookMoment, type BookPhoto, bookFileName, bookPage, buildBookHtml } from './bookHtml';
 import { localUriFor } from './media';
 
 const MAX_PHOTOS_PER_MOMENT = 6;
@@ -66,7 +60,8 @@ export async function exportGrowthBook(
     book,
     letters.map((l) => l.data),
   );
-  const printed = await Print.printToFileAsync({ html, ...BOOK_PAGE });
+  const page = bookPage(regionFor(baby.region).paperSize);
+  const printed = await Print.printToFileAsync({ html, ...page });
   const target = new File(Paths.cache, bookFileName(baby.name));
   if (target.exists) target.delete();
   await new File(printed.uri).move(target);

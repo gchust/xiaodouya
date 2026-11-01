@@ -1,6 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Api, ApiFailure } from '../src/lib/api';
-import { sessionOwner, shouldClearLocalData } from '../src/lib/sessionLogic';
+import { sessionOwner, shouldClearLocalData, timezoneToSync } from '../src/lib/sessionLogic';
+
+describe('夜间安静跟随手机的时区', () => {
+  it('新用户的默认时区要换成手机的', () => {
+    expect(timezoneToSync('UTC', 'America/New_York')).toBe('America/New_York');
+  });
+  it('出门换了时区也要跟上', () => {
+    expect(timezoneToSync('Asia/Singapore', 'Asia/Tokyo')).toBe('Asia/Tokyo');
+  });
+  it('一样就不用再写，否则每次刷新都会多一次请求', () => {
+    expect(timezoneToSync('Asia/Tokyo', 'Asia/Tokyo')).toBeNull();
+  });
+  it('读不到手机的时区时保持原样，不能写空值', () => {
+    expect(timezoneToSync('Asia/Tokyo', null)).toBeNull();
+    expect(timezoneToSync('Asia/Tokyo', '')).toBeNull();
+  });
+});
 
 function stubFetch(status: number, body: string) {
   vi.stubGlobal(

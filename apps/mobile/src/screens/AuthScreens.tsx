@@ -1,3 +1,10 @@
+import {
+  birthMeasuresFromInput,
+  convertMeasureText,
+  effectiveUnits,
+  guessRegionId,
+  scaleFor,
+} from '@xiaodouya/shared';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -11,9 +18,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Api } from '../lib/api';
 import { useApp } from '../lib/app';
+import { deviceRegionCode } from '../lib/device';
 import { colors, fonts, spacing } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { Button, Chip, Field, Muted, Serif } from '../ui/primitives';
+import { RegionPicker } from '../ui/RegionPicker';
 
 function Page({ children, testID }: { children: React.ReactNode; testID: string }) {
   const insets = useSafeAreaInsets();
@@ -354,13 +363,20 @@ export function BabySetup() {
   const [weight, setWeight] = useState('');
   const [length, setLength] = useState('');
   const [hospital, setHospital] = useState('');
+  const [region, setRegion] = useState(() => guessRegionId(deviceRegionCode()));
   const [error, setError] = useState<string | null>(null);
+  const units = effectiveUnits(app.prefs.units, region);
+
+  const changeRegion = (next: string) => {
+    const nextUnits = effectiveUnits(app.prefs.units, next);
+    setWeight((t) => convertMeasureText('weight', t, units.weight, nextUnits.weight));
+    setLength((t) => convertMeasureText('length', t, units.length, nextUnits.length));
+    setRegion(next);
+  };
 
   const submit = async () => {
-    const w = weight ? Number.parseFloat(weight) : undefined;
-    const l = length ? Number.parseFloat(length) : undefined;
-    if (w !== undefined && !(w >= 0.3 && w <= 10)) return setError('体重看起来不太对，单位是公斤');
-    if (l !== undefined && !(l >= 20 && l <= 80)) return setError('身长看起来不太对，单位是厘米');
+    const measures = birthMeasuresFromInput(weight, length, units);
+    if (!measures.ok) return setError(measures.error);
     if (birth.getTime() > Date.now()) return setError('出生时间不能晚于现在');
     setError(null);
     await app.write(
@@ -368,9 +384,10 @@ export function BabySetup() {
       {
         name: name.trim(),
         birthAt: birth.getTime(),
-        birthWeightKg: w,
-        birthLengthCm: l,
+        birthWeightKg: measures.weightKg,
+        birthLengthCm: measures.lengthCm,
         hospital: hospital.trim() || undefined,
+        region,
       },
       // 用家庭 id 做宝宝记录的 id：一个家庭一份档案，两台手机同时建档也只会有一条。
       app.me?.family?.id,
@@ -395,13 +412,20 @@ export function BabySetup() {
           maxLength={40}
         />
         <BirthPicker value={birth} onChange={setBirth} />
+        <View style={{ gap: 5 }}>
+          <Muted style={{ fontSize: 12 }}>所在地区</Muted>
+          <RegionPicker value={region} onChange={changeRegion} />
+          <Muted style={{ fontSize: 11, lineHeight: 18 }}>
+            决定疫苗本和默认单位，以后可以在资料里改。
+          </Muted>
+        </View>
         <View style={s.dateRow}>
           <View style={{ flex: 1 }}>
             <Field
               testID="field-baby-weight"
-              label="出生体重（kg）"
+              label={`出生体重（${scaleFor('weight', units.weight).label}）`}
               keyboardType="decimal-pad"
-              placeholder="3.4"
+              placeholder={units.weight === 'kg' ? '3.4' : '7.5'}
               value={weight}
               onChangeText={setWeight}
             />
@@ -409,9 +433,9 @@ export function BabySetup() {
           <View style={{ flex: 1 }}>
             <Field
               testID="field-baby-length"
-              label="出生身长（cm）"
+              label={`出生身长（${scaleFor('length', units.length).label}）`}
               keyboardType="decimal-pad"
-              placeholder="50"
+              placeholder={units.length === 'cm' ? '50' : '19.5'}
               value={length}
               onChangeText={setLength}
             />

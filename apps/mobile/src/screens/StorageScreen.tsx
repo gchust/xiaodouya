@@ -35,8 +35,8 @@ import {
 } from '../ui/primitives';
 
 const NOTES: Record<StorageProvider, string> = {
-  r2: '推荐。下载流量不收费，适合照片和视频多的情况。创建 Bucket 时位置选 Asia-Pacific（APAC），离新加坡比较近。',
-  s3: '选 ap-southeast-1（新加坡）区域，数据就在新加坡，但下载流量要收费。',
+  r2: '推荐。下载流量不收费，适合照片和视频多的情况。创建 Bucket 时位置选离家人最近的区域。',
+  s3: '选离家人最近的区域，数据就存在那里，但下载流量要收费。',
   other: '适用于 Backblaze B2、Wasabi、阿里云 OSS、自建 MinIO 等任何兼容 S3 接口的存储。',
 };
 
@@ -313,7 +313,7 @@ export function StorageScreen() {
               mono
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder={provider === 's3' ? 'ap-southeast-1' : 'auto'}
+              placeholder={provider === 's3' ? 'us-east-1' : 'auto'}
               value={form.region}
               onChangeText={set('region')}
             />
