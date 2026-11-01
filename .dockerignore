@@ -1,5 +1,6 @@
 # 没有这个文件，开发机上的构建上下文会带上 node_modules、原生工程和 .env。
 .git
+.claude
 .artifacts
 **/node_modules
 **/dist
