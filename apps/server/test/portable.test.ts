@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { AuthResponse, MeResponse, SyncResponse } from '@xiaodouya/shared';
+import {
+  type AuthResponse,
+  defaultPrefs,
+  type MeResponse,
+  type SyncResponse,
+} from '@xiaodouya/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { type Config, loadConfig } from '../src/config';
@@ -230,17 +235,10 @@ describe('后台任务', () => {
       token: member.token,
       body: { deviceId: randomUUID(), token: 'ExponentPushToken[fictional]' },
     });
-    // 否则这条测试在新加坡时间 23:00–07:00 必然失败：夜间安静默认打开，推送被跳过。
+    // 默认开着夜间安静：不关的话，这条测试在新加坡时间 23:00 到 07:00 会失败。
     await call(app, 'PUT', '/v1/me/prefs', {
       token: member.token,
-      body: {
-        feedReminder: true,
-        familyNotify: true,
-        quietNight: false,
-        timezone: 'Asia/Singapore',
-        documentLock: false,
-        videoWifiOnly: true,
-      },
+      body: { ...defaultPrefs, quietNight: false },
     });
     await write(app, owner.token);
     expect(tasks).toHaveLength(1);

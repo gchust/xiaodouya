@@ -200,6 +200,83 @@ describe('离线优先的记录和同步', () => {
     b.engine.stop();
   });
 
+  it('离开时家人记了很多条：分几页拉回来，也只通知一次', async () => {
+    const a = device(server);
+    const db = new MemoryDb();
+    const calls: number[] = [];
+    const b = new SyncEngine(new RecordStore(db), db, server, {
+      onRemote: (r) => calls.push(r.length),
+    });
+    await a.engine.start();
+    await b.start();
+    for (let i = 0; i < 5; i++) await a.store.write('event', randomUUID(), feed(60 + i, 1000 + i));
+    await a.engine.syncNow();
+    server.pageSize = 2;
+    await b.syncNow();
+    expect(calls).toEqual([5]);
+    a.engine.stop();
+    b.stop();
+  });
+
+  it('新设备第一次拉取全部历史时不算“家人刚记的”', async () => {
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('event', randomUUID(), feed(120));
+    await a.engine.syncNow();
+    const b = device(server);
+    await b.engine.start();
+    expect(b.store.getSnapshot().events).toHaveLength(1);
+    expect(b.remote).toHaveLength(0);
+    // 之后别人再写的要提示。
+    await a.store.write('event', randomUUID(), feed(90, 2000));
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    expect(b.remote).toHaveLength(1);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('权限升级后从头重新拉取的历史也不算“家人刚记的”', async () => {
+    server.role = 'viewer';
+    server.hideEvents = true;
+    const b = device(server);
+    await b.engine.start();
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('event', randomUUID(), feed(120));
+    await a.engine.syncNow();
+    // 游标越过这条读不到的记录，升级后要从头拉才能拿到它。
+    await b.engine.syncNow();
+    server.role = 'caregiver';
+    server.hideEvents = false;
+    await b.engine.syncNow();
+    expect(b.store.getSnapshot().events).toHaveLength(1);
+    expect(b.remote).toHaveLength(0);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('同步中途断网：已经写进本地的也要提示，否则下一轮游标已过，再也提示不了', async () => {
+    const a = device(server);
+    const b = device(server);
+    await a.engine.start();
+    await b.engine.start();
+    for (let i = 0; i < 3; i++) await a.store.write('event', randomUUID(), feed(60 + i, 1000 + i));
+    await a.engine.syncNow();
+    server.pageSize = 2;
+    const original = server.sync.bind(server);
+    let calls = 0;
+    server.sync = async (req) => {
+      calls += 1;
+      if (calls === 2) throw new Error('network');
+      return original(req);
+    };
+    await b.engine.syncNow();
+    expect(b.remote).toHaveLength(2);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
   it('App 重启后，未上传的记录和游标都还在', async () => {
     const db = new MemoryDb();
     const first = new RecordStore(db);

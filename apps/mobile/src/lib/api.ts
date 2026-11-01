@@ -128,9 +128,6 @@ export class Api {
   updatePrefs(prefs: Prefs) {
     return this.request<Prefs>('PUT', '/v1/me/prefs', prefs);
   }
-  registerPushToken(token: string, deviceId: string) {
-    return this.request('POST', '/v1/me/push-token', { token, deviceId });
-  }
   unregisterPushToken(deviceId: string) {
     return this.request('DELETE', `/v1/me/push-token/${encodeURIComponent(deviceId)}`);
   }
