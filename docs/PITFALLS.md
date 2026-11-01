@@ -129,6 +129,8 @@
 - **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 8 秒。
 - **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
+- **`uiautomator dump` 在界面一直有动画时会卡住。** 输入框光标闪烁、录音计时都会让它等不到空闲，`adb-ui.py` 看起来像挂了。这时用坐标点击和 `screencap`，或者先让输入框失去焦点。
+- **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 - **测事务模式连接池要加反向对照。** 本地用 PgBouncer（`pool_mode=transaction`、`max_prepared_statements=0`）跑全部测试，再打开 `DB_PREPARE` 跑一次，要看到 `prepared statement does not exist`，才说明这个环境真的能发现问题。
 - **`scrollUntilVisible` 一看到目标就停。** 滚到区块标题后再断言下面的内容，长列表时内容还在屏幕外。要断言哪一行就滚到哪一行。
