@@ -17,6 +17,17 @@ export function storagePageMode(role: Role | null, allowCustomStorage: boolean):
   return role === 'admin' && allowCustomStorage ? 'form' : 'usage';
 }
 
+/**
+ * 服务器关闭自定义存储后，已经在用自己存储的家庭还要能改配置：文件在那里，密钥过期不能被锁死。
+ * 和服务端的 validateStorageInput 规则一致。
+ */
+export function canEditStorage(
+  allowCustomStorage: boolean,
+  source: StorageConfigView['source'],
+): boolean {
+  return allowCustomStorage || source === 'family';
+}
+
 const LEVEL_PREFIX = { none: '', ok: '', warn: '快满了 · ', full: '已满 · ' } as const;
 
 /** 家人页“存储”那一行的小字。`config` 只有管理员拿得到，其他人传 null。 */

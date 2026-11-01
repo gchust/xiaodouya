@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app';
-import { storagePageMode } from '../lib/storagePage';
+import { canEditStorage, storagePageMode } from '../lib/storagePage';
 import { colors, spacing } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import {
@@ -71,7 +71,8 @@ export function StorageScreen() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      setAllowCustom(await app.api.allowCustomStorage());
+      const allowed = await app.api.allowCustomStorage();
+      setAllowCustom(allowed || canEditStorage(allowed, (await app.api.getStorage()).source));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : '读取失败');
     }

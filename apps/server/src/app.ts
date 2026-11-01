@@ -882,7 +882,14 @@ export function createApp({
           object_key = EXCLUDED.object_key, storage_config_id = EXCLUDED.storage_config_id,
           reserved_at = now()`;
     });
-    const url = await presignUpload(storage, key, body.mime, body.size, UPLOAD_URL_TTL);
+    const url = await presignUpload(
+      storage,
+      key,
+      body.mime,
+      body.size,
+      UPLOAD_URL_TTL,
+      config.bindUploadSize,
+    );
     return c.json<UploadUrlResponse>({
       url,
       headers: { 'Content-Type': body.mime },
@@ -1032,9 +1039,13 @@ export function createApp({
     });
   });
 
-  async function validateStorageInput(input: StorageConfigInput) {
-    if (!config.allowCustomStorage)
-      fail(403, 'custom_storage_disabled', '这台服务器不允许自定义存储');
+  async function validateStorageInput(familyId: string, input: StorageConfigInput) {
+    if (!config.allowCustomStorage) {
+      // 已经在用自己存储的家庭继续可以改：关闭之前存进去的文件还在那里，密钥过期不能把他们锁死。
+      const [active] = await sql`
+        SELECT 1 AS ok FROM storage_configs WHERE family_id = ${familyId} AND active`;
+      if (!active) fail(403, 'custom_storage_disabled', '这台服务器不允许自定义存储');
+    }
     if (input.provider === 'r2' && !input.accountId)
       fail(400, 'invalid_input', '请填写 Account ID');
     if (input.provider === 'other' && !input.endpoint)
@@ -1078,7 +1089,7 @@ export function createApp({
   v1.post('/storage/test', async (c) => {
     const m = requireAdmin(c);
     const input = await parseBody(c, StorageConfigInput);
-    await validateStorageInput(input);
+    await validateStorageInput(m.familyId, input);
     const secret = await secretFor(m.familyId, input);
     return c.json(await testStorage(resolvedFromInput(input, secret)));
   });
@@ -1086,7 +1097,7 @@ export function createApp({
   v1.put('/storage', async (c) => {
     const m = requireAdmin(c);
     const input = await parseBody(c, StorageConfigInput);
-    await validateStorageInput(input);
+    await validateStorageInput(m.familyId, input);
     const secret = await secretFor(m.familyId, input);
     const result = await testStorage(resolvedFromInput(input, secret));
     if (!result.ok) fail(400, 'storage_test_failed', result.message);
@@ -1113,7 +1124,9 @@ export function createApp({
           WHEN mime LIKE 'audio/%' THEN 'audio'
           ELSE 'image' END AS category,
         COALESCE(SUM(size), 0) AS total
-      FROM media WHERE family_id = ${m.familyId} AND status = 'ready' AND unreferenced_at IS NULL
+      FROM media WHERE family_id = ${m.familyId} AND status = 'ready'
+        -- 平台存储上已删除的文件会被清理；用户自己存储上的不清理，还占着他们的 Bucket。
+        AND (unreferenced_at IS NULL OR storage_config_id IS NOT NULL)
       GROUP BY 1`;
     const [family] = await sql<{ quota_mb: string | null; custom: boolean }[]>`
       SELECT quota_mb, EXISTS (

@@ -1,7 +1,12 @@
 import type { StorageConfigView, StorageUsage } from '@xiaodouya/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Api } from '../src/lib/api';
-import { canOpenStorage, storagePageMode, storageSummaryText } from '../src/lib/storagePage';
+import {
+  canEditStorage,
+  canOpenStorage,
+  storagePageMode,
+  storageSummaryText,
+} from '../src/lib/storagePage';
 
 const GB = 1024 ** 3;
 const usage = (over: Partial<StorageUsage> = {}): StorageUsage => ({
@@ -44,6 +49,20 @@ describe('存储页显示什么', () => {
     expect(canOpenStorage(null)).toBe(false);
     expect(canOpenStorage('caregiver')).toBe(true);
     expect(canOpenStorage('admin')).toBe(true);
+  });
+});
+
+describe('已经用自己存储的家庭', () => {
+  it('服务器关闭自定义后，管理员还能改配置，否则密钥过期就被锁死了', () => {
+    expect(canEditStorage(false, 'family')).toBe(true);
+  });
+  it('没用过的家庭在关闭后不能开始用', () => {
+    expect(canEditStorage(false, 'server')).toBe(false);
+    expect(canEditStorage(false, 'none')).toBe(false);
+  });
+  it('服务器允许时都可以', () => {
+    expect(canEditStorage(true, 'server')).toBe(true);
+    expect(canEditStorage(true, 'none')).toBe(true);
   });
 });
 

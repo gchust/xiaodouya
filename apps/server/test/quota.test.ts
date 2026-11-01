@@ -19,7 +19,7 @@ import { type Config, loadConfig } from '../src/config';
 import { connect, migrate, migrations, type Sql } from '../src/db';
 import { ensureBucket } from '../src/dev-bucket';
 import { runMaintenance } from '../src/maintenance';
-import { activeStorage, headObject } from '../src/storage';
+import { activeStorage, checkUploadSizeBinding, headObject } from '../src/storage';
 
 /** 配额、删除释放空间和防滥用。真实的 Postgres 和 S3 兼容服务，和 api.test.ts 一样由 pnpm dev:infra 提供。 */
 function testEnv(): NodeJS.ProcessEnv {
@@ -669,7 +669,6 @@ describe('维护任务', () => {
         env: {
           PATH: process.env.PATH,
           DATABASE_URL: testUrl,
-          APP_SECRET: env.APP_SECRET,
           S3_ENDPOINT: env.S3_ENDPOINT,
           S3_REGION: env.S3_REGION,
           S3_BUCKET: env.S3_BUCKET,
@@ -679,6 +678,7 @@ describe('维护任务', () => {
         },
       },
     );
+    // 不需要 APP_SECRET：不用把它复制到定时任务的环境里。
     expect(JSON.parse(stdout)).toMatchObject({ failed: 0 });
   }, 60_000);
 });
@@ -1015,6 +1015,145 @@ describe('防滥用：文件和记录大小', () => {
       },
     ]);
     expect(r.status).toBe(413);
+  });
+});
+
+describe('已上线的家庭和 v0.1.0 APK', () => {
+  const ownStorage = () => ({
+    provider: 'other' as const,
+    endpoint: process.env.TEST_S3_ENDPOINT ?? 'http://localhost:59000',
+    region: 'us-east-1',
+    bucket: 'xiaodouya-dev',
+    accessKeyId: 'devaccesskey',
+    secretAccessKey: 'devsecretkey',
+  });
+  const urlOf = async (token: string, id: string) =>
+    (
+      await api<MediaUrlsResponse>('POST', '/v1/media/urls', {
+        token,
+        body: { items: [{ id, variant: 'original' }] },
+      })
+    ).json.urls[0]!.url;
+
+  it('已经超过默认配额的家庭什么都不丢：能看、能同步、能删，只是传不了新文件', async () => {
+    const { token, familyId } = await newFamily();
+    const old = [await upload(token), await upload(token), await upload(token)];
+    const moment = randomUUID();
+    await writeMoment(token, moment, old);
+
+    useConfig({ familyQuotaBytes: FILE * 2 });
+    const seen = await usage(token);
+    expect(seen.quotaUsed).toBe(FILE * 3);
+    expect(seen.total).toBe(FILE * 3);
+    for (const id of old) expect((await fetch((await urlOf(token, id))!)).status).toBe(200);
+    expect((await writeMoment(token, randomUUID(), [])).json.rejected).toEqual([]);
+    expect((await sync(token, [])).json.records.some((r) => r.id === moment)).toBe(true);
+    expect((await requestUrl(token)).status).toBe(413);
+
+    // 清理任务不因为超额删任何东西。
+    const report = await runMaintenance(sql, { ...config, familyQuotaBytes: FILE * 2 });
+    expect(report.trashPurged + report.unattachedPurged).toBe(0);
+    for (const id of old) expect(await objectExists(familyId, id)).toBe(true);
+
+    // 删到配额以内就又能传了。
+    await writeMoment(token, moment, [old[0]!]);
+    expect((await usage(token)).quotaUsed).toBe(FILE);
+    expect((await requestUrl(token)).status).toBe(200);
+  });
+
+  it('配额错误是 4xx，带可以直接显示的文字：v0.1.0 把它显示给用户并停止重试', async () => {
+    useConfig({ familyQuotaBytes: FILE - 1 });
+    const { token } = await newFamily();
+    const over = await requestUrl(token);
+    expect(over.status).toBeGreaterThanOrEqual(400);
+    expect(over.status).toBeLessThan(500);
+    // v0.1.0 把 401、403、408、429 当成可恢复或别的含义，其余 4xx 才永久失败并显示 message。
+    expect([401, 403, 408, 429]).not.toContain(over.status);
+    const { message } = (over.json as unknown as { error: { message: string } }).error;
+    expect(message).toContain('存储空间已满');
+    expect(message).toContain('重试');
+    expect(message.length).toBeLessThanOrEqual(40);
+  });
+
+  it('服务器关闭自定义后，已经用自己存储的家庭照常读写，还能换密钥', async () => {
+    const { token, familyId } = await newFamily();
+    expect((await api('PUT', '/v1/storage', { token, body: ownStorage() })).status).toBe(200);
+    const before = await upload(token);
+
+    useConfig({ allowCustomStorage: false, familyQuotaBytes: 1 });
+    expect((await fetch((await urlOf(token, before))!)).status).toBe(200);
+    const after = await upload(token);
+    expect((await fetch((await urlOf(token, after))!)).status).toBe(200);
+    const [row] = await sql<{ storage_config_id: string | null }[]>`
+      SELECT storage_config_id FROM media WHERE id = ${after}`;
+    expect(row?.storage_config_id).not.toBeNull();
+    expect((await usage(token)).quota).toBeNull();
+    expect((await api<{ source: string }>('GET', '/v1/storage', { token })).json.source).toBe(
+      'family',
+    );
+    // 密钥过期时不能把他们锁死。
+    expect((await api('PUT', '/v1/storage', { token, body: ownStorage() })).status).toBe(200);
+    expect(await objectExists(familyId, after)).toBe(true);
+  });
+
+  it('服务器关闭自定义后，没用过自己存储的家庭不能开始用', async () => {
+    useConfig({ allowCustomStorage: false });
+    const { token } = await newFamily();
+    const test = await api('POST', '/v1/storage/test', { token, body: ownStorage() });
+    expect(test.status).toBe(403);
+    expect(errorCode(test)).toBe('custom_storage_disabled');
+    const saved = await api('PUT', '/v1/storage', { token, body: ownStorage() });
+    expect(saved.status).toBe(403);
+    // v0.1.0 还有这个表单，它把这句话显示在按钮下面。
+    expect((saved.json as { error: { message: string } }).error.message).toContain('自定义存储');
+  });
+
+  it('清理任务不碰用户自己的存储：那是他们的 Bucket，密钥也可能早过期了', async () => {
+    const { token, familyId } = await newFamily();
+    await api('PUT', '/v1/storage', { token, body: ownStorage() });
+    const deleted = await upload(token);
+    const orphan = await upload(token);
+    const abandoned = randomUUID();
+    const { json } = await requestUrl(token, { id: abandoned });
+    await fetch(json.url, { method: 'PUT', headers: json.headers, body: bytes });
+    const moment = randomUUID();
+    await writeMoment(token, moment, [deleted]);
+    await writeMoment(token, moment, [deleted], true);
+    await backdateTrash(deleted, config.mediaTrashDays + 1);
+    await sql`UPDATE media SET created_at = now() - interval '40 days' WHERE id = ${orphan}`;
+    await sql`UPDATE media SET reserved_at = now() - interval '25 hours' WHERE id = ${abandoned}`;
+
+    await runMaintenance(sql, config);
+    for (const id of [deleted, orphan, abandoned]) {
+      expect(await mediaRow(id)).not.toBeNull();
+      expect(await objectExists(familyId, id)).toBe(true);
+    }
+    // 对象还在他们的 Bucket 里，用量也要如实算上。
+    expect((await usage(token)).total).toBe(FILE * 2);
+  });
+
+  it('Edge Function 的路径前缀下也能读公开配置', async () => {
+    const edge = createApp({ sql, config, basePath: '/api' });
+    expect((await edge.request('/api/v1/config')).status).toBe(200);
+  });
+
+  it('可以关掉大小绑定，也能检查存储支不支持', async () => {
+    const storage = (await activeStorage(sql, config, randomUUID()))!;
+    expect(await checkUploadSizeBinding(storage)).toMatchObject({ ok: true });
+    expect(loadConfig(testEnv()).bindUploadSize).toBe(true);
+    useConfig({ bindUploadSize: false });
+    const { token } = await newFamily();
+    const { json } = await requestUrl(token, { size: 10 });
+    expect(json.url).not.toContain('content-length');
+    const put = await fetch(json.url, {
+      method: 'PUT',
+      headers: json.headers,
+      body: Buffer.alloc(11, 1),
+    });
+    expect(put.status).toBe(200);
+    // 关掉之后，complete 的 HEAD 校验还是最终依据。
+    const id = new URL(json.url).pathname.split('/').at(-2)!;
+    expect((await complete(token, id)).status).toBe(409);
   });
 });
 

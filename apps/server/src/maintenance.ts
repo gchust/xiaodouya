@@ -1,7 +1,7 @@
 import type { Config } from './config';
 import type { Sql } from './db';
 import { liveReferences } from './quota';
-import { assertEndpointAllowed, deleteObject, type ResolvedStorage, storageById } from './storage';
+import { deleteObject, type ResolvedStorage, storageById } from './storage';
 
 /** 比预留期（6 小时）和链接有效期（1 小时）长得多，不会删到还在传的文件。 */
 const ABANDONED_HOURS = 24;
@@ -32,13 +32,14 @@ interface MediaRow {
   variant: string;
   family_id: string;
   object_key: string;
-  storage_config_id: string | null;
 }
 
 /**
  * 定时任务调用（`cli maintenance`）。可以重复执行，中途失败下次接着来。
  *
  * 只处理这个项目自己知道的对象（media 表里有记录的），不列举 Bucket。
+ * 只处理平台存储：用户自己的 Bucket 不花平台的钱，那里的文件由他们自己决定，密钥也可能早就失效了。
+ * 超过配额的家庭不会因此丢任何东西，这里不看配额。
  * 账号删除有自己的待删除队列（pending_object_deletions），将来可以合并。
  */
 export async function runMaintenance(sql: Sql, config: Config): Promise<MaintenanceReport> {
@@ -50,39 +51,33 @@ export async function runMaintenance(sql: Sql, config: Config): Promise<Maintena
     failed: 0,
     rateLimitsRemoved: 0,
   };
-  const failed = new Set<string>();
+  const storage = await storageById(sql, config, '', null);
+  if (storage) report.failed = await purgeObjects(sql, storage, config.mediaTrashDays, report);
+  const removed = await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
+  report.rateLimitsRemoved = removed.count;
+  return report;
+}
 
-  // 必须在事务外解析：连接池可能只有 1 个连接，事务里再用 sql 会死锁。
-  const storages = new Map<string, ResolvedStorage | null>();
-  async function resolve(familyId: string, configId: string | null) {
-    const key = configId ?? 'env';
-    if (storages.has(key)) return storages.get(key) ?? null;
-    let storage: ResolvedStorage | null = null;
-    try {
-      storage = await storageById(sql, config, familyId, configId);
-      // 自定义地址可能在保存之后改为解析到内网，连接前再查一次。
-      if (storage?.configId && storage.endpoint) {
-        await assertEndpointAllowed(storage.endpoint, config);
-      }
-    } catch {
-      storage = null;
-    }
-    storages.set(key, storage);
-    return storage;
-  }
+/** 返回删除失败的文件数。 */
+async function purgeObjects(
+  sql: Sql,
+  storage: ResolvedStorage,
+  graceDays: number,
+  report: MaintenanceReport,
+): Promise<number> {
+  const failed = new Set<string>();
 
   // ─── 放弃的上传 ─────────────────────────────────────────
   for (;;) {
     const rows = await sql<MediaRow[]>`
-      SELECT id, variant, family_id, object_key, storage_config_id FROM media
-      WHERE status = 'pending' AND reserved_at < now() - interval '1 hour' * ${ABANDONED_HOURS}
+      SELECT id, variant, family_id, object_key FROM media
+      WHERE status = 'pending' AND storage_config_id IS NULL
+        AND reserved_at < now() - interval '1 hour' * ${ABANDONED_HOURS}
       ORDER BY reserved_at LIMIT ${BATCH + failed.size}`;
     const todo = rows.filter((r) => !failed.has(`${r.id}/${r.variant}`));
     if (todo.length === 0) break;
     for (const row of todo) {
-      const storage = await resolve(row.family_id, row.storage_config_id);
       try {
-        if (!storage) throw new Error('存储不可用');
         // 拿着行锁删对象：这时重新申请链接要排队，不会刚拿到链接文件就被删掉。
         await sql.begin(async (tx) => {
           const [locked] = await tx`
@@ -102,25 +97,20 @@ export async function runMaintenance(sql: Sql, config: Config): Promise<Maintena
   }
 
   // ─── 已删除和没有引用的文件 ───────────────────────────────
-  const graceDays = config.mediaTrashDays;
   const families = await sql<{ family_id: string }[]>`
     SELECT DISTINCT family_id FROM media
-    WHERE status = 'ready' AND (
+    WHERE status = 'ready' AND storage_config_id IS NULL AND (
       unreferenced_at < now() - interval '1 day' * ${graceDays}
       OR (unreferenced_at IS NULL AND NOT attached
           AND created_at < now() - interval '1 day' * ${UNATTACHED_DAYS}))`;
   for (const { family_id: familyId } of families) {
-    const configs = await sql<{ storage_config_id: string | null }[]>`
-      SELECT DISTINCT storage_config_id FROM media WHERE family_id = ${familyId}`;
-    for (const { storage_config_id: configId } of configs) await resolve(familyId, configId);
-
     for (;;) {
       const progress = await sql.begin(async (tx) => {
         // 和同步用同一把锁：核对引用之后、删除之前，不会有新的记录引用这个文件。
         await tx`SELECT 1 FROM families WHERE id = ${familyId} FOR UPDATE`;
         const rows = await tx<(MediaRow & { unreferenced_at: Date | null })[]>`
-          SELECT id, variant, family_id, object_key, storage_config_id, unreferenced_at FROM media
-          WHERE family_id = ${familyId} AND status = 'ready' AND (
+          SELECT id, variant, family_id, object_key, unreferenced_at FROM media
+          WHERE family_id = ${familyId} AND status = 'ready' AND storage_config_id IS NULL AND (
             unreferenced_at < now() - interval '1 day' * ${graceDays}
             OR (unreferenced_at IS NULL AND NOT attached
                 AND created_at < now() - interval '1 day' * ${UNATTACHED_DAYS}))
@@ -136,9 +126,7 @@ export async function runMaintenance(sql: Sql, config: Config): Promise<Maintena
             if (row.unreferenced_at) report.rescued += 1;
             continue;
           }
-          const storage = storages.get(row.storage_config_id ?? 'env');
           try {
-            if (!storage) throw new Error('存储不可用');
             // 先删对象再删记录。中途崩溃时记录还在，下次重试，DELETE 对不存在的对象也成功。
             await deleteObject(storage, row.object_key);
           } catch {
@@ -155,8 +143,5 @@ export async function runMaintenance(sql: Sql, config: Config): Promise<Maintena
     }
   }
 
-  report.failed = failed.size;
-  const removed = await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
-  report.rateLimitsRemoved = removed.count;
-  return report;
+  return failed.size;
 }

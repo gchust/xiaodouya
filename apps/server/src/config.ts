@@ -47,6 +47,7 @@ const EnvSchema = DbEnvSchema.extend({
   S3_ACCESS_KEY_ID: optionalText,
   S3_SECRET_ACCESS_KEY: optionalText,
   S3_FORCE_PATH_STYLE: bool(false),
+  S3_BIND_UPLOAD_SIZE: bool(true),
   ALLOW_CUSTOM_STORAGE: optionalText,
   ALLOW_PRIVATE_STORAGE_ENDPOINTS: bool(false),
   PUSH_ENABLED: bool(false),
@@ -102,6 +103,8 @@ export interface Config {
   clientIp: ClientIpConfig;
   limits: RateLimits;
   serverStorage: ServerStorageEnv | null;
+  /** 把声明的大小签进上传链接。个别存储不支持时关掉，complete 的校验还在。 */
+  bindUploadSize: boolean;
   allowCustomStorage: boolean;
   allowPrivateEndpoints: boolean;
   pushEnabled: boolean;
@@ -173,6 +176,7 @@ export function loadConfig(env: Env = process.env): Config {
       e.ALLOW_CUSTOM_STORAGE === undefined
         ? !hasStorage
         : e.ALLOW_CUSTOM_STORAGE === 'true' || e.ALLOW_CUSTOM_STORAGE === '1',
+    bindUploadSize: e.S3_BIND_UPLOAD_SIZE,
     allowPrivateEndpoints: e.ALLOW_PRIVATE_STORAGE_ENDPOINTS,
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,

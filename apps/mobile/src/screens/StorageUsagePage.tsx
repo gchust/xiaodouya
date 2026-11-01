@@ -108,7 +108,7 @@ export function StorageUsagePage() {
           <Muted style={s.note}>
             {limited ? '照片、视频和证件都存在小豆芽的服务器上，不用自己设置什么。\n' : ''}
             {usage.trash > 0
-              ? `刚删除的内容（${formatBytes(usage.trash)}）会再保留 ${usage.trashDays} 天，之后彻底清理，这期间不算在已用空间里。`
+              ? `刚删除的内容（${formatBytes(usage.trash)}）会再保留 ${usage.trashDays} 天，之后彻底清理。这期间不算在已用空间里，一次删得特别多时超出上限的部分除外。`
               : `删除回忆或证件后，空间马上就能用，文件会再保留 ${usage.trashDays} 天才彻底清理。`}
           </Muted>
         ) : null}
