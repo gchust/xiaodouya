@@ -3,13 +3,17 @@ import {
   type BabyData,
   birthMeasuresFromInput,
   birthMeasureText,
+  doseStatus,
+  dosesToBackfill,
   type EventData,
   formatBirthMeasures,
   formatFullDate,
   formatMonthDay,
+  inertPlanCount,
   knowledgeForAge,
   normalizeVaccineId,
   otherVaccineRecords,
+  planSchedule,
   regionFor,
   scaleFor,
   toDisplay,
@@ -29,6 +33,7 @@ import { gridItemWidth } from '../lib/layout';
 import { fileBadge } from '../lib/mediaUtils';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
+import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets';
 import { colors, spacing } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -56,7 +61,7 @@ const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 export function InfoScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('info');
-  const { baby, documents, events } = useRecords();
+  const { baby, documents, events, vaccinePlans } = useRecords();
   const { role } = useApp();
   const region = useRegion();
   const units = useUnits();
@@ -68,8 +73,11 @@ export function InfoScreen() {
   const now = Date.now();
   const birthAt = baby.data.birthAt;
   const data = events.map((e) => e.data);
-  const vaccines = vaccineStatuses(region, birthAt, data, now);
-  const others = otherVaccineRecords(region, events);
+  const planned = planSchedule(region, birthAt, vaccinePlans, data);
+  const vaccines = vaccineStatuses(planned, birthAt, data, now);
+  const others = otherVaccineRecords(planned, events);
+  const canBackfill = dosesToBackfill(vaccines).length > 0;
+  const inert = inertPlanCount(region, vaccinePlans);
   const knowledge = knowledgeForAge(ageParts(birthAt, now).months, units.temperature);
   // 记错了日期只能删掉重记，所以打过的剂次也要能点开。时间线只显示最近的几条，别处点不到。
   const openShot = (id: string) => {
@@ -254,6 +262,43 @@ export function InfoScreen() {
             ))}
           </ListCard>
         ) : null}
+        {canBackfill || planned.hidden.length > 0 ? (
+          <View style={s.vaccineLinks}>
+            {canBackfill ? (
+              <Pressable
+                testID="vaccine-backfill"
+                accessibilityRole="button"
+                accessibilityLabel="一次补记几剂"
+                hitSlop={LINK_HIT_SLOP}
+                onPress={() =>
+                  sheet.open('一次补记几剂', () => <VaccineBackfillSheet birthAt={birthAt} />)
+                }
+              >
+                <Text style={s.link}>一次补记几剂</Text>
+              </Pressable>
+            ) : (
+              <View />
+            )}
+            {planned.hidden.length > 0 ? (
+              <Pressable
+                testID="vaccine-hidden"
+                accessibilityRole="button"
+                accessibilityLabel={`已隐藏 ${planned.hidden.length} 剂，点开可以恢复`}
+                hitSlop={LINK_HIT_SLOP}
+                onPress={() =>
+                  sheet.open('已隐藏的剂次', () => <HiddenDosesSheet birthAt={birthAt} />)
+                }
+              >
+                <Text style={s.linkMuted}>已隐藏 {planned.hidden.length} 剂 ›</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+        {inert > 0 ? (
+          <Muted testID="vaccine-inert-note" style={{ fontSize: 11, lineHeight: 18 }}>
+            别的地区的表上还有 {inert} 项隐藏或改过时间的设置，这里不生效，换回那个地区就恢复。
+          </Muted>
+        ) : null}
         {others.length > 0 ? (
           <View testID="vaccine-other-section" style={s.section}>
             <Text style={s.subTitle}>其他接种记录</Text>
@@ -312,20 +357,9 @@ function VaccineRow({
   last: boolean;
   onPress: () => void;
 }) {
-  // 看情况或和医生商量的剂次不能写成“可以预约了”，那等于建议每个孩子都打。
-  const optional = dose.kind !== 'routine' && dose.state !== 'done';
-  const due = dose.state === 'due' && !optional;
-  const statusColor = dose.state === 'done' ? colors.green : due ? colors.accent : colors.muted;
-  const status =
-    dose.state === 'done' && dose.doneAt !== null
-      ? `已接种 ${formatMonthDay(dose.doneAt)}`
-      : dose.kind === 'shared-decision'
-        ? '和医生商量'
-        : dose.kind === 'conditional'
-          ? '看情况'
-          : due
-            ? '可以预约了'
-            : '未到时间';
+  const status = doseStatus(dose);
+  const statusColor =
+    status.tone === 'done' ? colors.green : status.tone === 'due' ? colors.accent : colors.muted;
   return (
     <Pressable
       testID={`vaccine-row-${dose.localId}`}
@@ -335,7 +369,15 @@ function VaccineRow({
       style={[s.vaccineRow, last ? null : s.divider]}
     >
       <View style={{ width: 16 }}>
-        <Dot color={dose.state === 'done' ? colors.green : due ? colors.accent : colors.off} />
+        <Dot
+          color={
+            status.tone === 'done'
+              ? colors.green
+              : status.tone === 'due'
+                ? colors.accent
+                : colors.off
+          }
+        />
       </View>
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={{ fontSize: 13, color: colors.ink }}>{dose.name}</Text>
@@ -345,7 +387,7 @@ function VaccineRow({
         </Muted>
       </View>
       <Text testID={`vaccine-status-${dose.localId}`} style={{ fontSize: 11, color: statusColor }}>
-        {status}
+        {status.text}
       </Text>
     </Pressable>
   );
@@ -355,6 +397,7 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
+  const hasPlans = app.store.getSnapshot().vaccinePlans.length > 0;
   const current = regionFor(baby.region).id;
   const [selected, setSelected] = useState(current);
   const target = regionFor(selected);
@@ -374,7 +417,7 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
       <RegionPicker value={selected} onChange={setSelected} />
       <Muted testID="region-note" style={{ fontSize: 13, lineHeight: 21 }}>
         {changed
-          ? `换成${target.name}后，全家的疫苗本都按当地方案显示。已记下的接种不会丢，不在新方案里的放到“其他接种记录”。没改过单位的家人，默认单位也会跟着变。`
+          ? `换成${target.name}后，全家的疫苗本都按当地方案显示。已记下的接种不会丢，不在新方案里的放到“其他接种记录”。${hasPlans ? '你们自己加的疫苗留在疫苗本里；隐藏和改过时间的设置属于原来的表，换回来还在。' : ''}没改过单位的家人，默认单位也会跟着变。`
           : '地区决定疫苗本和默认单位。'}
       </Muted>
       <Button
@@ -619,6 +662,8 @@ const s = StyleSheet.create({
     zIndex: 1,
   },
   link: { fontSize: 12, color: colors.accent },
+  linkMuted: { fontSize: 12, color: colors.muted },
+  vaccineLinks: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
   subTitle: { fontSize: 13, fontWeight: '500', color: colors.ink, marginTop: 4 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
   docCard: {

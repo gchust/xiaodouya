@@ -4,6 +4,7 @@ import {
   checkRecordTime,
   chipsFor,
   describeEvent,
+  doseTimeText,
   type EventData,
   estimateNextFeed,
   formatClock,
@@ -16,6 +17,7 @@ import {
   metricToSave,
   newCustomVaccineId,
   nextVaccine,
+  planSchedule,
   scaleFor,
   stepDisplay,
   toDisplay,
@@ -41,6 +43,7 @@ import {
   TimeCheckText,
   useRecordTime,
 } from '../ui/TimeField';
+import { DosePlanBar, VaccinePlanForm } from './vaccineSheets';
 
 type EventOf<T extends EventData['type']> = Extract<EventData, { type: T }>;
 
@@ -761,15 +764,18 @@ export function VaccineSheet({
   /** 直接打开“其他疫苗”，用于疫苗本上的添加入口。 */
   custom?: boolean;
 }) {
-  const { events } = useRecords();
+  const { events, vaccinePlans } = useRecords();
   const region = useRegion();
   const save = useSaveEvent();
+  const sheet = useSheet();
+  const shots = events.map((e) => e.data);
   const statuses = vaccineStatuses(
-    region,
+    planSchedule(region, birthAt, vaccinePlans, shots),
     birthAt,
-    events.map((e) => e.data),
+    shots,
     Date.now(),
   );
+  const [planning, setPlanning] = useState(false);
   const pending = vaccinesToOffer(statuses, preselect);
   const [selected, setSelected] = useState(
     custom ? CUSTOM_OPTION : (preselect ?? nextVaccine(statuses)?.id ?? CUSTOM_OPTION),
@@ -790,8 +796,41 @@ export function VaccineSheet({
       name,
     });
   };
+  // 从“＋ 其他疫苗”进来才有这个切换。默认还是记一剂打过的，从表上的剂次进来时不多一步。
+  const modeChips = custom ? (
+    <View style={s.chips}>
+      <Chip
+        testID="vaccine-mode-done"
+        label="已经打了"
+        selected={!planning}
+        onPress={() => {
+          setPlanning(false);
+          sheet.setTitle('疫苗接种');
+        }}
+      />
+      <Chip
+        testID="vaccine-mode-plan"
+        label="还没打，加进计划"
+        selected={planning}
+        onPress={() => {
+          setPlanning(true);
+          sheet.setTitle('加进计划');
+        }}
+      />
+    </View>
+  ) : null;
+  if (planning) {
+    return (
+      <>
+        {modeChips}
+        <VaccinePlanForm initialName={customName} />
+      </>
+    );
+  }
   return (
     <>
+      {modeChips}
+      {preselect && dose ? <DosePlanBar dose={dose} /> : null}
       <PastDatePicker label="接种日期" testID="vaccine-date" value={date} onChange={setDate} />
       <DayChips
         testID="vaccine-date"
@@ -813,7 +852,7 @@ export function VaccineSheet({
               style={[s.vaccineOption, { backgroundColor: on ? colors.ink : colors.paper }]}
             >
               <Text style={{ fontSize: 14, color: on ? colors.paper : colors.ink }}>
-                {v.name} · {v.ageLabel}
+                {v.name} · {doseTimeText(v)}
               </Text>
             </Pressable>
           );
