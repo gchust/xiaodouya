@@ -24,7 +24,7 @@
 
 ## 当前结论
 
-**核心流程已通过自动化验证，但还不能放行。** 真机没有验证过，后端还没有真实部署，真实 R2 和 S3 没有测过。放行列因此全部保持“否”。
+**核心流程已通过自动化验证，但还不能放行。** 后端已部署到 Supabase 新加坡项目，R2 实际签名上传下载、云端备份和本地恢复已验证；真机和签名 APK 首次发布还没有验证。
 
 E2E 列的 ✅ 指 CI run 41278806145（提交 `cce3497`）中对应编号的流程通过。这些流程跑在 CI 的 AOSP 模拟器上，系统相册和相机用内置样例代替。
 
@@ -121,7 +121,7 @@ E2E 列的 ✅ 指 CI run 41278806145（提交 `cce3497`）中对应编号的流
 | F-77 | iOS | 未开始 | ⬜ 从未运行 | 否 |  |
 | F-78 | 部署文档 | 待验证 | ⬜ 第一节第 3 到第 7 步的命令在本机照做跑通并修正（测试时加了项目名和端口覆盖，用 git archive 代替 git clone）。没做的：第 2 步创建云存储、真实域名和证书、git clone 和 git pull、方式 A 成功拉取镜像、crontab。origin/main 目前还没有 deploy/，合并前按文档 clone 默认分支走不通 | 否 |  |
 | F-79 | Supabase 部署（Edge Function、事务模式连接池、R2、加密备份） | 待验证 | ⬜ **没有在真实 Supabase 项目和真实 R2 上跑过。** 已验证：① 全部服务端测试在默认配置、连接池 1 且不用预处理语句、以及经过本地 PgBouncer 事务模式（`max_prepared_statements=0`）三种配置下通过；同样经过 PgBouncer 打开预处理语句时 12 条失败，说明这个环境确实能发现问题。PgBouncer 不是 Supabase 用的 Supavisor。② `pnpm test:edge` 在 Deno 2.9.6 和 `supabase/edge-runtime:v1.77.9` 镜像上通过（镜像里自己写的主服务设了 256 MB 内存、2 秒 CPU 硬限制，不是 Supabase 线上的主服务），连开发 Postgres 和 SeaweedFS，也经过要求 TLS 的 PgBouncer（自建 CA）。覆盖注册、登录、Node 和函数互相验证密码、事务、同步、长轮询唤醒、预签名上传下载、存储测试、SSRF 拒绝；一次带哈希的登录约 150–180 ms。`EdgeRuntime.waitUntil` 在镜像里单独探测过，响应后任务能跑完；但真实推送没有发送。③ `edge-runtime bundle` 打包成功（0.82 MB），Supabase CLI 2.122.0 能读 `config.toml`，但没有执行过 `functions deploy`。④ 备份：`cloud-backup.test.ts` 对开发 Postgres 的临时库和开发 S3 跑通加密、上传、恢复，口令错误、截断、坏 SQL 都不动数据。⑤ 迁移在模拟 Supabase 默认授权的临时 Postgres 上跑过，`anon`、`authenticated` 读写都被拒绝，真实 Data API 没测。⑥ 服务端 Docker 镜像重新构建，在空数据库上启动后自动迁移，healthz 和注册通过。⑦ 服务端测试和备份往返（pg_dump 17）也在临时的 Postgres 17 上通过。**没做：** GitHub 定时备份流程、curl 对真实 R2 的签名、Supavisor、暂停和恢复项目、真机连 Edge Function | 否 | worktree-agent-a1405ad7ede856910 |
-| F-80 | 新加坡生产部署与 APK 区域配置 | 开发中 | 已创建 Supabase `ap-southeast-1` 项目并部署函数；`healthz` 200、未登录接口 401，Data API 已关闭且 REST 入口 503。R2 Bucket 已建于 APAC 并设置 `backups/` 30 天过期。APK 区域请求标头测试先红后绿，`pnpm check` 通过；签名 APK、真实 R2 访问和备份仍待验证 | 否 | chore/singapore-deploy |
+| F-80 | 新加坡生产部署与 APK 区域配置 | 待验证 | Supabase `ap-southeast-1` 已部署；`healthz` 200，真实登录查询返回预期 401，指定区域响应头为新加坡。Data API 已关闭且 REST 入口 503。R2 APAC Bucket 的签名上传下载成功，`backups/` 设置 30 天过期。GitHub 手动备份 run 41289245178 成功；密文从 R2 恢复到本地 Postgres 17，11 张表及 3 条迁移版本存在。APK 区域请求标头测试先红后绿，`pnpm check` 通过；签名 APK 和真机仍待验证 | 否 | chore/singapore-deploy |
 
 ## 公开发布前必须解决
 

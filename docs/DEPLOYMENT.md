@@ -123,7 +123,7 @@ pnpm build:edge
 supabase functions deploy api
 ```
 
-`pnpm build:edge` 把服务端打成 `supabase/functions/api/_bundle/server.mjs`，这个文件不提交，**每次部署前都要重新生成**。`supabase/config.toml` 里已经写了 `verify_jwt = false`，接口用自己的令牌。部署时默认用 Docker 在本地打包，`--use-api`（不用 Docker）还没有试过。
+`pnpm build:edge` 把服务端打成 `supabase/functions/api/_bundle/server.mjs`，这个文件不提交，**每次部署前都要重新生成**。`supabase/config.toml` 里已经写了 `verify_jwt = false`，接口用自己的令牌。部署时默认用 Docker 在本地打包；镜像仓库无法访问时可加 `--use-api` 改为服务端打包，已在真实 Supabase 项目部署成功。
 
 验证：
 
