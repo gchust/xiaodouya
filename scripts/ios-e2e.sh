@@ -64,7 +64,7 @@ open -a Simulator --args -CurrentDeviceUDID "$UDID"
 xcrun simctl status_bar "$UDID" override --time 9:41 --batteryState charged --batteryLevel 100 || true
 
 # 崩溃和原生报错只留在这份日志里，失败时才知道发生了什么。
-xcrun simctl spawn "$UDID" log stream --level info \
+xcrun simctl spawn "$UDID" log stream \
   --predicate "process == \"app\"" >.artifacts/simulator.log 2>&1 &
 LOG_PID=$!
 
@@ -98,9 +98,13 @@ run_flow() {
   if maestro --device "$UDID" test --env "RUN_ID=$RUN_ID" \
     --debug-output .artifacts/maestro --flatten-debug-output "$flow"; then
     PASSED+=("$name")
+    # 每一步都有截图，通过的流程只留 takeScreenshot 的那些，否则产物一百多 MB，慢网下载不动。
+    rm -rf ".artifacts/maestro/$name/screenshots"
     return 0
   fi
   FAILED+=("$name")
+  # 断网的流程中途失败时要接回去，否则后面所有要联网的流程都跟着失败。
+  curl -fs -X POST -d '{}' http://127.0.0.1:18790/on >/dev/null || true
   # iOS 上控件是否可见取决于无障碍树，失败时留一份，不用猜。
   maestro --device "$UDID" hierarchy >".artifacts/hierarchy-$name.json" 2>/dev/null || true
   xcrun simctl io "$UDID" screenshot ".artifacts/failed-$name.png" || true

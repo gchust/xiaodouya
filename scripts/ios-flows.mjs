@@ -5,12 +5,16 @@ import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } fr
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const TEXT_MATCHER = /^(\s*(?:- )?(?:assertVisible|visible|text|tapOn): )(.+)$/;
+const TEXT_MATCHER = /^(\s*(?:- )?(assertVisible|visible|text|tapOn): )(.+)$/;
 
-function asContains(value) {
+function widen(key, value) {
   if (value.startsWith('{')) return null;
-  const bare = value.replace(/^["']|["']$/g, '');
-  return `".*${bare.replace(/^\.\*/, '').replace(/\.\*$/, '')}.*"`;
+  const bare = value
+    .replace(/^["']|["']$/g, '')
+    .replace(/^\.\*/, '')
+    .replace(/\.\*$/, '');
+  // 点击要按开头匹配：“包含”会先点中别处提到同样文字的地方，比如喂奶卡片上的“12:00 喂奶 110ml”。
+  return key === 'tapOn' ? `"${bare}.*"` : `".*${bare}.*"`;
 }
 
 /** 处理一个流程文件的文本。 */
@@ -27,8 +31,8 @@ export function adaptFlow(text) {
       // 比如“名字，Sprout2”里找 Sprout2。Android 上每段字是单独的元素，仍然按整段匹配。
       const matcher = TEXT_MATCHER.exec(line);
       if (matcher) {
-        const contains = asContains(matcher[2]);
-        if (contains) return `${matcher[1]}${contains}`;
+        const widened = widen(matcher[2], matcher[3]);
+        if (widened) return `${matcher[1]}${widened}`;
       }
       return line;
     })

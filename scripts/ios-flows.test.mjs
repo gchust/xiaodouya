@@ -11,7 +11,10 @@ test('文字匹配改成包含', () => {
   assert.equal(adaptFlow('- assertVisible: "70"'), '- assertVisible: ".*70.*"');
   assert.equal(adaptFlow('    visible: 喂奶 60ml'), '    visible: ".*喂奶 60ml.*"');
   assert.equal(adaptFlow('      text: 离线中.*'), '      text: ".*离线中.*"');
-  assert.equal(adaptFlow('- tapOn: 喂奶 110ml'), '- tapOn: ".*喂奶 110ml.*"');
+});
+
+test('点击按开头匹配，不会点中别处提到同样文字的地方', () => {
+  assert.equal(adaptFlow('- tapOn: 喂奶 110ml'), '- tapOn: "喂奶 110ml.*"');
 });
 
 test('按 id 的匹配、输入和否定断言不动', () => {

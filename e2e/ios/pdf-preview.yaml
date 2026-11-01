@@ -13,12 +13,13 @@ appId: com.gchust.xiaodouya
     visible: { id: document-screen }
     timeout: 10000
 - tapOn: { id: doc-file-sample-certificate.pdf }
-# Quick Look 的导航栏是系统界面，模拟器语言是英文。
+# Quick Look 是系统界面，这些 id 由 iOS 决定。关闭按钮在 iOS 26 上只有一个 ×，没有文字。
 - extendedWaitUntil:
-    visible: Done
+    visible: { id: QLOverlayDoneButtonAccessibilityIdentifier }
     timeout: 30000
+- assertVisible: { id: QLPDFViewControllerViewAccessibilityIdentifier }
 - takeScreenshot: .artifacts/e2e-ios-pdf-preview
-- tapOn: Done
+- tapOn: { id: QLOverlayDoneButtonAccessibilityIdentifier }
 - extendedWaitUntil:
     visible: { id: document-screen }
     timeout: 10000
