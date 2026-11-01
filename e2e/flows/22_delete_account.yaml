@@ -49,6 +49,7 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: export-data }
 - scrollUntilVisible:
     element: { id: delete-account }
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - tapOn: { id: delete-account }
 - extendedWaitUntil:
     visible: { id: delete-explanation }

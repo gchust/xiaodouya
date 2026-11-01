@@ -16,6 +16,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: sign-out }
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - tapOn: { id: sign-out }
 - tapOn: { id: signout-confirm }
 - extendedWaitUntil:

@@ -86,6 +86,11 @@ if [ ${#FLOWS[@]} -eq 0 ]; then
   while IFS= read -r flow; do FLOWS+=("$flow"); done < <(ls e2e/flows/*.yaml)
 fi
 
+photo_count() {
+  find "$HOME/Library/Developer/CoreSimulator/Devices/$UDID/data/Media/DCIM" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+PHOTOS_BEFORE="$(photo_count)"
+
 RUN_ID="$(date +%s)"
 PASSED=()
 FAILED=()
@@ -94,6 +99,8 @@ run_flow() {
   # 命令行里写的是 e2e/flows/xx.yaml，实际跑替换过的副本。
   flow="$FLOW_ROOT/${flow#e2e/}"
   name="$(basename "$flow" .yaml)"
+  # 流程 14b 要存到相册。系统权限弹窗不在 App 里，先授权；清除 App 状态后授权会丢，所以每条都授权一次。
+  xcrun simctl privacy "$UDID" grant photos-add "$BUNDLE_ID" 2>/dev/null || true
   echo "▶ $flow"
   if maestro --device "$UDID" test --env "RUN_ID=$RUN_ID" \
     --debug-output .artifacts/maestro --flatten-debug-output "$flow"; then
@@ -134,6 +141,17 @@ done
 echo "校验上传的文件"
 VERIFY=0
 node e2e/verify-uploads.mjs "$RUN_ID" || VERIFY=1
+# 流程 14b 存到相册的照片：不信界面提示，直接数模拟器相册里的文件。
+PHOTOS_AFTER="$(photo_count)"
+case "${FLOWS[*]}" in
+  *14b_*)
+    echo "相册文件：${PHOTOS_BEFORE} → ${PHOTOS_AFTER}"
+    if [ "$PHOTOS_AFTER" -le "$PHOTOS_BEFORE" ]; then
+      echo "相册里没有多出流程 14b 保存的照片" >&2
+      VERIFY=1
+    fi
+    ;;
+esac
 
 {
   echo "## iOS 流程结果（${DEVICE_TYPE}，${RUNTIME}）"
