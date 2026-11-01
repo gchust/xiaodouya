@@ -375,6 +375,19 @@ describe('同步', () => {
     const write = await sync(grandma.token, 0, [feedChange()]);
     expect(write.json.rejected[0]?.reason).toBe('forbidden');
   });
+  it('viewer 能读宝宝档案，但不能换头像', async () => {
+    const { admin, family } = await newFamily();
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const avatar = (id: string) => ({ id, kind: 'image', mime: 'image/jpeg', size: 1 });
+    const mine = randomUUID();
+    await sync(admin.token, 0, [babyChange(family.id, { avatar: avatar(mine) }, 1000)]);
+    const write = await sync(grandma.token, 0, [
+      babyChange(family.id, { avatar: avatar(randomUUID()) }, 2000),
+    ]);
+    expect(write.json.rejected).toEqual([{ id: family.id, reason: 'forbidden' }]);
+    const stored = write.json.records.find((r) => r.id === family.id);
+    expect((stored!.data as { avatar: { id: string } }).avatar.id).toBe(mine);
+  });
   it('大量记录分页拉取，不遗漏', async () => {
     const { admin } = await newFamily();
     const ids = new Set<string>();

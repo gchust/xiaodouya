@@ -30,6 +30,24 @@ const failures = [];
 const need = (ok, message) => {
   if (!ok) failures.push(message);
 };
+
+/** 从 JPEG 文件头读出实际的宽高：记录里写的尺寸不能证明图片真的被旋转或裁剪过。 */
+function jpegSize(bytes) {
+  let i = 2;
+  while (i + 9 < bytes.length) {
+    const marker = bytes[i + 1];
+    const isStartOfFrame =
+      marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+    if (isStartOfFrame) {
+      return {
+        height: (bytes[i + 5] << 8) | bytes[i + 6],
+        width: (bytes[i + 7] << 8) | bytes[i + 8],
+      };
+    }
+    i += 2 + ((bytes[i + 2] << 8) | bytes[i + 3]);
+  }
+  return null;
+}
 need(
   rows.some((r) => r.scope === 'memory' && r.variant === 'original'),
   '没有回忆原图',
@@ -42,6 +60,23 @@ need(
   rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
   '没有证件 PDF',
 );
+
+need(
+  rows.some((r) => r.scope === 'avatar' && r.variant === 'original'),
+  '没有头像原图',
+);
+need(
+  rows.some((r) => r.scope === 'avatar' && r.variant === 'thumb'),
+  '没有头像缩略图',
+);
+const [babyRow] = await sql`
+  SELECT r.data FROM records r
+  JOIN memberships ms ON ms.family_id = r.family_id
+  JOIN users u ON u.id = ms.user_id
+  WHERE u.email = ${`admin-${runId}@example.test`} AND r.collection = 'baby' AND r.deleted = false`;
+const avatar = babyRow?.data?.avatar;
+need(avatar?.mime === 'image/jpeg', '头像不是编辑后的 JPEG，撤销换图没有生效');
+const avatarSizes = new Map();
 
 for (const row of rows) {
   need(row.status === 'ready', `${row.object_key} 状态是 ${row.status}`);
@@ -56,8 +91,24 @@ for (const row of rows) {
   if (row.variant === 'thumb') {
     need(bytes[0] === 0xff && bytes[1] === 0xd8, `${row.object_key} 不是 JPEG 缩略图`);
   }
+  if (row.scope === 'avatar' && row.variant === 'original' && row.mime === 'image/jpeg') {
+    avatarSizes.set(row.id, jpegSize(bytes));
+  }
 }
 await sql.end();
+
+// 流程 14a：320×160 旋转后是 160×320，再裁成 160×160。
+const edited = [...avatarSizes.values()];
+need(
+  edited.some((size) => size?.width === 160 && size?.height === 320),
+  `没有旋转后的头像：${JSON.stringify(edited)}`,
+);
+const current = avatarSizes.get(avatar?.id);
+need(
+  current?.width === 160 && current?.height === 160,
+  `当前头像不是裁好的正方形：${JSON.stringify(current)}`,
+);
+need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
 console.log(`校验了 ${rows.length} 个对象`);
 if (failures.length > 0) {
   console.error(failures.join('\n'));
