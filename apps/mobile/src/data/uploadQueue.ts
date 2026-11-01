@@ -239,8 +239,8 @@ export class UploadQueue {
   private async runJob(job: UploadJob): Promise<boolean> {
     this.batchSent = 0;
     this.publish(true);
-    if (job.thumbSource && !(await this.prepareThumb(job))) return true;
     try {
+      if (job.thumbSource && !(await this.prepareThumb(job))) return true;
       const target = await this.transport.requestUrl({
         id: job.id,
         scope: job.scope,

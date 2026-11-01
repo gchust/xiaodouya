@@ -469,6 +469,9 @@ export async function clearLocalMedia(): Promise<void> {
   try {
     const dir = new Directory(Paths.document, 'uploads');
     if (dir.exists) dir.delete();
+    // 不清的话，下一个登录的人会看到“刚才选的照片没带回来”。
+    const marker = pendingPickMarker();
+    if (marker.exists) marker.delete();
     await Image.clearDiskCache();
     await Image.clearMemoryCache();
   } catch {

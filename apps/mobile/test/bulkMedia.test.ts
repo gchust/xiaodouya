@@ -294,6 +294,29 @@ describe('上传队列里的缩略图', () => {
     expect(calls).toContain('url:original:100');
   });
 
+  it('缩略图做好后存队列失败，后面的文件照样传，队列也不会停', async () => {
+    const db = new MemoryDb();
+    const save = db.saveJob.bind(db);
+    let failNext = false;
+    db.saveJob = async (j) => {
+      if (failNext && j.variant === 'thumb' && !j.thumbSource) {
+        failNext = false;
+        throw new Error('disk full');
+      }
+      await save(j);
+    };
+    const { transport, calls } = uploads();
+    const queue = new UploadQueue(db, transport, { sleepMs: () => 1 });
+    const jobs = [...pair(), ...pair()];
+    await queue.enqueue(jobs);
+    failNext = true;
+    await queue.idle();
+    await new Promise((r) => setTimeout(r, 20));
+    await queue.idle();
+    expect(calls.filter((c) => c.startsWith('url:original'))).toHaveLength(2);
+    expect(db.jobs.size).toBe(0);
+  });
+
   it('清空队列时正在生成的缩略图不会写回去', async () => {
     const db = new MemoryDb();
     let finish: (v: { size: number }) => void = () => {};
