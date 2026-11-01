@@ -158,10 +158,12 @@ describe('离线优先的记录和同步', () => {
   it('单条就超过分批大小时也要发出去，不能被挡在队列里', async () => {
     const a = device(server);
     await a.engine.start();
+    // 大在未知字段上：写入会校验内容，而 looseObject 保留未知字段，这样的记录能写进来，也确实很大。
     await a.store.write('letter', randomUUID(), {
       title: '',
-      text: 'x'.repeat(4 * 1024 * 1024),
+      text: '',
       at: 1000,
+      future: 'x'.repeat(4 * 1024 * 1024),
     });
     await a.store.write('event', randomUUID(), feed());
     await a.engine.syncNow();
