@@ -1,4 +1,5 @@
 import { metricUnits } from '../domain/units';
+import { nutritionReferenceFallback } from '../health/nutritionReferences';
 import type { RegionDefinition } from './types';
 
 /** 用户选了“其他地区”，或者地区这个版本还不认识。没有疫苗表就不做提醒，宁可不提示，也不套用别国的方案。 */
@@ -11,6 +12,7 @@ export const OTHER: RegionDefinition = {
   disclaimer: '这里只保存你们记下的疫苗和安排，不是接种建议，以诊所安排和健康手册为准。',
   emptyScheduleNote:
     '这个地区还没有内置的疫苗表。打过的和打算打的疫苗都可以自己记下来，家人都能看到。',
+  nutrition: nutritionReferenceFallback('当地的推荐量可能不同'),
   documentSuggestions: [
     '出生证明',
     '护照',

@@ -4,6 +4,8 @@ import {
   type CollectionData,
   type DocumentData,
   type EventData,
+  type FormulaData,
+  isFormulaData,
   isNewerVersion,
   isVaccinePlanData,
   type LetterData,
@@ -51,6 +53,8 @@ export interface Snapshot {
   events: RecordEntry<EventData>[];
   /** 家庭对疫苗本的配置。存在 event 集合里，但不是一条记录，所以不进时间线。 */
   vaccinePlans: RecordEntry<VaccinePlanData>[];
+  /** 家庭配置的奶粉。存在 event 集合里，但不是一条记录，所以不进时间线。 */
+  formulas: RecordEntry<FormulaData>[];
   moments: Entry<'moment'>[];
   letters: Entry<'letter'>[];
   documents: Entry<'document'>[];
@@ -61,6 +65,7 @@ const emptySnapshot: Snapshot = {
   baby: null,
   events: [],
   vaccinePlans: [],
+  formulas: [],
   moments: [],
   letters: [],
   documents: [],
@@ -103,6 +108,7 @@ export class RecordStore {
       baby: null,
       events: [],
       vaccinePlans: [],
+      formulas: [],
       moments: [],
       letters: [],
       documents: [],
@@ -121,7 +127,8 @@ export class RecordStore {
           }
           break;
         case 'event':
-          if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
+          if (isFormulaData(data)) next.formulas.push({ ...base, data });
+          else if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
           else next.events.push({ ...base, data: data as EventData });
           break;
         case 'moment':
@@ -140,6 +147,7 @@ export class RecordStore {
     next.moments.sort(byAtDesc);
     next.letters.sort(byAtDesc);
     next.documents.sort((a, b) => a.updatedAt - b.updatedAt);
+    next.formulas.sort((a, b) => a.data.name.localeCompare(b.data.name));
     this.snapshot = next;
     for (const listener of this.listeners) listener();
   }

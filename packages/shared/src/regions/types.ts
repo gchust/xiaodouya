@@ -1,5 +1,6 @@
 import type { Units } from '../domain/units';
 import type { VaccineDose } from '../domain/vaccines';
+import type { NutritionReferenceUse } from '../health/nutritionReferences';
 
 export type PaperSize = 'A4' | 'Letter';
 
@@ -31,6 +32,8 @@ export interface RegionDefinition {
   /** 没有疫苗表时，疫苗本上的解释。 */
   emptyScheduleNote?: string;
   documentSuggestions: readonly string[];
+  /** 每日营养的参考量用哪张表。本地原文没核对时写清楚，界面会显示这句话。 */
+  nutrition: NutritionReferenceUse;
   defaultUnits: Units;
   paperSize: PaperSize;
 }

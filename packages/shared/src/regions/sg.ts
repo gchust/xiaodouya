@@ -1,5 +1,6 @@
 import { metricUnits } from '../domain/units';
 import { defineSchedule } from '../domain/vaccines';
+import { nutritionReferenceFallback } from '../health/nutritionReferences';
 import type { RegionDefinition } from './types';
 
 /**
@@ -53,6 +54,7 @@ export const SG: RegionDefinition = {
   },
   reviewStatus: 'needs-review',
   disclaimer: '按新加坡国家儿童免疫计划排列，以诊所安排和健康手册为准。',
+  nutrition: nutritionReferenceFallback('新加坡当地的推荐量还没有核对原文'),
   documentSuggestions: [
     '出生证明',
     '护照',

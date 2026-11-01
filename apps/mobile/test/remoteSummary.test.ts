@@ -131,6 +131,11 @@ describe('event 集合里不是记录的内容', () => {
     expect(summarize([record(MOM, plan)])).toBeNull();
   });
 
+  it('家人配置奶粉同样不提示', () => {
+    const formula = { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} };
+    expect(summarize([record(MOM, formula)])).toBeNull();
+  });
+
   it('也不算进条数', () => {
     expect(summarize([record(MOM, feed(75)), record(MOM, plan)])?.message).toBe(
       '妈妈 记录了 喂奶 75ml',

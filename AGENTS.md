@@ -107,7 +107,7 @@ App 不是医疗器械，健康内容错了会伤人。
 ## 9. Git 工作流
 
 - `main` 保持可发布，功能在分支上开发，通过 PR 合并，CI 全绿才能合并。
-- 只改 `docs/` 和 Markdown 的提交不触发 CI（`ci.yml` 的 `paths-ignore`）。
+- `pull_request` 的 `paths-ignore`（`ci.yml`）看的是整个 PR 的差异：只有全是 `docs/` 和 Markdown 的 PR 才不跑 CI，含代码的 PR 只推文档也会重跑全量 CI。
 - 不要在 CI 运行中推送同一分支，除非已知这轮会失败：新推送会取消正在跑的 Android 流程（约 30 分钟）。
 - 提交信息用 Conventional Commits（`feat:`、`fix:`、`docs:`、`test:`、`ci:`、`chore:`），一个提交只做一件事。
 - 提交前确认 `git status` 里没有 `.env`、`.artifacts/`、APK 或真实数据。

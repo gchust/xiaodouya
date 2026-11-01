@@ -1,6 +1,8 @@
 import {
   activeSleep,
+  ageParts,
   ageText,
+  assessDayNutrition,
   dayNumber,
   describeEvent,
   dueVaccine,
@@ -12,6 +14,7 @@ import {
   formatDuration,
   formatHoursMinutes,
   formatVolume,
+  nutritionEntryText,
   planSchedule,
   summarize24h,
   summaryText,
@@ -21,7 +24,6 @@ import {
   vaccineReminderText,
   vaccineStatuses,
 } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -42,7 +44,9 @@ import {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
-import { pickFromLibrary, queueForUpload } from '../lib/media';
+import { saveAvatar } from '../lib/avatar';
+import { localDayBounds } from '../lib/dates';
+import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import {
@@ -65,11 +69,11 @@ export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
+  const router = useRouter();
   const { events, baby, pendingCount, vaccinePlans } = useRecords();
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();
-  const router = useRouter();
   const { toast } = useFeedback();
   // 只用来定时刷新。过滤记录要用渲染时的时间：否则刚保存的记录比 now 新，最多 15 秒不显示，家长可能重复记录。
   useNow(15_000);
@@ -88,6 +92,17 @@ export function TodayScreen() {
   const recent = timelineEntries(events, now);
   const vaccine = dueVaccine(
     vaccineStatuses(planSchedule(region, birthAt, vaccinePlans, data), birthAt, data, now),
+  );
+  const today = localDayBounds(now);
+  const nutritionText = nutritionEntryText(
+    assessDayNutrition({
+      events: data,
+      dayStart: today.start,
+      dayEnd: today.end,
+      now,
+      ageMonths: ageParts(birthAt, now).months,
+      reference: region.nutrition,
+    }),
   );
 
   const feedHint = !estimate.last
@@ -116,14 +131,7 @@ export function TodayScreen() {
     try {
       const [file] = await pickFromLibrary({ singleImage: true });
       if (!file) return;
-      const avatar = await queueForUpload(app.uploads, file, {
-        id: Crypto.randomUUID(),
-        scope: 'avatar',
-        videoWifiOnly: false,
-      });
-      // 选照片可能花了一会儿，用最新的档案，不要盖掉家人刚改的内容。
-      const latest = app.store.getSnapshot().baby ?? baby;
-      await app.write('baby', { ...latest.data, avatar }, latest.id);
+      await saveAvatar(app, file);
       toast('头像换好了');
     } catch (error) {
       toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
@@ -133,6 +141,7 @@ export function TodayScreen() {
   };
 
   const openFeed = () => sheet.open('喂奶', () => <FeedSheet />);
+  const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
   const syncLine =
     app.syncStatus === 'offline'
@@ -177,14 +186,18 @@ export function TodayScreen() {
         </View>
         <PressScale
           testID="baby-avatar"
-          accessibilityLabel="换宝宝的头像"
-          accessibilityState={{ busy: changingAvatar, disabled: !canChangeAvatar }}
-          disabled={changingAvatar || !canChangeAvatar}
+          accessibilityLabel={avatar ? '查看宝宝的头像' : '添加宝宝的头像'}
+          accessibilityState={{ busy: changingAvatar, disabled: !avatar && !canChangeAvatar }}
+          disabled={changingAvatar || (!avatar && !canChangeAvatar)}
           style={s.avatar}
-          onPress={() => void changeAvatar()}
+          onPress={() => {
+            // 还没有头像时没什么可放大的，直接选图。
+            if (avatar) router.push({ pathname: '/viewer', params: { avatar: '1' } });
+            else void changeAvatar();
+          }}
         >
-          {baby.data.avatar ? (
-            <MediaImage media={baby.data.avatar} variant="thumb" style={StyleSheet.absoluteFill} />
+          {avatar ? (
+            <MediaImage media={avatar} variant="thumb" style={StyleSheet.absoluteFill} />
           ) : (
             <Stripes style={StyleSheet.absoluteFill} />
           )}
@@ -258,6 +271,21 @@ export function TodayScreen() {
       ) : null}
 
       {events.length > 0 ? <NotificationPrompt /> : null}
+
+      {nutritionText ? (
+        <Pressable
+          testID="nutrition-entry"
+          accessibilityRole="button"
+          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
+          onPress={() => router.push('/nutrition')}
+          style={s.nutritionEntry}
+        >
+          <Text style={s.nutritionLabel}>奶粉营养</Text>
+          <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
+            {nutritionText} ›
+          </Muted>
+        </Pressable>
+      ) : null}
 
       <View style={s.listHeader}>
         <Text style={s.listTitle}>过去 24 小时</Text>
@@ -489,6 +517,17 @@ const s = StyleSheet.create({
   },
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
+  nutritionEntry: {
+    marginTop: 8,
+    marginHorizontal: spacing.page,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+  },
+  nutritionLabel: { fontSize: 13, color: colors.ink },
+  nutritionText: { flexShrink: 1, textAlign: 'right' },
   vaccineWrap: { marginHorizontal: spacing.page, marginTop: 16 },
   vaccineCard: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 4 },
   vaccineLabel: { fontSize: 11, color: colors.green, letterSpacing: 0.7 },
