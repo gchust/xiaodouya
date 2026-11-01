@@ -6,24 +6,41 @@ import { colors, motion } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Mono } from '../ui/primitives';
 import { useApp, useUploadProgress } from './app';
+import { uploadCardStatus } from './uploadStatus';
 
-/** 顶部上传进度。排队等 Wi-Fi 或失败时也如实显示，不让用户以为传完了。 */
+/**
+ * 顶部上传进度。排队等 Wi-Fi 或失败时也如实显示，不让用户以为传完了。
+ * 它盖在页面标题和返回链接上面，所以可以关掉，而且除了自己的按钮，点击都要穿透给下面的页面。
+ */
 export function UploadCard() {
   const { uploads, sessionState } = useApp();
   const progress = useUploadProgress();
   const insets = useSafeAreaInsets();
   const { toast } = useFeedback();
   const visible = useSharedValue(0);
+  const fill = useSharedValue(0);
   const wasActive = useRef(false);
   const [shown, setShown] = useState(false);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
 
+  const status = uploadCardStatus(progress);
   const hasWork = progress.total > 0 || progress.failedCount > 0;
-  const show = sessionState === 'ready' && hasWork;
+  const show = sessionState === 'ready' && hasWork && dismissedKey !== status.key;
+  const percent = Math.round(progress.fraction * 100);
+
+  // 这一批传完了就忘掉：下一批文件的状态可能和关掉时一样，但那是新的事。
+  useEffect(() => {
+    if (!hasWork) setDismissedKey(null);
+  }, [hasWork]);
 
   useEffect(() => {
     if (show) setShown(true);
     visible.value = withTiming(show ? 1 : 0, { duration: 340, easing: motion.easing });
   }, [show, visible]);
+
+  useEffect(() => {
+    fill.value = withTiming(percent, { duration: 150 });
+  }, [percent, fill]);
 
   useEffect(() => {
     if (progress.total > 0) wasActive.current = true;
@@ -37,50 +54,59 @@ export function UploadCard() {
     opacity: visible.value,
     transform: [{ translateY: (1 - visible.value) * -90 }],
   }));
+  const fillStyle = useAnimatedStyle(() => ({ width: `${fill.value}%` }));
 
   if (!shown) return null;
-  const percent = Math.round(progress.fraction * 100);
-  let text = `正在上传 ${progress.total} 个文件`;
-  if (progress.failedCount > 0 && progress.total === 0)
-    text = `${progress.failedCount} 个文件上传失败`;
-  else if (progress.waitingForWifi) text = `${progress.total} 个视频等 Wi-Fi 再上传`;
-  else if (!progress.active && progress.total > 0) text = `${progress.total} 个文件等待上传`;
 
   return (
     <Animated.View
       testID={show ? 'upload-card' : undefined}
-      pointerEvents={progress.failedCount > 0 ? 'auto' : 'none'}
+      pointerEvents={show ? 'box-none' : 'none'}
       style={[s.card, { top: insets.top + 6 }, style]}
     >
-      <View style={s.row}>
-        <Text testID="upload-text" style={{ fontSize: 12, color: colors.ink, flexShrink: 1 }}>
-          {text}
-        </Text>
+      <View style={s.row} pointerEvents="box-none">
+        <View style={s.main} pointerEvents="none">
+          <Text testID="upload-text" style={{ fontSize: 12, color: colors.ink, flexShrink: 1 }}>
+            {status.text}
+          </Text>
+          {progress.failedCount > 0 ? null : (
+            <Mono style={{ fontSize: 12, color: colors.muted }}>{percent}%</Mono>
+          )}
+        </View>
         {progress.failedCount > 0 ? (
           <Pressable
             testID="upload-retry"
             accessibilityRole="button"
             accessibilityLabel="重试上传"
-            hitSlop={10}
+            hitSlop={14}
             onPress={() => void uploads.retryFailed()}
           >
             <Text style={{ fontSize: 12, color: colors.accent }}>重试</Text>
           </Pressable>
-        ) : (
-          <Mono style={{ fontSize: 12, color: colors.muted }}>{percent}%</Mono>
-        )}
-      </View>
-      {progress.failedReason ? (
-        <Text
-          testID="upload-reason"
-          style={{ fontSize: 11, color: colors.danger }}
-          numberOfLines={2}
+        ) : null}
+        <Pressable
+          testID="upload-dismiss"
+          accessibilityRole="button"
+          accessibilityLabel="先收起上传提示"
+          hitSlop={14}
+          onPress={() => setDismissedKey(status.key)}
         >
-          {progress.failedReason}
-        </Text>
-      ) : null}
-      <View style={s.track}>
-        <View style={[s.fill, { width: `${percent}%` }]} />
+          <Text style={s.dismiss}>×</Text>
+        </Pressable>
+      </View>
+      <View style={{ gap: 7 }} pointerEvents="none">
+        {progress.failedReason ? (
+          <Text
+            testID="upload-reason"
+            style={{ fontSize: 11, color: colors.danger }}
+            numberOfLines={2}
+          >
+            {progress.failedReason}
+          </Text>
+        ) : null}
+        <View style={s.track}>
+          <Animated.View style={[s.fill, fillStyle]} />
+        </View>
       </View>
     </Animated.View>
   );
@@ -104,7 +130,9 @@ const s = StyleSheet.create({
     shadowRadius: 9,
     shadowOffset: { width: 0, height: 6 },
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  main: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  dismiss: { fontSize: 15, lineHeight: 16, color: colors.muted },
   track: { height: 4, borderRadius: 2, backgroundColor: '#efe7dc', overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.accent },
 });
