@@ -259,7 +259,7 @@ function Photos() {
                 testID={`photo-${cell.id}`}
                 accessibilityRole="imagebutton"
                 accessibilityLabel={cell.kind === 'video' ? '播放视频' : '查看照片'}
-                style={[s.gridCell, { width: cellWidth }]}
+                style={[s.gridCell, { width: cellWidth, height: cellWidth }]}
                 onPress={() =>
                   router.push({ pathname: '/viewer', params: { moment: moment.id, index } })
                 }
@@ -426,7 +426,6 @@ const s = StyleSheet.create({
   groupTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink, flexShrink: 1 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP },
   gridCell: {
-    aspectRatio: 1,
     borderRadius: 8,
     overflow: 'hidden',
     backgroundColor: colors.line,

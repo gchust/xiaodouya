@@ -48,6 +48,8 @@
 
 ## React Native 和 Expo
 
+- **换行布局里，子元素全是绝对定位时，`aspectRatio` 算出的高度是 0。** 照片墙因此显示“1 项”却一片空白，也没有任何报错。给格子明确的宽和高。
+- **截图存了就要打开看。** 照片墙这个 Bug 的截图一直在，是 E2E 失败后才发现的。
 - **打开弹层时要收起 Toast。** Toast 显示在弹层之上，会盖住底部按钮。
 - **`StyleSheet.absoluteFillObject` 在 RN 0.88 已移除。** 用 `absoluteFill` 或写明四个方向。
 - **自定义 Tab 栏的类型从 `expo-router/js-tabs` 导入。** expo-router 58 自带 react-navigation，props 是 `emitter` 和 `navigateToTab`，不是 `navigation`。
