@@ -70,6 +70,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: region-confirm }
     timeout: 10000
+# Toast 可能盖住底部标签，等它消失再点
+- extendedWaitUntil:
+    notVisible: 已换成新加坡
+    timeout: 15000
 - tapOn: { id: tab-today }
 - extendedWaitUntil:
     visible: { id: today-screen }

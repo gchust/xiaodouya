@@ -45,7 +45,10 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     text: .*CDC.*
 - takeScreenshot: .artifacts/e2e-16-us-other-records
-# 喂奶按盎司
+# 喂奶按盎司。Toast 可能盖住底部标签，等它消失再点
+- extendedWaitUntil:
+    notVisible: 已换成美国
+    timeout: 15000
 - tapOn: { id: tab-today }
 - extendedWaitUntil:
     visible: { id: today-screen }
@@ -109,6 +112,10 @@ appId: com.gchust.xiaodouya
 # 卡介苗又回到表里，还是已接种
 - assertVisible:
     text: 已接种 .*
+# Toast 可能盖住底部标签，等它消失再点
+- extendedWaitUntil:
+    notVisible: 已换成新加坡
+    timeout: 15000
 - tapOn: { id: tab-today }
 - extendedWaitUntil:
     visible: { id: today-screen }
