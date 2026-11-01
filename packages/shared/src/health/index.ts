@@ -123,6 +123,7 @@ export function todayInsight(
     (e) =>
       e.type !== 'vaccine' &&
       e.type !== 'growth' &&
+      e.at >= birthAt &&
       now - e.at >= MIN_COVERAGE_MS &&
       now - e.at <= COVERAGE_LOOKBACK_MS,
   );

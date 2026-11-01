@@ -308,6 +308,12 @@ describe('补记不能让提示误判已经记满一天', () => {
     expect(r?.tone).toBe('neutral');
   });
 
+  it('早于出生的记录（多半是选错了）也不算记满一天', () => {
+    const newborn = now - 3 * HOUR;
+    const r = todayInsight([...today, { type: 'feed', at: now - 30 * HOUR, ml: 90 }], newborn, now);
+    expect(r?.tone).toBe('neutral');
+  });
+
   it('一直在记的家庭，偏少的提醒不能被挡住', () => {
     const r = todayInsight([...today, { type: 'feed', at: now - 30 * HOUR, ml: 90 }], birth, now);
     expect(r?.tone).toBe('attention');
