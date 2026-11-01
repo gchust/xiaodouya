@@ -1,6 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { formatClock, formatFullDate } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -375,7 +374,8 @@ export function BabySetup() {
         birthLengthCm: l,
         hospital: hospital.trim() || undefined,
       },
-      Crypto.randomUUID(),
+      // 用家庭 id 做宝宝记录的 id：一个家庭一份档案，两台手机同时建档也只会有一条。
+      app.me?.family?.id,
     );
   };
 

@@ -288,6 +288,9 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
       LEFT JOIN memberships m ON m.user_id = u.id
       WHERE s.token_hash = ${sha256(token)} AND s.expires_at > now()`;
     if (!row) fail(401, 'unauthenticated', '登录已过期，请重新登录');
+    // 常用的手机不应该到期被踢：剩余不足一半时续期（不是每次都写库）。
+    await sql`UPDATE sessions SET expires_at = now() + interval '1 day' * ${SESSION_DAYS}
+      WHERE token_hash = ${sha256(token)} AND expires_at < now() + interval '1 day' * ${SESSION_DAYS / 2}`;
     c.set('user', {
       id: row.id,
       email: row.email,
@@ -489,6 +492,7 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
         for (const change of body.changes) {
           if (!canWriteCollection(m.role, change.collection)) {
             rejected.push({ id: change.id, reason: 'forbidden' });
+            conflicted.push(change.id);
             continue;
           }
           const data = change.deleted
@@ -496,6 +500,7 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
             : parseCollectionData(change.collection, change.data);
           if (data === null || data === undefined) {
             rejected.push({ id: change.id, reason: 'invalid' });
+            conflicted.push(change.id);
             continue;
           }
           const [existing] = await tx<
@@ -541,36 +546,38 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
     }
 
     const readable = collections.filter((name) => canReadCollection(m.role, name));
+    // 顺序不能换：先定上界 S，再查 seq <= S。写入在持有家庭行锁时提交，所以 S 之前的记录一定可见。
+    // 如果先查记录再读 seq，中间提交的记录会被游标直接跳过，再也同步不到。
+    const [family] = await sql<
+      { seq: string }[]
+    >`SELECT seq FROM families WHERE id = ${m.familyId}`;
+    const upperBound = Number(family?.seq ?? body.cursor);
     const rows = await sql<RecordRow[]>`
       SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
-      WHERE family_id = ${m.familyId} AND seq > ${body.cursor} AND collection = ANY(${readable})
+      WHERE family_id = ${m.familyId} AND seq > ${body.cursor} AND seq <= ${upperBound}
+        AND collection = ANY(${readable})
       ORDER BY seq LIMIT ${SYNC_PAGE_SIZE + 1}`;
     const hasMore = rows.length > SYNC_PAGE_SIZE;
     const page = rows.slice(0, SYNC_PAGE_SIZE);
-    let cursor = body.cursor;
-    if (hasMore) {
-      cursor = Number(page[page.length - 1]?.seq ?? body.cursor);
-    } else {
-      // 没有更多可读记录时直接跳到家庭最新 seq，viewer 不必反复扫描读不到的记录。
-      const [family] = await sql<
-        { seq: string }[]
-      >`SELECT seq FROM families WHERE id = ${m.familyId}`;
-      cursor = Number(family?.seq ?? body.cursor);
-    }
+    const cursor = hasMore
+      ? Number(page[page.length - 1]?.seq ?? body.cursor)
+      : Math.max(upperBound, body.cursor);
     const records = page.map(toServerRecord);
     if (conflicted.length > 0) {
-      // 客户端手里的是旧版本，但服务端版本可能已在游标之前，必须显式补发。
+      // 客户端手里的版本没有生效，而服务端版本可能已在游标之前，必须显式补发。
+      // 一定要按可读集合过滤，否则 viewer 能用猜到的 id 读到证件。
       const seen = new Set(records.map((r) => r.id));
       const missing = conflicted.filter((id) => !seen.has(id));
       if (missing.length > 0) {
         const extra = await sql<RecordRow[]>`
           SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
-          WHERE family_id = ${m.familyId} AND id = ANY(${missing}::uuid[])`;
+          WHERE family_id = ${m.familyId} AND id = ANY(${missing}::uuid[])
+            AND collection = ANY(${readable})`;
         records.push(...extra.map(toServerRecord));
       }
     }
     await sql`UPDATE memberships SET last_seen_at = now() WHERE family_id = ${m.familyId} AND user_id = ${user.id}`;
-    return c.json<SyncResponse>({ cursor, hasMore, records, rejected });
+    return c.json<SyncResponse>({ cursor, hasMore, records, rejected, role: m.role });
   });
 
   /** 长轮询：比 WebSocket 简单，反向代理不用特殊配置。App 在前台时循环调用。 */
@@ -690,6 +697,14 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
     if (row.status === 'ready') return c.json({ ok: true });
     const storage = await storageById(sql, config, m.familyId, row.storage_config_id);
     if (!storage) fail(503, 'no_storage', '存储配置不可用');
+    if (storage.configId && storage.endpoint) {
+      // 地址可能在保存之后改为解析到内网，连接前再查一次。
+      try {
+        await assertEndpointAllowed(storage.endpoint, config);
+      } catch {
+        fail(503, 'no_storage', '存储地址不可用');
+      }
+    }
     const head = await headObject(storage, row.object_key);
     if (!head) fail(409, 'not_uploaded', '文件还没有上传完成');
     // 预签名链接不限制大小，这里补上校验，防止绕过上传大小限制。

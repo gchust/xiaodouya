@@ -17,6 +17,9 @@ export interface LocalDb {
   put(record: StoredRecord): Promise<void>;
   putMany(records: StoredRecord[], cursor: number): Promise<void>;
   getCursor(): Promise<number>;
+  getMeta(key: string): Promise<string | null>;
+  setMeta(key: string, value: string): Promise<void>;
+  deleteCollections(collections: readonly Collection[]): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -198,16 +201,12 @@ export class RecordStore {
     const toPersist = new Map<string, StoredRecord>();
     for (const record of sent) {
       if (!this.isUnchanged(record)) continue;
-      if (rejectedIds.has(record.id)) {
-        // 服务端明确拒绝：不再重试，否则发件箱会被永远卡住。
-        const cleaned = { ...record, dirty: false, deleted: true };
-        toPersist.set(record.id, cleaned);
-        this.records.set(record.id, cleaned);
-      } else {
-        const cleaned = { ...record, dirty: false };
-        toPersist.set(record.id, cleaned);
-        this.records.set(record.id, cleaned);
-      }
+      // 被拒绝的记录也不再重试，否则发件箱会卡死。但数据要留着：服务端有更权威的版本时，
+      // 下面的 incoming 会覆盖它；没有的话，这是用户写的内容，不能悄悄删掉。
+      void rejectedIds;
+      const cleaned = { ...record, dirty: false };
+      toPersist.set(record.id, cleaned);
+      this.records.set(record.id, cleaned);
     }
     const applied: ServerRecord[] = [];
     for (const remote of incoming) {
@@ -237,6 +236,15 @@ export class RecordStore {
     await this.db.putMany([...toPersist.values()], cursor);
     this.rebuild();
     return applied;
+  }
+
+  /** 权限变小后，清掉现在无权查看的数据。 */
+  async purgeCollections(collections: readonly Collection[]): Promise<void> {
+    await this.db.deleteCollections(collections);
+    for (const [id, record] of this.records) {
+      if (collections.includes(record.collection)) this.records.delete(id);
+    }
+    this.rebuild();
   }
 
   async clear(): Promise<void> {

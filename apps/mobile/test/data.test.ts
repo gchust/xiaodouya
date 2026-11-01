@@ -28,9 +28,21 @@ class MemoryDb implements LocalDb, UploadQueueDb {
   async getCursor() {
     return this.cursor;
   }
+  meta = new Map<string, string>();
+  async getMeta(key: string) {
+    return this.meta.get(key) ?? null;
+  }
+  async setMeta(key: string, value: string) {
+    this.meta.set(key, value);
+  }
+  async deleteCollections(collections: readonly string[]) {
+    for (const [id, r] of this.records)
+      if (collections.includes(r.collection)) this.records.delete(id);
+  }
   async clear() {
     this.records.clear();
     this.cursor = 0;
+    this.meta.clear();
     this.jobs.clear();
   }
   async loadJobs() {
@@ -52,6 +64,8 @@ class FakeServer implements SyncTransport {
   requests: SyncRequest[] = [];
   rejectIds = new Set<string>();
   pageSize = 500;
+  role: 'admin' | 'caregiver' | 'viewer' = 'admin';
+  hideEvents = false;
 
   async sync(req: SyncRequest): Promise<SyncResponse> {
     this.requests.push(req);
@@ -71,11 +85,20 @@ class FakeServer implements SyncTransport {
       this.log = this.log.filter((r) => r.id !== change.id);
       this.log.push({ ...change, seq: ++this.seq, createdBy: null });
     }
-    const after = this.log.filter((r) => r.seq > req.cursor).sort((a, b) => a.seq - b.seq);
+    const after = this.log
+      .filter((r) => r.seq > req.cursor)
+      .filter((r) => !this.hideEvents || (r.collection !== 'event' && r.collection !== 'document'))
+      .sort((a, b) => a.seq - b.seq);
     const page = after.slice(0, this.pageSize);
     const hasMore = after.length > this.pageSize;
     const records = [...page, ...conflicted.filter((c) => !page.some((p) => p.id === c.id))];
-    return { cursor: hasMore ? page[page.length - 1]!.seq : this.seq, hasMore, records, rejected };
+    return {
+      cursor: hasMore ? page[page.length - 1]!.seq : this.seq,
+      hasMore,
+      records,
+      rejected,
+      role: this.role,
+    };
   }
   async wait(_cursor: number, signal: AbortSignal) {
     await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve()));
@@ -469,5 +492,186 @@ describe('上传队列', () => {
       if (queue.getProgress().total > 0) expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
     }
     expect(queue.getProgress().total).toBe(0);
+  });
+});
+
+describe('审查发现的客户端问题（回归）', () => {
+  it('被拒绝的记录保留在本地，不会悄悄消失', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    await a.engine.start();
+    const id = randomUUID();
+    server.rejectIds.add(id);
+    await a.store.write('letter', id, { title: '很长的信', text: '内容', at: 1 });
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().letters).toHaveLength(1);
+    expect(a.store.getSnapshot().pendingCount).toBe(0);
+    a.engine.stop();
+  });
+
+  it('被拒绝时告诉用户', async () => {
+    const server = new FakeServer();
+    const db = new MemoryDb();
+    const store = new RecordStore(db);
+    const rejected: number[] = [];
+    const engine = new SyncEngine(store, db, server, { onRejected: (n) => rejected.push(n) });
+    await engine.start();
+    const id = randomUUID();
+    server.rejectIds.add(id);
+    await store.write('event', id, feed());
+    await engine.syncNow();
+    expect(rejected).toEqual([1]);
+    engine.stop();
+  });
+
+  it('viewer 升级后重新拉取历史记录', async () => {
+    const server = new FakeServer();
+    const seed = device(server);
+    await seed.engine.start();
+    await seed.store.write('event', randomUUID(), feed(111));
+    await seed.engine.syncNow();
+    seed.engine.stop();
+
+    const a = device(server);
+    server.role = 'viewer';
+    server.hideEvents = true;
+    await a.engine.start();
+    expect(a.store.getSnapshot().events).toHaveLength(0);
+    expect(a.db.cursor).toBeGreaterThan(0);
+
+    server.role = 'caregiver';
+    server.hideEvents = false;
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().events).toHaveLength(1);
+    a.engine.stop();
+  });
+
+  it('角色在 App 重启后也能识别变化', async () => {
+    const server = new FakeServer();
+    const seed = device(server);
+    await seed.engine.start();
+    await seed.store.write('event', randomUUID(), feed());
+    await seed.engine.syncNow();
+    seed.engine.stop();
+
+    const db = new MemoryDb();
+    server.role = 'viewer';
+    server.hideEvents = true;
+    const first = new SyncEngine(new RecordStore(db), db, server);
+    await first.start();
+    first.stop();
+
+    server.role = 'caregiver';
+    server.hideEvents = false;
+    const store = new RecordStore(db);
+    await store.load();
+    const second = new SyncEngine(store, db, server);
+    await second.start();
+    expect(store.getSnapshot().events).toHaveLength(1);
+    second.stop();
+  });
+
+  it('降级成 viewer 后清掉本地读不到的记录和证件', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('event', randomUUID(), feed());
+    await a.store.write('document', randomUUID(), { name: '虚构证件', files: [] });
+    await a.store.write('letter', randomUUID(), { title: '信', text: '', at: 1 });
+    await a.engine.syncNow();
+    server.role = 'viewer';
+    server.hideEvents = true;
+    await a.engine.syncNow();
+    const snap = a.store.getSnapshot();
+    expect(snap.events).toHaveLength(0);
+    expect(snap.documents).toHaveLength(0);
+    expect(snap.letters).toHaveLength(1);
+    expect([...a.db.records.values()].some((r) => r.collection === 'document')).toBe(false);
+    a.engine.stop();
+  });
+
+  it('同步一直失败时，长轮询不会空转', async () => {
+    class Failing extends FakeServer {
+      waits = 0;
+      override async sync(): Promise<SyncResponse> {
+        throw new Error('500');
+      }
+      override async wait(): Promise<{ changed: boolean }> {
+        this.waits += 1;
+        return { changed: true };
+      }
+    }
+    const server = new Failing();
+    const db = new MemoryDb();
+    const engine = new SyncEngine(new RecordStore(db), db, server);
+    await engine.start();
+    await new Promise((r) => setTimeout(r, 150));
+    engine.stop();
+    expect(server.waits).toBeLessThan(5);
+  });
+
+  it('首次同步完成后才通知，失败时不算完成', async () => {
+    const server = new FakeServer();
+    server.offline = true;
+    const db = new MemoryDb();
+    let synced = 0;
+    const engine = new SyncEngine(new RecordStore(db), db, server, {
+      onSynced: () => {
+        synced += 1;
+      },
+    });
+    await engine.start();
+    expect(synced).toBe(0);
+    server.offline = false;
+    await engine.syncNow();
+    expect(synced).toBe(1);
+    engine.stop();
+  });
+
+  it('本地文件不见了：标记失败，不卡住队列', async () => {
+    const bad = job();
+    const good = job();
+    const { transport, calls } = fakeUploads({
+      put: async (j) => {
+        if (j.id === bad.id) throw new UploadHttpError(410, 'local_missing', '本地文件不见了');
+        calls.push(`put:${j.key}`);
+        return { status: 200 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport, { sleepMs: () => 1 });
+    await queue.enqueue([bad, good]);
+    await new Promise((r) => setTimeout(r, 30));
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(1);
+    expect(calls.some((c) => c.startsWith('done:') && c.includes(good.id))).toBe(true);
+    queue.stop();
+  });
+
+  it('某个文件一直传不上去时，不挡住后面的文件', async () => {
+    const stuck = job();
+    const good = job();
+    const { transport, calls } = fakeUploads({
+      put: async (j, _t, onProgress) => {
+        if (j.id === stuck.id) return { status: 500 };
+        onProgress(j.size);
+        return { status: 200 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport, { sleepMs: () => 1 });
+    await queue.enqueue([stuck, good]);
+    await new Promise((r) => setTimeout(r, 40));
+    await queue.idle();
+    expect(calls.some((c) => c.startsWith('done:') && c.includes(good.id))).toBe(true);
+    queue.stop();
+  });
+
+  it('存储持续返回错误时，重试有上限，最后标记失败', async () => {
+    const { transport } = fakeUploads({ put: async () => ({ status: 400 }) });
+    const queue = new UploadQueue(new MemoryDb(), transport, { sleepMs: () => 1 });
+    await queue.enqueue([job()]);
+    await new Promise((r) => setTimeout(r, 120));
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(1);
+    queue.stop();
   });
 });

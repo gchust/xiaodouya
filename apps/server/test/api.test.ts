@@ -390,6 +390,144 @@ describe('同步', () => {
   });
 });
 
+describe('审查发现的同步问题（回归）', () => {
+  it('写入和拉取并发时，读者不会漏掉任何记录', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const written = new Set<string>();
+    let writing = true;
+    const writers = Array.from({ length: 4 }, async () => {
+      for (let i = 0; i < 40; i++) {
+        const change = feedChange();
+        await sync(admin.token, 0, [change]);
+        written.add(change.id);
+      }
+    });
+    const done = Promise.all(writers).then(() => {
+      writing = false;
+    });
+    const seen = new Set<string>();
+    let cursor = 0;
+    while (writing) {
+      const { json } = await sync(mom.token, cursor);
+      for (const r of json.records) seen.add(r.id);
+      cursor = json.cursor;
+    }
+    await done;
+    for (let guard = 0; guard < 20; guard++) {
+      const { json } = await sync(mom.token, cursor);
+      for (const r of json.records) seen.add(r.id);
+      cursor = json.cursor;
+      if (!json.hasMore && json.records.length === 0) break;
+    }
+    expect([...written].filter((id) => !seen.has(id))).toEqual([]);
+  });
+  it('分页查询和读 seq 之间有写入提交时，不会被游标跳过', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const before = feedChange();
+    await sync(admin.token, 0, [before]);
+
+    // 在“读家庭 seq”的语句前后各插入一次写入，覆盖两种语句顺序下的竞争窗口。
+    const writer = createApp({ sql, config });
+    const raw = sql;
+    const injected: string[] = [];
+    let armed = true;
+    const inject = async () => {
+      const change = feedChange();
+      injected.push(change.id);
+      const response = await writer.request('/v1/sync', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${admin.token}` },
+        body: JSON.stringify({ cursor: 0, changes: [change] }),
+      });
+      expect(response.status).toBe(200);
+    };
+    const racing = new Proxy(raw, {
+      apply(target, thisArg, args: unknown[]) {
+        const text = Array.isArray(args[0]) ? (args[0] as string[]).join('?') : '';
+        if (armed && text.includes('SELECT seq FROM families') && !text.includes('FOR UPDATE')) {
+          armed = false;
+          return (async () => {
+            await inject();
+            const result = await Reflect.apply(target, thisArg, args);
+            await inject();
+            return result;
+          })();
+        }
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+    app = createApp({ sql: racing as Sql, config });
+
+    const seen = new Set<string>();
+    let cursor = 0;
+    for (let i = 0; i < 4; i++) {
+      const { json } = await sync(mom.token, cursor);
+      for (const r of json.records) seen.add(r.id);
+      cursor = json.cursor;
+    }
+    expect(injected).toHaveLength(2);
+    expect([before.id, ...injected].filter((id) => !seen.has(id))).toEqual([]);
+  });
+  it('响应里带当前角色，客户端才能发现权限变化', async () => {
+    const { admin } = await newFamily();
+    expect((await sync(admin.token, 0)).json.role).toBe('admin');
+  });
+  it('没有写权限时返回服务端当前版本，让客户端收敛而不是丢数据', async () => {
+    const { admin } = await newFamily();
+    const member = await join(admin.token, 'caregiver', '妈妈');
+    const id = randomUUID();
+    const moment = (title: string, updatedAt: number) => ({
+      id,
+      collection: 'moment' as const,
+      data: { title, text: '', at: 1, milestone: false, media: [] },
+      deleted: false,
+      updatedAt,
+    });
+    await sync(member.token, 0, [moment('原来的', 1000)]);
+    await api('PATCH', `/v1/family/members/${member.user.id}`, {
+      token: admin.token,
+      body: { role: 'viewer' },
+    });
+    const { json } = await sync(member.token, 999_999, [moment('离线改的', 2000)]);
+    expect(json.rejected[0]?.reason).toBe('forbidden');
+    expect((json.records.find((r) => r.id === id)!.data as { title: string }).title).toBe('原来的');
+  });
+  it('补发服务端版本时不能泄露 viewer 读不到的集合', async () => {
+    const { admin } = await newFamily();
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const secret = randomUUID();
+    await sync(admin.token, 0, [
+      {
+        id: secret,
+        collection: 'document',
+        data: { name: '虚构证件', number: 'T0000000X', files: [] },
+        deleted: false,
+        updatedAt: 1,
+      },
+    ]);
+    const probe = await sync(grandma.token, 999_999, [
+      {
+        id: secret,
+        collection: 'document',
+        data: { name: '探测', files: [] },
+        deleted: false,
+        updatedAt: 2,
+      },
+    ]);
+    expect(probe.json.records.map((r) => r.id)).not.toContain(secret);
+  });
+  it('登录会话在使用时自动延长，常用的手机不会到期被踢', async () => {
+    const user = await newUser();
+    await sql`UPDATE sessions SET expires_at = now() + interval '10 days' WHERE user_id = ${user.user.id}`;
+    await api('GET', '/v1/me', { token: user.token });
+    const [row] = await sql<{ days: number }[]>`
+      SELECT EXTRACT(DAY FROM expires_at - now())::int AS days FROM sessions WHERE user_id = ${user.user.id}`;
+    expect(row?.days).toBeGreaterThan(300);
+  });
+});
+
 describe('推送', () => {
   async function familyWithToken(prefs: Record<string, unknown> = {}) {
     const { admin } = await newFamily();
@@ -706,6 +844,12 @@ describe('存储设置', () => {
       'https://192.168.1.1',
       'https://169.254.169.254',
       'https://[::1]',
+      'https://[::ffff:127.0.0.1]',
+      'https://[::ffff:10.0.0.1]',
+      'https://[::7f00:1]',
+      'https://[64:ff9b::7f00:1]',
+      'https://[fe80::1]',
+      'https://[fd00::1]',
       'http://example.com',
     ]) {
       await expect(assertEndpointAllowed(endpoint, strict)).rejects.toThrow();

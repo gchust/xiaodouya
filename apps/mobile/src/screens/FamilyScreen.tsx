@@ -9,7 +9,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecords } from '../lib/app';
+import { useApp, useNow, useRecords, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -31,6 +31,8 @@ export function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const app = useApp();
   const { moments, letters, baby, pendingCount } = useRecords();
+  const uploadProgress = useUploadProgress();
+  const pendingFiles = uploadProgress.total + uploadProgress.failedCount;
   const sheet = useSheet();
   const router = useRouter();
   const { toast } = useFeedback();
@@ -65,17 +67,18 @@ export function FamilyScreen() {
   const otherName = others.length === 1 ? (others[0]?.label ?? '家人') : '家人';
 
   const signOut = () => {
+    const unsynced = pendingCount > 0 || pendingFiles > 0;
     sheet.open('退出登录', () => (
       <>
         <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-          {pendingCount > 0
-            ? `还有 ${pendingCount} 条记录没有同步到服务器，退出后这些记录会丢失。建议联网同步后再退出。`
+          {unsynced
+            ? `还有${pendingCount ? ` ${pendingCount} 条记录` : ''}${pendingCount && pendingFiles ? '和' : ''}${pendingFiles ? ` ${pendingFiles} 个文件` : ''}没有传到服务器，退出后会丢失。建议联网（视频要连 Wi-Fi）传完后再退出。`
             : '退出后手机上的数据会被清除，重新登录后会从服务器同步回来。'}
         </Muted>
         <Button
           testID="signout-confirm"
-          tone={pendingCount > 0 ? 'outline' : 'accent'}
-          label={pendingCount > 0 ? '仍然退出' : '退出登录'}
+          tone={unsynced ? 'outline' : 'accent'}
+          label={unsynced ? '仍然退出' : '退出登录'}
           onPress={() => {
             sheet.close();
             void app.signOut();

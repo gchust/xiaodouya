@@ -40,6 +40,7 @@ export class Api {
     body?: unknown,
     signal?: AbortSignal,
   ): Promise<T> {
+    const tokenAtStart = this.token;
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}`, {
@@ -64,7 +65,11 @@ export class Api {
     }
     if (!response.ok) {
       const error = (json as ApiError | null)?.error;
-      if (response.status === 401 && this.token) this.onUnauthorized?.();
+      // 只认服务端明确的未登录，公共 Wi-Fi 的登录页或代理也可能返回 401。
+      // 令牌已经换过的话，这是旧请求的响应，不能影响新会话。
+      if (error?.code === 'unauthenticated' && tokenAtStart && tokenAtStart === this.token) {
+        this.onUnauthorized?.();
+      }
       throw new ApiFailure(
         response.status,
         error?.code ?? 'http_error',

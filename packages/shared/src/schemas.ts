@@ -189,6 +189,8 @@ export const SyncResponse = z.object({
   records: z.array(ServerRecord),
   /** 被拒绝的改动：客户端应丢弃它们，防止发件箱卡死。 */
   rejected: z.array(z.object({ id: z.uuid(), reason: z.string() })),
+  /** 当前角色。客户端靠它发现权限变化：升级后要重新拉历史，降级后要清掉读不到的数据。 */
+  role: Role,
 });
 export type SyncResponse = z.infer<typeof SyncResponse>;
 

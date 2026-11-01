@@ -122,14 +122,14 @@ describe('24 小时统计', () => {
 describe('体温判断', () => {
   it('3 个月以下 38℃ 必须建议尽快就医', () => {
     const r = assessTemperature(38, 1);
-    expect(r.level).toBe('fever');
+    expect(r.level).toBe('urgent');
     expect(r.hint).toContain('尽快就医');
   });
   it('37.5 偏高，37.4 正常', () => {
     expect(assessTemperature(37.5, 1).level).toBe('elevated');
     expect(assessTemperature(37.4, 1).level).toBe('normal');
   });
-  it('体温过低不能显示正常', () => expect(assessTemperature(35.5, 1).level).toBe('elevated'));
+  it('体温过低不能显示正常', () => expect(assessTemperature(35.5, 1).level).not.toBe('normal'));
 });
 
 describe('今日提示', () => {
@@ -177,6 +177,63 @@ describe('今日提示', () => {
     expect(r?.text).not.toContain('他');
   });
   it('没有记录时不显示', () => expect(todayInsight([], birth, now)).toBeNull());
+});
+
+describe('健康规则（审查回归）', () => {
+  const birth = at(2026, 1, 1);
+  const now = at(2026, 1, 15);
+  const sparse: EventData[] = [
+    { type: 'bath', at: now - 30 * HOUR },
+    { type: 'feed', at: now - 2 * HOUR, ml: 90 },
+    { type: 'feed', at: now - 5 * HOUR, ml: 90 },
+    { type: 'feed', at: now - 8 * HOUR, ml: 90 },
+    { type: 'diaper', at: now - 3 * HOUR, kind: 'wee' },
+  ];
+  it('睡眠计时开着，也不能盖住偏少的提醒', () => {
+    const r = todayInsight([...sparse, { type: 'sleep', at: now - HOUR }], birth, now);
+    expect(r?.tone).toBe('attention');
+  });
+  it('忘记结束的睡眠不能显示成“已经睡了 72 小时”', () => {
+    const r = todayInsight(
+      [
+        { type: 'sleep', at: now - 72 * HOUR },
+        ...Array.from({ length: 8 }, (_, i) => ({
+          type: 'feed' as const,
+          at: now - (i + 1) * 2 * HOUR,
+          ml: 90,
+        })),
+        ...Array.from({ length: 7 }, (_, i) => ({
+          type: 'diaper' as const,
+          at: now - (i + 1) * HOUR,
+          kind: 'wee' as const,
+        })),
+      ],
+      birth,
+      now,
+    );
+    expect(r?.text).not.toContain('已经睡了');
+    expect(r?.text).toContain('忘');
+  });
+  it('正在睡的时候仍然显示睡眠提示', () => {
+    const r = todayInsight([{ type: 'sleep', at: now - HOUR }], birth, now);
+    expect(r?.text).toContain('已经睡了');
+  });
+  it('36.0–36.4℃ 不能说正常，提示要和范围一致', () => {
+    const r = assessTemperature(36.2, 1);
+    expect(r.level).not.toBe('normal');
+    expect(r.note).not.toBe('正常');
+  });
+  it('36.5℃ 是正常', () => expect(assessTemperature(36.5, 1).level).toBe('normal'));
+  it('3 个月以下低于 36℃ 要尽快联系医生', () => {
+    const r = assessTemperature(35, 0);
+    expect(r.level).toBe('urgent');
+    expect(r.hint).toContain('尽快');
+  });
+  it('3–6 个月 39℃ 及以上要尽快联系医生', () => {
+    expect(assessTemperature(39.5, 4).hint).toContain('尽快');
+    expect(assessTemperature(38.5, 4).hint).not.toContain('尽快');
+    expect(assessTemperature(38.5, 8).hint).not.toContain('尽快');
+  });
 });
 
 describe('疫苗表', () => {

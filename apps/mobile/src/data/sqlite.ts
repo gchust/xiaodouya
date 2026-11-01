@@ -86,6 +86,30 @@ export class SqliteDb implements LocalDb, UploadQueueDb {
     return row ? Number(row.value) : 0;
   }
 
+  async getMeta(key: string): Promise<string | null> {
+    const row = await this.db.getFirstAsync<{ value: string }>(
+      'SELECT value FROM meta WHERE key = ?',
+      [key],
+    );
+    return row?.value ?? null;
+  }
+
+  async setMeta(key: string, value: string): Promise<void> {
+    await this.db.runAsync(
+      `INSERT INTO meta (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      [key, value],
+    );
+  }
+
+  async deleteCollections(collections: readonly Collection[]): Promise<void> {
+    await this.db.withTransactionAsync(async () => {
+      for (const collection of collections) {
+        await this.db.runAsync('DELETE FROM records WHERE collection = ?', [collection]);
+      }
+    });
+  }
+
   async clear(): Promise<void> {
     await this.db.execAsync('DELETE FROM records; DELETE FROM meta; DELETE FROM uploads;');
   }

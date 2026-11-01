@@ -1,4 +1,11 @@
-import type { ServerRecord, SyncRequest, SyncResponse } from '@xiaodouya/shared';
+import {
+  canReadCollection,
+  collections,
+  type Role,
+  type ServerRecord,
+  type SyncRequest,
+  type SyncResponse,
+} from '@xiaodouya/shared';
 import type { LocalDb, RecordStore } from './store';
 
 export interface SyncTransport {
@@ -12,9 +19,15 @@ export interface SyncEvents {
   /** 同步到了其他家人的新记录（不含自己刚上传的）。 */
   onRemote?(records: ServerRecord[]): void;
   onStatus?(status: SyncStatus): void;
+  /** 有记录被服务端拒绝（比如权限变了）。 */
+  onRejected?(count: number): void;
+  /** 一轮同步成功完成。 */
+  onSynced?(): void;
 }
 
+const ROLE_KEY = 'role';
 const OUTBOX_BATCH = 200;
+const LIVE_BACKOFF_MS = 5_000;
 const MAX_ROUNDS = 50;
 const MIN_RETRY_MS = 2_000;
 const MAX_RETRY_MS = 60_000;
@@ -34,6 +47,7 @@ export class SyncEngine {
   private stopped = true;
   private cursor = 0;
   private lastSentIds = new Set<string>();
+  private lastRole: Role | null = null;
 
   constructor(
     private store: RecordStore,
@@ -49,6 +63,7 @@ export class SyncEngine {
   async start(): Promise<void> {
     this.stopped = false;
     this.cursor = await this.db.getCursor();
+    this.lastRole = (await this.db.getMeta(ROLE_KEY)) as Role | null;
     this.startLiveLoop();
     await this.syncNow();
   }
@@ -116,15 +131,44 @@ export class SyncEngine {
         const fromOthers = applied.filter((r) => !this.lastSentIds.has(r.id));
         if (fromOthers.length > 0) this.events.onRemote?.(fromOthers);
         for (const record of sent) this.lastSentIds.delete(record.id);
+        if (response.rejected.length > 0) this.events.onRejected?.(response.rejected.length);
+        const resync = await this.applyRole(response.role);
         const moreToSend = this.store.dirtyRecords(1).length > 0;
-        if (!response.hasMore && !moreToSend) break;
+        if (!response.hasMore && !moreToSend && !resync) break;
       }
       this.retryMs = MIN_RETRY_MS;
       this.events.onStatus?.('idle');
+      this.events.onSynced?.();
     } catch {
       this.events.onStatus?.('offline');
       this.scheduleRetry();
     }
+  }
+
+  /**
+   * 角色变化会改变“能读到什么”，而游标已经越过了当时读不到的记录。
+   * 升级后从头重新拉取，降级后清掉现在无权查看的内容。返回是否需要继续拉取。
+   */
+  private async applyRole(role: Role): Promise<boolean> {
+    const previous = this.lastRole;
+    if (previous === role) return false;
+    if (previous !== null) {
+      const unreadable = collections.filter((name) => !canReadCollection(role, name));
+      if (unreadable.length > 0) await this.store.purgeCollections(unreadable);
+    }
+    const widened =
+      previous !== null &&
+      collections.some(
+        (name) => canReadCollection(role, name) && !canReadCollection(previous, name),
+      );
+    // 先重置游标再记角色：中途崩溃时最多多拉一遍，不会漏。
+    if (widened) {
+      this.cursor = 0;
+      await this.db.putMany([], 0);
+    }
+    await this.db.setMeta(ROLE_KEY, role);
+    this.lastRole = role;
+    return widened;
   }
 
   private scheduleRetry(): void {
@@ -144,14 +188,23 @@ export class SyncEngine {
       while (!this.stopped && !controller.signal.aborted) {
         try {
           const { changed } = await this.transport.wait(this.cursor, controller.signal);
-          if (changed) await this.syncNow();
+          if (changed) {
+            const before = this.cursor;
+            await this.syncNow();
+            // 服务端说有新内容但游标没动（同步失败）：等一等，否则这里会变成死循环。
+            if (this.cursor === before) await this.pause(LIVE_BACKOFF_MS);
+          }
         } catch {
           if (controller.signal.aborted) return;
-          await new Promise<void>((resolve) => {
-            this.scheduler.setTimeout(resolve, 5_000);
-          });
+          await this.pause(LIVE_BACKOFF_MS);
         }
       }
     })();
+  }
+
+  private pause(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      this.scheduler.setTimeout(resolve, ms);
+    });
   }
 }

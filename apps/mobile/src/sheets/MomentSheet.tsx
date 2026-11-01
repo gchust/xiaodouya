@@ -193,6 +193,7 @@ export function MomentSheet({
       />
       <SoftInput
         testID="moment-text"
+        maxLength={20000}
         value={text}
         onChangeText={setText}
         placeholder={isLetter ? '想对长大后的宝宝说的话…' : '写下当时的样子，以后宝宝会想看的。'}

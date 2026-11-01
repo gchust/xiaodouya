@@ -31,14 +31,17 @@ import { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
 import { Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
-import { createUploadTransport } from './media';
+import { clearLocalMedia, createUploadTransport } from './media';
 import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { sessionOwner, shouldClearLocalData } from './sessionLogic';
 
 const TOKEN_KEY = 'session.token';
 const SERVER_KEY = 'session.server';
 const ME_KEY = 'session.me';
+const OWNER_KEY = 'session.owner';
+const SYNCED_KEY = 'synced';
 
-export type SessionState = 'loading' | 'signedOut' | 'noFamily' | 'noBaby' | 'ready';
+export type SessionState = 'signedOut' | 'noFamily' | 'syncing' | 'noBaby' | 'ready';
 
 export interface AppApi {
   api: Api;
@@ -112,6 +115,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [serverUrl, setServerUrl] = useState(DEFAULT_API_URL);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [booted, setBooted] = useState(false);
+  const [hasSynced, setHasSynced] = useState(false);
   const feedback = useFeedback();
   const feedbackRef = useRef(feedback);
   feedbackRef.current = feedback;
@@ -133,6 +137,12 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         {
           onStatus: setSyncStatus,
           onRemote: (records) => announceRemote(records, meRef.current, feedbackRef.current.banner),
+          onRejected: (count) =>
+            feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
+          onSynced: () => {
+            setHasSynced(true);
+            void db.setMeta(SYNCED_KEY, '1');
+          },
         },
       );
       const [token, savedServer, savedMe] = await Promise.all([
@@ -143,7 +153,9 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       api.baseUrl = savedServer ?? DEFAULT_API_URL;
       api.token = token;
       if (savedServer) setServerUrl(savedServer);
+      const synced = await db.getMeta(SYNCED_KEY);
       if (cancelled) return;
+      setHasSynced(synced === '1');
       setServices({ db, store, uploads, api, engine });
       if (token && savedMe) {
         // 先用缓存的身份立刻进入 App：没网时也不能挡住半夜的记录。
@@ -159,26 +171,44 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const persistMe = useCallback(async (next: MeResponse) => {
     setMeState(next);
     await SecureStore.setItemAsync(ME_KEY, JSON.stringify(next));
+    await SecureStore.setItemAsync(OWNER_KEY, sessionOwner(next.user.id, next.family?.id ?? null));
   }, []);
 
-  const clearSession = useCallback(async () => {
+  const stopServices = useCallback(() => {
     if (!services) return;
     services.engine.stop();
     services.uploads.stop();
     services.api.token = null;
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(ME_KEY);
-    await services.store.clear();
-    setMeState(null);
   }, [services]);
 
-  // 登录失效（例如被管理员移出家庭）时回到登录页。
+  const wipeLocalData = useCallback(async () => {
+    if (!services) return;
+    await services.store.clear();
+    await clearLocalMedia();
+    setHasSynced(false);
+  }, [services]);
+
+  // 主动退出：清除一切。
+  const clearSession = useCallback(async () => {
+    stopServices();
+    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await SecureStore.deleteItemAsync(ME_KEY);
+    await SecureStore.deleteItemAsync(OWNER_KEY);
+    await wipeLocalData();
+    setMeState(null);
+  }, [stopServices, wipeLocalData]);
+
+  // 登录失效（过期、被移出家庭、改了密码）：回到登录页，但本地数据一条都不动。
+  // 里面可能有没同步的记录，同一个人重新登录后要接着传。
   useEffect(() => {
     if (!services) return;
     services.api.onUnauthorized = () => {
-      void clearSession();
+      stopServices();
+      void SecureStore.deleteItemAsync(TOKEN_KEY);
+      void SecureStore.deleteItemAsync(ME_KEY);
+      setMeState(null);
     };
-  }, [services, clearSession]);
+  }, [services, stopServices]);
 
   const hasFamily = Boolean(me?.family);
 
@@ -253,14 +283,25 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       serverUrl,
       syncStatus,
       async signIn(token, url) {
+        const previousToken = api.token;
+        const previousUrl = api.baseUrl;
         api.token = token;
         api.baseUrl = url;
+        let next: MeResponse;
+        try {
+          next = await api.me();
+        } catch (error) {
+          api.token = previousToken;
+          api.baseUrl = previousUrl;
+          throw error;
+        }
         setServerUrl(url);
+        const owner = sessionOwner(next.user.id, next.family?.id ?? null);
+        const previousOwner = await SecureStore.getItemAsync(OWNER_KEY);
+        if (shouldClearLocalData(previousOwner, owner)) await wipeLocalData();
         await SecureStore.setItemAsync(TOKEN_KEY, token);
         await SecureStore.setItemAsync(SERVER_KEY, url);
-        // 换账号时不能看到上一个账号的本地数据。
-        await store.clear();
-        await persistMe(await api.me());
+        await persistMe(next);
       },
       async signOut() {
         await unregisterPushToken(api).catch(() => {});
@@ -291,7 +332,17 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         void engine.syncNow();
       },
     };
-  }, [services, me, prefs, serverUrl, syncStatus, persistMe, clearSession, refreshMe]);
+  }, [
+    services,
+    me,
+    prefs,
+    serverUrl,
+    syncStatus,
+    persistMe,
+    clearSession,
+    wipeLocalData,
+    refreshMe,
+  ]);
 
   // baby 从无到有时 sessionState 要更新。
   const [, forceRender] = useState(0);
@@ -308,14 +359,15 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   }, [services]);
 
   if (!value || !booted) return <>{fallback}</>;
-  const sessionState: SessionState =
-    value.api.token && me
-      ? !me.family
-        ? 'noFamily'
-        : !services?.store.getSnapshot().baby && me.role === 'admin'
-          ? 'noBaby'
-          : 'ready'
-      : 'signedOut';
+  const hasBaby = Boolean(services?.store.getSnapshot().baby);
+  let sessionState: SessionState = 'signedOut';
+  if (value.api.token && me) {
+    if (!me.family) sessionState = 'noFamily';
+    else if (hasBaby || me.role !== 'admin') sessionState = 'ready';
+    // 换了新手机的管理员，同步完成前不知道有没有宝宝资料。这时让人填，
+    // 会覆盖全家的出生时间。所以必须等第一次同步成功。
+    else sessionState = hasSynced ? 'noBaby' : 'syncing';
+  }
   return <AppContext.Provider value={{ ...value, sessionState }}>{children}</AppContext.Provider>;
 }
 

@@ -6,13 +6,16 @@ import type { EventData } from '../schemas';
 /**
  * 健康提示规则。App 不是医疗器械：这里只做保守提示，宁可建议留意，也不在数据不足时安慰。
  *
- * 依据（修改前请复核）：
- * - 发烧：3 个月以下 ≥38℃ 应尽快就医。NHS "Fever in children"；AAP HealthyChildren。
+ * 依据（修改前请复核，详见 docs/ARCHITECTURE.md 的“健康内容”）：
+ * - 发烧：NICE NG143 traffic light：3 个月以下 ≥38℃ 属高风险，3–6 个月 ≥39℃ 属中风险。
+ *   NHS "Fever in children" 也建议这两种情况尽快联系医生。
+ * - 体温偏低：WHO Thermal Protection of the Newborn：36.5–37.5℃ 正常，36.0–36.4℃ 为轻度偏低，
+ *   低于 36℃ 为中度低体温。NHS 孕产单位的家长手册建议新生儿低于 36℃ 时联系医护。
  * - 湿尿布：出生约 5 天后每天约 6 片以上，是奶量足够的常用参考。NHS；AAP。
  * - 喂奶次数：足月新生儿母乳每天约 8–12 次，配方奶约 6–8 次。AAP HealthyChildren。
  */
 
-export type TempLevel = 'normal' | 'elevated' | 'fever';
+export type TempLevel = 'normal' | 'elevated' | 'fever' | 'urgent';
 
 export interface TempAssessment {
   level: TempLevel;
@@ -21,14 +24,25 @@ export interface TempAssessment {
 }
 
 export function assessTemperature(celsius: number, ageMonths: number): TempAssessment {
+  if (celsius >= 38 && ageMonths < 3) {
+    return {
+      level: 'urgent',
+      note: '发烧，请尽快就医',
+      hint: '3 个月以下的宝宝 38℃ 及以上，请尽快就医。',
+    };
+  }
+  if (celsius >= 39 && ageMonths < 6) {
+    return {
+      level: 'urgent',
+      note: '高烧，请尽快联系医生',
+      hint: '6 个月以下的宝宝 39℃ 及以上，请尽快联系医生。',
+    };
+  }
   if (celsius >= 38) {
     return {
       level: 'fever',
-      note: '发烧，建议就医',
-      hint:
-        ageMonths < 3
-          ? '3 个月以下的宝宝 38℃ 及以上，请尽快就医。'
-          : '已经发烧了。请留意精神和吃奶情况，不舒服或持续不退请看医生。',
+      note: '发烧，注意观察',
+      hint: '已经发烧了。请留意精神和吃奶情况，不舒服或持续不退请看医生。',
     };
   }
   if (celsius >= 37.5) {
@@ -39,10 +53,23 @@ export function assessTemperature(celsius: number, ageMonths: number): TempAsses
     };
   }
   if (celsius < 36) {
+    return ageMonths < 3
+      ? {
+          level: 'urgent',
+          note: '体温过低，请尽快联系医生',
+          hint: '体温低于 36℃。先给宝宝保暖，并尽快联系医生。',
+        }
+      : {
+          level: 'elevated',
+          note: '偏低，注意观察',
+          hint: '体温偏低。注意保暖，过一会儿再量一次；持续偏低或精神差请看医生。',
+        };
+  }
+  if (celsius < 36.5) {
     return {
       level: 'elevated',
       note: '偏低，注意观察',
-      hint: '有点偏低。注意保暖，过一会儿再量一次；持续偏低或精神差请看医生。',
+      hint: '有点偏低。给宝宝保暖，30 分钟后再量一次。',
     };
   }
   return { level: 'normal', note: '正常', hint: '正常范围（36.5–37.5℃）。' };
@@ -57,21 +84,18 @@ export interface Insight {
 
 /** 至少连续记录这么久，才对数量下判断，否则分不清是“少”还是“还没开始记”。 */
 const MIN_COVERAGE_MS = 20 * 3_600_000;
+/** 一次睡超过这么久多半是忘了点“醒了”，不能当真。 */
+const FORGOTTEN_SLEEP_MS = 12 * 3_600_000;
 
 export function todayInsight(
   events: readonly EventData[],
   birthAt: number,
   now: number,
 ): Insight | null {
-  const sleeping = activeSleep(events);
-  if (sleeping) {
-    return {
-      tone: 'neutral',
-      text: `宝宝已经睡了 ${formatDuration(now - sleeping.at)}。醒来后一般会饿，可以先把奶准备好。`,
-    };
-  }
   const logged = events.filter((e) => e.at <= now);
   if (logged.length === 0) return null;
+  const sleeping = activeSleep(logged);
+  const forgotten = sleeping && now - sleeping.at > FORGOTTEN_SLEEP_MS ? sleeping : null;
 
   const summary = summarize24h(logged, now);
   const estimate = estimateNextFeed(logged, now);
@@ -82,8 +106,17 @@ export function todayInsight(
   if (estimate.isLearned) facts.push(`平均间隔 ${formatDuration(estimate.intervalMs)}`);
   const lead = `${facts.join('，')}。`;
 
+  const sleepingText =
+    sleeping && !forgotten
+      ? `宝宝已经睡了 ${formatDuration(now - sleeping.at)}。醒来后一般会饿，可以先把奶准备好。`
+      : null;
+  const forgottenText = forgotten ? '睡眠计时还开着，是不是忘了点“醒了”？' : null;
+
   if (!hasFullDay) {
-    return { tone: 'neutral', text: `${lead}记满一天后，我们再帮你看看规律。` };
+    return {
+      tone: 'neutral',
+      text: sleepingText ?? forgottenText ?? `${lead}记满一天后，我们再帮你看看规律。`,
+    };
   }
 
   const { months, days } = ageParts(birthAt, now);
@@ -93,11 +126,15 @@ export function todayInsight(
   if (pastFirstDays && months < 6 && summary.wetDiapers < 6) {
     concerns.push(`湿尿布 ${summary.wetDiapers} 片`);
   }
+  // 偏少的提醒优先于其他任何提示，不能被睡眠计时盖住。
   if (concerns.length > 0) {
     return {
       tone: 'attention',
       text: `${lead}${concerns.join('、')}比常见的少。如果不是漏记，又没精神或吃奶变少，建议问问医生。`,
     };
+  }
+  if (sleepingText || forgottenText) {
+    return { tone: 'neutral', text: (sleepingText ?? forgottenText) as string };
   }
   return {
     tone: 'neutral',

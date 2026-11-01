@@ -1,5 +1,5 @@
 import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import {
   DeleteObjectCommand,
   GetObjectCommand,
@@ -172,24 +172,41 @@ export async function deleteObject(s: ResolvedStorage, key: string): Promise<voi
   await client(s, s.endpoint).send(new DeleteObjectCommand({ Bucket: s.bucket, Key: key }));
 }
 
-function isPrivateAddress(address: string): boolean {
-  if (address === '::1' || address === '::') return true;
-  const lower = address.toLowerCase();
-  if (lower.startsWith('fe80') || lower.startsWith('fc') || lower.startsWith('fd')) return true;
-  const v4 = lower.startsWith('::ffff:') ? lower.slice(7) : lower;
-  const parts = v4.split('.').map(Number);
-  if (parts.length !== 4) return false;
-  const [a, b] = parts as [number, number, number, number];
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    a >= 224
-  );
+/** 用 BlockList 而不是字符串判断：IPv6 的写法很多（比如 ::ffff:7f00:1 就是 127.0.0.1）。 */
+const blockedAddresses = (() => {
+  const list = new BlockList();
+  for (const [net, prefix] of [
+    ['0.0.0.0', 8],
+    ['10.0.0.0', 8],
+    ['100.64.0.0', 10],
+    ['127.0.0.0', 8],
+    ['169.254.0.0', 16],
+    ['172.16.0.0', 12],
+    ['192.0.0.0', 24],
+    ['192.168.0.0', 16],
+    ['198.18.0.0', 15],
+    ['224.0.0.0', 3],
+  ] as const) {
+    list.addSubnet(net, prefix, 'ipv4');
+  }
+  for (const [net, prefix] of [
+    ['::', 96], // 未指定、回环、IPv4 兼容地址
+    ['64:ff9b::', 96], // NAT64，内嵌 IPv4
+    ['2002::', 16], // 6to4，内嵌 IPv4
+    ['fc00::', 7], // 唯一本地
+    ['fe80::', 10], // 链路本地
+    ['ff00::', 8], // 组播
+  ] as const) {
+    list.addSubnet(net, prefix, 'ipv6');
+  }
+  return list;
+})();
+
+export function isPrivateAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 0) return true;
+  // IPv4 映射地址（::ffff:a.b.c.d）由 BlockList 按 IPv4 规则检查。
+  return blockedAddresses.check(address, family === 4 ? 'ipv4' : 'ipv6');
 }
 
 /**

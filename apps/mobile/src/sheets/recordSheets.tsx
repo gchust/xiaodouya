@@ -299,7 +299,7 @@ export function TempSheet({ birthAt }: { birthAt: number }) {
   const [offset, setOffset] = useState(0);
   const assessment = assessTemperature(c, ageParts(birthAt, Date.now()).months);
   const tone =
-    assessment.level === 'fever'
+    assessment.level === 'fever' || assessment.level === 'urgent'
       ? colors.danger
       : assessment.level === 'elevated'
         ? colors.accent

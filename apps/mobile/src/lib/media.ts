@@ -1,6 +1,7 @@
 import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
+import { Image } from 'expo-image';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as IntentLauncher from 'expo-intent-launcher';
@@ -219,7 +220,10 @@ export function createUploadTransport(api: Api): UploadTransport {
       }
     },
     async put(job, target, onProgress) {
-      const result = await new File(job.localUri).upload(target.url, {
+      const file = new File(job.localUri);
+      if (!file.exists)
+        throw new UploadHttpError(410, 'local_missing', '本地文件不见了，请重新添加');
+      const result = await file.upload(target.url, {
         httpMethod: 'PUT',
         uploadType: UploadType.BINARY_CONTENT,
         headers: target.headers,
@@ -265,4 +269,16 @@ export async function openDocumentFile(api: Api, queue: UploadQueue, ref: MediaR
     return;
   }
   await Sharing.shareAsync(uri, { mimeType: ref.mime });
+}
+
+/** 退出登录时清掉手机上的文件副本和图片缓存，下一个登录的人不能看到。 */
+export async function clearLocalMedia(): Promise<void> {
+  try {
+    const dir = new Directory(Paths.document, 'uploads');
+    if (dir.exists) dir.delete();
+    await Image.clearDiskCache();
+    await Image.clearMemoryCache();
+  } catch {
+    // 清缓存失败不影响退出。
+  }
 }

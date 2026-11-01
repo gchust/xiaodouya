@@ -65,6 +65,7 @@ export interface UploadProgress {
   doneInBatch: number;
 }
 
+const MAX_PUT_ATTEMPTS = 6;
 const MIN_BACKOFF_MS = 3_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
@@ -157,10 +158,10 @@ export class UploadQueue {
     this.retryTimer = null;
   }
 
-  private nextJob(): UploadJob | null {
+  private nextJob(skip: ReadonlySet<string>): UploadJob | null {
     if (this.network === 'none') return null;
     for (const job of this.jobs.values()) {
-      if (job.failed) continue;
+      if (job.failed || skip.has(job.key)) continue;
       if (job.wifiOnly && this.network !== 'wifi') continue;
       return job;
     }
@@ -184,16 +185,20 @@ export class UploadQueue {
   private async drain(): Promise<void> {
     this.running = true;
     try {
+      // 这一轮失败过的先跳过，一个传不上去的文件不能挡住后面的文件。
+      const failedThisRound = new Set<string>();
+      let lastFailed: UploadJob | null = null;
       for (;;) {
         if (this.stopped) return;
-        const job = this.nextJob();
-        if (!job) return;
+        const job = this.nextJob(failedThisRound);
+        if (!job) break;
         const ok = await this.runJob(job);
         if (!ok) {
-          this.scheduleRetry(job);
-          return;
+          failedThisRound.add(job.key);
+          lastFailed = job;
         }
       }
+      if (lastFailed) this.scheduleRetry(lastFailed);
     } finally {
       this.running = false;
       this.publish();
@@ -239,8 +244,12 @@ export class UploadQueue {
         return true;
       }
       job.attempts += 1;
-      if (error instanceof UploadHttpError && isPermanent(error)) {
-        job.failed = error.message;
+      if (error instanceof UploadHttpError) {
+        if (isPermanent(error)) job.failed = error.message;
+        // 存储持续报错（配额满、配置错）时重试没有意义，交给用户处理。
+        else if (error.code === 'put_failed' && job.attempts >= MAX_PUT_ATTEMPTS) {
+          job.failed = '存储一直返回错误，请检查存储设置后重试';
+        }
       }
       await this.db.saveJob(job);
       this.publish();
