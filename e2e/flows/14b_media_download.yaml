@@ -45,21 +45,38 @@ appId: com.gchust.xiaodouya
     timeout: 5000
 - takeScreenshot: .artifacts/e2e-14b-document-note
 - tapOn: { id: doc-download-confirm }
-- extendedWaitUntil:
-    visible: 已保存到你选的文件夹
-    timeout: 30000
-- takeScreenshot: .artifacts/e2e-14b-document-saved
-# 再存一次：目标文件夹里已有同名文件，也要成功。
-- extendedWaitUntil:
-    notVisible: { id: toast }
-    timeout: 15000
-- tapOn: { id: doc-file-download-sample-certificate.pdf }
-- extendedWaitUntil:
-    visible: { id: doc-download-confirm }
-    timeout: 5000
-- tapOn: { id: doc-download-confirm }
-- extendedWaitUntil:
-    visible: 已保存到你选的文件夹
-    timeout: 30000
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible: 已保存到你选的文件夹
+          timeout: 30000
+      - takeScreenshot: .artifacts/e2e-14b-document-saved
+      # 再存一次：目标文件夹里已有同名文件，也要成功。
+      - extendedWaitUntil:
+          notVisible: { id: toast }
+          timeout: 15000
+      - tapOn: { id: doc-file-download-sample-certificate.pdf }
+      - extendedWaitUntil:
+          visible: { id: doc-download-confirm }
+          timeout: 5000
+      - tapOn: { id: doc-download-confirm }
+      - extendedWaitUntil:
+          visible: 已保存到你选的文件夹
+          timeout: 30000
+# iOS 没有文件夹选择，走系统分享面板，用户在里面存到“文件”。存下去这一步是系统界面，这里只看面板出来了。
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible: { id: ActivityListView }
+          timeout: 30000
+      - takeScreenshot: .artifacts/e2e-14b-document-share-sheet
+      - tapOn: { id: PopoverDismissRegion }
+      - extendedWaitUntil:
+          notVisible: { id: ActivityListView }
+          timeout: 10000
 - tapOn: { id: doc-back }
 - assertVisible: { id: info-screen }

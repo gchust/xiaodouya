@@ -132,6 +132,11 @@
 - **`expo-audio` 默认声明 `audio` 后台模式，Android 上还有媒体播放前台服务。** 只有在 `app.config.ts` 里显式处理才去得掉，prebuild 后看一眼 `Info.plist` 就能发现，不用等 CI。
 
 - **Maestro 的 `hideKeyboard` 收不起 iOS 软键盘。** 报 `Couldn't hide the keyboard`。把模拟器设成硬件键盘也没用，XCTest 打字时软键盘还是出来。`ios-e2e.sh` 跑流程的副本，把它换成点 E2E 构建里专门的按钮。
+- **iOS 上有 `accessibilityLabel` 的按钮是一个元素，里面的字 XCTest 和读屏都看不到。** 名字、接种状态写在行里，却只读“名字”。显示的内容要写进标签，否则流程断言找不到，用的人也听不到。Android 的 UIAutomator 能看到子元素，所以这类问题只有跑 iOS 才发现。
+- **被 Tab 栏盖住的元素，Maestro 在 iOS 上也算可见。** 滚动区里超出可视范围的元素仍然报告屏幕上的坐标，`scrollUntilVisible` 一看到就停，点下去落在 Tab 栏上，于是跳到别的页。现象是流程断言失败、截图却在另一个 Tab。页面底部的按钮前面加 `subflows/ios-scroll-past-tab-bar.yaml`。
+- **断网的流程中途失败，转发要接回去。** 否则后面每条要联网的流程都跟着失败，看起来像一片新问题。`ios-e2e.sh` 失败时会恢复。
+- **iOS 上产物大，`gh run download` 默认写 `/tmp`。** 一百多 MB 就触发配额，报 `disk quota exceeded`。设 `TMPDIR` 到 `.artifacts/` 下面。
+- **iOS 的钥匙串不随卸载和 `clearState` 清掉。** 重装后令牌还在，App 直接进主页而不是欢迎页。流程要从欢迎页开始就先 `clearKeychain`（`22_delete_account.yaml`）。真实用户重装后也是登录状态，本地数据从服务器重新同步，这一点没有改。
 - **iOS 的“存储密码”对话框 Maestro 看不到。** 无障碍树里没有它，截图上却盖在最上面，之后的点击全部落空，表现成下一步的元素找不到。E2E 构建里不把输入框当成密码框。流程莫名失败时一定先看失败截图。
 
 ## 依赖和环境

@@ -7,14 +7,20 @@ test('hideKeyboard 换成点 E2E 按钮', () => {
 });
 
 test('文字匹配改成包含', () => {
-  assert.equal(adaptFlow('- assertVisible: Sprout2'), '- assertVisible: ".*Sprout2.*"');
-  assert.equal(adaptFlow('- assertVisible: "70"'), '- assertVisible: ".*70.*"');
-  assert.equal(adaptFlow('    visible: 喂奶 60ml'), '    visible: ".*喂奶 60ml.*"');
-  assert.equal(adaptFlow('      text: 离线中.*'), '      text: ".*离线中.*"');
+  assert.equal(adaptFlow('- assertVisible: Sprout2'), "- assertVisible: '.*Sprout2.*'");
+  assert.equal(adaptFlow('- assertVisible: "70"'), "- assertVisible: '.*70.*'");
+  assert.equal(adaptFlow('    visible: 喂奶 60ml'), "    visible: '.*喂奶 60ml.*'");
+  assert.equal(adaptFlow('      text: 离线中.*'), "      text: '.*离线中.*'");
+});
+
+test('正则里的反斜杠要能通过 YAML，滚动的目标也按包含匹配', () => {
+  assert.equal(adaptFlow('    text: .*(100\\.4°F|发烧).*'), "    text: '.*(100\\.4°F|发烧).*'");
+  assert.equal(adaptFlow('    element: Rabies'), "    element: '.*Rabies.*'");
+  assert.equal(adaptFlow('    element: { id: sign-out }'), '    element: { id: sign-out }');
 });
 
 test('点击按开头匹配，不会点中别处提到同样文字的地方', () => {
-  assert.equal(adaptFlow('- tapOn: 喂奶 110ml'), '- tapOn: "喂奶 110ml.*"');
+  assert.equal(adaptFlow('- tapOn: 喂奶 110ml'), "- tapOn: '喂奶 110ml.*'");
 });
 
 test('按 id 的匹配、输入和否定断言不动', () => {

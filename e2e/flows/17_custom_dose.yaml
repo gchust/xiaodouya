@@ -13,6 +13,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: vaccine-add-custom }
     timeout: 30000
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - tapOn: { id: vaccine-add-custom }
 - assertVisible: { id: vaccine-date }
 - takeScreenshot: .artifacts/e2e-17-custom-sheet

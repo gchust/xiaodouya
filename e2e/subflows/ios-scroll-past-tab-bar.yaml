@@ -1,8 +1,11 @@
-# iOS 上滚动区延伸到 Tab 栏下面，元素被盖住时 Maestro 也算“可见”，点下去落在 Tab 栏上。再滚一下让它露出来。
+# iOS 上被 Tab 栏盖住的元素 Maestro 也算“可见”，点下去落在 Tab 栏上。把页面再往上推一小段，比 Tab 栏高一点就够。
 appId: com.gchust.xiaodouya
 ---
 - runFlow:
     when:
       platform: iOS
     commands:
-      - scroll
+      - swipe:
+          start: 50%, 60%
+          end: 50%, 45%
+          duration: 500

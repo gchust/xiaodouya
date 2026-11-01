@@ -12,6 +12,7 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - scrollUntilVisible:
     element: { id: region-row }
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - assertVisible: 新加坡
 - tapOn: { id: region-row }
 - assertVisible: { id: region-confirm }

@@ -5,7 +5,7 @@ import { cpSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } fr
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const TEXT_MATCHER = /^(\s*(?:- )?(assertVisible|visible|text|tapOn): )(.+)$/;
+const TEXT_MATCHER = /^(\s*(?:- )?(assertVisible|visible|text|tapOn|element): )(.+)$/;
 
 function widen(key, value) {
   if (value.startsWith('{')) return null;
@@ -14,7 +14,8 @@ function widen(key, value) {
     .replace(/^\.\*/, '')
     .replace(/\.\*$/, '');
   // 点击要按开头匹配：“包含”会先点中别处提到同样文字的地方，比如喂奶卡片上的“12:00 喂奶 110ml”。
-  return key === 'tapOn' ? `"${bare}.*"` : `".*${bare}.*"`;
+  // 用单引号：正则里的 \. 在 YAML 双引号里是非法转义。
+  return key === 'tapOn' ? `'${bare}.*'` : `'.*${bare}.*'`;
 }
 
 /** 处理一个流程文件的文本。 */

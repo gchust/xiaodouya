@@ -4,6 +4,12 @@
 # 排在最后：跑完 App 停在登录页，之后的流程都登录不上。
 appId: com.gchust.xiaodouya
 ---
+# iOS 的钥匙串不随 clearState 清掉，不清的话 App 还是登录着流程 21 的账号。
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - clearKeychain
 - launchApp:
     clearState: true
 - extendedWaitUntil:
