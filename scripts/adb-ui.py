@@ -67,7 +67,10 @@ def run(action: str):
     elif name == 'wait':
         time.sleep(float(value))
     elif name == 'scroll':
-        adb('shell', 'input', 'swipe', '540', '1700', '540', str(1700 - int(value or 800)), '400')
+        # 正数向下翻，负数向上翻。
+        distance = int(value or 800)
+        start = 1700 if distance > 0 else 500
+        adb('shell', 'input', 'swipe', '540', str(start), '540', str(start - distance), '400')
     elif name == 'shot':
         os.makedirs(f'{ROOT}/.artifacts', exist_ok=True)
         path = f'{ROOT}/.artifacts/{value}.png'

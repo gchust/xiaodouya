@@ -10,6 +10,7 @@ import {
   describeEvent,
   type EventData,
   estimateNextFeed,
+  formatBytes,
   formatDuration,
   formatHoursMinutes,
   isAllowedMime,
@@ -54,6 +55,15 @@ describe('时长格式', () => {
     expect(formatDuration(25 * 60_000)).toBe('25分钟');
   });
   it('计时器补零', () => expect(formatHoursMinutes(121 * 60_000)).toBe('2:01'));
+});
+
+describe('文件大小', () => {
+  it('0 字节不能显示成 1 KB', () => expect(formatBytes(0)).toBe('0'));
+  it('很小的文件至少显示 1 KB', () => expect(formatBytes(100)).toBe('1 KB'));
+  it('按单位换算', () => {
+    expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MB');
+    expect(formatBytes(3.2 * 1024 ** 3)).toBe('3.2 GB');
+  });
 });
 
 describe('下次喂奶估算', () => {

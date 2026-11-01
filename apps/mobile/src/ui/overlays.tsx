@@ -1,3 +1,4 @@
+import { usePathname } from 'expo-router';
 import {
   createContext,
   type ReactNode,
@@ -197,6 +198,8 @@ function ToastLayer({
   onUndo: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  // 回忆页右下角有深色悬浮按钮，Toast 要让开，否则两块深色叠在一起看不清。
+  const onRecall = usePathname() === '/recall';
   const visible = useSharedValue(0);
   const last = useRef(toast);
   if (toast) last.current = toast;
@@ -211,7 +214,7 @@ function ToastLayer({
   return (
     <Animated.View
       pointerEvents={toast ? 'auto' : 'none'}
-      style={[s.toast, { bottom: Math.max(insets.bottom, 8) + 70 }, style]}
+      style={[s.toast, { bottom: Math.max(insets.bottom, 8) + (onRecall ? 134 : 70) }, style]}
       testID="toast"
     >
       <Text style={s.toastText} numberOfLines={2}>
