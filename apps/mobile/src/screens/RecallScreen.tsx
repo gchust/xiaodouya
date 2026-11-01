@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -158,6 +159,10 @@ function Timeline({ birthAt }: { birthAt: number }) {
         const visual = m.data.media.filter((x) => x.kind === 'image' || x.kind === 'video');
         const audios = m.data.media.filter((x) => x.kind === 'audio');
         const cover = visual[0];
+        const fileNames = downloadFileNames(m.data.media, {
+          title: m.data.title || '这一刻',
+          at: m.data.at,
+        });
         return (
           <View key={m.id} style={{ gap: 10 }} testID={`moment-${m.id}`}>
             <View style={s.momentHeadRow}>
@@ -215,7 +220,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
               </Pressable>
             ) : null}
             {audios.map((a) => (
-              <AudioCard key={a.id} media={a} />
+              <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? '录音'} />
             ))}
             {m.data.text ? <Serif>{m.data.text}</Serif> : null}
             {m.data.byName ? <Muted style={{ fontSize: 11 }}>{m.data.byName}写</Muted> : null}

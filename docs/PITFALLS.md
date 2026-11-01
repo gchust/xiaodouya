@@ -45,6 +45,10 @@
 - **退出登录的警告要同时算记录和上传队列。** 记录都同步了不代表视频也传了。
 - **SeaweedFS 写入时会自动建 Bucket，R2 和 S3 不会。** “Bucket 不存在”在本地测不出来，要测错误翻译函数。
 - **内网地址判断不能用字符串。** `::ffff:7f00:1` 就是 127.0.0.1，用 `net.BlockList`。
+- **Expo 会自动应用一批“老插件”，不写也生效。** 只是装上 `expo-media-library`，prebuild 就会声明 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`READ_MEDIA_AUDIO`，上架 Google Play 要单独申报。必须在 `plugins` 里显式写 `granularPermissions: []`，库清单自带的 `READ_MEDIA_VISUAL_USER_SELECTED` 还要用 `blockedPermissions` 去掉。加原生依赖后要 prebuild 看一眼清单。
+- **`saveToLibraryAsync` 靠文件名判断类型和扩展名。** 没有扩展名直接报错，所以上传队列里的 `<id>-original` 不能直接交给它。文件名有中文或 `+`、`,` 时，Android 的 `getFileExtensionFromUrl` 取不到扩展名，视频会被当成类型未知的图片，要先编码（见 `galleryUri`）。
+- **expo-file-system 不能往 `createFile` 建好的 SAF 文档里 `copy`。** 不带 `overwrite` 报已存在，带了会先删掉文档再写，写不进去。只能 `copy` 到文件夹，用源文件的名字，重名时报 `Destination already exists`，要自己换名字再试。
+- **`expo-intent-launcher` 拿不到 `ACTION_CREATE_DOCUMENT` 返回的地址。** 它返回的 `data` 是 `Intent.toString()`，不是 URI，所以“另存为”对话框走不通，只能用文件夹选择器。Android 11 起这个选择器不让选“下载”根目录和存储根目录，要在里面新建文件夹或选别的目录。
 - **开发 SeaweedFS 的卷位用满后，写入新 Bucket 返回 500。** 它给每个 Bucket 单独分卷，`-volume.max=20` 用完就报 `No writable volume`，已有的 Bucket 不受影响。看起来像预签名出错，先看 S3 容器的日志。
 
 ## 健康内容
@@ -125,6 +129,8 @@
 - **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 8 秒。
 - **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
+- **`uiautomator dump` 在界面一直有动画时会卡住。** 输入框光标闪烁、录音计时都会让它等不到空闲，`adb-ui.py` 看起来像挂了。这时用坐标点击和 `screencap`，或者先让输入框失去焦点。
+- **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 - **测事务模式连接池要加反向对照。** 本地用 PgBouncer（`pool_mode=transaction`、`max_prepared_statements=0`）跑全部测试，再打开 `DB_PREPARE` 跑一次，要看到 `prepared statement does not exist`，才说明这个环境真的能发现问题。
 - **`scrollUntilVisible` 一看到目标就停。** 滚到区块标题后再断言下面的内容，长列表时内容还在屏幕外。要断言哪一行就滚到哪一行。

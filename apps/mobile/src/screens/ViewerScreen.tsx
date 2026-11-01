@@ -22,6 +22,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecords } from '../lib/app';
+import { DownloadButton } from '../lib/DownloadButton';
+import { downloadFileNames } from '../lib/downloadCore';
 import { clampPan, containedSize } from '../lib/layout';
 import { MediaImage, useMediaSource } from '../lib/mediaViews';
 import { colors } from '../theme';
@@ -39,18 +41,26 @@ export function ViewerScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
-  const { items, title } = useMemo(() => {
+  const { items, title, fileNames } = useMemo(() => {
     if (params.document) {
       const doc = documents.find((d) => d.id === params.document);
       return {
         items: (doc?.data.files ?? []).filter((f) => f.id === params.media),
         title: doc?.data.name ?? '',
+        // 证件不在这里下载：这个页面能通过链接直接打开，没有经过证件夹解锁。
+        fileNames: null,
       };
     }
     const moment = moments.find((m) => m.id === params.moment);
     return {
       items: (moment?.data.media ?? []).filter((x) => x.kind === 'image' || x.kind === 'video'),
       title: moment ? `${moment.data.title || '这一刻'} · ${formatMonthDay(moment.data.at)}` : '',
+      fileNames: moment
+        ? downloadFileNames(moment.data.media, {
+            title: moment.data.title || '这一刻',
+            at: moment.data.at,
+          })
+        : null,
     };
   }, [params.document, params.moment, params.media, documents, moments]);
 
@@ -62,6 +72,8 @@ export function ViewerScreen() {
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
   };
+  const current = items[index];
+  const currentName = current && fileNames?.get(current.id);
 
   return (
     <View style={s.root} testID="viewer-screen">
@@ -111,6 +123,15 @@ export function ViewerScreen() {
           {title}
         </Text>
         <Text style={s.count}>{items.length > 1 ? `${index + 1} / ${items.length}` : ''}</Text>
+        {current && currentName ? (
+          <DownloadButton
+            key={current.id}
+            media={current}
+            fileName={currentName}
+            tone="dark"
+            testID="viewer-download"
+          />
+        ) : null}
       </View>
     </View>
   );
