@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createApp } from '../src/app';
 import { decryptSecret } from '../src/crypto';
 import { connect } from '../src/db';
+import { runMaintenance } from '../src/maintenance';
 import { processPendingDeletions } from '../src/objectDeletions';
 import { headObject, type ResolvedStorage, storageById } from '../src/storage';
 import {
@@ -534,35 +535,157 @@ describe('待删除文件的队列', () => {
     expect(await exists(key!)).toBe(false);
   });
 
-  it('命令行 purge-objects 能处理队列', async () => {
+  /** 走真实上传，让存储里有文件，再把它放进队列。不删家庭，方便控制队列里有什么。 */
+  async function queuedObjects() {
     const { admin, family } = await newFamily(app);
     await upload(app, admin.token);
-    const [key] = await objectKeys(family.id);
+    await upload(app, admin.token);
+    const [platformKey, customKey] = await objectKeys(family.id);
+    const s = localS3();
     await db.sql`INSERT INTO pending_object_deletions (id, object_key, storage)
-      VALUES (${randomUUID()}, ${key!}, NULL)`;
-    const s = db.config.serverStorage!;
-    const { stdout } = await promisify(execFile)(
-      process.execPath,
-      ['--import', 'tsx', resolve(import.meta.dirname, '../src/cli.ts'), 'purge-objects'],
-      {
-        cwd: resolve(import.meta.dirname, '..'),
-        env: {
-          PATH: process.env.PATH,
-          DATABASE_URL: db.url,
-          APP_SECRET: db.config.appSecret.toString('base64'),
-          S3_ENDPOINT: s.endpoint,
-          S3_REGION: s.region,
-          S3_BUCKET: s.bucket,
-          S3_ACCESS_KEY_ID: s.accessKeyId,
-          S3_SECRET_ACCESS_KEY: s.secretAccessKey,
-          S3_FORCE_PATH_STYLE: 'true',
+      VALUES (${randomUUID()}, ${platformKey!}, NULL)`;
+    await db.sql`INSERT INTO pending_object_deletions (id, object_key, storage)
+      VALUES (${randomUUID()}, ${customKey!}, ${db.sql.json({
+        id: randomUUID(),
+        provider: s.provider,
+        account_id: null,
+        endpoint: s.endpoint,
+        region: s.region,
+        bucket: s.bucket,
+        access_key_id: s.accessKeyId,
+        secret_encrypted: cryptoModule.encryptSecret(s.secretAccessKey, db.config.appSecret),
+        public_base_url: null,
+      })})`;
+    return { platformKey: platformKey!, customKey: customKey! };
+  }
+
+  const customRow = async () => {
+    const [row] = await db.sql<
+      { attempts: number; last_error: string | null; waits: boolean }[]
+    >`SELECT attempts, last_error, next_attempt_at > now() AS waits
+      FROM pending_object_deletions WHERE storage IS NOT NULL`;
+    return row;
+  };
+
+  describe('每天的 maintenance 一起处理这个队列', () => {
+    /** 定时任务没有 APP_SECRET 时，cli 用的就是这样的假密钥。 */
+    const fakeSecret = () => ({ ...db.config, appSecret: Buffer.alloc(32) });
+
+    it('没有真实的 APP_SECRET：平台存储照删，自带存储留在队列，不计次数也不算失败', async () => {
+      const { platformKey, customKey } = await queuedObjects();
+      const report = await runMaintenance(db.sql, fakeSecret(), { customStorage: false });
+      expect(report).toMatchObject({
+        failed: 0,
+        deletionsDone: 1,
+        deletionsFailed: 0,
+        deletionsRemaining: 1,
+        deletionsWaitingForSecret: 1,
+      });
+      expect(await exists(platformKey)).toBe(false);
+      expect(await exists(customKey)).toBe(true);
+      expect(await customRow()).toEqual({ attempts: 0, last_error: null, waits: false });
+    });
+
+    it('有真实的 APP_SECRET：两种都删掉', async () => {
+      const { platformKey, customKey } = await queuedObjects();
+      const report = await runMaintenance(db.sql, db.config);
+      expect(report).toMatchObject({
+        deletionsDone: 2,
+        deletionsFailed: 0,
+        deletionsRemaining: 0,
+        deletionsWaitingForSecret: 0,
+      });
+      expect(await exists(platformKey)).toBe(false);
+      expect(await exists(customKey)).toBe(false);
+    });
+
+    it('反向对照：拿假密钥硬解，自带存储的会失败，所以才要跳过', async () => {
+      const { customKey } = await queuedObjects();
+      const report = await runMaintenance(db.sql, fakeSecret());
+      expect(report.deletionsFailed).toBe(1);
+      expect((await customRow())?.attempts).toBe(1);
+      expect(await exists(customKey)).toBe(true);
+    });
+  });
+
+  describe('命令行', () => {
+    const run = (command: string, appSecret: string | undefined) => {
+      const s = db.config.serverStorage!;
+      return promisify(execFile)(
+        process.execPath,
+        ['--import', 'tsx', resolve(import.meta.dirname, '../src/cli.ts'), command],
+        {
+          cwd: resolve(import.meta.dirname, '..'),
+          env: {
+            PATH: process.env.PATH,
+            DATABASE_URL: db.url,
+            ...(appSecret === undefined ? {} : { APP_SECRET: appSecret }),
+            S3_ENDPOINT: s.endpoint,
+            S3_REGION: s.region,
+            S3_BUCKET: s.bucket,
+            S3_ACCESS_KEY_ID: s.accessKeyId,
+            S3_SECRET_ACCESS_KEY: s.secretAccessKey,
+            S3_FORCE_PATH_STYLE: 'true',
+            // 自带存储的地址在这里是本机，否则会被 SSRF 检查拦下。
+            ALLOW_PRIVATE_STORAGE_ENDPOINTS: 'true',
+          },
         },
-      },
-    );
-    expect(stdout).toContain('已删除 1 个');
-    expect(await exists(key!)).toBe(false);
-    expect(await queueSize()).toBe(0);
-  }, 60_000);
+      );
+    };
+    const realSecret = () => db.config.appSecret.toString('base64');
+
+    // 空字符串是 GitHub Actions 上没设置 Secret 时的样子。
+    for (const [name, secret] of [
+      ['没有 APP_SECRET', undefined],
+      ['APP_SECRET 是空字符串', ''],
+    ] as const) {
+      it(`maintenance，${name}：退出码 0，写明还剩多少`, async () => {
+        const { platformKey, customKey } = await queuedObjects();
+        const { stdout } = await run('maintenance', secret);
+        expect(stdout).toContain('"deletionsDone":1');
+        expect(stdout).toContain('"deletionsWaitingForSecret":1');
+        expect(stdout).toContain('还有 1 个文件在家庭自带的存储里');
+        expect(await exists(platformKey)).toBe(false);
+        expect(await exists(customKey)).toBe(true);
+        expect((await customRow())?.attempts).toBe(0);
+      }, 60_000);
+    }
+
+    it('maintenance，有真实的 APP_SECRET：两种都删掉', async () => {
+      const { platformKey, customKey } = await queuedObjects();
+      const { stdout } = await run('maintenance', realSecret());
+      expect(stdout).toContain('"deletionsDone":2');
+      expect(stdout).not.toContain('家庭自带的存储');
+      expect(await exists(platformKey)).toBe(false);
+      expect(await exists(customKey)).toBe(false);
+    }, 60_000);
+
+    it('purge-objects，没有 APP_SECRET：规则一样', async () => {
+      const { platformKey, customKey } = await queuedObjects();
+      const { stdout } = await run('purge-objects', undefined);
+      expect(stdout).toContain('已删除 1 个');
+      expect(stdout).toContain('还有 1 个文件在家庭自带的存储里');
+      expect(await exists(platformKey)).toBe(false);
+      expect(await exists(customKey)).toBe(true);
+    }, 60_000);
+
+    it('purge-objects，有真实的 APP_SECRET：队列清空', async () => {
+      const { platformKey, customKey } = await queuedObjects();
+      const { stdout } = await run('purge-objects', realSecret());
+      expect(stdout).toContain('已删除 2 个');
+      expect(await exists(platformKey)).toBe(false);
+      expect(await exists(customKey)).toBe(false);
+      expect(await queueSize()).toBe(0);
+    }, 60_000);
+
+    it('APP_SECRET 填错了要算失败：和“没有设置”不一样', async () => {
+      const { customKey } = await queuedObjects();
+      const wrong = Buffer.alloc(32, 7).toString('base64');
+      await expect(run('maintenance', wrong)).rejects.toMatchObject({ code: 1 });
+      expect(await exists(customKey)).toBe(true);
+      expect((await customRow())?.attempts).toBe(1);
+    }, 60_000);
+  });
 });
 
 describe('导出家庭数据', () => {
@@ -648,6 +771,13 @@ describe('导出家庭数据', () => {
     expect(json.records).toEqual([]);
     expect(json.media).toEqual([]);
     expect(text).not.toContain(foreign);
+  });
+
+  it('等待清理的文件（所在记录已删除）不导出', async () => {
+    const { admin } = await newFamily(app);
+    const id = await upload(app, admin.token);
+    await db.sql`UPDATE media SET unreferenced_at = now() WHERE id = ${id}`;
+    expect((await exportFamily(admin.token)).json.media).toEqual([]);
   });
 
   it('密钥、哈希、令牌、别人的邮箱和内部地址一律不出现', async () => {

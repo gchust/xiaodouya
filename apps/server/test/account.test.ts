@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AuthResponse, MeResponse, ServerConfig } from '@xiaodouya/shared';
+import type { AuthResponse, MeResponse, PublicConfig } from '@xiaodouya/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app';
 import { loadConfig } from '../src/config';
@@ -75,12 +75,20 @@ const wrongCode = (right: string) => (right === '000000' ? '111111' : '000000');
 
 describe('邮件配置', () => {
   it('公开的 /v1/config 不需要登录，只说开了什么', async () => {
-    const on = await call<ServerConfig>(app, 'GET', '/v1/config');
+    const on = await call<PublicConfig>(app, 'GET', '/v1/config');
     expect(on.status).toBe(200);
-    expect(on.json).toEqual({ passwordReset: true, emailVerification: true });
-    const off = await call<ServerConfig>(plainApp, 'GET', '/v1/config');
+    expect(on.json).toEqual({
+      allowCustomStorage: db.config.allowCustomStorage,
+      passwordReset: true,
+      emailVerification: true,
+    });
+    const off = await call<PublicConfig>(plainApp, 'GET', '/v1/config');
     expect(off.status).toBe(200);
-    expect(off.json).toEqual({ passwordReset: false, emailVerification: false });
+    expect(off.json).toEqual({
+      allowCustomStorage: db.config.allowCustomStorage,
+      passwordReset: false,
+      emailVerification: false,
+    });
   });
 
   it('Edge Function 的路径前缀下也能访问 /v1/config', async () => {
@@ -602,7 +610,10 @@ describe('邮箱验证', () => {
     const handler = createEdgeHandler(env, () => {});
     expect(handler).toBeTypeOf('function');
     const response = await handler(new Request('http://localhost/api/v1/config'));
-    expect(await response.json()).toEqual({ passwordReset: false, emailVerification: false });
+    expect(await response.json()).toMatchObject({
+      passwordReset: false,
+      emailVerification: false,
+    });
   });
 
   it('没有配置邮件时跳过这一步：不发信，算作已验证，直接建家庭', async () => {
@@ -700,16 +711,101 @@ describe('邮箱验证', () => {
     await expect(bg.flush()).resolves.toBeUndefined();
   });
 
-  it('用同一个来源大量注册不能变成群发：超过上限后注册还成功，但不发信', async () => {
-    const headers = { 'x-forwarded-for': `192.0.2.${Math.floor(Math.random() * 250) + 1}` };
-    for (let i = 0; i < 21; i++) {
-      const response = await call(app, 'POST', '/v1/auth/register', {
+  /** 注册本身的按来源限制关掉，只看发信这一条。 */
+  const withoutRegisterLimit = () =>
+    createApp({
+      sql: db.sql,
+      config: { ...db.config, limits: { ...db.config.limits, registerPerIpHour: 0 } },
+      mailer: mail,
+      background: bg.background,
+    });
+  const registerMany = async (target: App, count: number, headers?: Record<string, string>) => {
+    for (let i = 0; i < count; i++) {
+      const response = await call(target, 'POST', '/v1/auth/register', {
         body: { email: uniqueEmail(), password: PASSWORD, displayName: '虚构用户' },
         headers,
       });
       expect(response.status).toBe(201);
     }
     await bg.flush();
+  };
+
+  it('用同一个来源大量注册不能变成群发：超过上限后注册还成功，但不发信', async () => {
+    const headers = { 'x-forwarded-for': `192.0.2.${Math.floor(Math.random() * 250) + 1}` };
+    await registerMany(withoutRegisterLimit(), 21, headers);
     expect(mail.messages).toHaveLength(20);
   }, 60_000);
+
+  it('拿不到来源时不按来源限制发信：大家不能共用一个计数', async () => {
+    await registerMany(withoutRegisterLimit(), 21);
+    expect(mail.messages).toHaveLength(21);
+    const proxied = { 'x-forwarded-for': '10.0.0.1' };
+    await registerMany(withoutRegisterLimit(), 1, proxied);
+    expect(mail.messages).toHaveLength(22);
+  }, 60_000);
+});
+
+describe('拿不到来源地址时的限流', () => {
+  it('找回密码不共用一个计数，一个人挡不住所有人', async () => {
+    for (const headers of [undefined, { 'x-forwarded-for': '10.0.0.1' }]) {
+      for (let i = 0; i < 21; i++) {
+        expect((await forgot(uniqueEmail(), headers)).status).toBe(200);
+      }
+    }
+    await bg.flush();
+  }, 60_000);
+
+  it('按邮箱的发送上限还在', async () => {
+    const user = await newUser(app);
+    for (let i = 0; i < 7; i++) {
+      await skipCooldown();
+      await forgot(user.email);
+      await bg.flush();
+    }
+    expect(mail.to(user.email, 'reset')).toHaveLength(5);
+  });
+
+  it('提交验证码按 unknown 加邮箱计数，只影响这一个邮箱', async () => {
+    const victim = uniqueEmail();
+    let last = 0;
+    for (let i = 0; i < 21; i++) last = (await reset(victim, '123456')).status;
+    expect(last).toBe(429);
+    expect((await reset(uniqueEmail(), '123456')).status).toBe(400);
+  }, 60_000);
+});
+
+describe('改密码后清除登录限流，键要和登录时算出来的完全一样', () => {
+  const loginFrom = (email: string, password: string, headers?: Record<string, string>) =>
+    call<AuthResponse>(app, 'POST', '/v1/auth/login', { body: { email, password }, headers });
+
+  async function lockOutThenReset(headers?: Record<string, string>) {
+    const user = await newUser(app);
+    for (let i = 0; i < 11; i++) await loginFrom(user.email, 'wrong-pass', headers);
+    expect((await loginFrom(user.email, PASSWORD, headers)).status).toBe(429);
+    await forgot(user.email, headers);
+    await bg.flush();
+    const done = await reset(user.email, mail.lastCode(user.email, 'reset'), NEW_PASSWORD, headers);
+    expect(done.status).toBe(200);
+    expect((await loginFrom(user.email, NEW_PASSWORD, headers)).status).toBe(200);
+  }
+
+  it('有来源地址时', async () => {
+    await lockOutThenReset({ 'x-forwarded-for': '203.0.113.7' });
+  });
+
+  it('拿不到来源地址时（unknown）', async () => {
+    await lockOutThenReset();
+  });
+
+  it('代理追加的地址：取同一段', async () => {
+    await lockOutThenReset({ 'x-forwarded-for': '198.51.100.1, 203.0.113.8' });
+  });
+
+  it('只清除本人这一个邮箱的限流', async () => {
+    const headers = { 'x-forwarded-for': '203.0.113.9' };
+    const other = await newUser(app);
+    for (let i = 0; i < 11; i++) await loginFrom(other.email, 'wrong-pass', headers);
+    await lockOutThenReset(headers);
+    expect((await loginFrom(other.email, PASSWORD, headers)).status).toBe(429);
+  });
 });
