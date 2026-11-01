@@ -2,7 +2,8 @@
 # 用法：scripts/android-build.sh [e2e|debug|release] [--clean]
 #   e2e     内置 JS、用样例代替系统相册，连 10.0.2.2:8787，模拟器和 CI 用
 #   debug   开发版，配合 pnpm dev:mobile 热更新
-#   release 正式版，需要 ANDROID_KEYSTORE_* 和 EXPO_PUBLIC_API_URL（见 docs/DEPLOYMENT.md）
+#   release 正式版，同时产出 APK 和上传 Google Play 用的 AAB，需要 ANDROID_KEYSTORE_* 和
+#           EXPO_PUBLIC_API_URL（见 docs/DEPLOYMENT.md）
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 
@@ -15,11 +16,11 @@ case "$MODE" in
     export EXPO_PUBLIC_E2E=1
     export EXPO_PUBLIC_API_URL="${EXPO_PUBLIC_API_URL:-http://10.0.2.2:8787}"
     export ANDROID_ARCHS="${ANDROID_ARCHS:-x86_64}"
-    TASK=assembleRelease
+    TASKS=(:app:assembleRelease)
     ;;
   debug)
     export ANDROID_ARCHS="${ANDROID_ARCHS:-x86_64}"
-    TASK=assembleDebug
+    TASKS=(:app:assembleDebug)
     ;;
   release)
     : "${EXPO_PUBLIC_API_URL:?正式版必须设置 EXPO_PUBLIC_API_URL}"
@@ -28,9 +29,10 @@ case "$MODE" in
     : "${ANDROID_KEYSTORE_PASSWORD:?正式版必须设置 ANDROID_KEYSTORE_PASSWORD}"
     : "${ANDROID_KEY_ALIAS:?正式版必须设置 ANDROID_KEY_ALIAS}"
     : "${ANDROID_KEY_PASSWORD:?正式版必须设置 ANDROID_KEY_PASSWORD}"
-    export ANDROID_ARCHS="${ANDROID_ARCHS:-arm64-v8a}"
+    # Google Play 要求有 64 位。32 位留给还在用的旧手机，AAB 下发时每台手机只拿自己的那一份。
+    export ANDROID_ARCHS="${ANDROID_ARCHS:-arm64-v8a,armeabi-v7a}"
     export ANDROID_ALLOW_HTTP="${ANDROID_ALLOW_HTTP:-0}"
-    TASK=assembleRelease
+    TASKS=(:app:assembleRelease :app:bundleRelease)
     ;;
   *)
     echo "未知模式：$MODE" >&2
@@ -48,7 +50,7 @@ fi
 
 cd android
 # 限制内存：本机同时还在跑模拟器和其他项目。CI 上可以用环境变量放开。
-./gradlew ":app:$TASK" \
+./gradlew "${TASKS[@]}" \
   --max-workers="${GRADLE_WORKERS:-3}" \
   -PreactNativeArchitectures="$ANDROID_ARCHS" \
   -Porg.gradle.jvmargs="-Xmx${GRADLE_HEAP:-3g} -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
@@ -59,3 +61,11 @@ VARIANT=release
 OUT="$ROOT/.artifacts/xiaodouya-$MODE.apk"
 cp "app/build/outputs/apk/$VARIANT/app-$VARIANT.apk" "$OUT"
 ls -lh "$OUT"
+
+if [ "$MODE" = "release" ]; then
+  AAB="$ROOT/.artifacts/xiaodouya-release.aab"
+  cp app/build/outputs/bundle/release/app-release.aab "$AAB"
+  ls -lh "$AAB"
+  # 上传前就知道过不过：Google Play 拒绝时已经走完了整个发布流程。
+  node "$ROOT/scripts/check-native-libs.mjs" "$OUT" "$AAB"
+fi

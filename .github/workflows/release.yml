@@ -1,6 +1,6 @@
 name: Release
 
-# 打 v* 标签时发布：服务端镜像推到 GHCR，签名 APK 放到 GitHub Release。
+# 打 v* 标签时发布：服务端镜像推到 GHCR，签名 APK 和 AAB 放到 GitHub Release。
 # 需要配置的 Secrets 和变量见 docs/DEPLOYMENT.md。
 on:
   push:
@@ -74,7 +74,7 @@ jobs:
             echo "$GOOGLE_SERVICES" | base64 -d > "$RUNNER_TEMP/google-services.json"
             echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
           fi
-      - name: 构建签名 APK
+      - name: 构建签名 APK 和 AAB
         env:
           EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
           EXPO_PUBLIC_API_REGION: ${{ vars.EXPO_PUBLIC_API_REGION }}
@@ -92,7 +92,11 @@ jobs:
           export APP_VERSION_CODE="${GITHUB_RUN_NUMBER}"
           bash scripts/android-build.sh release --clean
           mv .artifacts/xiaodouya-release.apk "xiaodouya-$TAG.apk"
+          mv .artifacts/xiaodouya-release.aab "xiaodouya-$TAG.aab"
       - uses: softprops/action-gh-release@v2
         with:
-          files: xiaodouya-*.apk
+          # APK 直接安装，AAB 上传 Google Play。
+          files: |
+            xiaodouya-*.apk
+            xiaodouya-*.aab
           generate_release_notes: true
