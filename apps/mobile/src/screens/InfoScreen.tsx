@@ -10,10 +10,11 @@ import {
 import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { formatBirthTime } from '../lib/dates';
+import { gridItemWidth } from '../lib/layout';
 import { GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { colors, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -33,12 +34,16 @@ import {
 } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
+const DOC_GAP = 8;
+
 export function InfoScreen() {
   const insets = useSafeAreaInsets();
   const { baby, documents, events } = useRecords();
   const sheet = useSheet();
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
   if (!baby) return <SyncingPlaceholder />;
+  const docWidth = gridItemWidth(windowWidth - spacing.page * 2, 2, DOC_GAP);
   const now = Date.now();
   const birthAt = baby.data.birthAt;
   const data = events.map((e) => e.data);
@@ -117,7 +122,7 @@ export function InfoScreen() {
                   testID={`doc-card-${d.data.name}`}
                   accessibilityLabel={d.data.name}
                   scaleTo={0.97}
-                  style={s.docCard}
+                  style={[s.docCard, { width: docWidth }]}
                   onPress={() => router.push({ pathname: '/doc/[id]', params: { id: d.id } })}
                 >
                   <Stripes style={s.docThumb}>
@@ -399,9 +404,8 @@ const s = StyleSheet.create({
   section: { gap: 8 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   link: { fontSize: 12, color: colors.accent },
-  docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
   docCard: {
-    width: '48.8%',
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,

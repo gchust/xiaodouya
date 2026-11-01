@@ -12,9 +12,10 @@ import {
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords } from '../lib/app';
-import { colors, fonts } from '../theme';
+import { gridItemWidth } from '../lib/layout';
+import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput } from '../ui/primitives';
 
@@ -226,8 +227,12 @@ export function DiaperSheet() {
   );
 }
 
+const MORE_GAP = 10;
+
 export function MoreSheet({ birthAt }: { birthAt: number }) {
   const sheet = useSheet();
+  const { width: windowWidth } = useWindowDimensions();
+  const itemWidth = gridItemWidth(windowWidth - spacing.page * 2, 3, MORE_GAP);
   const canEatSolids = ageParts(birthAt, Date.now()).months >= 6;
   const items: { key: string; label: string; color: string; onPress?: () => void; sub?: string }[] =
     [
@@ -280,7 +285,7 @@ export function MoreSheet({ birthAt }: { birthAt: number }) {
           accessibilityState={{ disabled: !item.onPress }}
           disabled={!item.onPress}
           onPress={item.onPress}
-          style={[s.moreItem, { opacity: item.onPress ? 1 : 0.5 }]}
+          style={[s.moreItem, { width: itemWidth, opacity: item.onPress ? 1 : 0.5 }]}
         >
           <Dot color={item.color} />
           <Text style={s.moreLabel}>{item.label}</Text>
@@ -646,9 +651,8 @@ const s = StyleSheet.create({
     gap: 8,
   },
   diaperLabel: { fontSize: 16, color: colors.ink },
-  moreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  moreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: MORE_GAP },
   moreItem: {
-    width: '31.5%',
     height: 88,
     borderRadius: 16,
     borderWidth: 1,

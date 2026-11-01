@@ -3,9 +3,10 @@ import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { gridItemWidth } from '../lib/layout';
 import {
   openDocumentFile,
   type PickedFile,
@@ -29,6 +30,8 @@ import {
   Stripes,
 } from '../ui/primitives';
 
+const FILE_GAP = 8;
+
 export function DocumentScreen({ id }: { id: string }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -36,6 +39,8 @@ export function DocumentScreen({ id }: { id: string }) {
   const { documents } = useRecords();
   const sheet = useSheet();
   const { toast } = useFeedback();
+  const { width: windowWidth } = useWindowDimensions();
+  const fileWidth = gridItemWidth(windowWidth - spacing.page * 2, 2, FILE_GAP);
   const [showNumber, setShowNumber] = useState(false);
   const [unlocked, setUnlocked] = useState(!app.prefs.documentLock);
   const [authFailed, setAuthFailed] = useState(false);
@@ -221,7 +226,7 @@ export function DocumentScreen({ id }: { id: string }) {
                   testID={`doc-file-${file.name ?? file.id}`}
                   accessibilityRole="button"
                   accessibilityLabel={file.name ?? '文件'}
-                  style={s.file}
+                  style={[s.file, { width: fileWidth }]}
                   onPress={() => openFile(file)}
                 >
                   <View style={s.preview}>
@@ -362,8 +367,8 @@ const s = StyleSheet.create({
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   fileHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  files: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  file: { width: '48.8%', gap: 6 },
+  files: { flexDirection: 'row', flexWrap: 'wrap', gap: FILE_GAP },
+  file: { gap: 6 },
   preview: {
     aspectRatio: 3 / 4,
     borderRadius: 10,

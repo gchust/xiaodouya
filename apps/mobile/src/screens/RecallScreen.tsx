@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { MomentSheet } from '../sheets/MomentSheet';
 import { colors, fonts, spacing } from '../theme';
@@ -195,9 +196,13 @@ function Timeline({ birthAt }: { birthAt: number }) {
   );
 }
 
+const PHOTO_GAP = 4;
+
 function Photos() {
   const { moments } = useRecords();
   const router = useRouter();
+  const { width: windowWidth } = useWindowDimensions();
+  const cellWidth = gridItemWidth(windowWidth - spacing.page * 2, 3, PHOTO_GAP);
   const groups = moments
     .map((m) => ({
       moment: m,
@@ -224,7 +229,7 @@ function Photos() {
                 testID={`photo-${cell.id}`}
                 accessibilityRole="imagebutton"
                 accessibilityLabel={cell.kind === 'video' ? '播放视频' : '查看照片'}
-                style={s.gridCell}
+                style={[s.gridCell, { width: cellWidth }]}
                 onPress={() =>
                   router.push({ pathname: '/viewer', params: { moment: moment.id, index } })
                 }
@@ -363,9 +368,8 @@ const s = StyleSheet.create({
     gap: 8,
   },
   groupTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink, flexShrink: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP },
   gridCell: {
-    width: '32.4%',
     aspectRatio: 1,
     borderRadius: 8,
     overflow: 'hidden',
