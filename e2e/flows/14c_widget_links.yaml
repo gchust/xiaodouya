@@ -28,3 +28,13 @@ appId: com.gchust.xiaodouya
     visible: { id: today-screen }
     timeout: 15000
 - assertNotVisible: { id: event-edit }
+# App 完全没开时从链接启动：弹层在刚挂载时打开，收起动画的回调不能把它清掉。
+- stopApp
+- openLink: xiaodouya://today?sheet=feed
+- extendedWaitUntil:
+    visible: { id: feed-save }
+    timeout: 30000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000

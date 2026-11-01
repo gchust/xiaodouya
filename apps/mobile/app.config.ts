@@ -2,6 +2,8 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 const version = process.env.APP_VERSION ?? '0.1.0';
 const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
+// 小工具上有宝宝的名字和记录。Android 16 QPR2 起第三方小工具默认可以放到锁屏，这里明确不要。
+const WIDGET_CATEGORY = 'home_screen|not_keyguard';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -94,6 +96,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             resizeMode: 'horizontal|vertical',
             // 系统不接受比 30 分钟更短的周期；更及时的刷新靠写入和同步后主动更新。
             updatePeriodMillis: 1_800_000,
+            widgetCategory: WIDGET_CATEGORY,
           },
           {
             name: 'SleepWidget',
@@ -106,6 +109,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             targetCellHeight: 2,
             resizeMode: 'horizontal|vertical',
             updatePeriodMillis: 1_800_000,
+            widgetCategory: WIDGET_CATEGORY,
           },
           {
             name: 'SummaryWidget',
@@ -118,6 +122,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             targetCellHeight: 2,
             resizeMode: 'horizontal|vertical',
             updatePeriodMillis: 1_800_000,
+            widgetCategory: WIDGET_CATEGORY,
           },
         ],
       },
