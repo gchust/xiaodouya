@@ -5,10 +5,14 @@ import {
   defaultPrefs,
   describeEvent,
   type EventData,
+  effectiveUnits,
   type MeResponse,
   type Prefs,
+  type RegionDefinition,
   type Role,
+  regionFor,
   type ServerRecord,
+  type Units,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
@@ -31,9 +35,10 @@ import { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
 import { Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
+import { deviceTimezone } from './device';
 import { clearLocalMedia, createUploadTransport } from './media';
 import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
-import { sessionOwner, shouldClearLocalData } from './sessionLogic';
+import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 
 const TOKEN_KEY = 'session.token';
 const SERVER_KEY = 'session.server';
@@ -82,6 +87,17 @@ export function useRecords(): Snapshot {
 export function useUploadProgress() {
   const { uploads } = useApp();
   return useSyncExternalStore(uploads.subscribe, uploads.getProgress);
+}
+
+/** 家庭的地区，规则见 regionFor。 */
+export function useRegion(): RegionDefinition {
+  return regionFor(useRecords().baby?.data.region);
+}
+
+/** 这个人用的单位。所有显示和输入数量的地方都从这里取。 */
+export function useUnits(): Units {
+  const { prefs } = useApp();
+  return effectiveUnits(prefs.units, useRecords().baby?.data.region);
 }
 
 /** 让计时类显示定期刷新。 */
@@ -136,7 +152,13 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         { sync: (r) => api.sync(r), wait: (c, s) => api.syncWait(c, s) },
         {
           onStatus: setSyncStatus,
-          onRemote: (records) => announceRemote(records, meRef.current, feedbackRef.current.banner),
+          onRemote: (records) =>
+            announceRemote(
+              records,
+              meRef.current,
+              effectiveUnits(meRef.current?.prefs.units, store.getSnapshot().baby?.data.region),
+              feedbackRef.current.banner,
+            ),
           onRejected: (count) =>
             feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
           onSynced: () => {
@@ -257,6 +279,16 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
 
   const prefs = me?.prefs ?? defaultPrefs;
 
+  // 夜间安静在服务端按这个时区判断。失败了也没关系，下次刷新发现不一样会再写一次。
+  useEffect(() => {
+    if (!services || !me) return;
+    const timezone = timezoneToSync(me.prefs.timezone, deviceTimezone());
+    if (!timezone) return;
+    const next = { ...me.prefs, timezone };
+    void persistMe({ ...me, prefs: next });
+    void services.api.updatePrefs(next).catch(() => {});
+  }, [services, me, persistMe]);
+
   // 记录或设置变化后，重新安排本机的喂奶提醒。
   useEffect(() => {
     if (!services || me?.role === 'viewer' || !hasFamily) return;
@@ -374,6 +406,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
 function announceRemote(
   records: ServerRecord[],
   me: MeResponse | null,
+  units: Units,
   banner: (initial: string, message: string) => void,
 ) {
   const now = Date.now();
@@ -388,7 +421,7 @@ function announceRemote(
     '家人';
   const text =
     latest.collection === 'event'
-      ? describeEvent(latest.data as EventData, now)
+      ? describeEvent(latest.data as EventData, now, units)
       : (latest.data as { title?: string }).title || '新的一刻';
   banner(author.slice(0, 1), `${author} 记录了 ${text}`);
 }

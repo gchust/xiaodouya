@@ -1,21 +1,31 @@
 import {
   ageParts,
   assessTemperature,
+  chipsFor,
   describeEvent,
   type EventData,
   estimateNextFeed,
-  feedAmountChips,
+  formatTemperatureRange,
   medicineSuggestions,
+  metricToSave,
+  newCustomVaccineId,
   nextVaccine,
+  scaleFor,
+  stepDisplay,
+  toDisplay,
+  toMetric,
   vaccineStatuses,
   vaccinesToOffer,
 } from '@xiaodouya/shared';
+import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { useApp, useRecords } from '../lib/app';
+import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
+import { doseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { colors, fonts, spacing } from '../theme';
+import { PastDatePicker } from '../ui/BirthPicker';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput } from '../ui/primitives';
 
@@ -47,6 +57,7 @@ export function useSaveEvent() {
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
+  const units = useUnits();
   const { me, label } = app;
   return useCallback(
     async (event: EventData, id?: string) => {
@@ -56,11 +67,11 @@ export function useSaveEvent() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
       const suffix = others.length === 1 ? ` · 已同步给${others[0]?.label}` : '';
-      toast(`已记录 · ${describeEvent(data, Date.now())}${suffix}`, {
+      toast(`已记录 · ${describeEvent(data, Date.now(), units)}${suffix}`, {
         undo: id ? undefined : () => void app.remove(recordId),
       });
     },
-    [app, sheet, toast, me, label],
+    [app, sheet, toast, me, label, units],
   );
 }
 
@@ -122,7 +133,10 @@ export function FeedSheet({
     events.map((e) => e.data),
     Date.now(),
   ).last;
-  const [ml, setMl] = useState(initial?.ml ?? last?.ml ?? 90);
+  const { volume } = useUnits();
+  const scale = scaleFor('volume', volume);
+  const original = initial?.ml ?? last?.ml;
+  const [amount, setAmount] = useState(() => toDisplay('volume', original ?? 90, volume));
   const [note, setNote] = useState(initial?.note ?? '');
   const [offset, setOffset] = useState(0);
   return (
@@ -130,23 +144,23 @@ export function FeedSheet({
       {id ? null : <TimeOffsets value={offset} onChange={setOffset} />}
       <Stepper
         testPrefix="ml"
-        value={String(ml)}
-        unit="ml"
-        onDec={() => setMl((v) => Math.max(10, v - 10))}
-        onInc={() => setMl((v) => Math.min(1000, v + 10))}
+        value={amount.toFixed(scale.decimals)}
+        unit={scale.label}
+        onDec={() => setAmount((v) => stepDisplay('volume', v, -1, volume))}
+        onInc={() => setAmount((v) => stepDisplay('volume', v, 1, volume))}
       />
       <View style={s.mlChips}>
-        {feedAmountChips.map((v) => {
-          const on = ml === v;
+        {chipsFor(volume).map((v) => {
+          const on = amount === v;
           return (
             <Pressable
               key={v}
-              testID={`ml-chip-${v}`}
+              testID={`${volume}-chip-${v}`}
               accessibilityRole="button"
-              accessibilityLabel={`${v} 毫升`}
+              accessibilityLabel={`${v} ${scale.name}`}
               accessibilityState={{ selected: on }}
               hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-              onPress={() => setMl(v)}
+              onPress={() => setAmount(v)}
               style={[s.mlChip, { backgroundColor: on ? colors.ink : colors.paper }]}
             >
               <Mono weight="medium" style={{ fontSize: 13, color: on ? colors.paper : colors.ink }}>
@@ -171,7 +185,7 @@ export function FeedSheet({
             {
               type: 'feed',
               at: initial?.at ?? Date.now() - offset * 60_000,
-              ml,
+              ml: metricToSave('volume', original, amount, volume),
               note: note.trim() || undefined,
               byName: initial?.byName,
             },
@@ -299,27 +313,28 @@ export function MoreSheet({ birthAt }: { birthAt: number }) {
 
 export function TempSheet({ birthAt }: { birthAt: number }) {
   const save = useSaveEvent();
-  const [c, setC] = useState(36.8);
+  const { temperature: unit } = useUnits();
+  const scale = scaleFor('temperature', unit);
+  const [value, setValue] = useState(() => toDisplay('temperature', 36.8, unit));
   const [offset, setOffset] = useState(0);
-  const assessment = assessTemperature(c, ageParts(birthAt, Date.now()).months);
+  const celsius = toMetric('temperature', value, unit);
+  const assessment = assessTemperature(celsius, ageParts(birthAt, Date.now()).months, unit);
   const tone =
     assessment.level === 'fever' || assessment.level === 'urgent'
       ? colors.danger
       : assessment.level === 'elevated'
         ? colors.accent
         : colors.ink;
-  const step = (delta: number) =>
-    setC((v) => Math.min(45, Math.max(30, Math.round((v + delta) * 10) / 10)));
   return (
     <>
       <TimeOffsets value={offset} onChange={setOffset} />
       <Stepper
         testPrefix="temp"
-        value={c.toFixed(1)}
-        unit="℃"
+        value={value.toFixed(scale.decimals)}
+        unit={scale.label}
         color={tone}
-        onDec={() => step(-0.1)}
-        onInc={() => step(0.1)}
+        onDec={() => setValue((v) => stepDisplay('temperature', v, -1, unit))}
+        onInc={() => setValue((v) => stepDisplay('temperature', v, 1, unit))}
       />
       <Text testID="temp-hint" style={[s.hint, { color: tone }]}>
         {assessment.hint}
@@ -331,7 +346,7 @@ export function TempSheet({ birthAt }: { birthAt: number }) {
           void save({
             type: 'temp',
             at: Date.now() - offset * 60_000,
-            celsius: c,
+            celsius,
             note: assessment.note,
           })
         }
@@ -394,12 +409,14 @@ export function MedSheet() {
 
 export function BathSheet() {
   const save = useSaveEvent();
+  const { temperature } = useUnits();
   const [offset, setOffset] = useState(0);
   return (
     <>
       <TimeOffsets value={offset} onChange={setOffset} />
       <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-        水温 37–40℃，用手肘试一下不烫就好。洗完先擦干脐部和皮肤褶皱。
+        水温 {formatTemperatureRange(37, 40, temperature)}
+        ，用手肘试一下不烫就好。洗完先擦干脐部和皮肤褶皱。
       </Muted>
       <Button
         testID="bath-save"
@@ -486,56 +503,95 @@ export function GrowthSheet() {
   const latest = events.find((e) => e.data.type === 'growth')?.data as
     | Extract<EventData, { type: 'growth' }>
     | undefined;
-  const [w, setW] = useState(latest?.weightKg ?? baby?.data.birthWeightKg ?? 3.4);
-  const [h, setH] = useState(latest?.lengthCm ?? baby?.data.birthLengthCm ?? 50);
-  const round = (v: number) => Math.round(v * 10) / 10;
+  const units = useUnits();
+  const originalWeight = latest?.weightKg ?? baby?.data.birthWeightKg;
+  const originalLength = latest?.lengthCm ?? baby?.data.birthLengthCm;
+  const [w, setW] = useState(() => toDisplay('weight', originalWeight ?? 3.4, units.weight));
+  const [h, setH] = useState(() => toDisplay('length', originalLength ?? 50, units.length));
   return (
     <>
       <SmallStepper
         testPrefix="weight"
         label="体重"
         value={w.toFixed(1)}
-        unit="kg"
-        onDec={() => setW((v) => Math.max(0.5, round(v - 0.1)))}
-        onInc={() => setW((v) => Math.min(100, round(v + 0.1)))}
+        unit={scaleFor('weight', units.weight).label}
+        onDec={() => setW((v) => stepDisplay('weight', v, -1, units.weight))}
+        onInc={() => setW((v) => stepDisplay('weight', v, 1, units.weight))}
       />
       <SmallStepper
         testPrefix="length"
         label="身长"
         value={h.toFixed(1)}
-        unit="cm"
-        onDec={() => setH((v) => Math.max(25, round(v - 0.5)))}
-        onInc={() => setH((v) => Math.min(250, round(v + 0.5)))}
+        unit={scaleFor('length', units.length).label}
+        onDec={() => setH((v) => stepDisplay('length', v, -1, units.length))}
+        onInc={() => setH((v) => stepDisplay('length', v, 1, units.length))}
       />
       <Button
         testID="growth-save"
         label="记录"
-        onPress={() => void save({ type: 'growth', at: Date.now(), weightKg: w, lengthCm: h })}
+        onPress={() =>
+          void save({
+            type: 'growth',
+            at: Date.now(),
+            weightKg: metricToSave('weight', originalWeight, w, units.weight),
+            lengthCm: metricToSave('length', originalLength, h, units.length),
+          })
+        }
       />
     </>
   );
 }
 
-export function VaccineSheet({ birthAt, preselect }: { birthAt: number; preselect?: string }) {
+/** 选中“其他疫苗”时的占位值，不会和带地区前缀的 id 冲突。 */
+const CUSTOM_OPTION = 'custom';
+
+export function VaccineSheet({
+  birthAt,
+  preselect,
+  custom,
+}: {
+  birthAt: number;
+  preselect?: string;
+  /** 直接打开“其他疫苗”，用于疫苗本上的添加入口。 */
+  custom?: boolean;
+}) {
   const { events } = useRecords();
+  const region = useRegion();
   const save = useSaveEvent();
   const statuses = vaccineStatuses(
+    region,
     birthAt,
     events.map((e) => e.data),
     Date.now(),
   );
   const pending = vaccinesToOffer(statuses, preselect);
-  const [selected, setSelected] = useState(preselect ?? nextVaccine(statuses)?.id ?? '');
+  const [selected, setSelected] = useState(
+    custom ? CUSTOM_OPTION : (preselect ?? nextVaccine(statuses)?.id ?? CUSTOM_OPTION),
+  );
+  const [customName, setCustomName] = useState('');
+  const [date, setDate] = useState(() => new Date());
+  const isCustom = selected === CUSTOM_OPTION;
   const dose = pending.find((v) => v.id === selected);
+  const name = isCustom ? customName.trim() : dose?.name;
+  const submit = () => {
+    if (!name) return;
+    void save({
+      type: 'vaccine',
+      at: doseTimestamp(date, Date.now()),
+      vaccineId: isCustom ? newCustomVaccineId(Crypto.randomUUID()) : (dose?.id as string),
+      name,
+    });
+  };
   return (
     <>
+      <PastDatePicker label="接种日期" testID="vaccine-date" value={date} onChange={setDate} />
       <View style={{ gap: 8 }}>
         {pending.map((v) => {
           const on = selected === v.id;
           return (
             <Pressable
               key={v.id}
-              testID={`vaccine-${v.id}`}
+              testID={`vaccine-${v.localId}`}
               accessibilityRole="button"
               accessibilityLabel={v.name}
               accessibilityState={{ selected: on }}
@@ -548,21 +604,35 @@ export function VaccineSheet({ birthAt, preselect }: { birthAt: number; preselec
             </Pressable>
           );
         })}
+        {pending.length > 0 ? (
+          <Pressable
+            testID="vaccine-custom"
+            accessibilityRole="button"
+            accessibilityLabel="其他疫苗"
+            accessibilityState={{ selected: isCustom }}
+            onPress={() => setSelected(CUSTOM_OPTION)}
+            style={[s.vaccineOption, { backgroundColor: isCustom ? colors.ink : colors.paper }]}
+          >
+            <Text style={{ fontSize: 14, color: isCustom ? colors.paper : colors.ink }}>
+              其他疫苗（自己填名字）
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
-      <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-        按新加坡国家儿童免疫计划排列，以诊所安排和健康手册为准。
+      {isCustom ? (
+        <SoftInput
+          testID="vaccine-custom-name"
+          value={customName}
+          onChangeText={setCustomName}
+          placeholder="疫苗名称"
+          maxLength={100}
+        />
+      ) : null}
+      {dose?.note ? <Muted style={{ fontSize: 12, lineHeight: 19 }}>{dose.note}</Muted> : null}
+      <Muted testID="vaccine-sheet-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
+        {region.disclaimer}
       </Muted>
-      <Button
-        testID="vaccine-save"
-        tone="green"
-        label="已接种"
-        disabled={!dose}
-        onPress={() =>
-          dose
-            ? void save({ type: 'vaccine', at: Date.now(), vaccineId: dose.id, name: dose.name })
-            : undefined
-        }
-      />
+      <Button testID="vaccine-save" tone="green" label="已接种" disabled={!name} onPress={submit} />
     </>
   );
 }

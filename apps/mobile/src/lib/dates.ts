@@ -9,6 +9,16 @@ export function isBirthInFuture(birthAt: number, now: number): boolean {
   return birthAt > now;
 }
 
+/**
+ * 接种日期变成记录时间。今天的用现在，这样时间线顺序才对；补记以前的放在那天中午，
+ * 时区差几个小时也还是同一天。不接受未来的日期。
+ */
+export function doseTimestamp(picked: Date, now: number): number {
+  if (picked.toDateString() === new Date(now).toDateString()) return now;
+  const noon = new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), 12).getTime();
+  return Math.min(noon, now);
+}
+
 /** 成员状态：刚刚活跃算在线，否则显示大致时间。 */
 export function formatLastSeen(
   lastSeenAt: number | null,

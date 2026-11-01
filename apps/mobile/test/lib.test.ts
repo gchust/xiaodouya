@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bookFileName, buildBookHtml } from '../src/lib/bookHtml';
-import { formatLastSeen, isBirthInFuture } from '../src/lib/dates';
+import { bookFileName, bookPage, buildBookHtml } from '../src/lib/bookHtml';
+import { doseTimestamp, formatLastSeen, isBirthInFuture } from '../src/lib/dates';
 import {
   createExclusivePlayback,
   downsamplePeaks,
@@ -152,6 +152,29 @@ describe('成员状态', () => {
     expect(formatLastSeen(now - 3 * 3_600_000, now).text).toBe('今天');
     expect(formatLastSeen(now - 24 * 3_600_000, now).text).toBe('昨天');
     expect(formatLastSeen(new Date(2026, 1, 3).getTime(), now).text).toBe('2月3日');
+  });
+});
+
+describe('接种日期', () => {
+  const now = new Date(2026, 5, 10, 15, 30).getTime();
+  it('今天就用现在的时间，时间线的顺序才对', () => {
+    expect(doseTimestamp(new Date(2026, 5, 10, 8, 0), now)).toBe(now);
+  });
+  it('补记以前的就放在那天中午，不受时区边缘影响', () => {
+    expect(doseTimestamp(new Date(2024, 1, 3, 23, 59), now)).toBe(
+      new Date(2024, 1, 3, 12, 0).getTime(),
+    );
+  });
+  it('不能晚于现在', () => {
+    expect(doseTimestamp(new Date(2026, 5, 11, 9, 0), now)).toBe(now);
+    expect(doseTimestamp(new Date(2027, 0, 1), now)).toBe(now);
+  });
+});
+
+describe('成长册纸张', () => {
+  it('按地区的纸张（单位是点）', () => {
+    expect(bookPage('A4')).toEqual({ width: 595, height: 842 });
+    expect(bookPage('Letter')).toEqual({ width: 612, height: 792 });
   });
 });
 

@@ -3,6 +3,7 @@ import {
   ageText,
   dayNumber,
   describeEvent,
+  dueVaccine,
   type EventData,
   estimateNextFeed,
   eventColors,
@@ -10,10 +11,11 @@ import {
   formatDateHeader,
   formatDuration,
   formatHoursMinutes,
-  nextVaccine,
+  formatVolume,
   summarize24h,
   summaryText,
   todayInsight,
+  type Units,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
@@ -35,7 +37,7 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecords } from '../lib/app';
+import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
 import { pickFromLibrary, queueForUpload } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -57,6 +59,8 @@ export function TodayScreen() {
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
   const { events, baby, pendingCount } = useRecords();
+  const region = useRegion();
+  const units = useUnits();
   const sheet = useSheet();
   const { toast } = useFeedback();
   // 只用来定时刷新。过滤记录要用渲染时的时间：否则刚保存的记录比 now 新，最多 15 秒不显示，家长可能重复记录。
@@ -74,8 +78,7 @@ export function TodayScreen() {
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
   const recent = events.filter((e) => e.data.type !== 'growth' && e.data.at <= now).slice(0, 8);
-  const statuses = vaccineStatuses(birthAt, data, now);
-  const vaccine = nextVaccine(statuses);
+  const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
 
   const feedHint = !estimate.last
     ? ''
@@ -197,7 +200,7 @@ export function TodayScreen() {
         </Mono>
         <Muted testID="last-feed">
           {estimate.last
-            ? `${formatClock(estimate.last.at)} 喂奶 ${estimate.last.ml}ml${
+            ? `${formatClock(estimate.last.at)} 喂奶 ${formatVolume(estimate.last.ml, units.volume)}${
                 estimate.last.byName ? ` · ${estimate.last.byName}记录` : ''
               }`
             : '还没有喂奶记录，点这里记第一次'}
@@ -249,7 +252,7 @@ export function TodayScreen() {
       <View style={s.listHeader}>
         <Text style={s.listTitle}>过去 24 小时</Text>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
-          {summaryText(summary)}
+          {summaryText(summary, units)}
         </Muted>
       </View>
       <View style={s.list}>
@@ -266,8 +269,9 @@ export function TodayScreen() {
               id={entry.id}
               event={entry.data}
               now={now}
+              units={units}
               onPress={() =>
-                sheet.open(describeEvent(entry.data, now), () => (
+                sheet.open(describeEvent(entry.data, now, units), () => (
                   <EventActionsSheet id={entry.id} event={entry.data} />
                 ))
               }
@@ -293,14 +297,7 @@ export function TodayScreen() {
             </Text>
           </Card>
         </Pressable>
-      ) : (
-        <View testID="vaccine-reminder" style={s.vaccineWrap}>
-          <Card style={s.vaccineCard}>
-            <Text style={s.vaccineLabel}>疫苗提醒</Text>
-            <Text style={s.vaccineText}>目前没有待接种的疫苗。</Text>
-          </Card>
-        </View>
-      )}
+      ) : null}
     </ScrollView>
   );
 }
@@ -333,11 +330,13 @@ function TimelineRow({
   id,
   event,
   now,
+  units,
   onPress,
 }: {
   id: string;
   event: EventData;
   now: number;
+  units: Units;
   onPress: () => void;
 }) {
   const sub = [event.note, event.byName].filter(Boolean).join(' · ');
@@ -345,7 +344,7 @@ function TimelineRow({
     <Pressable
       testID={`event-row-${id}`}
       accessibilityRole="button"
-      accessibilityLabel={describeEvent(event, now)}
+      accessibilityLabel={describeEvent(event, now, units)}
       onPress={onPress}
       style={s.row}
     >
@@ -354,7 +353,7 @@ function TimelineRow({
         <Dot color={eventColors[event.type]} size={8} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={s.rowTitle}>{describeEvent(event, now)}</Text>
+        <Text style={s.rowTitle}>{describeEvent(event, now, units)}</Text>
         {sub ? <Muted style={{ fontSize: 11 }}>{sub}</Muted> : null}
       </View>
     </Pressable>

@@ -4,6 +4,7 @@ import {
   formatFullDate,
   type LetterData,
   type MomentData,
+  type PaperSize,
 } from '@xiaodouya/shared';
 import { escapeHtml } from './mediaUtils';
 
@@ -71,8 +72,15 @@ ${letterHtml ? `<h1 class="section">写给你的信</h1>${letterHtml}` : ''}
 </body></html>`;
 }
 
-/** A4（单位是点）。默认的 Letter 是美国纸张，新加坡打印不合适。 */
-export const BOOK_PAGE = { width: 595, height: 842 };
+const PAGES: Record<PaperSize, { width: number; height: number }> = {
+  A4: { width: 595, height: 842 },
+  Letter: { width: 612, height: 792 },
+};
+
+/** 打印的页面大小（单位是点），各地区常用的纸不一样，见地区配置的 `paperSize`。 */
+export function bookPage(paper: PaperSize): { width: number; height: number } {
+  return PAGES[paper];
+}
 
 /** 分享和保存时用户会看到文件名，不能是一串随机 id。去掉文件系统不允许的字符。 */
 export function bookFileName(babyName: string): string {

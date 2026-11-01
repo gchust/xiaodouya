@@ -12,6 +12,4 @@ export const milestoneTemplates: readonly MilestoneTemplate[] = [
   { title: '第一次叫爸爸妈妈', typical: '通常 10–14 个月' },
 ];
 
-export const documentSuggestions = ['体检报告', '疫苗接种证明', '保险单', '医疗收据'] as const;
 export const medicineSuggestions = ['维生素D', '益生菌', '退烧药'] as const;
-export const feedAmountChips = [60, 80, 90, 100, 120] as const;

@@ -1,5 +1,13 @@
 import type { EventData } from '../schemas';
 import { formatDuration } from './age';
+import {
+  formatLength,
+  formatTemperature,
+  formatVolume,
+  formatWeight,
+  metricUnits,
+  type Units,
+} from './units';
 
 export const eventColors: Record<EventData['type'], string> = {
   feed: '#c0714f',
@@ -15,10 +23,10 @@ export const eventColors: Record<EventData['type'], string> = {
 
 const diaperLabels = { wee: '尿尿', poo: '便便', both: '尿尿 + 便便' } as const;
 
-export function describeEvent(event: EventData, now: number): string {
+export function describeEvent(event: EventData, now: number, units: Units = metricUnits): string {
   switch (event.type) {
     case 'feed':
-      return `喂奶 ${event.ml}ml`;
+      return `喂奶 ${formatVolume(event.ml, units.volume)}`;
     case 'diaper':
       return `换尿布 · ${diaperLabels[event.kind]}`;
     case 'sleep':
@@ -26,7 +34,7 @@ export function describeEvent(event: EventData, now: number): string {
         ? `睡了 ${formatDuration(event.endAt - event.at)}`
         : `睡觉中 · 已 ${formatDuration(now - event.at)}`;
     case 'temp':
-      return `体温 ${event.celsius.toFixed(1)}℃`;
+      return `体温 ${formatTemperature(event.celsius, units.temperature)}`;
     case 'med':
       return `吃药 · ${event.name}${event.dose ? ` ${event.dose}` : ''}`;
     case 'bath':
@@ -34,7 +42,7 @@ export function describeEvent(event: EventData, now: number): string {
     case 'solids':
       return `辅食 · ${event.food}`;
     case 'growth':
-      return `体重 ${event.weightKg.toFixed(1)}kg · 身长 ${event.lengthCm.toFixed(1)}cm`;
+      return `体重 ${formatWeight(event.weightKg, units.weight)} · 身长 ${formatLength(event.lengthCm, units.length)}`;
     case 'vaccine':
       return `接种 ${event.name}`;
   }
@@ -71,6 +79,6 @@ export function summarize24h(events: readonly EventData[], now: number): DaySumm
   return summary;
 }
 
-export function summaryText(s: DaySummary): string {
-  return `喂奶 ${s.feeds} 次 · ${s.ml}ml　尿布 ${s.diapers}　睡 ${(s.sleepMs / 3_600_000).toFixed(1)}h`;
+export function summaryText(s: DaySummary, units: Units = metricUnits): string {
+  return `喂奶 ${s.feeds} 次 · ${formatVolume(s.ml, units.volume)}　尿布 ${s.diapers}　睡 ${(s.sleepMs / 3_600_000).toFixed(1)}h`;
 }

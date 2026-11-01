@@ -105,6 +105,24 @@ const feedChange = (
   updatedAt: overrides.updatedAt ?? Date.now(),
 });
 
+const babyChange = (
+  id: string,
+  data: Record<string, unknown>,
+  updatedAt = Date.now(),
+): {
+  id: string;
+  collection: 'baby';
+  data: Record<string, unknown>;
+  deleted: boolean;
+  updatedAt: number;
+} => ({
+  id,
+  collection: 'baby',
+  data: { name: '虚构宝宝', birthAt: 1_000, ...data },
+  deleted: false,
+  updatedAt,
+});
+
 const sync = (token: string, cursor: number, changes: unknown[] = []) =>
   api<SyncResponse>('POST', '/v1/sync', { token, body: { cursor, changes } });
 
@@ -551,9 +569,63 @@ describe('审查发现的同步问题（回归）', () => {
   });
 });
 
+describe('家庭的地区只有管理员能改', () => {
+  const stored = async (token: string, id: string) => {
+    const { json } = await sync(token, 0);
+    return json.records.find((r) => r.id === id)?.data as Record<string, unknown>;
+  };
+  it('管理员可以设置和修改', async () => {
+    const { admin, family } = await newFamily();
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'SG' }, 1000)]);
+    expect((await stored(admin.token, family.id)).region).toBe('SG');
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'US' }, 2000)]);
+    expect((await stored(admin.token, family.id)).region).toBe('US');
+  });
+  it('其他家人写入时不能改地区，其余修改照常生效', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'SG' }, 1000)]);
+    const result = await sync(mom.token, 0, [
+      babyChange(family.id, { region: 'US', name: '改名' }, 2000),
+    ]);
+    expect(result.json.rejected).toEqual([]);
+    const data = await stored(admin.token, family.id);
+    expect(data.region).toBe('SG');
+    expect(data.name).toBe('改名');
+  });
+  it('其他家人拿着旧版本保存，不能把地区改回去或抹掉', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'US' }, 1000)]);
+    await sync(mom.token, 0, [babyChange(family.id, { name: '换头像' }, 2000)]);
+    expect((await stored(admin.token, family.id)).region).toBe('US');
+  });
+  it('其他家人也不能用另一条记录绕过', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'SG' }, 1000)]);
+    const other = randomUUID();
+    await sync(mom.token, 0, [babyChange(other, { region: 'US' }, 2000)]);
+    expect((await stored(admin.token, other)).region).toBe('SG');
+  });
+  it('没有地区的旧档案，其他家人保存后仍然没有地区', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    await sync(admin.token, 0, [babyChange(family.id, {}, 1000)]);
+    await sync(mom.token, 0, [babyChange(family.id, { region: 'US' }, 2000)]);
+    expect((await stored(admin.token, family.id)).region).toBeUndefined();
+  });
+  it('新版本写入的未知地区能保存，不被拒绝', async () => {
+    const { admin, family } = await newFamily();
+    const result = await sync(admin.token, 0, [babyChange(family.id, { region: 'JP' }, 1000)]);
+    expect(result.json.rejected).toEqual([]);
+    expect((await stored(admin.token, family.id)).region).toBe('JP');
+  });
+});
+
 describe('推送', () => {
   async function familyWithToken(prefs: Record<string, unknown> = {}) {
-    const { admin } = await newFamily();
+    const { admin, family } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');
     await api('POST', '/v1/me/push-token', {
       token: mom.token,
@@ -571,7 +643,7 @@ describe('推送', () => {
         ...prefs,
       },
     });
-    return { admin, mom };
+    return { admin, mom, family };
   }
   const flush = () => new Promise((r) => setTimeout(r, 100));
 
@@ -582,6 +654,77 @@ describe('推送', () => {
     expect(pushes).toEqual([
       { token: 'ExponentPushToken[mom]', title: '爸爸 刚刚记录了', body: '喂奶 90ml' },
     ]);
+  });
+  it('按收件人自己选的单位写推送内容', async () => {
+    const { admin } = await familyWithToken({ units: { volume: 'oz' } });
+    await sync(admin.token, 0, [feedChange({ ml: 90 })]);
+    await flush();
+    expect(pushes.map((p) => p.body)).toEqual(['喂奶 3oz']);
+  });
+  it('收件人没选单位时跟随家庭的地区', async () => {
+    const { admin, family } = await familyWithToken();
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'US' })]);
+    await flush();
+    pushes = [];
+    await sync(admin.token, 0, [
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { type: 'temp', at: Date.now(), celsius: 38 },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await flush();
+    expect(pushes.map((p) => p.body)).toEqual(['体温 100.4°F']);
+  });
+  it('收件人明确选了公制时，美国家庭也用公制', async () => {
+    const { admin, family } = await familyWithToken({ units: { volume: 'ml' } });
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'US' })]);
+    await flush();
+    pushes = [];
+    await sync(admin.token, 0, [feedChange({ ml: 90 })]);
+    await flush();
+    expect(pushes.map((p) => p.body)).toEqual(['喂奶 90ml']);
+  });
+  it('v0.1.0 没存过时区的账号，夜间安静仍按新加坡判断', async () => {
+    const { admin } = await newFamily();
+    const { json } = await api<MeResponse>('GET', '/v1/me', { token: admin.token });
+    expect(json.prefs.timezone).toBe('Asia/Singapore');
+  });
+  it('v0.1.0 发来的完整偏好（没有 units）能保存，不会弄丢已选的单位以外的设置', async () => {
+    const { admin } = await newFamily();
+    const body = {
+      feedReminder: false,
+      familyNotify: true,
+      quietNight: true,
+      timezone: 'Asia/Singapore',
+      documentLock: false,
+      videoWifiOnly: true,
+    };
+    const saved = await api('PUT', '/v1/me/prefs', { token: admin.token, body });
+    expect(saved.status).toBe(200);
+    const { json } = await api<MeResponse>('GET', '/v1/me', { token: admin.token });
+    expect(json.prefs).toMatchObject(body);
+    expect(json.prefs.units).toBeUndefined();
+  });
+  it('v0.1.0 建的档案没有地区，推送还是公制', async () => {
+    const { admin, family } = await familyWithToken();
+    await sync(admin.token, 0, [babyChange(family.id, {})]);
+    await flush();
+    pushes = [];
+    await sync(admin.token, 0, [feedChange({ ml: 90 })]);
+    await flush();
+    expect(pushes.map((p) => p.body)).toEqual(['喂奶 90ml']);
+  });
+  it('不认识的单位不会让收件人的其他设置失效', async () => {
+    const { admin } = await familyWithToken({
+      familyNotify: false,
+      units: { volume: 'cup' },
+    });
+    await sync(admin.token, 0, [feedChange()]);
+    await flush();
+    expect(pushes).toEqual([]);
   });
   it('关闭通知后不再推送', async () => {
     const { admin } = await familyWithToken({ familyNotify: false });

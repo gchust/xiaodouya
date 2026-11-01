@@ -1,15 +1,24 @@
 import {
+  type Dimension,
   type FamilyMember,
   formatBytes,
+  lengthUnits,
   type Role,
+  regionFor,
   roleLabels,
+  scaleFor,
   storageProviderNames,
+  temperatureUnits,
+  type UnitPrefs,
+  unitsSummary,
+  volumeUnits,
+  weightUnits,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecords, useUploadProgress } from '../lib/app';
+import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { ensureNotificationPermission } from '../lib/notifications';
@@ -34,6 +43,7 @@ export function FamilyScreen() {
   const app = useApp();
   const { moments, letters, baby, pendingCount } = useRecords();
   const uploadProgress = useUploadProgress();
+  const units = useUnits();
   const pendingFiles = uploadProgress.total + uploadProgress.failedCount;
   const sheet = useSheet();
   const router = useRouter();
@@ -223,6 +233,12 @@ export function FamilyScreen() {
             />
           ) : null}
           <NavRow
+            testID="open-units"
+            label="单位"
+            sub={unitsSummary(units)}
+            onPress={() => sheet.open('单位', () => <UnitsSheet />)}
+          />
+          <NavRow
             testID="export-book"
             label={exporting ? '正在生成成长册…' : '导出成长册'}
             sub="把回忆、照片和信整理成可打印的 PDF"
@@ -318,6 +334,55 @@ function MemberRow({
         {isMe ? '我' : seen.text}
       </Text>
     </Pressable>
+  );
+}
+
+const UNIT_ROWS: { dimension: Dimension; label: string; options: readonly string[] }[] = [
+  { dimension: 'volume', label: '奶量', options: volumeUnits },
+  { dimension: 'temperature', label: '体温', options: temperatureUnits },
+  { dimension: 'weight', label: '体重', options: weightUnits },
+  { dimension: 'length', label: '身长', options: lengthUnits },
+];
+
+/** 单位是每个人自己的：爸爸看 oz、妈妈看 ml 都行，记录里存的都是公制。 */
+function UnitsSheet() {
+  const app = useApp();
+  const { baby } = useRecords();
+  const units = useUnits();
+  const regionName = regionFor(baby?.data.region).name;
+  return (
+    <>
+      {UNIT_ROWS.map(({ dimension, label, options }) => (
+        <View key={dimension} style={s.unitRow}>
+          <Text style={{ fontSize: 14, color: colors.ink }}>{label}</Text>
+          <View style={s.chips}>
+            {options.map((unit) => (
+              <Chip
+                key={unit}
+                testID={`unit-${dimension}-${unit}`}
+                label={scaleFor(dimension, unit).label}
+                selected={units[dimension] === unit}
+                onPress={() =>
+                  void app.updatePrefs({
+                    units: { ...app.prefs.units, [dimension]: unit } as UnitPrefs,
+                  })
+                }
+              />
+            ))}
+          </View>
+        </View>
+      ))}
+      <Muted style={{ fontSize: 12, lineHeight: 19 }}>
+        只改变你看到的数字，记录都按公制保存。家人可以用不同的单位。
+      </Muted>
+      <Button
+        testID="units-reset"
+        tone="ghost"
+        label={`恢复${regionName}的默认单位`}
+        disabled={!app.prefs.units}
+        onPress={() => void app.updatePrefs({ units: undefined })}
+      />
+    </>
   );
 }
 
@@ -490,6 +555,7 @@ const s = StyleSheet.create({
   avatarText: { fontFamily: fonts.serifBold, fontSize: 14, color: colors.ink },
   navRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  unitRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   roleOption: { paddingHorizontal: 14, paddingVertical: 11, borderRadius: 12, gap: 2 },
   codeBox: {
     backgroundColor: colors.paper,

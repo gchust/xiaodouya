@@ -1,10 +1,20 @@
 import {
   ageParts,
   type BabyData,
-  documentSuggestions,
+  birthMeasuresFromInput,
+  birthMeasureText,
   type EventData,
+  formatBirthMeasures,
+  formatFullDate,
   formatMonthDay,
   knowledgeForAge,
+  normalizeVaccineId,
+  otherVaccineRecords,
+  regionFor,
+  scaleFor,
+  toDisplay,
+  type Units,
+  type VaccineStatus,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
@@ -13,12 +23,12 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useRecords } from '../lib/app';
+import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { fileBadge } from '../lib/mediaUtils';
 import { useTabScrollRef } from '../lib/tabScroll';
-import { GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
+import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { colors, spacing } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -36,6 +46,7 @@ import {
   SoftInput,
   Stripes,
 } from '../ui/primitives';
+import { RegionPicker } from '../ui/RegionPicker';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
 const DOC_GAP = 8;
@@ -46,6 +57,9 @@ export function InfoScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('info');
   const { baby, documents, events } = useRecords();
+  const { role } = useApp();
+  const region = useRegion();
+  const units = useUnits();
   const sheet = useSheet();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
@@ -54,8 +68,25 @@ export function InfoScreen() {
   const now = Date.now();
   const birthAt = baby.data.birthAt;
   const data = events.map((e) => e.data);
-  const vaccines = vaccineStatuses(birthAt, data, now);
-  const knowledge = knowledgeForAge(ageParts(birthAt, now).months);
+  const vaccines = vaccineStatuses(region, birthAt, data, now);
+  const others = otherVaccineRecords(region, events);
+  const knowledge = knowledgeForAge(ageParts(birthAt, now).months, units.temperature);
+  // 记错了日期只能删掉重记，所以打过的剂次也要能点开。时间线只显示最近的几条，别处点不到。
+  const openShot = (id: string) => {
+    const entry = events.find((e) => e.id === id);
+    if (!entry) return;
+    sheet.open('这条接种记录', () => <EventActionsSheet id={entry.id} event={entry.data} />);
+  };
+  const openDose = (dose: VaccineStatus) => {
+    if (dose.state !== 'done') {
+      sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} preselect={dose.id} />);
+      return;
+    }
+    const shot = events.find(
+      (e) => e.data.type === 'vaccine' && normalizeVaccineId(e.data.vaccineId) === dose.id,
+    );
+    if (shot) openShot(shot.id);
+  };
 
   return (
     <ScrollView
@@ -88,7 +119,7 @@ export function InfoScreen() {
             label="体重 / 身长"
             value={
               baby.data.birthWeightKg || baby.data.birthLengthCm
-                ? `${baby.data.birthWeightKg ?? '—'} kg · ${baby.data.birthLengthCm ?? '—'} cm`
+                ? formatBirthMeasures(baby.data, units)
                 : '待补充'
             }
             onPress={() => openEdit(sheet, baby.id, baby.data, 'measures')}
@@ -105,6 +136,17 @@ export function InfoScreen() {
             value={baby.data.bloodType || '待补充'}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'bloodType')}
             testID="birth-blood"
+          />
+          <Row
+            label="地区"
+            value={region.name}
+            testID="region-row"
+            // 全家共用同一份疫苗表，只有管理员能改。服务端也按这个规则校验。
+            onPress={
+              role === 'admin'
+                ? () => sheet.open('所在地区', () => <RegionSheet id={baby.id} baby={baby.data} />)
+                : undefined
+            }
             last
           />
         </ListCard>
@@ -168,7 +210,7 @@ export function InfoScreen() {
 
       <View style={s.section}>
         <View style={s.sectionHead}>
-          <SectionTitle>体重</SectionTitle>
+          <SectionTitle>体重（{scaleFor('weight', units.weight).label}）</SectionTitle>
           <Pressable
             testID="growth-add"
             accessibilityRole="button"
@@ -179,64 +221,69 @@ export function InfoScreen() {
             <Text style={s.link}>＋ 记录身高体重</Text>
           </Pressable>
         </View>
-        <GrowthChart baby={baby.data} events={data} />
+        <GrowthChart baby={baby.data} events={data} units={units} />
       </View>
 
       <View style={s.section}>
-        <SectionTitle>疫苗本</SectionTitle>
-        <ListCard>
-          {vaccines.map((v, i) => (
-            <Pressable
-              key={v.id}
-              testID={`vaccine-row-${v.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={v.name}
-              disabled={v.state === 'done'}
-              onPress={() =>
-                sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} preselect={v.id} />)
-              }
-              style={[s.vaccineRow, i < vaccines.length - 1 ? s.divider : null]}
-            >
-              <View style={{ width: 16 }}>
-                <Dot
-                  color={
-                    v.state === 'done'
-                      ? colors.green
-                      : v.state === 'due'
-                        ? colors.accent
-                        : colors.off
-                  }
-                />
-              </View>
-              <View style={{ flex: 1, gap: 1 }}>
-                <Text style={{ fontSize: 13, color: colors.ink }}>{v.name}</Text>
-                <Muted style={{ fontSize: 11 }}>
-                  {v.ageLabel}
-                  {v.note ? ` · ${v.note}` : ''}
-                </Muted>
-              </View>
-              <Text
-                style={{
-                  fontSize: 11,
-                  color:
-                    v.state === 'done'
-                      ? colors.green
-                      : v.state === 'due'
-                        ? colors.accent
-                        : colors.muted,
-                }}
-              >
-                {v.state === 'done' && v.doneAt
-                  ? `已接种 ${formatMonthDay(v.doneAt)}`
-                  : v.state === 'due'
-                    ? '可以预约了'
-                    : '未到时间'}
-              </Text>
-            </Pressable>
-          ))}
-        </ListCard>
-        <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-          按新加坡国家儿童免疫计划排列，以诊所安排和健康手册为准。
+        <View style={s.sectionHead}>
+          <SectionTitle>疫苗本</SectionTitle>
+          <Pressable
+            testID="vaccine-add-custom"
+            accessibilityRole="button"
+            accessibilityLabel="记一剂其他疫苗"
+            hitSlop={LINK_HIT_SLOP}
+            onPress={() => sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} custom />)}
+          >
+            <Text style={s.link}>＋ 其他疫苗</Text>
+          </Pressable>
+        </View>
+        {region.emptyScheduleNote ? (
+          <Muted testID="vaccine-empty-note" style={{ fontSize: 13, lineHeight: 20 }}>
+            {region.emptyScheduleNote}
+          </Muted>
+        ) : null}
+        {vaccines.length > 0 ? (
+          <ListCard>
+            {vaccines.map((v, i) => (
+              <VaccineRow
+                key={v.id}
+                dose={v}
+                last={i === vaccines.length - 1}
+                onPress={() => openDose(v)}
+              />
+            ))}
+          </ListCard>
+        ) : null}
+        {others.length > 0 ? (
+          <View testID="vaccine-other-section" style={s.section}>
+            <Text style={s.subTitle}>其他接种记录</Text>
+            <ListCard>
+              {others.map((record, i) => (
+                <Pressable
+                  key={record.id}
+                  testID={`vaccine-other-${record.id}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={record.name}
+                  onPress={() => openShot(record.id)}
+                  style={[s.vaccineRow, i < others.length - 1 ? s.divider : null]}
+                >
+                  <View style={{ width: 16 }}>
+                    <Dot color={colors.green} />
+                  </View>
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.ink }}>{record.name}</Text>
+                  <Text style={{ fontSize: 11, color: colors.green }}>
+                    已接种 {formatFullDate(record.at)}
+                  </Text>
+                </Pressable>
+              ))}
+            </ListCard>
+            <Muted style={{ fontSize: 11, lineHeight: 18 }}>
+              这些记录不在当前地区的疫苗表里，也不会自动算进上面的剂次。不同地区的疫苗能不能互相替代，请问医生。
+            </Muted>
+          </View>
+        ) : null}
+        <Muted testID="vaccine-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
+          {region.disclaimer}
         </Muted>
       </View>
 
@@ -256,13 +303,104 @@ export function InfoScreen() {
   );
 }
 
-function GrowthChart({ baby, events }: { baby: BabyData; events: EventData[] }) {
+function VaccineRow({
+  dose,
+  last,
+  onPress,
+}: {
+  dose: VaccineStatus;
+  last: boolean;
+  onPress: () => void;
+}) {
+  // 看情况或和医生商量的剂次不能写成“可以预约了”，那等于建议每个孩子都打。
+  const optional = dose.kind !== 'routine' && dose.state !== 'done';
+  const due = dose.state === 'due' && !optional;
+  const statusColor = dose.state === 'done' ? colors.green : due ? colors.accent : colors.muted;
+  const status =
+    dose.state === 'done' && dose.doneAt !== null
+      ? `已接种 ${formatMonthDay(dose.doneAt)}`
+      : dose.kind === 'shared-decision'
+        ? '和医生商量'
+        : dose.kind === 'conditional'
+          ? '看情况'
+          : due
+            ? '可以预约了'
+            : '未到时间';
+  return (
+    <Pressable
+      testID={`vaccine-row-${dose.localId}`}
+      accessibilityRole="button"
+      accessibilityLabel={dose.name}
+      onPress={onPress}
+      style={[s.vaccineRow, last ? null : s.divider]}
+    >
+      <View style={{ width: 16 }}>
+        <Dot color={dose.state === 'done' ? colors.green : due ? colors.accent : colors.off} />
+      </View>
+      <View style={{ flex: 1, gap: 1 }}>
+        <Text style={{ fontSize: 13, color: colors.ink }}>{dose.name}</Text>
+        <Muted style={{ fontSize: 11 }}>
+          {dose.ageLabel}
+          {dose.note ? ` · ${dose.note}` : ''}
+        </Muted>
+      </View>
+      <Text style={{ fontSize: 11, color: statusColor }}>{status}</Text>
+    </Pressable>
+  );
+}
+
+function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
+  const app = useApp();
+  const sheet = useSheet();
+  const { toast } = useFeedback();
+  const current = regionFor(baby.region).id;
+  const [selected, setSelected] = useState(current);
+  const target = regionFor(selected);
+  // 和显示的地区比，不和字段比：v0.1.0 的档案没有这个字段，显示的是新加坡，选新加坡不算改动。
+  const changed = selected !== current;
+
+  const save = async () => {
+    // 弹层可能开了一会儿，用最新的档案，不要盖掉家人刚改的内容。
+    const latest = app.store.getSnapshot().baby ?? { id, data: baby };
+    await app.write('baby', { ...latest.data, region: selected }, latest.id);
+    sheet.close();
+    toast(`已换成${target.name}`);
+  };
+
+  return (
+    <>
+      <RegionPicker value={selected} onChange={setSelected} />
+      <Muted testID="region-note" style={{ fontSize: 13, lineHeight: 21 }}>
+        {changed
+          ? `换成${target.name}后，全家的疫苗本都按当地方案显示。已记下的接种不会丢，不在新方案里的放到“其他接种记录”。没改过单位的家人，默认单位也会跟着变。`
+          : '地区决定疫苗本和默认单位。'}
+      </Muted>
+      <Button
+        testID="region-confirm"
+        label={changed ? `确定换成${target.name}` : '确定'}
+        disabled={!changed}
+        onPress={() => void save()}
+      />
+    </>
+  );
+}
+
+function GrowthChart({
+  baby,
+  events,
+  units,
+}: {
+  baby: BabyData;
+  events: EventData[];
+  units: Units;
+}) {
+  const shown = (kg: number) => toDisplay('weight', kg, units.weight);
   const points = [
-    ...(baby.birthWeightKg ? [{ w: baby.birthWeightKg, label: '出生' }] : []),
+    ...(baby.birthWeightKg ? [{ w: shown(baby.birthWeightKg), label: '出生' }] : []),
     ...events
       .filter((e): e is Extract<EventData, { type: 'growth' }> => e.type === 'growth')
       .sort((a, b) => a.at - b.at)
-      .map((e) => ({ w: e.weightKg, label: formatMonthDay(e.at) })),
+      .map((e) => ({ w: shown(e.weightKg), label: formatMonthDay(e.at) })),
   ].slice(-5);
   if (points.length === 0) {
     return (
@@ -354,6 +492,7 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
+  const units = useUnits();
   const [text, setText] = useState(
     field === 'name'
       ? baby.name
@@ -361,8 +500,12 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
         ? (baby.hospital ?? '')
         : (baby.bloodType ?? ''),
   );
-  const [weight, setWeight] = useState(baby.birthWeightKg?.toString() ?? '');
-  const [length, setLength] = useState(baby.birthLengthCm?.toString() ?? '');
+  const [weight, setWeight] = useState(() =>
+    birthMeasureText('weight', baby.birthWeightKg, units.weight),
+  );
+  const [length, setLength] = useState(() =>
+    birthMeasureText('length', baby.birthLengthCm, units.length),
+  );
 
   const save = async () => {
     const next: BabyData = { ...baby };
@@ -373,12 +516,10 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
     if (field === 'hospital') next.hospital = text.trim() || undefined;
     if (field === 'bloodType') next.bloodType = text.trim() || undefined;
     if (field === 'measures') {
-      const w = Number.parseFloat(weight);
-      const l = Number.parseFloat(length);
-      if (weight && !(w >= 0.3 && w <= 10)) return toast('体重看起来不太对，单位是公斤');
-      if (length && !(l >= 20 && l <= 80)) return toast('身长看起来不太对，单位是厘米');
-      next.birthWeightKg = weight ? w : undefined;
-      next.birthLengthCm = length ? l : undefined;
+      const measures = birthMeasuresFromInput(weight, length, units, baby);
+      if (!measures.ok) return toast(measures.error);
+      next.birthWeightKg = measures.weightKg;
+      next.birthLengthCm = measures.lengthCm;
     }
     await app.write('baby', next, id);
     sheet.close();
@@ -394,14 +535,14 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
             value={weight}
             onChangeText={setWeight}
             keyboardType="decimal-pad"
-            placeholder="体重（kg），比如 3.4"
+            placeholder={`体重（${units.weight}），比如 ${units.weight === 'kg' ? '3.4' : '7.5'}`}
           />
           <SoftInput
             testID="edit-length"
             value={length}
             onChangeText={setLength}
             keyboardType="decimal-pad"
-            placeholder="身长（cm），比如 50"
+            placeholder={`身长（${units.length}），比如 ${units.length === 'cm' ? '50' : '19.5'}`}
           />
         </>
       ) : (
@@ -427,11 +568,12 @@ function DocAddSheet() {
   const app = useApp();
   const sheet = useSheet();
   const router = useRouter();
+  const region = useRegion();
   const [name, setName] = useState('');
   return (
     <>
       <View style={s.docChips}>
-        {['出生证明', '护照', '儿童健康手册', ...documentSuggestions].map((v) => (
+        {region.documentSuggestions.map((v) => (
           <Chip
             key={v}
             label={v}
@@ -475,6 +617,7 @@ const s = StyleSheet.create({
     zIndex: 1,
   },
   link: { fontSize: 12, color: colors.accent },
+  subTitle: { fontSize: 13, fontWeight: '500', color: colors.ink, marginTop: 4 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
   docCard: {
     backgroundColor: colors.card,
