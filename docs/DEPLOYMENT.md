@@ -260,6 +260,14 @@ DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouy
 
 已有家庭的文件从第一天起就算配额，超额的只是传不了新文件。迁移时，已删除记录里的文件进入待清理，从迁移当天算 30 天。
 
+**打开 `MAINTENANCE_ENABLED` 之前先看一眼会清掉什么。** 上传超过 30 天、从没有未删除的记录提到的文件，第一次运行就会被彻底删除，不再等宽限期。这些文件在 App 里本来就看不到，但它们是升级前就有的数据，不能恢复：
+
+```sql
+SELECT count(*), sum(size) FROM media
+WHERE status = 'ready' AND storage_config_id IS NULL AND NOT attached AND unreferenced_at IS NULL
+  AND created_at < now() - interval '30 days';
+```
+
 部署后**确认取到的是客户端地址**。依据只是一条没有官方回复的[社区讨论](https://github.com/orgs/supabase/discussions/34647)，它说 `x-forwarded-for` 是“伪造的,真实的”，而且讨论的是数据库接口，不是函数：
 
 1. 用一个**已注册**的邮箱，连续注册 21 次，每次在 `X-Forwarded-For` 里换一个假地址。前 20 次应该是 409，第 21 次是 429。如果一直是 409，说明地址能被伪造。
