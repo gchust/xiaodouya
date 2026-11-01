@@ -61,6 +61,7 @@ import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+import { useWidgetLink } from '../widgets/useWidgetLink';
 
 /** 链接文字只有 16 高，上下各扩 14 才到 44。 */
 const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
@@ -80,6 +81,17 @@ export function TodayScreen() {
   const now = Date.now();
   const [refreshing, setRefreshing] = useState(false);
   const [changingAvatar, setChangingAvatar] = useState(false);
+  useWidgetLink({
+    ready: Boolean(baby) && app.role !== 'viewer',
+    openEvent: (id) => {
+      const entry = events.find((e) => e.id === id);
+      if (!entry) return;
+      sheet.open(describeEvent(entry.data, Date.now(), units), () => (
+        <EventActionsSheet id={entry.id} event={entry.data} />
+      ));
+    },
+    openFeed: () => sheet.open('喂奶', () => <FeedSheet />),
+  });
 
   if (!baby) return <SyncingPlaceholder />;
   const birthAt = baby.data.birthAt;

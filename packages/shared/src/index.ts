@@ -9,6 +9,7 @@ export * from './domain/storage';
 export * from './domain/units';
 export * from './domain/vaccinePlan';
 export * from './domain/vaccines';
+export * from './domain/widget';
 export * from './health';
 export * from './health/formulaPresets';
 export * from './health/nutrition';

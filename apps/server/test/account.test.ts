@@ -655,6 +655,9 @@ describe('邮箱验证', () => {
     for (let i = 0; i < 6; i++) {
       await skipCooldown();
       last = (await sendCode(user.token)).status;
+      // 验证码是响应之后才写的。不等它，下一轮的 skipCooldown 可能跑在写入之前，
+      // 下一次请求就落在冷却期里，不计数也返回 200。
+      await bg.flush();
     }
     expect(last).toBe(429);
   });

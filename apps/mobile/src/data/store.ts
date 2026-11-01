@@ -191,6 +191,11 @@ export class RecordStore {
     return Math.max(this.now(), (existing?.updatedAt ?? 0) + 1);
   }
 
+  /** 这个 id 是否存在，已删除的也算。 */
+  has(id: string): boolean {
+    return this.records.has(id);
+  }
+
   dirtyRecords(limit: number): StoredRecord[] {
     const dirty: StoredRecord[] = [];
     for (const record of this.records.values()) {
