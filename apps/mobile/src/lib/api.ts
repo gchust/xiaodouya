@@ -28,6 +28,8 @@ export class ApiFailure extends Error {
 
 export const NETWORK_ERROR = '连不上服务器，请检查网络或服务器地址';
 
+const SUPABASE_FUNCTION_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\//;
+
 /** 只有 token 和 baseUrl 是可变的，其他都是无状态的请求封装。 */
 export class Api {
   baseUrl = '';
@@ -49,6 +51,9 @@ export class Api {
         headers: {
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+          ...(process.env.EXPO_PUBLIC_API_REGION && SUPABASE_FUNCTION_URL.test(this.baseUrl)
+            ? { 'x-region': process.env.EXPO_PUBLIC_API_REGION }
+            : {}),
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
