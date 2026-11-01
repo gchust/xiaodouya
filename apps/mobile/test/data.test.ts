@@ -1081,3 +1081,73 @@ describe('审查发现的客户端问题（回归）', () => {
     queue.stop();
   });
 });
+
+describe('疫苗本的家庭配置', () => {
+  const remote = (data: unknown, id = randomUUID()): ServerRecord => ({
+    id,
+    collection: 'event',
+    data,
+    deleted: false,
+    updatedAt: 1000,
+    seq: 1,
+    createdBy: null,
+  });
+
+  it('存在 event 集合里，但不是一条记录：不进时间线', async () => {
+    const store = new RecordStore(new MemoryDb());
+    await store.load();
+    await store.write('event', randomUUID(), {
+      type: 'vaccine-plan',
+      vaccineId: 'sg:bcg',
+      hidden: true,
+    });
+    await store.write('event', randomUUID(), {
+      type: 'feed',
+      at: 1000,
+      ml: 90,
+    });
+    const snapshot = store.getSnapshot();
+    expect(snapshot.events.map((e) => e.data.type)).toEqual(['feed']);
+    expect(snapshot.vaccinePlans.map((e) => e.data.vaccineId)).toEqual(['sg:bcg']);
+  });
+
+  it('其他设备写的配置也能收到，移除后不再显示', async () => {
+    const store = new RecordStore(new MemoryDb());
+    await store.load();
+    const id = randomUUID();
+    const data = { type: 'vaccine-plan', vaccineId: `custom:${id}`, name: '虚构疫苗' };
+    await store.applySyncResult([], [remote(data, id)], new Set(), 1);
+    expect(store.getSnapshot().vaccinePlans).toHaveLength(1);
+    await store.remove(id);
+    expect(store.getSnapshot().vaccinePlans).toEqual([]);
+    expect(store.getSnapshot().events).toEqual([]);
+  });
+
+  it('移除后再写回同一个 id 能恢复，这是撤销', async () => {
+    const store = new RecordStore(new MemoryDb());
+    await store.load();
+    const id = randomUUID();
+    const data = {
+      type: 'vaccine-plan' as const,
+      vaccineId: `custom:${id}`,
+      name: '虚构疫苗',
+      months: 6,
+    };
+    await store.write('event', id, data);
+    await store.remove(id);
+    await store.write('event', id, data);
+    expect(store.getSnapshot().vaccinePlans[0]?.data).toEqual(data);
+  });
+
+  it('权限变小后，配置和喂奶记录一起清掉', async () => {
+    const store = new RecordStore(new MemoryDb());
+    await store.load();
+    await store.write('event', randomUUID(), {
+      type: 'vaccine-plan',
+      vaccineId: 'sg:bcg',
+      hidden: true,
+    });
+    await store.purgeCollections(['event']);
+    expect(store.getSnapshot().vaccinePlans).toEqual([]);
+  });
+});

@@ -101,6 +101,32 @@ export const EventData = z.discriminatedUnion('type', [
 export type EventData = z.infer<typeof EventData>;
 export type EventType = EventData['type'];
 
+/**
+ * 家庭对疫苗本的配置，每一剂一条：隐藏、改计划时间，或者自己加的一剂（`custom:` 开头）。
+ *
+ * 放在 `event` 集合而不是新集合，也没有 `at`，理由和奶粉配置一样，见 docs/ARCHITECTURE.md 的
+ * “疫苗本的家庭配置”。一剂一条，两位家人同时改不同的剂次不会互相覆盖。
+ * 内置表永远不改，这里只是一层覆盖。单项格式不对只丢这一项。
+ */
+export const VaccinePlanData = z.looseObject({
+  type: z.literal('vaccine-plan'),
+  /** 这条配置管哪一剂。内置的是 `sg:bcg`；自己加的是 `custom:<这条记录的 id>`，接种记录也写这个 id。 */
+  vaccineId: shortText.min(1),
+  /** 自己加的疫苗的名字。 */
+  name: shortText.min(1).optional().catch(undefined),
+  /** 只影响显示和提醒。已经记录的接种不受它影响。 */
+  hidden: z.boolean().optional().catch(undefined),
+  /** 计划接种那天的当地中午，时区差几个小时也还是同一天。优先于月龄。 */
+  plannedAt: timestamp.optional().catch(undefined),
+  /** 自己加的疫苗按月龄算时的月龄。 */
+  months: z.number().int().min(0).max(240).optional().catch(undefined),
+});
+export type VaccinePlanData = z.infer<typeof VaccinePlanData>;
+
+export function isVaccinePlanData(data: unknown): data is VaccinePlanData {
+  return (data as { type?: unknown } | null)?.type === 'vaccine-plan';
+}
+
 export const formulaBases = ['per100ml', 'per100g'] as const;
 export type FormulaBasis = (typeof formulaBases)[number];
 
@@ -176,7 +202,7 @@ export type BabyData = z.infer<typeof BabyData>;
 
 export const collectionSchemas = {
   baby: BabyData,
-  event: z.union([EventData, FormulaData]),
+  event: z.union([EventData, FormulaData, VaccinePlanData]),
   moment: MomentData,
   letter: LetterData,
   document: DocumentData,
@@ -187,7 +213,7 @@ export type Collection = (typeof collections)[number];
 
 export interface CollectionData {
   baby: BabyData;
-  event: EventData | FormulaData;
+  event: EventData | FormulaData | VaccinePlanData;
   moment: MomentData;
   letter: LetterData;
   document: DocumentData;

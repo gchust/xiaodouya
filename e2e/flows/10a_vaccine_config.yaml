@@ -1,0 +1,242 @@
+# 配置疫苗本：隐藏和恢复、改一剂的时间、给计划加一个疫苗、一次补记几剂。
+# 都从疫苗本上点进去，不经过设置页。系统日期选择器不好自动化，这里用“下周 / 下个月 / 昨天”胶囊；
+# 单独改某一剂日期的按钮只断言它在，选日期要在模拟器上手动看。
+#
+# 不依赖流程 10（文件名排序在不同系统上可能排在它前面），所以不碰卡介苗和乙肝第 1 剂。
+# 最后把所有改动都还原，后面的流程按内置表断言。
+# Toast 会盖住屏幕底部的行，每次都等它消失再点。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+
+# ── 隐藏一剂：两步。已隐藏的在下面一行，点开恢复 ──
+- scrollUntilVisible:
+    element: { id: vaccine-row-6in1-1 }
+    timeout: 30000
+- tapOn: { id: vaccine-row-6in1-1 }
+- assertVisible: { id: vaccine-plan-summary }
+- takeScreenshot: .artifacts/e2e-10a-dose-sheet
+- tapOn: { id: vaccine-plan-hide }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-plan-hide }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已隐藏 · .*
+    timeout: 15000
+- assertNotVisible: { id: vaccine-row-6in1-1 }
+- scrollUntilVisible:
+    element: { id: vaccine-hidden }
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-10a-hidden
+- tapOn: { id: vaccine-hidden }
+- assertVisible: { id: vaccine-restore-6in1-1 }
+- takeScreenshot: .artifacts/e2e-10a-hidden-sheet
+- tapOn: { id: vaccine-restore-6in1-1 }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-restore-6in1-1 }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已恢复 · .*
+    timeout: 15000
+- assertNotVisible: { id: vaccine-hidden }
+- scrollUntilVisible:
+    element: { id: vaccine-row-6in1-1 }
+    direction: UP
+    timeout: 30000
+- assertVisible: { id: vaccine-row-6in1-1 }
+
+# ── 诊所另约了时间：改计划日期，再恢复表上的时间 ──
+- tapOn: { id: vaccine-row-6in1-1 }
+- tapOn: { id: vaccine-plan-time }
+- assertVisible: 表上的时间：2 个月
+- tapOn: { id: vaccine-plan-week }
+- assertVisible: { id: vaccine-plan-date }
+- takeScreenshot: .artifacts/e2e-10a-dose-time
+- tapOn: { id: vaccine-plan-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-plan-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已改时间 · .*
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-status-6in1-1 }
+    timeout: 30000
+- assertVisible:
+    id: vaccine-status-6in1-1
+    text: 计划 .*
+- takeScreenshot: .artifacts/e2e-10a-dose-moved
+- tapOn: { id: vaccine-row-6in1-1 }
+- tapOn: { id: vaccine-plan-time }
+- tapOn: { id: vaccine-plan-reset }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-plan-reset }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已恢复表上的时间 · .*
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-status-6in1-1 }
+    timeout: 30000
+- assertVisible:
+    id: vaccine-status-6in1-1
+    text: 未到时间
+
+# ── 给计划加一个疫苗：从“＋ 其他疫苗”切到“加进计划”，一个名字加一个日期 ──
+- scrollUntilVisible:
+    element: { id: vaccine-add-custom }
+    direction: UP
+    timeout: 30000
+- tapOn: { id: vaccine-add-custom }
+- tapOn: { id: vaccine-mode-plan }
+- tapOn: { id: vaccine-plan-name }
+- inputText: Flu Plan
+- hideKeyboard
+- tapOn: { id: vaccine-plan-month }
+- takeScreenshot: .artifacts/e2e-10a-plan-form
+- scrollUntilVisible:
+    element: { id: vaccine-plan-save }
+- tapOn: { id: vaccine-plan-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-plan-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已加进计划 · .*
+    timeout: 15000
+- scrollUntilVisible:
+    element: 自己加的
+    timeout: 30000
+- assertVisible: Flu Plan
+- takeScreenshot: .artifacts/e2e-10a-plan-added
+# 自己加的打过之后还在疫苗本上，不跑到“其他接种记录”
+- tapOn: Flu Plan
+- assertVisible: { id: vaccine-plan-summary }
+- takeScreenshot: .artifacts/e2e-10a-plan-sheet
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已记录 · .*
+    timeout: 15000
+- scrollUntilVisible:
+    element: 自己加的
+    timeout: 30000
+- assertNotVisible: { id: vaccine-other-section }
+# 删掉这条接种，再把计划移除
+- tapOn: Flu Plan
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已删除这条记录
+    timeout: 15000
+- scrollUntilVisible:
+    element: 自己加的
+    timeout: 30000
+- tapOn: Flu Plan
+- tapOn: { id: vaccine-plan-hide }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-plan-hide }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已从计划里移除 · .*
+    timeout: 15000
+- assertNotVisible: Flu Plan
+
+# ── 一次补记几剂：勾两剂，同一个日期，一个按钮记下。撤销之后回到原样 ──
+- scrollUntilVisible:
+    element: { id: vaccine-backfill }
+    direction: UP
+    timeout: 30000
+- tapOn: { id: vaccine-backfill }
+- assertVisible: { id: backfill-date }
+- tapOn: { id: backfill-date-day-1 }
+- scrollUntilVisible:
+    element: { id: backfill-6in1-1 }
+- tapOn: { id: backfill-6in1-1 }
+- scrollUntilVisible:
+    element: { id: backfill-5in1-2 }
+- tapOn: { id: backfill-5in1-2 }
+- assertVisible: { id: backfill-date-5in1-2 }
+- takeScreenshot: .artifacts/e2e-10a-backfill
+- scrollUntilVisible:
+    element: { id: backfill-save }
+- assertVisible: 记下 2 剂
+- takeScreenshot: .artifacts/e2e-10a-backfill-save
+- tapOn: { id: backfill-save }
+- extendedWaitUntil:
+    notVisible: { id: backfill-save }
+    timeout: 10000
+- assertVisible: 已记录 2 剂
+- tapOn: { id: toast-undo }
+- extendedWaitUntil:
+    notVisible: 已记录 2 剂
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-status-5in1-2 }
+    timeout: 30000
+- assertVisible:
+    id: vaccine-status-5in1-2
+    text: 未到时间
+- takeScreenshot: .artifacts/e2e-10a-backfill-undone
+# 再记一次，这次不撤销：疫苗本显示已接种。然后一条条删掉，给后面的流程留下干净的状态
+- scrollUntilVisible:
+    element: { id: vaccine-backfill }
+    direction: UP
+    timeout: 30000
+- tapOn: { id: vaccine-backfill }
+- scrollUntilVisible:
+    element: { id: backfill-6in1-1 }
+- tapOn: { id: backfill-6in1-1 }
+- scrollUntilVisible:
+    element: { id: backfill-5in1-2 }
+- tapOn: { id: backfill-5in1-2 }
+- scrollUntilVisible:
+    element: { id: backfill-save }
+- tapOn: { id: backfill-save }
+- extendedWaitUntil:
+    notVisible: { id: backfill-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已记录 2 剂
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-status-5in1-2 }
+    timeout: 30000
+- assertVisible:
+    id: vaccine-status-5in1-2
+    text: 已接种 .*
+- assertVisible:
+    id: vaccine-status-6in1-1
+    text: 已接种 .*
+- takeScreenshot: .artifacts/e2e-10a-backfill-done
+- tapOn: { id: vaccine-row-5in1-2 }
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已删除这条记录
+    timeout: 15000
+- tapOn: { id: vaccine-row-6in1-1 }
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已删除这条记录
+    timeout: 15000
+- assertVisible:
+    id: vaccine-status-6in1-1
+    text: 未到时间

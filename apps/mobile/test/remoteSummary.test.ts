@@ -123,3 +123,26 @@ describe('打开 App 时汇总家人的记录', () => {
     ).toBe('家人记了 2 条，最近是 奶奶 · 喂奶 90ml');
   });
 });
+
+describe('event 集合里不是记录的内容', () => {
+  const plan = { type: 'vaccine-plan', vaccineId: 'sg:bcg', hidden: true };
+
+  it('家人改疫苗本的配置，不提示“记录了 undefined”', () => {
+    expect(summarize([record(MOM, plan)])).toBeNull();
+  });
+
+  it('家人配置奶粉同样不提示', () => {
+    const formula = { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} };
+    expect(summarize([record(MOM, formula)])).toBeNull();
+  });
+
+  it('也不算进条数', () => {
+    expect(summarize([record(MOM, feed(75)), record(MOM, plan)])?.message).toBe(
+      '妈妈 记录了 喂奶 75ml',
+    );
+  });
+
+  it('以后的版本写入的、这个版本不认识的类型同样不算', () => {
+    expect(summarize([record(MOM, { type: 'from-the-future', at: NOW })])).toBeNull();
+  });
+});

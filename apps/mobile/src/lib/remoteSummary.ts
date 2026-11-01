@@ -1,4 +1,4 @@
-import { describeEvent, type EventData, type ServerRecord, type Units } from '@xiaodouya/shared';
+import { describeEvent, EventData, type ServerRecord, type Units } from '@xiaodouya/shared';
 
 interface Member {
   userId: string;
@@ -6,6 +6,15 @@ interface Member {
 }
 
 const atOf = (record: ServerRecord) => (record.data as { at?: number }).at ?? 0;
+
+/**
+ * event 集合里还放着配置（疫苗本），以后的版本也可能写入这个版本不认识的类型，
+ * 它们不是一条记录，算进来会提示“记录了 undefined”。
+ */
+function isRecord(record: ServerRecord): boolean {
+  if (record.collection === 'moment') return true;
+  return record.collection === 'event' && EventData.safeParse(record.data).success;
+}
 
 /**
  * 家人的记录只在打开 App 时提示（不做远程推送），所以一次同步可能带回离开期间的很多条。
@@ -17,12 +26,7 @@ export function summarizeRemote(
   context: { selfId: string | undefined; members: readonly Member[]; units: Units; now: number },
 ): { initial: string; message: string } | null {
   const { selfId, members, units, now } = context;
-  const relevant = records.filter(
-    (r) =>
-      !r.deleted &&
-      (r.collection === 'event' || r.collection === 'moment') &&
-      r.createdBy !== selfId,
-  );
+  const relevant = records.filter((r) => !r.deleted && isRecord(r) && r.createdBy !== selfId);
   const authorOf = (record: ServerRecord) =>
     members.find((m) => m.userId === record.createdBy)?.label ??
     (record.data as { byName?: string }).byName ??

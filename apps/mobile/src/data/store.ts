@@ -7,10 +7,12 @@ import {
   type FormulaData,
   isFormulaData,
   isNewerVersion,
+  isVaccinePlanData,
   type LetterData,
   type MomentData,
   parseCollectionData,
   type ServerRecord,
+  type VaccinePlanData,
 } from '@xiaodouya/shared';
 
 /** 本地持久化接口。生产用 SQLite（`sqlite.ts`），测试用内存实现。 */
@@ -49,6 +51,8 @@ export interface Snapshot {
   baby: Entry<'baby'> | null;
   /** 按发生时间倒序。 */
   events: RecordEntry<EventData>[];
+  /** 家庭对疫苗本的配置。存在 event 集合里，但不是一条记录，所以不进时间线。 */
+  vaccinePlans: RecordEntry<VaccinePlanData>[];
   /** 家庭配置的奶粉。存在 event 集合里，但不是一条记录，所以不进时间线。 */
   formulas: RecordEntry<FormulaData>[];
   moments: Entry<'moment'>[];
@@ -60,6 +64,7 @@ export interface Snapshot {
 const emptySnapshot: Snapshot = {
   baby: null,
   events: [],
+  vaccinePlans: [],
   formulas: [],
   moments: [],
   letters: [],
@@ -102,6 +107,7 @@ export class RecordStore {
     const next: Snapshot = {
       baby: null,
       events: [],
+      vaccinePlans: [],
       formulas: [],
       moments: [],
       letters: [],
@@ -122,6 +128,7 @@ export class RecordStore {
           break;
         case 'event':
           if (isFormulaData(data)) next.formulas.push({ ...base, data });
+          else if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
           else next.events.push({ ...base, data: data as EventData });
           break;
         case 'moment':

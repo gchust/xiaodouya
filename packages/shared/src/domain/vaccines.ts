@@ -21,6 +21,8 @@ export interface VaccineDose {
   kind: VaccineKind;
   /** 几种产品二选一（比如乙脑减毒或灭活）。记了其中一种后，另一种的剂次不再显示。 */
   choice?: { group: string; option: string };
+  /** 家里定的计划日期（见 planSchedule）。有它就按它判断到期，地区文件不写这个字段。 */
+  plannedAt?: number;
 }
 
 export type VaccineDoseInput = Omit<VaccineDose, 'id' | 'localId' | 'kind'> & {
@@ -77,8 +79,12 @@ export function vaccineStatuses(
   now: number,
 ): VaccineStatus[] {
   const done = new Map<string, number>();
+  const doneNames = new Map<string, string>();
   for (const e of events) {
-    if (e.type === 'vaccine') done.set(normalizeVaccineId(e.vaccineId), e.at);
+    if (e.type !== 'vaccine') continue;
+    const id = normalizeVaccineId(e.vaccineId);
+    done.set(id, e.at);
+    doneNames.set(id, e.name);
   }
   const chosen = new Map<string, Set<string>>();
   for (const dose of region.vaccineSchedule) {
@@ -87,7 +93,8 @@ export function vaccineStatuses(
     options.add(dose.choice.option);
     chosen.set(dose.choice.group, options);
   }
-  const reference = ageParts(birthAt, now + DUE_LEAD_DAYS * 86_400_000);
+  const horizon = now + DUE_LEAD_DAYS * 86_400_000;
+  const reference = ageParts(birthAt, horizon);
   return region.vaccineSchedule
     .filter((dose) => {
       const options = dose.choice ? chosen.get(dose.choice.group) : undefined;
@@ -95,21 +102,28 @@ export function vaccineStatuses(
     })
     .map((dose) => {
       const doneAt = done.get(dose.id) ?? null;
-      const state: VaccineState =
-        doneAt !== null ? 'done' : reference.months >= dose.months ? 'due' : 'upcoming';
-      return { ...dose, state, doneAt };
+      const reached =
+        dose.plannedAt !== undefined ? horizon >= dose.plannedAt : reference.months >= dose.months;
+      const state: VaccineState = doneAt !== null ? 'done' : reached ? 'due' : 'upcoming';
+      // 自己加的疫苗，接种记录改过名字时以记录为准，疫苗本和时间线才对得上。
+      const name = isCustomVaccineId(dose.id) ? (doneNames.get(dose.id) ?? dose.name) : dose.name;
+      return { ...dose, name, state, doneAt };
     });
 }
 
-/** 下一剂常规疫苗。表是按月龄排好的，所以它没到期就说明都没到期。 */
-export function nextVaccine(statuses: readonly VaccineStatus[]): VaccineStatus | null {
-  return statuses.find((v) => v.state !== 'done' && v.kind === 'routine') ?? null;
+/** 常规剂次，或者家里定了日期的剂次。后者不是 App 在建议打，所以可以提醒。 */
+function isRemindable(dose: VaccineStatus): boolean {
+  return dose.kind === 'routine' || dose.plannedAt !== undefined;
 }
 
-/** 今天页的提醒：只有真的到期才显示。 */
+/** 下一剂常规疫苗。 */
+export function nextVaccine(statuses: readonly VaccineStatus[]): VaccineStatus | null {
+  return statuses.find((v) => v.state !== 'done' && isRemindable(v)) ?? null;
+}
+
+/** 今天页的提醒：只有真的到期才显示。月龄和日期混排时顺序是近似的，所以要找到期的，不能只看第一个。 */
 export function dueVaccine(statuses: readonly VaccineStatus[]): VaccineStatus | null {
-  const next = nextVaccine(statuses);
-  return next?.state === 'due' ? next : null;
+  return statuses.find((v) => v.state === 'due' && isRemindable(v)) ?? null;
 }
 
 /** 接种弹层只列当前相关的几剂，否则“已接种”按钮会被 13 个选项挤出屏幕。 */
@@ -118,7 +132,7 @@ export function vaccinesToOffer(
   preselect?: string,
   limit = 4,
 ): VaccineStatus[] {
-  const pending = statuses.filter((v) => v.state !== 'done' && v.kind === 'routine');
+  const pending = statuses.filter((v) => v.state !== 'done' && isRemindable(v));
   const offered = pending.slice(
     0,
     Math.max(limit, pending.filter((v) => v.state === 'due').length),
