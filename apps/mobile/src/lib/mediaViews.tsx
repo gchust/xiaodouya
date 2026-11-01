@@ -404,6 +404,49 @@ export function useRecorder() {
   return { recording, elapsedMs, start, stop };
 }
 
+/** 修改回忆时，已经在记录里的文件。样子和刚选的一样，用户不需要区分。 */
+export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: () => void }) {
+  const visual = media.kind === 'image' || media.kind === 'video';
+  return (
+    <View style={s.localThumb} testID="existing-media">
+      {visual ? (
+        <MediaImage media={media} variant="thumb" style={StyleSheet.absoluteFill} />
+      ) : (
+        <>
+          <Stripes style={StyleSheet.absoluteFill} />
+          <View style={s.localAudio}>
+            <Mono
+              weight="medium"
+              style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}
+            >
+              录音{'\n'}
+              {media.durationMs ? formatMediaDuration(media.durationMs) : ''}
+            </Mono>
+          </View>
+        </>
+      )}
+      {media.kind === 'video' && media.durationMs ? (
+        <View style={s.localDuration}>
+          <Mono weight="medium" style={{ fontSize: 9, color: colors.white }}>
+            ▶ {formatMediaDuration(media.durationMs)}
+          </Mono>
+        </View>
+      ) : null}
+      <Pressable
+        testID="existing-media-remove"
+        accessibilityRole="button"
+        accessibilityLabel="从这条回忆里移除"
+        // 同 LocalThumb：缩略图裁剪了溢出，热区只能往图内扩。
+        hitSlop={{ top: 3, right: 3, bottom: 23, left: 23 }}
+        onPress={onRemove}
+        style={s.remove}
+      >
+        <Text style={{ fontSize: 11, color: colors.white, lineHeight: 14 }}>×</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /** 弹层里已选文件的小缩略图。 */
 export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () => void }) {
   return (

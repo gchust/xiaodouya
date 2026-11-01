@@ -14,12 +14,14 @@ import {
   formatVolume,
   summarize24h,
   summaryText,
+  timelineEntries,
   todayInsight,
   type Units,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -54,6 +56,9 @@ import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
+/** 链接文字只有 16 高，上下各扩 14 才到 44。 */
+const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
+
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('today');
@@ -62,6 +67,7 @@ export function TodayScreen() {
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();
+  const router = useRouter();
   const { toast } = useFeedback();
   // 只用来定时刷新。过滤记录要用渲染时的时间：否则刚保存的记录比 now 新，最多 15 秒不显示，家长可能重复记录。
   useNow(15_000);
@@ -77,7 +83,7 @@ export function TodayScreen() {
   const sleepingEntry = sleeping ? events.find((e) => e.data === sleeping) : undefined;
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
-  const recent = events.filter((e) => e.data.type !== 'growth' && e.data.at <= now).slice(0, 8);
+  const recent = timelineEntries(events, now);
   const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
 
   const feedHint = !estimate.last
@@ -279,6 +285,27 @@ export function TodayScreen() {
           ))
         )}
       </View>
+      {/* 放在时间线下面：补记不是半夜要做的事，不能和上面的快捷按钮抢位置。 */}
+      <View style={s.listFooter}>
+        <Pressable
+          testID="records-open"
+          accessibilityRole="button"
+          accessibilityLabel="查看全部记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => router.push('/records')}
+        >
+          <Text style={s.listLink}>全部记录 ›</Text>
+        </Pressable>
+        <Pressable
+          testID="backfill-open"
+          accessibilityRole="button"
+          accessibilityLabel="补记以前的记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => sheet.open('补记', () => <MoreSheet birthAt={birthAt} backfill />)}
+        >
+          <Text style={s.listLink}>＋ 补记</Text>
+        </Pressable>
+      </View>
 
       {vaccine ? (
         <Pressable
@@ -326,7 +353,7 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   );
 }
 
-function TimelineRow({
+export function TimelineRow({
   id,
   event,
   now,
@@ -443,6 +470,13 @@ const s = StyleSheet.create({
   },
   listTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink },
   list: { marginTop: 6, marginHorizontal: spacing.page },
+  listFooter: {
+    marginTop: 14,
+    marginHorizontal: spacing.page,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  listLink: { fontSize: 12, color: colors.accent },
   row: {
     flexDirection: 'row',
     gap: 8,

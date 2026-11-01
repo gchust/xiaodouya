@@ -344,7 +344,9 @@ function VaccineRow({
           {dose.note ? ` · ${dose.note}` : ''}
         </Muted>
       </View>
-      <Text style={{ fontSize: 11, color: statusColor }}>{status}</Text>
+      <Text testID={`vaccine-status-${dose.localId}`} style={{ fontSize: 11, color: statusColor }}>
+        {status}
+      </Text>
     </Pressable>
   );
 }

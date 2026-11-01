@@ -1,5 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import type { ServerRecord, SyncRequest, SyncResponse, UploadUrlRequest } from '@xiaodouya/shared';
+import {
+  type EventData,
+  estimateNextFeed,
+  type MediaRef,
+  type MomentData,
+  mergeEdit,
+  mergeMediaEdit,
+  type ServerRecord,
+  type SyncRequest,
+  type SyncResponse,
+  type UploadUrlRequest,
+} from '@xiaodouya/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { type LocalDb, RecordStore, type StoredRecord } from '../src/data/store';
 import { SyncEngine, type SyncTransport } from '../src/data/syncEngine';
@@ -492,6 +503,147 @@ describe('上传队列', () => {
       if (queue.getProgress().total > 0) expect(seen[i]!).toBeGreaterThanOrEqual(seen[i - 1]!);
     }
     expect(queue.getProgress().total).toBe(0);
+  });
+});
+
+describe('修改已有记录', () => {
+  const HOUR = 3_600_000;
+
+  it('改时间后立刻按新时间排序，距上次喂奶也跟着变，订阅者会收到通知（喂奶提醒靠它重算）', async () => {
+    const now = 100 * HOUR;
+    const server = new FakeServer();
+    const a = device(server);
+    const older = randomUUID();
+    const newer = randomUUID();
+    await a.store.write('event', older, feed(60, now - 3 * HOUR));
+    await a.store.write('event', newer, feed(120, now - HOUR));
+    let notified = 0;
+    a.store.subscribe(() => {
+      notified += 1;
+    });
+    const estimate = () =>
+      estimateNextFeed(
+        a.store.getSnapshot().events.map((e) => e.data),
+        now,
+      );
+    expect(estimate().last?.ml).toBe(120);
+    await a.store.write('event', newer, feed(120, now - 5 * HOUR));
+    expect(notified).toBe(1);
+    expect(a.store.getSnapshot().events[0]?.id).toBe(older);
+    expect(estimate().last?.ml).toBe(60);
+    expect(estimate().sinceMs).toBe(3 * HOUR);
+  });
+
+  it('离线时也能改，联网后同步给家人，新版本写的未知字段不丢', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    const b = device(server);
+    await a.engine.start();
+    await b.engine.start();
+    const id = randomUUID();
+    const fromNewerVersion = {
+      ...feed(90, 5000),
+      byName: '妈妈',
+      milkKind: 'formula',
+      future: { nested: true },
+    };
+    await a.store.write('event', id, fromNewerVersion);
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+
+    server.offline = true;
+    const base = b.store.getSnapshot().events[0]?.data as EventData;
+    expect(base).toMatchObject({ milkKind: 'formula' });
+    await b.store.write('event', id, mergeEdit(base, base, { ...base, at: 4000, ml: 100 }));
+    expect(b.store.getSnapshot().events[0]?.data).toMatchObject({ at: 4000, ml: 100 });
+    expect(b.store.getSnapshot().pendingCount).toBe(1);
+    await b.engine.syncNow();
+    expect(b.store.getSnapshot().pendingCount).toBe(1);
+
+    server.offline = false;
+    await b.engine.syncNow();
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().events[0]?.data).toEqual({
+      ...fromNewerVersion,
+      at: 4000,
+      ml: 100,
+    });
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('两个人离线改同一条，后写胜出，两边收敛', async () => {
+    const server = new FakeServer();
+    let clock = 1000;
+    const a = device(server, { now: () => clock });
+    const b = device(server, { now: () => clock });
+    await a.engine.start();
+    await b.engine.start();
+    const id = randomUUID();
+    await a.store.write('event', id, feed(90));
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    server.offline = true;
+    clock = 2000;
+    await a.store.write('event', id, feed(100));
+    clock = 3000;
+    await b.store.write('event', id, feed(110));
+    server.offline = false;
+    await b.engine.syncNow();
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    expect(a.store.getSnapshot().events[0]?.data).toMatchObject({ ml: 110 });
+    expect(b.store.getSnapshot().events[0]?.data).toMatchObject({ ml: 110 });
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('修改回忆：移除只摘掉引用，家人同时加的文件和未知字段都在', async () => {
+    const server = new FakeServer();
+    const a = device(server);
+    const id = randomUUID();
+    const media = (name: string): MediaRef => ({
+      id: randomUUID(),
+      kind: 'image',
+      mime: 'image/png',
+      size: 1,
+      name,
+    });
+    const [keep, drop, family, mine] = ['keep', 'drop', 'family', 'mine'].map(media) as [
+      MediaRef,
+      MediaRef,
+      MediaRef,
+      MediaRef,
+    ];
+    const opened: MomentData = {
+      title: '第一次笑',
+      text: '',
+      at: 1000,
+      milestone: false,
+      media: [keep, drop],
+      byName: '妈妈',
+      futureField: 'keep',
+    };
+    await a.store.write('moment', id, opened);
+    // 弹层开着的时候，家人加了一个文件。
+    const latest = { ...opened, media: [keep, drop, family] };
+    await a.store.write('moment', id, latest);
+    const merged = mergeEdit(opened, latest, {
+      title: '第一次笑出声',
+      at: 500,
+      milestone: true,
+      media: mergeMediaEdit(opened.media, latest.media, [keep, mine]),
+    });
+    await a.store.write('moment', id, merged);
+    const saved = a.store.getSnapshot().moments[0]?.data;
+    expect(saved?.media.map((m) => m.name)).toEqual(['keep', 'family', 'mine']);
+    expect(saved).toMatchObject({
+      title: '第一次笑出声',
+      at: 500,
+      milestone: true,
+      byName: '妈妈',
+      futureField: 'keep',
+    });
   });
 });
 
