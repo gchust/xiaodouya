@@ -6,6 +6,9 @@ import {
   formatLastSeen,
   isBirthInFuture,
   isDaysAgo,
+  plannedDaysLater,
+  plannedDayTimestamp,
+  plannedNextMonth,
   resolveTimeChoice,
   withClock,
   withDate,
@@ -280,5 +283,21 @@ describe('成长册', () => {
     expect(html).toContain('data:image/jpeg;base64,AAAA');
     expect(html).toContain('想对你说');
     expect(html).toContain('爸爸写');
+  });
+});
+
+describe('计划接种日期', () => {
+  it('存成那天的中午，选的是未来的日期也不改', () => {
+    const picked = new Date(2027, 2, 5, 23, 40);
+    expect(plannedDayTimestamp(picked)).toBe(new Date(2027, 2, 5, 12).getTime());
+  });
+
+  it('下周和下个月都从今天算，月底不会跳过一个月', () => {
+    const now = new Date(2026, 0, 31, 8).getTime();
+    expect(plannedDaysLater(7, now).getTime()).toBe(new Date(2026, 1, 7, 12).getTime());
+    expect(plannedNextMonth(now).getTime()).toBe(new Date(2026, 1, 28, 12).getTime());
+    expect(plannedNextMonth(new Date(2026, 11, 15, 8).getTime()).getTime()).toBe(
+      new Date(2027, 0, 15, 12).getTime(),
+    );
   });
 });

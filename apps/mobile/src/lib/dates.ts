@@ -35,6 +35,23 @@ export function editedDoseTimestamp(originalAt: number, picked: Date, now: numbe
     : doseTimestamp(picked, now);
 }
 
+/** 计划接种日期存成当地中午，时区差几个小时也还是同一天。可以是未来，也可以已经过去。 */
+export function plannedDayTimestamp(picked: Date): number {
+  return new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), 12).getTime();
+}
+
+export function plannedDaysLater(days: number, now: number): Date {
+  const d = new Date(now);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, 12);
+}
+
+/** 下个月的今天。下个月没有这一天时（1 月 31 日）取月底，不跳到再下一个月。 */
+export function plannedNextMonth(now: number): Date {
+  const d = new Date(now);
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 2, 0).getDate();
+  return new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), lastDay), 12);
+}
+
 /** 记录时间的选择：相对现在的几个偏移（保存时才算成时间），或者一个确定的时刻。 */
 export type TimeChoice = { kind: 'offset'; minutes: number } | { kind: 'exact'; at: number };
 

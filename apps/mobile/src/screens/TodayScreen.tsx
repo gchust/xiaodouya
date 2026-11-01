@@ -15,11 +15,13 @@ import {
   formatHoursMinutes,
   formatVolume,
   nutritionEntryText,
+  planSchedule,
   summarize24h,
   summaryText,
   timelineEntries,
   todayInsight,
   type Units,
+  vaccineReminderText,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
@@ -69,7 +71,7 @@ export function TodayScreen() {
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
   const router = useRouter();
-  const { events, baby, pendingCount } = useRecords();
+  const { events, baby, pendingCount, vaccinePlans } = useRecords();
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();
@@ -100,7 +102,9 @@ export function TodayScreen() {
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
   const recent = timelineEntries(events, now);
-  const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
+  const vaccine = dueVaccine(
+    vaccineStatuses(planSchedule(region, birthAt, vaccinePlans, data), birthAt, data, now),
+  );
   const today = localDayBounds(now);
   const nutritionText = nutritionEntryText(
     assessDayNutrition({
@@ -359,9 +363,7 @@ export function TodayScreen() {
         >
           <Card style={s.vaccineCard}>
             <Text style={s.vaccineLabel}>疫苗提醒</Text>
-            <Text style={s.vaccineText}>
-              {vaccine.name}，{vaccine.ageLabel}可接种。打完点这里在疫苗本里记一笔。
-            </Text>
+            <Text style={s.vaccineText}>{vaccineReminderText(vaccine)}</Text>
           </Card>
         </Pressable>
       ) : null}

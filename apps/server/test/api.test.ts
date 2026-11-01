@@ -498,6 +498,75 @@ describe('同步', () => {
     const all = await sync(admin.token, 0);
     expect(all.json.records.find((r) => r.id === id)?.data).toMatchObject({ media: [media] });
   });
+  it('疫苗本的配置能同步，一起记录的家人能改，viewer 读不到也不能写', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const hide = {
+      id: randomUUID(),
+      collection: 'event' as const,
+      data: { type: 'vaccine-plan', vaccineId: 'sg:bcg', hidden: true },
+      deleted: false,
+      updatedAt: Date.now(),
+    };
+    const added = {
+      id: randomUUID(),
+      collection: 'event' as const,
+      data: {
+        type: 'vaccine-plan',
+        vaccineId: `custom:${randomUUID()}`,
+        name: '虚构疫苗',
+        months: 6,
+      },
+      deleted: false,
+      updatedAt: Date.now(),
+    };
+    const write = await sync(admin.token, 0, [hide]);
+    expect(write.json.rejected).toEqual([]);
+    const byCaregiver = await sync(mom.token, 0, [added]);
+    expect(byCaregiver.json.rejected).toEqual([]);
+
+    const seen = await sync(mom.token, 0);
+    expect(seen.json.records.find((r) => r.id === hide.id)?.data).toEqual(hide.data);
+    expect(seen.json.records.find((r) => r.id === added.id)?.data).toEqual(added.data);
+
+    const view = await sync(grandma.token, 0);
+    expect(view.json.records).toEqual([]);
+    const forbidden = await sync(grandma.token, 0, [{ ...hide, id: randomUUID() }]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+    // 猜到 id 提交改动，既不能改掉配置，也不能把它补发出来。
+    const guessed = await sync(grandma.token, 0, [
+      { ...hide, data: { ...hide.data, hidden: false }, updatedAt: Date.now() + 60_000 },
+    ]);
+    expect(guessed.json.rejected[0]?.reason).toBe('forbidden');
+    expect(guessed.json.records).toEqual([]);
+    const after = await sync(admin.token, 0);
+    expect(after.json.records.find((r) => r.id === hide.id)?.data).toEqual(hide.data);
+  });
+
+  it('疫苗本的配置后写胜出，自己加的移除后是软删除', async () => {
+    const { admin } = await newFamily();
+    const id = randomUUID();
+    const data = { type: 'vaccine-plan', vaccineId: `custom:${id}`, name: '虚构疫苗' };
+    await sync(admin.token, 0, [
+      { id, collection: 'event', data, deleted: false, updatedAt: 2000 },
+    ]);
+    await sync(admin.token, 0, [
+      {
+        id,
+        collection: 'event',
+        data: { ...data, name: '更早的改动' },
+        deleted: false,
+        updatedAt: 1000,
+      },
+    ]);
+    await sync(admin.token, 0, [{ id, collection: 'event', data, deleted: true, updatedAt: 3000 }]);
+    const after = await sync(admin.token, 0);
+    const record = after.json.records.find((r) => r.id === id);
+    expect(record?.deleted).toBe(true);
+    expect(record?.data).toEqual(data);
+  });
+
   it('viewer 能读宝宝档案，但不能换头像', async () => {
     const { admin, family } = await newFamily();
     const grandma = await join(admin.token, 'viewer', '奶奶');
@@ -906,6 +975,28 @@ describe('推送', () => {
     ]);
     await flush();
     expect(pushes[0]?.body).toBe('喂奶 90ml');
+  });
+  it('配置疫苗本不是一条记录，不打扰家人', async () => {
+    const { admin } = await familyWithToken();
+    await sync(admin.token, 0, [
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { type: 'vaccine-plan', vaccineId: 'sg:bcg', hidden: true },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+      {
+        id: randomUUID(),
+        collection: 'event',
+        // 就算以后的版本给配置带上了时间，也不能当成一条新记录通知。
+        data: { type: 'vaccine-plan', vaccineId: 'sg:hepb-1', hidden: true, at: Date.now() },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await flush();
+    expect(pushes).toEqual([]);
   });
   it('viewer 不会收到喂奶通知', async () => {
     const { admin } = await newFamily();
