@@ -7,6 +7,7 @@ import {
   formatSyncedAt,
   parseWidgetAction,
   planWidgetAction,
+  shortBabyName,
   type WidgetEntry,
   type WidgetSession,
 } from '../src/domain/widget';
@@ -279,6 +280,22 @@ describe('parseWidgetAction', () => {
     expect(parseWidgetAction({ type: 'feed' })).toBeNull();
     expect(parseWidgetAction({ type: 'nuke', id: 'a' })).toBeNull();
     expect(parseWidgetAction(null)).toBeNull();
+  });
+});
+
+describe('shortBabyName', () => {
+  it('放得下时不动', () => {
+    expect(shortBabyName('小禾', 10)).toBe('小禾');
+    expect(shortBabyName('Sprout Lee', 10)).toBe('Sprout Lee');
+  });
+
+  it('放不下时截短，中文按两格算', () => {
+    expect(shortBabyName('一个特别特别长的虚构小名字', 11)).toBe('一个特别特…');
+    expect(shortBabyName('Bartholomew the Second', 11)).toBe('Bartholome…');
+  });
+
+  it('不切断表情符号', () => {
+    expect(shortBabyName('🌱🌱🌱🌱🌱🌱🌱', 5)).toBe('🌱🌱…');
   });
 });
 

@@ -2,6 +2,7 @@ import {
   formatClock,
   formatSyncedAt,
   formatVolume,
+  shortBabyName,
   type WidgetAction,
   type WidgetView,
 } from '@xiaodouya/shared';
@@ -75,7 +76,8 @@ function Header({ title, syncText, dot }: { title: string; syncText: string; dot
         justifyContent: 'space-between',
       }}
     >
-      <FlexWidget style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+      {/* 不用 flex：1，那样量出来的宽度偏大，会把同步时间挤出卡片。名字由调用方截短。 */}
+      <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
         <FlexWidget
           style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: dot, marginRight: 6 }}
         />
@@ -89,8 +91,7 @@ function Header({ title, syncText, dot }: { title: string; syncText: string; dot
       <TextWidget
         text={syncText}
         maxLines={1}
-        // 定宽：名字再长也不能把同步时间挤没，那是判断数据新不新的依据。
-        style={{ width: 62, fontSize: 10, color: c.muted, marginLeft: 6, textAlign: 'right' }}
+        style={{ fontSize: 10, color: c.muted, marginLeft: 6 }}
       />
     </FlexWidget>
   );
@@ -170,7 +171,7 @@ type Ready = Extract<WidgetView, { kind: 'ready' }>;
 
 function FeedCard({ view, newId, shown }: { view: Ready; newId: string; shown?: WidgetFeedback }) {
   const sync = formatSyncedAt(view.syncedAt, view.dayStart);
-  const header = <Header title={view.babyName} syncText={sync} dot={c.accent} />;
+  const header = <Header title={shortBabyName(view.babyName, 11)} syncText={sync} dot={c.accent} />;
   if (shown) {
     return (
       <Card link={eventLink(shown.eventId)} label={`${shown.title}，点这里修改或撤销`}>
@@ -221,7 +222,7 @@ function SleepCard({ view, newId, shown }: { view: Ready; newId: string; shown?:
   const { sleep } = view;
   const header = (
     <Header
-      title={view.babyName}
+      title={shortBabyName(view.babyName, 11)}
       syncText={sync}
       dot={sleep.status === 'awake' ? c.off : c.sleep}
     />
@@ -340,19 +341,17 @@ function SummaryCard({ view }: { view: Ready }) {
           justifyContent: 'space-between',
         }}
       >
-        <FlexWidget style={{ flex: 1, flexDirection: 'row' }}>
-          <TextWidget
-            text={`${view.babyName}的今天`}
-            maxLines={1}
-            truncate="END"
-            style={{ fontSize: 15, fontFamily: SERIF, color: c.ink }}
-          />
-        </FlexWidget>
+        <TextWidget
+          text={`${shortBabyName(view.babyName, 16)}的今天`}
+          maxLines={1}
+          truncate="END"
+          style={{ fontSize: 15, fontFamily: SERIF, color: c.ink }}
+        />
         <TextWidget
           // 系统定时刷新可能晚于 0 点，写明日期，显示的永远是这一天的真实数字。
           text={`${date.getMonth() + 1}月${date.getDate()}日 · ${formatSyncedAt(view.syncedAt, view.dayStart)}`}
           maxLines={1}
-          style={{ width: 118, fontSize: 10, color: c.muted, marginLeft: 6, textAlign: 'right' }}
+          style={{ fontSize: 10, color: c.muted, marginLeft: 6 }}
         />
       </FlexWidget>
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>

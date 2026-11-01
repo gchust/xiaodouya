@@ -188,6 +188,24 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
   };
 }
 
+/**
+ * 小工具的一行放不下时先截短名字。系统的省略号靠不住：名字太长时旁边的同步时间会被挤没，
+ * 而那是判断数据新不新的依据。宽度按“西文 1、中日韩 2”粗略算。
+ */
+export function shortBabyName(name: string, maxWidth: number): string {
+  const chars = Array.from(name);
+  const width = (ch: string) => ((ch.codePointAt(0) ?? 0) >= 0x2e80 ? 2 : 1);
+  if (chars.reduce((sum, ch) => sum + width(ch), 0) <= maxWidth) return name;
+  let used = 0;
+  let out = '';
+  for (const ch of chars) {
+    used += width(ch);
+    if (used > maxWidth - 1) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 export function formatSyncedAt(syncedAt: number | null, dayStart: number): string {
   if (syncedAt === null) return '未同步';
   if (syncedAt >= dayStart) return `${formatClock(syncedAt)} 同步`;
