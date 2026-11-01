@@ -359,9 +359,9 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: Edit me ${RUN_ID}
     timeout: 15000
+# 等上传卡片消失，不等“文件都上传好了”：那是 Toast，会被下一个 Toast 换掉，传得快时就等不到了。
 - extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
+    notVisible: { id: upload-card }
     timeout: 60000
 - tapOn: Edit me ${RUN_ID}的更多操作
 - takeScreenshot: .artifacts/e2e-11a-moment-actions
@@ -385,8 +385,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - assertVisible: 共 2 项
 - extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
+    notVisible: { id: upload-card }
     timeout: 60000
 - takeScreenshot: .artifacts/e2e-11a-moment-after-add
 # 移除一个，再撤销
@@ -537,8 +536,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: sample-certificate.pdf
 - takeScreenshot: .artifacts/e2e-11a-doc-after-remove
 - extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
+    notVisible: { id: upload-card }
     timeout: 60000
 - scrollUntilVisible:
     element: { id: doc-delete }
