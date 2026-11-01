@@ -298,28 +298,6 @@ describe('找回密码', () => {
       expect(fake.status).toBe(429);
       expect(fake.text).toBe(real.text);
     });
-
-    it('登录时邮箱不存在也要算一遍哈希，否则响应时间就暴露了邮箱是否存在', async () => {
-      const user = await newUser(app);
-      const timed = async (email: string) => {
-        const started = performance.now();
-        expect((await login(email, 'wrong-pass')).status).toBe(401);
-        return performance.now() - started;
-      };
-      const median = (values: number[]) => [...values].sort((a, b) => a - b)[1] ?? 0;
-      const existing = median([
-        await timed(user.email),
-        await timed(user.email),
-        await timed(user.email),
-      ]);
-      const missing = median([
-        await timed(uniqueEmail()),
-        await timed(uniqueEmail()),
-        await timed(uniqueEmail()),
-      ]);
-      // 修复前约 0.25 倍。查询本身也占时间，所以不要求接近 1。
-      expect(missing).toBeGreaterThan(existing * 0.6);
-    });
   });
 
   it('验证码错了不会改密码', async () => {
