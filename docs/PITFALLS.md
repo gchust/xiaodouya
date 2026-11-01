@@ -56,7 +56,7 @@
 - **Biome 的 `noReactNativeRawText` 认不出包了 Text 的组件。** 已关闭，不要重新打开。
 - **弹层不能假设键盘有没有把窗口顶起来。** `softwareKeyboardLayoutMode: 'resize'` 在 edge-to-edge 下不一定缩小窗口，假设错了要么被键盘挡住，要么抬高两次。`overlays.tsx` 用量到的层高算差额（`keyboardLift`）。还没在设备上看过，改这里要在模拟器上打开喂奶弹层点备注确认。
 - **`hitSlop` 只在父视图没有裁剪时才生效，后面的兄弟视图还会抢走重叠区域。** `overflow: hidden` 的卡片里，× 的热区要向卡片内部扩。紧贴滚动区的控件（回忆页子标签）用内边距加负外边距，再给头部 `zIndex`。
-- **RN 的 `lineHeight` 按网页规则把差额平分到字的上下。** 衬线标题行高 31 时，g、y 的下伸部分会超出文字框 1dp 左右。加 `paddingBottom` 和相同的负 `marginBottom`，布局不变，也不会被裁掉。
+- **RN 的 `lineHeight` 按网页规则把差额平分到字的上下。** 衬线标题行高 31 时，g、y 的下伸部分会超出文字框 1dp 左右（按 `CustomLineHeightSpan` 源码推算，没有在设备上看过）。加 `paddingBottom` 和相同的负 `marginBottom`，布局不变，也不会被裁掉。
 - **要让卡片不挡住下面的点击，整条路径都要处理。** 容器用 `box-none` 还不够：里面的普通 View 和 Text 仍会成为点击目标，点击不会穿透给下面的页面。不需要响应的部分要包在 `pointerEvents="none"` 里。
 
 ## Android 构建和模拟器

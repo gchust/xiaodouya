@@ -103,14 +103,15 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
   const pendingUpload = uploads.pendingIds().has(media.id);
   const hasSource = source !== null;
 
-  // 离线时不空转，靠这里在状态变化后补一次。恢复联网后重新从最短的间隔开始。
+  // 离线时不空转，靠这里在同步结束后补一次。只看回到 idle：恢复联网或刚同步到新数据时才可能拿到链接，
+  // 每次状态变化都取的话，家人频繁同步时退避的定时器会一直被清掉。恢复联网后重新从最短的间隔开始。
   const lastStatus = useRef(syncStatus);
   useEffect(() => {
     const wasOffline = lastStatus.current === 'offline';
     const changed = lastStatus.current !== syncStatus;
     lastStatus.current = syncStatus;
     offline.current = syncStatus === 'offline';
-    if (!changed || hasSource) return;
+    if (!changed || hasSource || syncStatus !== 'idle') return;
     if (wasOffline) failures.current = 0;
     setRetry((n) => n + 1);
   }, [syncStatus, hasSource]);
