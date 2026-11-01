@@ -13,6 +13,7 @@ import { useApp, useNow, useRecords, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { ensureNotificationPermission } from '../lib/notifications';
+import { useTabScrollRef } from '../lib/tabScroll';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
@@ -29,6 +30,7 @@ import {
 
 export function FamilyScreen() {
   const insets = useSafeAreaInsets();
+  const scrollRef = useTabScrollRef('family');
   const app = useApp();
   const { moments, letters, baby, pendingCount } = useRecords();
   const uploadProgress = useUploadProgress();
@@ -88,8 +90,30 @@ export function FamilyScreen() {
     ));
   };
 
+  const cancelInvite = (invite: { id: string; label: string }) => {
+    sheet.open(`取消${invite.label}的邀请？`, () => (
+      <>
+        <Muted style={{ fontSize: 13, lineHeight: 21 }}>
+          已经发出去的邀请码会立刻失效，之后想邀请可以重新生成。
+        </Muted>
+        <Button
+          testID="invite-cancel-confirm"
+          label="确定取消邀请"
+          onPress={() => {
+            sheet.close();
+            void app.api
+              .deleteInvite(invite.id)
+              .then(() => app.refreshMe())
+              .catch((e: Error) => toast(e.message));
+          }}
+        />
+      </>
+    ));
+  };
+
   return (
     <ScrollView
+      ref={scrollRef}
       testID="family-screen"
       style={s.scroll}
       contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}
@@ -122,15 +146,11 @@ export function FamilyScreen() {
               <Muted style={{ fontSize: 11 }}>已发送邀请 · {roleLabels[invite.role]}</Muted>
             </View>
             <Pressable
+              testID={`invite-cancel-${invite.label}`}
               accessibilityRole="button"
-              accessibilityLabel="取消邀请"
-              hitSlop={8}
-              onPress={() => {
-                void app.api
-                  .deleteInvite(invite.id)
-                  .then(() => app.refreshMe())
-                  .catch((e: Error) => toast(e.message));
-              }}
+              accessibilityLabel={`取消${invite.label}的邀请`}
+              hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
+              onPress={() => cancelInvite(invite)}
             >
               <Text style={{ fontSize: 11, color: colors.accent }}>取消</Text>
             </Pressable>
