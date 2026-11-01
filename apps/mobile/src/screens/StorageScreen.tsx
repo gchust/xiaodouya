@@ -8,8 +8,17 @@ import {
   storageProviderNames,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app';
 import { colors, spacing } from '../theme';
@@ -65,29 +74,32 @@ export function StorageScreen() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [c, u] = await Promise.all([app.api.getStorage(), app.api.storageUsage()]);
-        setConfig(c);
-        setUsage(u);
-        if (c.provider) {
-          setProvider(c.provider);
-          setForm({
-            accountId: c.accountId ?? '',
-            endpoint: c.endpoint ?? '',
-            region: c.region ?? '',
-            bucket: c.bucket ?? '',
-            accessKeyId: c.accessKeyId ?? '',
-            secretAccessKey: '',
-            publicBaseUrl: c.publicBaseUrl ?? '',
-          });
-        }
-      } catch (error) {
-        setLoadError(error instanceof Error ? error.message : '读取失败');
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const [c, u] = await Promise.all([app.api.getStorage(), app.api.storageUsage()]);
+      setConfig(c);
+      setUsage(u);
+      if (c.provider) {
+        setProvider(c.provider);
+        setForm({
+          accountId: c.accountId ?? '',
+          endpoint: c.endpoint ?? '',
+          region: c.region ?? '',
+          bucket: c.bucket ?? '',
+          accessKeyId: c.accessKeyId ?? '',
+          secretAccessKey: '',
+          publicBaseUrl: c.publicBaseUrl ?? '',
+        });
       }
-    })();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : '读取失败');
+    }
   }, [app.api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const set = (key: keyof Form) => (value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -159,7 +171,11 @@ export function StorageScreen() {
           : '';
 
   return (
-    <View style={s.root} testID="storage-screen">
+    <KeyboardAvoidingView
+      style={s.root}
+      testID="storage-screen"
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <ScrollView
         contentContainerStyle={[
           s.content,
@@ -168,18 +184,33 @@ export function StorageScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          testID="storage-back"
-          accessibilityRole="button"
-          accessibilityLabel="返回家人"
-          hitSlop={12}
-          onPress={() => router.back()}
-        >
-          <Text style={s.back}>‹ 家人</Text>
-        </Pressable>
-        <PageTitle>存储</PageTitle>
+        <View style={{ gap: 8 }}>
+          <Pressable
+            testID="storage-back"
+            accessibilityRole="button"
+            accessibilityLabel="返回家人"
+            hitSlop={12}
+            onPress={() => router.back()}
+          >
+            <Text style={s.back}>‹ 家人</Text>
+          </Pressable>
+          <PageTitle>存储</PageTitle>
+        </View>
 
-        {loadError ? <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text> : null}
+        {loadError ? (
+          <View style={{ gap: 8 }}>
+            <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text>
+            <Button
+              testID="storage-retry"
+              tone="outline"
+              label="重新读取"
+              height={44}
+              style={{ borderRadius: 14 }}
+              labelStyle={s.outlineLabel}
+              onPress={() => void load()}
+            />
+          </View>
+        ) : null}
         {!config && !loadError ? <ActivityIndicator color={colors.accent} /> : null}
 
         <View style={s.usageCard}>
@@ -339,6 +370,8 @@ export function StorageScreen() {
             tone="outline"
             label={testing ? '测试中…' : '测试连接'}
             height={48}
+            style={{ borderRadius: 14 }}
+            labelStyle={s.outlineLabel}
             disabled={!complete || testing}
             onPress={() => void runTest()}
           />
@@ -380,7 +413,7 @@ export function StorageScreen() {
           onPress={() => void save()}
         />
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -388,6 +421,7 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
+  outlineLabel: { fontSize: 15, fontWeight: '400' },
   usageCard: {
     backgroundColor: colors.card,
     borderWidth: 1,
