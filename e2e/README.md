@@ -60,6 +60,7 @@ bash scripts/ios-e2e.sh         # 或 bash scripts/ios-e2e.sh e2e/flows/01_onboa
 和 Android 的不同：
 
 - 一条流程失败后继续跑完其余流程，最后列出结果，失败现场和无障碍树（`hierarchy-<流程>.json`）在 `.artifacts/`。
+- Maestro 的 `hideKeyboard` 收不起 iOS 软键盘。`ios-e2e.sh` 跑的是流程的副本，把 `- hideKeyboard` 换成点 E2E 构建里的 `e2e-hide-keyboard`。写流程时照常用 `hideKeyboard`，要顶格写在一行里才会被替换，写在 `commands:` 里面的不会。
 - 模拟器没有飞行模式。`subflows/net-off.yaml` 在 iOS 上改为断开 `net-proxy.mjs` 这个转发，App 连不上服务端，但系统仍然报告在线。所以 iOS 上**没有验证过**“离线中”的提示和 NetInfo 的联动，流程 06 看的是“正在同步”。
 - 服务端监听 18787，转发监听 8787。`S3_PUBLIC_ENDPOINT` 是 `localhost:59000`，App 连 `localhost:8787`，模拟器和宿主机共用网络，不需要 `10.0.2.2`。
 

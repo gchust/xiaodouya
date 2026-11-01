@@ -304,6 +304,22 @@ function BannerLayer({ banner }: { banner: { initial: string; message: string } 
   );
 }
 
+/**
+ * 只在 iOS 的 E2E 构建里有。Maestro 的 hideKeyboard 收不起 iOS 软键盘，而点空白处又可能点到弹层外面、
+ * 把弹层关掉。贴在屏幕右边距里，不会盖住真实控件，scripts/ios-e2e.sh 把 hideKeyboard 换成点这里。
+ */
+function E2eHideKeyboard() {
+  const insets = useSafeAreaInsets();
+  return (
+    <Pressable
+      testID="e2e-hide-keyboard"
+      accessibilityLabel="收起键盘"
+      onPress={() => Keyboard.dismiss()}
+      style={{ position: 'absolute', top: insets.top, right: 0, width: 12, height: 12 }}
+    />
+  );
+}
+
 /** Toast 和横幅：包在最外层，任何地方都能用，也始终显示在弹层之上。 */
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
@@ -341,6 +357,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       {children}
       <ToastLayer toast={toast} onUndo={undo} />
       <BannerLayer banner={banner} />
+      {IS_E2E && Platform.OS === 'ios' ? <E2eHideKeyboard /> : null}
     </FeedbackContext.Provider>
   );
 }

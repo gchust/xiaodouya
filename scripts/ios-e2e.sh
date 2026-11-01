@@ -47,18 +47,15 @@ curl -fs http://localhost:8787/healthz >/dev/null || {
   exit 1
 }
 
-# Maestro 的 hideKeyboard 收不起 iOS 的软键盘（React Native 的输入框没有它能点的收起动作），
-# 所以流程在硬件键盘模式下跑，软键盘不弹出来。弹层遇到键盘的布局用 e2e/ios/sheet-keyboard.yaml 单独测。
-defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true
+# 默认接着 Mac 的硬件键盘，软键盘不会弹出来，弹层遇到键盘的布局就测不到了。要在开机前设置。
+defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 
-# 这个设置只在 Simulator.app 启动时读取，设备不用重启。
-use_hardware_keyboard() {
-  defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool "$1"
-  killall Simulator 2>/dev/null
-  sleep 3
-  open -a Simulator --args -CurrentDeviceUDID "$UDID"
-  sleep 10
-}
+# Maestro 的 hideKeyboard 收不起 iOS 软键盘，流程都会失败。复制一份流程，把它换成点 E2E 构建里专门的按钮
+# （见 overlays.tsx）。流程文件本身不用区分平台，新加的流程也自动适用。
+FLOW_ROOT=.artifacts/ios-e2e-flows
+rm -rf "$FLOW_ROOT"
+cp -R e2e "$FLOW_ROOT"
+find "$FLOW_ROOT" -name '*.yaml' -print0 | xargs -0 sed -i '' 's/^- hideKeyboard$/- tapOn: { id: e2e-hide-keyboard }/'
 
 RUNTIME="$(xcrun simctl list runtimes available -j |
   node -e 'const r=JSON.parse(require("fs").readFileSync(0)).runtimes.filter((x)=>x.name.startsWith("iOS "));console.log(r.at(-1).identifier)')"
@@ -97,6 +94,8 @@ PASSED=()
 FAILED=()
 run_flow() {
   local flow="$1" name
+  # 命令行里写的是 e2e/flows/xx.yaml，实际跑替换过的副本。
+  flow="$FLOW_ROOT/${flow#e2e/}"
   name="$(basename "$flow" .yaml)"
   echo "▶ $flow"
   if maestro --device "$UDID" test --env "RUN_ID=$RUN_ID" \
@@ -123,11 +122,7 @@ for flow in "${FLOWS[@]}"; do
   fi
   # 要用管理员身份，紧接着建好账号后面跑，流程 17 之后 App 里就不是管理员了。
   case "$flow" in
-    */01_*)
-      use_hardware_keyboard false
-      run_flow e2e/ios/sheet-keyboard.yaml
-      use_hardware_keyboard true
-      ;;
+    */01_*) run_flow e2e/ios/sheet-keyboard.yaml ;;
   esac
 done
 
