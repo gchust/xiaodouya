@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import type {
   BabyData,
   EventData,
@@ -39,6 +40,10 @@ class MemoryDb implements LocalDb {
     this.records.clear();
   }
 }
+
+const { addOnNewIntent } = createRequire(import.meta.url)('../plugins/with-latest-intent.js') as {
+  addOnNewIntent(source: string): string;
+};
 
 const session: WidgetSession = {
   signedIn: true,
@@ -223,5 +228,28 @@ describe('小工具的链接', () => {
   it('相同的动作得到相同的去重键', () => {
     expect(linkKey({ kind: 'event', id: 'a' })).toBe('event:a');
     expect(linkKey({ kind: 'feed' })).toBe('feed');
+  });
+});
+
+describe('with-latest-intent', () => {
+  const template = `package a
+import android.os.Bundle
+class MainActivity : ReactActivity() {
+  override fun getMainComponentName(): String = "main"
+}`;
+
+  it('把新的 Intent 存下来，并补上 import', () => {
+    const result = addOnNewIntent(template);
+    expect(result).toContain('import android.content.Intent');
+    expect(result).toContain('setIntent(intent)');
+  });
+
+  it('重复运行 prebuild 不会加两次', () => {
+    const once = addOnNewIntent(template);
+    expect(addOnNewIntent(once)).toBe(once);
+  });
+
+  it('模板变了要报错，不能悄悄失效', () => {
+    expect(() => addOnNewIntent('class Other {}')).toThrow();
   });
 });

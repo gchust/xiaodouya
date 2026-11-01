@@ -75,6 +75,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ['expo-audio', { microphonePermission: '录下宝宝的声音，保存到回忆里。' }],
     ['expo-local-authentication', { faceIDPermission: '验证身份后查看证件夹。' }],
     ['expo-notifications', { color: '#c0714f', icon: './assets/notification-icon.png' }],
+    './plugins/with-latest-intent',
     // 只生成 Android 的 receiver 和资源，iOS 上这个插件什么都不做。
     [
       'react-native-android-widget',
@@ -85,6 +86,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             name: 'FeedWidget',
             label: '记喂奶',
             description: '点一下，按上次的奶量记一次喂奶',
+            previewImage: './assets/widgets/feed-preview.png',
             minWidth: '110dp',
             minHeight: '110dp',
             targetCellWidth: 2,
@@ -97,6 +99,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             name: 'SleepWidget',
             label: '睡眠',
             description: '看宝宝是不是在睡，点一下开始或结束睡眠',
+            previewImage: './assets/widgets/sleep-preview.png',
             minWidth: '110dp',
             minHeight: '110dp',
             targetCellWidth: 2,
@@ -108,6 +111,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
             name: 'SummaryWidget',
             label: '今日汇总',
             description: '今天喂奶、尿布和睡眠的合计',
+            previewImage: './assets/widgets/summary-preview.png',
             minWidth: '250dp',
             minHeight: '110dp',
             targetCellWidth: 4,
