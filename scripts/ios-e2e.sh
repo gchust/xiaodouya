@@ -96,6 +96,13 @@ for flow in "${FLOWS[@]}"; do
     # iOS 上控件是否可见取决于无障碍树，失败时留一份，不用猜。
     maestro --device "$UDID" hierarchy >".artifacts/hierarchy-$name.json" 2>/dev/null || true
     xcrun simctl io "$UDID" screenshot ".artifacts/failed-$name.png" || true
+    # 其他流程都从建好的账号开始。它失败时后面每条都要等满超时，白白占一个小时。
+    case "$name" in
+      01_*)
+        echo "流程 01 失败，后面的流程都依赖它，不再继续" >&2
+        break
+        ;;
+    esac
   fi
 done
 

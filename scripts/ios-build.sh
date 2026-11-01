@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 用法：scripts/ios-build.sh
-# 编译给 iOS 模拟器用的 E2E 版（Release 配置、内置 JS、不签名），只能在 macOS 上跑。
+# 编译给 iOS 模拟器用的 E2E 版（Release 配置、内置 JS、不用 Apple 账号），只能在 macOS 上跑。
 # 产物：.artifacts/xiaodouya-e2e.app。正式版的归档和上传见 docs/DEPLOYMENT.md。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,6 +27,8 @@ echo "--- Info.plist ---"
 plutil -p ios/app/Info.plist
 
 # 只编 arm64 能省一半时间，Runner 本身就是 arm64。
+# 用 “-” 做本地签名，不需要 Apple 账号。不能写 CODE_SIGNING_ALLOWED=NO：没有签名就没有钥匙串权限，
+# SecureStore 读令牌时报 -34018，App 一直停在空白页。
 xcodebuild \
   -workspace ios/app.xcworkspace \
   -scheme app \
@@ -36,9 +38,7 @@ xcodebuild \
   -derivedDataPath ios/build \
   ARCHS=arm64 \
   ONLY_ACTIVE_ARCH=YES \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY= \
+  CODE_SIGN_IDENTITY=- \
   build 2>&1 | tee "$ROOT/.artifacts/xcodebuild.log" | xcbeautify --quiet
 
 APP="ios/build/Build/Products/Release-iphonesimulator/app.app"

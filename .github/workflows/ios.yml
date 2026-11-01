@@ -47,7 +47,7 @@ jobs:
           path: ~/Library/Caches/CocoaPods
           key: ios-pods-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: ios-pods-
-      - name: 编译（模拟器，不签名）
+      - name: 编译（模拟器，本地签名，不需要 Apple 账号）
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: bash scripts/ios-build.sh
       # 编译完马上存，不等整个任务成功：后面的端到端测试失败时，修流程不用再编译一遍。
