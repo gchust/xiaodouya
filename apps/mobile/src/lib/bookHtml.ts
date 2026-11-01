@@ -70,3 +70,12 @@ ${momentHtml ? `<h1 class="section" style="page-break-before:auto">回忆</h1>${
 ${letterHtml ? `<h1 class="section">写给你的信</h1>${letterHtml}` : ''}
 </body></html>`;
 }
+
+/** A4（单位是点）。默认的 Letter 是美国纸张，新加坡打印不合适。 */
+export const BOOK_PAGE = { width: 595, height: 842 };
+
+/** 分享和保存时用户会看到文件名，不能是一串随机 id。去掉文件系统不允许的字符。 */
+export function bookFileName(babyName: string): string {
+  const safe = babyName.replace(/[\\/:*?"<>|]/g, '').trim();
+  return `${safe || '宝宝'}的成长册.pdf`;
+}

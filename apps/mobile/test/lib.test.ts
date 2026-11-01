@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBookHtml } from '../src/lib/bookHtml';
+import { bookFileName, buildBookHtml } from '../src/lib/bookHtml';
 import { formatLastSeen, isBirthInFuture } from '../src/lib/dates';
 import {
   createExclusivePlayback,
@@ -153,6 +153,14 @@ describe('成员状态', () => {
     expect(formatLastSeen(now - 24 * 3_600_000, now).text).toBe('昨天');
     expect(formatLastSeen(new Date(2026, 1, 3).getTime(), now).text).toBe('2月3日');
   });
+});
+
+describe('成长册文件名', () => {
+  it('用宝宝的名字，去掉文件系统不允许的字符', () => {
+    expect(bookFileName('小豆芽')).toBe('小豆芽的成长册.pdf');
+    expect(bookFileName('a/b:c?')).toBe('abc的成长册.pdf');
+  });
+  it('名字为空时有默认值', () => expect(bookFileName(' / ')).toBe('宝宝的成长册.pdf'));
 });
 
 describe('成长册', () => {

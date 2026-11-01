@@ -44,7 +44,8 @@ export function MomentSheet({
   }, [isLetter, setSheetTitle]);
   const canSave = isLetter
     ? Boolean(title.trim() || text.trim())
-    : Boolean(title.trim() || text.trim() || files.length);
+    : // 只录音也能保存：保存时会自动停止录音。
+      Boolean(title.trim() || text.trim() || files.length || recorder.recording);
 
   const pick = async () => {
     setPicking(true);
@@ -158,7 +159,11 @@ export function MomentSheet({
               style={[
                 s.picker,
                 recorder.recording
-                  ? { backgroundColor: colors.accent, borderColor: colors.accent }
+                  ? {
+                      backgroundColor: colors.accent,
+                      borderColor: colors.accent,
+                      borderStyle: 'solid',
+                    }
                   : null,
               ]}
             >
