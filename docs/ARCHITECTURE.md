@@ -129,11 +129,11 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 
 - **上传不能在 App 被杀后继续**，也不能断点续传，下次启动从该文件开头重传。大视频要真正后台上传，需要用 Expo Modules 写 WorkManager/URLSession 模块。
 - 每个账号只属于一个家庭（`memberships_one_family`），一个家庭只有一个宝宝（`baby` 集合取最新一条）。
-- iOS 没有测试过。
+- iOS 只在 CI 的模拟器上跑过，没有上过真机（见 PROGRESS 的 F-77）。
 - 视频没有压缩。
 - 存储地址的内网检查在连接前做，理论上还有 DNS 重绑定的窗口。管理员都是家人，风险可接受。
 - 在 Supabase 上，手机断开后长轮询可能继续查到 25 秒时限才结束：在 edge-runtime 镜像里 `request.signal` 没有触发。只多几次很轻的查询，没有处理。
-- 上传队列保存的是绝对路径。iOS 升级后容器路径可能变化，做 iOS 版时要改成相对路径。
+- iOS 的 ATS 不允许连公网的 http 服务器，自建服务要配 https。局域网地址可以（`NSAllowsLocalNetworking`）。
 
 ## 登录失效和本地数据
 

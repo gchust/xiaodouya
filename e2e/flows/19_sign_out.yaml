@@ -22,6 +22,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: sign-out }
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - tapOn: { id: sign-out }
 - assertVisible:
     text: 还有.*没有传到服务器.*
@@ -44,6 +45,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: sign-out }
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - tapOn: { id: sign-out }
 - assertVisible:
     text: 退出后手机上的数据会被清除.*
