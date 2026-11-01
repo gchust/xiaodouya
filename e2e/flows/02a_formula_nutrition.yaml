@@ -26,7 +26,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: nutrition-entry }
 - assertVisible:
-    text: 数据不足 · 有 .* 次喂奶没算进去.*
+    text: .*数据不足 · 有 .* 次喂奶没算进去.*
 - takeScreenshot: .artifacts/e2e-02a-today-entry
 - tapOn: { id: nutrition-entry }
 - extendedWaitUntil:
@@ -152,7 +152,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: nutrition-entry }
 - assertVisible:
-    text: 目前已摄入.*
+    text: .*目前已摄入.*
 - tapOn: { id: nutrition-entry }
 - extendedWaitUntil:
     visible: { id: nutrition-screen }

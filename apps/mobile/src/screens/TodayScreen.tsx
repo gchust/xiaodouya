@@ -266,6 +266,21 @@ export function TodayScreen() {
 
       {events.length > 0 ? <NotificationPrompt /> : null}
 
+      {nutritionText ? (
+        <Pressable
+          testID="nutrition-entry"
+          accessibilityRole="button"
+          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
+          onPress={() => router.push('/nutrition')}
+          style={s.nutritionEntry}
+        >
+          <Text style={s.nutritionLabel}>奶粉营养</Text>
+          <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
+            {nutritionText} ›
+          </Muted>
+        </Pressable>
+      ) : null}
+
       <View style={s.listHeader}>
         <Text style={s.listTitle}>过去 24 小时</Text>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
@@ -296,21 +311,6 @@ export function TodayScreen() {
           ))
         )}
       </View>
-
-      {nutritionText ? (
-        <Pressable
-          testID="nutrition-entry"
-          accessibilityRole="button"
-          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
-          onPress={() => router.push('/nutrition')}
-          style={s.nutritionEntry}
-        >
-          <Text style={s.nutritionLabel}>奶粉营养</Text>
-          <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
-            {nutritionText} ›
-          </Muted>
-        </Pressable>
-      ) : null}
 
       {vaccine ? (
         <Pressable
@@ -486,9 +486,9 @@ const s = StyleSheet.create({
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
   nutritionEntry: {
-    marginTop: 4,
+    marginTop: 8,
     marginHorizontal: spacing.page,
-    paddingVertical: 11,
+    paddingVertical: 8,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
