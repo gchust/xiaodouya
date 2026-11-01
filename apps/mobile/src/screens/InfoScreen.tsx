@@ -72,16 +72,19 @@ export function InfoScreen() {
                 : '待补充'
             }
             onPress={() => openEdit(sheet, baby.id, baby.data, 'measures')}
+            testID="birth-measures"
           />
           <Row
             label="医院"
             value={baby.data.hospital || '待补充'}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'hospital')}
+            testID="birth-hospital"
           />
           <Row
             label="血型"
             value={baby.data.bloodType || '待补充'}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'bloodType')}
+            testID="birth-blood"
             last
           />
         </ListCard>
@@ -214,7 +217,7 @@ export function InfoScreen() {
       <View style={s.section}>
         <SectionTitle>这个月该知道的</SectionTitle>
         {knowledge.map((k) => (
-          <View key={k.title} style={s.knowledge}>
+          <View key={k.title} testID="knowledge-card" style={s.knowledge}>
             <Text style={{ fontSize: 14, fontWeight: '500', color: colors.ink }}>{k.title}</Text>
             <Text style={{ fontSize: 12, lineHeight: 20, color: colors.inkSoft }}>{k.body}</Text>
           </View>
