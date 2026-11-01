@@ -1003,6 +1003,36 @@ describe('防滥用：文件和记录大小', () => {
     expect(removed.json.rejected).toEqual([]);
   });
 
+  it('非管理员保存档案时地区被换回来，大小和引用都按真正入库的内容算', async () => {
+    const { token, familyId } = await newFamily();
+    const mom = await join(token, 'caregiver');
+    const oldAvatar = await upload(token, { scope: 'avatar' });
+    const newAvatar = await upload(token, { scope: 'avatar' });
+    const id = randomUUID();
+    const baby = (avatar: string, region?: string) => ({
+      name: '小虚构',
+      birthAt: 1_700_000_000_000,
+      avatar: mediaRef(avatar),
+      ...(region ? { region } : {}),
+    });
+    const write = (who: string, data: unknown) =>
+      sync(who, [{ id, collection: 'baby', data, deleted: false, updatedAt: nextVersion() }]);
+    await write(token, baby(oldAvatar, 'SG'));
+
+    // 旧版 App 不认识地区，发来的内容没有这个字段，入库时要补上，所以比发来的大。
+    expect((await write(mom.token, baby(newAvatar))).json.rejected).toEqual([]);
+    const [stored] = await sql<{ data: { region?: string } }[]>`
+      SELECT data FROM records WHERE id = ${id}`;
+    expect(stored?.data.region).toBe('SG');
+    const [family] = await sql<{ record_bytes: string }[]>`
+      SELECT record_bytes FROM families WHERE id = ${familyId}`;
+    expect(Number(family?.record_bytes)).toBe(Buffer.byteLength(JSON.stringify(stored?.data)));
+
+    const after = await usage(token);
+    expect(after.trash).toBe(FILE);
+    expect(after.total).toBe(FILE);
+  });
+
   it('请求体上限仍然拦得住超大的同步请求', async () => {
     const { token } = await newFamily();
     const r = await sync(token, [
