@@ -1,0 +1,30 @@
+# 小工具点进 App 的链接：没有历史奶量时要去选奶量，已记录的可以改。
+# 桌面上的小工具是系统画的位图，Maestro 选不到里面的文字，点击记录这一段见 docs/PROGRESS.md F-115。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- openLink: xiaodouya://today?sheet=feed
+- extendedWaitUntil:
+    visible: { id: feed-save }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-14c-widget-feed-link
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+# 打开过一次后要清掉参数，切回这一页不能再弹一次。
+- tapOn: { id: tab-recall }
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- assertNotVisible: { id: feed-save }
+# 记录已经不存在（比如被家人删了）时不打开任何东西，也不能崩。
+- openLink: xiaodouya://today?event=00000000-0000-4000-8000-000000000000
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 15000
+- assertNotVisible: { id: event-edit }
