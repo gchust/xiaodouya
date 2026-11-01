@@ -5,7 +5,7 @@ import { connect, migrate } from './db';
 import { expoNotifier, noopNotifier } from './notifier';
 
 const config = loadConfig();
-const sql = connect(config.databaseUrl);
+const sql = connect(config.databaseUrl, config.db);
 await migrate(sql);
 
 if (!config.serverStorage) {

@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import type { DbConfig } from './config';
 
 export type Sql = postgres.Sql;
 
@@ -102,12 +103,67 @@ const migrations: readonly string[] = [
   );
   CREATE INDEX push_tokens_user ON push_tokens(user_id);
   `,
+  // 限流计数：Edge Function 的 isolate 之间不共享内存。
+  `
+  CREATE TABLE rate_limits (
+    key_hash TEXT PRIMARY KEY,
+    count INT NOT NULL,
+    reset_at TIMESTAMPTZ NOT NULL
+  );
+  `,
+  // Supabase 的 Data API 把 public 里的表暴露给 anon 角色，而 anon key 本来就是公开的。
+  // 这里只有服务端自己访问数据库：开 RLS 不写策略，表的所有者（服务端的连接）不受影响，其他角色一律读不到。
+  // 以后新增表也要开 RLS，portable.test.ts 会检查。自建 Postgres 没有这些角色，只是多开了 RLS，没有副作用。
+  `
+  ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE families ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE memberships ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE invites ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE records ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE storage_configs ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE media ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
+  DO $$
+  DECLARE
+    api_role TEXT;
+  BEGIN
+    FOREACH api_role IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = api_role) THEN
+        EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM %I', api_role);
+        EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM %I', api_role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM %I', api_role);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM %I', api_role);
+      END IF;
+    END LOOP;
+  END $$;
+  `,
 ];
 
-export function connect(databaseUrl: string): Sql {
-  return postgres(databaseUrl, { max: 10, onnotice: () => {} });
+export interface ConnectOptions extends Partial<DbConfig> {
+  /** 空闲多少秒后断开。Edge Function 的 isolate 不用时要尽快还回连接。 */
+  idleTimeout?: number;
 }
 
+export function connect(databaseUrl: string, options: ConnectOptions = {}): Sql {
+  const { poolMax = 10, prepare = true, ssl = false, idleTimeout } = options;
+  return postgres(databaseUrl, {
+    max: poolMax,
+    // 事务模式的连接池不支持命名预处理语句，语句可能落到另一条服务端连接上。
+    prepare,
+    onnotice: () => {},
+    // 这两项不能传默认值：显式传了就会盖掉连接串里的 sslmode。
+    ...(ssl ? { ssl } : {}),
+    ...(idleTimeout === undefined ? {} : { idle_timeout: idleTimeout }),
+  });
+}
+
+/**
+ * 迁移的唯一入口。Node 服务启动时调用；Edge Function 不调用，部署时用 `cli migrate` 执行。
+ * 在事务里完成并且记录版本，重复执行没有副作用。
+ */
 export async function migrate(sql: Sql): Promise<void> {
   // 多实例同时启动时用咨询锁排队，避免重复执行迁移。
   await sql.begin(async (tx) => {

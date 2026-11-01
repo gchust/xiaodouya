@@ -5,9 +5,34 @@
 | 选择                            | 原因                                                                                         |
 | ------------------------------- | -------------------------------------------------------------------------------------------- |
 | Expo + React Native             | 一套代码支持 Android 和 iOS；改 JS 不用重新编译；需要时能用 Expo Modules 写原生代码          |
-| 自托管服务端（Hono + Postgres） | 一个 `docker compose` 就能部署；本地和 CI 能完整跑起来，Agent 可以闭环测试；不依赖第三方账号 |
+| 自己的服务端（Hono + Postgres） | 本地和 CI 能完整跑起来，Agent 可以闭环测试。同一份代码能跑在 Supabase Edge Function 上，也能用 `docker compose` 自建，不绑定平台 |
 | S3 直传                         | 文件不经过服务器，服务器配置要求低；兼容 R2、S3 和其他存储                                   |
-| 长轮询而不是 WebSocket          | 反向代理不用特殊配置，代码量小。一家人的规模足够实时                                         |
+| 长轮询而不是 WebSocket          | 反向代理和 Edge Function 都不用特殊配置，代码量小。一家人的规模足够实时                      |
+
+## 两种部署方式
+
+生产推荐 Supabase 免费版（新加坡）：API 跑在 Edge Function，数据在 Supabase Postgres，文件在 Cloudflare R2。Docker 自建是备选。步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
+```
+apps/server/src/app.ts   createApp：全部业务逻辑，两边共用
+    ├── index.ts         Node 入口，启动时执行迁移，Docker 用
+    └── edge.ts          Edge 入口，由 scripts/build-edge.mjs 打包，supabase/functions/api/index.ts 调用
+```
+
+|            | Docker                 | Edge Function                                     |
+| ---------- | ---------------------- | ------------------------------------------------- |
+| 迁移       | 服务启动时             | 部署时手动执行 `cli migrate`，冷启动不跑          |
+| 数据库连接 | 直连，连接池 10，预处理语句 | 事务模式连接池，连接池 1，不用预处理语句，TLS |
+| 路径       | `/v1/...`              | `/functions/v1/api/v1/...`，函数里是 `/api/v1/...` |
+| 响应后的工作 | 进程一直在           | 交给 `EdgeRuntime.waitUntil`                      |
+
+因为 Edge Function 的 isolate 随时被回收、可能同时有多个，**进程内存不能放任何需要共享的状态**：
+
+- `/v1/sync/wait` 每 2 秒查一次 `families.seq`，两次检查之间不占数据库连接。新记录最多晚 2 秒通知。
+- 登录和邀请码的限流计数放在 `rate_limits` 表。同一个邮箱还有一条不看来源的总量限制，因为 `X-Forwarded-For` 不一定可信。
+- 事务里只用 `tx`，不能用 `sql`：连接池只有 1 个连接时，事务内再用 `sql` 会死锁。
+
+Supabase 的 Data API 会把 `public` 里的表开放给 `anon` 角色。这个项目不用它，部署时要关掉。所有表还开了 RLS，不写策略，并收回了 `anon`、`authenticated` 的权限。服务端用表的所有者连接，不受影响。新增的表也要开 RLS，`portable.test.ts` 会检查。
 
 ## 数据流
 
@@ -66,7 +91,8 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 - 每个账号只属于一个家庭（`memberships_one_family`），一个家庭只有一个宝宝（`baby` 集合取最新一条）。
 - iOS 没有测试过。
 - 视频没有压缩。
-- 存储地址的内网检查在连接前做，理论上还有 DNS 重绑定的窗口。自托管、管理员都是家人，风险可接受。
+- 存储地址的内网检查在连接前做，理论上还有 DNS 重绑定的窗口。管理员都是家人，风险可接受。
+- 在 Supabase 上，手机断开后长轮询可能继续查到 25 秒时限才结束：在 edge-runtime 镜像里 `request.signal` 没有触发。只多几次很轻的查询，没有处理。
 - 上传队列保存的是绝对路径。iOS 升级后容器路径可能变化，做 iOS 版时要改成相对路径。
 
 ## 登录失效和本地数据

@@ -18,9 +18,10 @@
 
 ```
 apps/mobile/       Expo + React Native App（Expo Router，TypeScript）
-apps/server/       Hono + Postgres 服务端（TypeScript，Node）
+apps/server/       Hono + Postgres 服务端（TypeScript），Node 和 Deno（Supabase Edge Function）共用
 packages/shared/   前后端共用：zod 契约、领域逻辑（喂奶估算、疫苗表、月龄计算）
 e2e/               Maestro 端到端流程和测试辅助脚本
+supabase/          Edge Function 入口和配置，代码由 scripts/build-edge.mjs 从 apps/server 打包
 deploy/            生产 Docker Compose、Caddy、备份脚本
 docs/              DEPLOYMENT.md、ARCHITECTURE.md、PROGRESS.md（功能进展）、PITFALLS.md（踩坑记录）、design/SPEC.md
 .github/workflows/ CI
@@ -41,6 +42,7 @@ docs/              DEPLOYMENT.md、ARCHITECTURE.md、PROGRESS.md（功能进展�
 | 启动 App 的 Metro                                | `pnpm dev:mobile`                              |
 | 全部静态检查 + 单元测试                          | `pnpm check`                                   |
 | 服务端集成测试（需要 dev:infra）                 | `pnpm test:server`                             |
+| 在 Deno 上跑 Edge Function 入口（需要 dev:infra 和 Deno） | `pnpm test:edge`                      |
 | 编译 Android                                     | `pnpm android:build`（debug APK）              |
 | 启动无窗口模拟器                                 | `pnpm emulator`                                |
 | 端到端测试                                       | `pnpm e2e`                                     |
@@ -88,6 +90,7 @@ docs/              DEPLOYMENT.md、ARCHITECTURE.md、PROGRESS.md（功能进展�
 - 存储的 Secret 只存在服务端并加密保存，**永远不下发给 App**；App 只拿短时效的签名链接。
 - 权限在服务端校验，App 里的隐藏按钮不算权限。`viewer` 只能读回忆和照片，不能读记录和证件。
 - 证件文件的签名链接有效期不超过 10 分钟，日志里不能出现签名链接、证件号或令牌。
+- 数据库备份不能进入 Actions 产物或日志，上传前必须加密。
 - 登录令牌只存在 `expo-secure-store`。
 
 ## 8. 健康内容
@@ -102,6 +105,8 @@ App 不是医疗器械，健康内容错了会伤人。
 ## 9. Git 工作流
 
 - `main` 保持可发布，功能在分支上开发，通过 PR 合并，CI 全绿才能合并。
+- 只改 `docs/` 和 Markdown 的提交不触发 CI（`ci.yml` 的 `paths-ignore`）。
+- 不要在 CI 运行中推送同一分支，除非已知这轮会失败：新推送会取消正在跑的 Android 流程（约 30 分钟）。
 - 提交信息用 Conventional Commits（`feat:`、`fix:`、`docs:`、`test:`、`ci:`、`chore:`），一个提交只做一件事。
 - 提交前确认 `git status` 里没有 `.env`、`.artifacts/`、APK 或真实数据。
 
@@ -112,7 +117,7 @@ App 不是医疗器械，健康内容错了会伤人。
 - 每个 Agent 用自己的分支和 git worktree，每个 worktree 单独 `pnpm install`。
 - 开工前先看 [PROGRESS.md](docs/PROGRESS.md) 的“负责”列，别人在做的不要重复做，并在同一个 PR 里写上自己的分支。
 - 用 `git fetch` 和 rebase 跟上 `main`，合并前必须基于最新的 `main` 重新跑检查。
-- **数据库迁移只能追加到 `migrations` 数组末尾。** 两个 PR 都加了迁移时，后合并的要 rebase 并放到后面，不能调换已发布的顺序。
+- **数据库迁移只能追加到 `migrations` 数组末尾。** 两个 PR 都加了迁移时，后合并的要 rebase 并放到后面，不能调换已发布的顺序。新表要开 RLS，否则 `portable.test.ts` 不通过。
 - 改 `packages/shared` 的数据结构前，先看有没有别的进行中的改动，它影响所有 Agent。
 - 共享资源：开发用的 Postgres 和 S3 可以共用，测试已经隔离；模拟器只有一台，E2E 会排队；本地服务端端口用 `PORT` 区分。
 
