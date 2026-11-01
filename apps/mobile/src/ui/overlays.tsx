@@ -164,7 +164,9 @@ function SheetLayer({
               s.panel,
               {
                 maxHeight: sheetMaxHeight(layerHeight, lift, insets.top),
-                paddingBottom: Math.max(insets.bottom, 12) + 14,
+                // iOS 的键盘高度已经包含底部安全区，再算一次会在按钮和键盘之间空出 48。
+                paddingBottom:
+                  Platform.OS === 'ios' && lift > 0 ? 14 : Math.max(insets.bottom, 12) + 14,
               },
               panelStyle,
             ]}
