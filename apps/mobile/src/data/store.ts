@@ -5,10 +5,12 @@ import {
   type DocumentData,
   type EventData,
   isNewerVersion,
+  isVaccinePlanData,
   type LetterData,
   type MomentData,
   parseCollectionData,
   type ServerRecord,
+  type VaccinePlanData,
 } from '@xiaodouya/shared';
 
 /** 本地持久化接口。生产用 SQLite（`sqlite.ts`），测试用内存实现。 */
@@ -34,17 +36,21 @@ export interface StoredRecord {
   dirty: boolean;
 }
 
-export interface Entry<C extends Collection> {
+export interface RecordEntry<T> {
   id: string;
-  data: CollectionData[C];
+  data: T;
   updatedAt: number;
   dirty: boolean;
 }
 
+export type Entry<C extends Collection> = RecordEntry<CollectionData[C]>;
+
 export interface Snapshot {
   baby: Entry<'baby'> | null;
   /** 按发生时间倒序。 */
-  events: Entry<'event'>[];
+  events: RecordEntry<EventData>[];
+  /** 家庭对疫苗本的配置。存在 event 集合里，但不是一条记录，所以不进时间线。 */
+  vaccinePlans: RecordEntry<VaccinePlanData>[];
   moments: Entry<'moment'>[];
   letters: Entry<'letter'>[];
   documents: Entry<'document'>[];
@@ -54,6 +60,7 @@ export interface Snapshot {
 const emptySnapshot: Snapshot = {
   baby: null,
   events: [],
+  vaccinePlans: [],
   moments: [],
   letters: [],
   documents: [],
@@ -95,6 +102,7 @@ export class RecordStore {
     const next: Snapshot = {
       baby: null,
       events: [],
+      vaccinePlans: [],
       moments: [],
       letters: [],
       documents: [],
@@ -113,7 +121,8 @@ export class RecordStore {
           }
           break;
         case 'event':
-          next.events.push({ ...base, data: data as EventData });
+          if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
+          else next.events.push({ ...base, data: data as EventData });
           break;
         case 'moment':
           next.moments.push({ ...base, data: data as MomentData });
