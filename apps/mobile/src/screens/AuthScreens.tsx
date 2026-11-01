@@ -1,5 +1,3 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { formatClock, formatFullDate } from '@xiaodouya/shared';
 import { useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -14,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Api } from '../lib/api';
 import { useApp } from '../lib/app';
 import { colors, fonts, spacing } from '../theme';
+import { BirthPicker } from '../ui/BirthPicker';
 import { Button, Chip, Field, Muted, Serif } from '../ui/primitives';
 
 function Page({ children, testID }: { children: React.ReactNode; testID: string }) {
@@ -352,7 +351,6 @@ export function BabySetup() {
     d.setSeconds(0, 0);
     return d;
   });
-  const [picker, setPicker] = useState<'date' | 'time' | null>(null);
   const [weight, setWeight] = useState('');
   const [length, setLength] = useState('');
   const [hospital, setHospital] = useState('');
@@ -396,41 +394,7 @@ export function BabySetup() {
           onChangeText={setName}
           maxLength={40}
         />
-        <View style={{ gap: 5 }}>
-          <Muted style={{ fontSize: 12 }}>出生时间</Muted>
-          <View style={s.dateRow}>
-            <Pressable
-              testID="birth-date"
-              accessibilityRole="button"
-              accessibilityLabel="选择出生日期"
-              onPress={() => setPicker('date')}
-              style={s.dateBtn}
-            >
-              <Text style={s.dateText}>{formatFullDate(birth.getTime())}</Text>
-            </Pressable>
-            <Pressable
-              testID="birth-time"
-              accessibilityRole="button"
-              accessibilityLabel="选择出生时刻"
-              onPress={() => setPicker('time')}
-              style={s.dateBtn}
-            >
-              <Text style={s.dateText}>{formatClock(birth.getTime())}</Text>
-            </Pressable>
-          </View>
-        </View>
-        {picker ? (
-          <DateTimePicker
-            value={birth}
-            mode={picker}
-            is24Hour
-            maximumDate={picker === 'date' ? new Date() : undefined}
-            onChange={(_event, date) => {
-              setPicker(null);
-              if (date) setBirth(date);
-            }}
-          />
-        ) : null}
+        <BirthPicker value={birth} onChange={setBirth} />
         <View style={s.dateRow}>
           <View style={{ flex: 1 }}>
             <Field
@@ -485,14 +449,4 @@ const s = StyleSheet.create({
   chips: { flexDirection: 'row', gap: 8 },
   bigChip: { flex: 1, paddingVertical: 14, backgroundColor: colors.card },
   dateRow: { flexDirection: 'row', gap: 8 },
-  dateBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-  },
-  dateText: { fontFamily: fonts.monoRegular, fontSize: 14, color: colors.ink },
 });

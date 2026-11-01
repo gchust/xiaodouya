@@ -4,6 +4,11 @@ export function formatBirthTime(ms: number): string {
   return `${formatFullDate(ms)} ${formatClock(ms)}`;
 }
 
+/** 出生时间不能晚于现在。天数、月龄和疫苗时间都从它算起，错了影响整个 App。 */
+export function isBirthInFuture(birthAt: number, now: number): boolean {
+  return birthAt > now;
+}
+
 /** 成员状态：刚刚活跃算在线，否则显示大致时间。 */
 export function formatLastSeen(
   lastSeenAt: number | null,

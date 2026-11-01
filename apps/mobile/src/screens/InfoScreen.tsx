@@ -9,14 +9,18 @@ import {
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
-import { formatBirthTime } from '../lib/dates';
+import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
+import { fileBadge } from '../lib/mediaUtils';
+import { useTabScrollRef } from '../lib/tabScroll';
 import { GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { colors, spacing } from '../theme';
+import { BirthPicker } from '../ui/BirthPicker';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
   Button,
@@ -35,9 +39,12 @@ import {
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
 const DOC_GAP = 8;
+/** 链接文字只有 16 高，上下各扩 14 才到 44。 */
+const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 
 export function InfoScreen() {
   const insets = useSafeAreaInsets();
+  const scrollRef = useTabScrollRef('info');
   const { baby, documents, events } = useRecords();
   const sheet = useSheet();
   const router = useRouter();
@@ -52,6 +59,7 @@ export function InfoScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       testID="info-screen"
       style={s.scroll}
       contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}
@@ -68,7 +76,14 @@ export function InfoScreen() {
             onPress={() => openEdit(sheet, baby.id, baby.data, 'name')}
             testID="birth-name"
           />
-          <Row label="出生时间" value={formatBirthTime(birthAt)} />
+          <Row
+            label="出生时间"
+            value={formatBirthTime(birthAt)}
+            testID="birth-at"
+            onPress={() =>
+              sheet.open('出生时间', () => <BirthTimeSheet id={baby.id} baby={baby.data} />)
+            }
+          />
           <Row
             label="体重 / 身长"
             value={
@@ -102,7 +117,7 @@ export function InfoScreen() {
             testID="doc-add"
             accessibilityRole="button"
             accessibilityLabel="添加证件"
-            hitSlop={8}
+            hitSlop={LINK_HIT_SLOP}
             onPress={() => sheet.open('添加证件 / 资料', () => <DocAddSheet />)}
           >
             <Text style={s.link}>＋ 添加</Text>
@@ -127,7 +142,7 @@ export function InfoScreen() {
                 >
                   <Stripes style={s.docThumb}>
                     <Mono weight="medium" style={{ fontSize: 10, color: colors.muted }}>
-                      {first ? (first.kind === 'pdf' ? 'PDF' : 'IMG') : '空'}
+                      {first ? fileBadge(first) : '空'}
                     </Mono>
                   </Stripes>
                   <Text style={s.docName} numberOfLines={1}>
@@ -158,7 +173,7 @@ export function InfoScreen() {
             testID="growth-add"
             accessibilityRole="button"
             accessibilityLabel="记录身高体重"
-            hitSlop={8}
+            hitSlop={LINK_HIT_SLOP}
             onPress={() => sheet.open('身高体重', () => <GrowthSheet />)}
           >
             <Text style={s.link}>＋ 记录身高体重</Text>
@@ -182,11 +197,17 @@ export function InfoScreen() {
               }
               style={[s.vaccineRow, i < vaccines.length - 1 ? s.divider : null]}
             >
-              <Dot
-                color={
-                  v.state === 'done' ? colors.green : v.state === 'due' ? colors.accent : colors.off
-                }
-              />
+              <View style={{ width: 16 }}>
+                <Dot
+                  color={
+                    v.state === 'done'
+                      ? colors.green
+                      : v.state === 'due'
+                        ? colors.accent
+                        : colors.off
+                  }
+                />
+              </View>
               <View style={{ flex: 1, gap: 1 }}>
                 <Text style={{ fontSize: 13, color: colors.ink }}>{v.name}</Text>
                 <Muted style={{ fontSize: 11 }}>
@@ -258,11 +279,9 @@ function GrowthChart({ baby, events }: { baby: BabyData; events: EventData[] }) 
           <Mono weight="medium" style={{ fontSize: 11 }}>
             {p.w.toFixed(1)}
           </Mono>
-          <View
-            style={[
-              s.bar,
-              { height: Math.round((p.w / max) * 78), opacity: i === points.length - 1 ? 1 : 0.45 },
-            ]}
+          <GrowthBar
+            height={Math.round((p.w / max) * 78)}
+            opacity={i === points.length - 1 ? 1 : 0.45}
           />
           <Muted style={{ fontSize: 10 }} numberOfLines={1}>
             {p.label}
@@ -270,6 +289,47 @@ function GrowthChart({ baby, events }: { baby: BabyData; events: EventData[] }) 
         </View>
       ))}
     </View>
+  );
+}
+
+function GrowthBar({ height, opacity }: { height: number; opacity: number }) {
+  const animated = useSharedValue(height);
+  useEffect(() => {
+    animated.value = withTiming(height, { duration: 400 });
+  }, [height, animated]);
+  const style = useAnimatedStyle(() => ({ height: animated.value }));
+  return <Animated.View style={[s.bar, { opacity }, style]} />;
+}
+
+function BirthTimeSheet({ id, baby }: { id: string; baby: BabyData }) {
+  const app = useApp();
+  const sheet = useSheet();
+  const { toast } = useFeedback();
+  const [birth, setBirth] = useState(() => new Date(baby.birthAt));
+  const future = isBirthInFuture(birth.getTime(), Date.now());
+
+  const save = async () => {
+    // 弹层可能开了很久，这里按保存时的时间再判断一次。
+    if (isBirthInFuture(birth.getTime(), Date.now())) return;
+    await app.write('baby', { ...baby, birthAt: birth.getTime() }, id);
+    sheet.close();
+    toast('已保存');
+  };
+
+  return (
+    <>
+      <BirthPicker value={birth} onChange={setBirth} />
+      {future ? (
+        <Text testID="birth-error" style={{ fontSize: 13, lineHeight: 20, color: colors.danger }}>
+          出生时间不能晚于现在
+        </Text>
+      ) : (
+        <Muted style={{ fontSize: 12, lineHeight: 19 }}>
+          改了之后，天数、月龄和疫苗时间都会重新计算。
+        </Muted>
+      )}
+      <Button testID="birth-save" label="保存" disabled={future} onPress={() => void save()} />
+    </>
   );
 }
 
@@ -353,7 +413,12 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
           maxLength={100}
         />
       )}
-      <Button testID="edit-save" label="保存" onPress={() => void save()} />
+      <Button
+        testID="edit-save"
+        label="保存"
+        disabled={field === 'name' && !text.trim()}
+        onPress={() => void save()}
+      />
     </>
   );
 }
@@ -402,7 +467,13 @@ const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, paddingBottom: 28, gap: 24 },
   section: { gap: 8 },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  // zIndex 让链接的热区压过下面紧挨着的卡片。
+  sectionHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    zIndex: 1,
+  },
   link: { fontSize: 12, color: colors.accent },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
   docCard: {

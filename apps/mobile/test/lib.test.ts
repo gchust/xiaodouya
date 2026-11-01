@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildBookHtml } from '../src/lib/bookHtml';
-import { formatLastSeen } from '../src/lib/dates';
+import { formatLastSeen, isBirthInFuture } from '../src/lib/dates';
 import {
   createExclusivePlayback,
   downsamplePeaks,
@@ -11,6 +11,14 @@ import {
   mediaRetryDelayMs,
   pickDurationMs,
 } from '../src/lib/mediaUtils';
+
+describe('出生时间', () => {
+  it('晚于现在的不接受，现在和过去的可以', () => {
+    expect(isBirthInFuture(1001, 1000)).toBe(true);
+    expect(isBirthInFuture(1000, 1000)).toBe(false);
+    expect(isBirthInFuture(999, 1000)).toBe(false);
+  });
+});
 
 describe('取不到链接时的重试间隔', () => {
   it('逐步变长，最多 60 秒', () => {
