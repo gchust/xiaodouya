@@ -1,6 +1,7 @@
-# 宝宝头像：没有头像时点一下直接选图；有头像时点一下放大，能旋转、裁剪、换一张。
+# 宝宝头像：没有头像时点一下直接选图；有头像时点一下放大，能换一张、旋转、裁剪。
 # 选图用内置样例（320×160）。verify-uploads.mjs 会从存储读回文件，确认旋转和裁剪真的写进去了。
-# Toast 淡出后文字还留在界面树里，所以等“上一步做完”要看按钮变化或换了文字，不能看 Toast 还在不在。
+# 小文件传得很快，“头像换好了”马上就被“文件都上传好了”盖掉，所以每一步都等后者出现再等它消失：
+# 这样既确认传完了，也不会把上一次的提示当成这一次的。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
@@ -14,10 +15,16 @@ appId: com.gchust.xiaodouya
 # 还没有头像：不打开空的查看器，直接选图
 - tapOn: { id: baby-avatar }
 - extendedWaitUntil:
-    visible: 头像换好了
+    visible: 查看宝宝的头像
     timeout: 15000
 - assertNotVisible: { id: viewer-screen }
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
 - takeScreenshot: .artifacts/e2e-14a-first-avatar
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
 # 有头像了：点开是大图和编辑按钮
 - tapOn: { id: baby-avatar }
 - extendedWaitUntil:
@@ -32,6 +39,15 @@ appId: com.gchust.xiaodouya
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: .artifacts/e2e-14a-viewer
+# 换一张
+- tapOn: { id: avatar-replace }
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-14a-replaced
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
 # 旋转后先预览，点保存才上传。320×160 变成 160×320
 - tapOn: { id: avatar-rotate }
 - extendedWaitUntil:
@@ -42,12 +58,13 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: avatar-save }
     timeout: 15000
-- assertVisible: 头像改好了
-# 等它传完，下面裁剪时本地副本已经删了，走的是从存储下载原图的路径
+# 等它传完：下面裁剪时本地副本已经删了，走的是从存储下载原图的路径
 - extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
+    visible: 文件都上传好了
     timeout: 60000
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
 # 裁剪：拖动一下再裁，160×320 变成 160×160
 - tapOn: { id: avatar-crop }
 - extendedWaitUntil:
@@ -68,8 +85,14 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: avatar-save }
     timeout: 15000
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
 - takeScreenshot: .artifacts/e2e-14a-saved
-# 改了又取消：回到原来的样子，不生成新文件
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
+# 改了又取消：回到原来的样子，不生成新文件。verify-uploads.mjs 按裁好的那张检查
 - tapOn: { id: avatar-rotate }
 - extendedWaitUntil:
     visible: { id: avatar-cancel }
@@ -78,20 +101,9 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: avatar-replace }
     timeout: 10000
-# 换一张后撤销：还是裁好的那张，verify-uploads.mjs 按这张检查
-- tapOn: { id: avatar-replace }
-- extendedWaitUntil:
-    visible: 头像换好了
-    timeout: 15000
-- takeScreenshot: .artifacts/e2e-14a-replaced
-- tapOn: { id: toast-undo }
 - tapOn: { id: viewer-close }
 - extendedWaitUntil:
     notVisible: { id: viewer-screen }
     timeout: 10000
 - assertVisible: { id: today-screen }
-- extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
-    timeout: 60000
 - takeScreenshot: .artifacts/e2e-14a-today

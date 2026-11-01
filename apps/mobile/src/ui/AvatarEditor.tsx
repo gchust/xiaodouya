@@ -58,16 +58,16 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
     setCropping(false);
   };
 
-  const persist = async (file: PickedFile, message: string) => {
-    const undo = await saveAvatar(app, file);
+  const persist = async (file: PickedFile) => {
+    await saveAvatar(app, file);
     reset();
-    toast(message, { undo: () => void undo() });
+    toast('头像换好了');
   };
 
   const replace = () =>
     run(async () => {
       const [file] = await pickFromLibrary({ singleImage: true });
-      if (file) await persist(file, '头像换好了');
+      if (file) await persist(file);
     });
 
   const rotate = () =>
@@ -103,7 +103,7 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
 
   const save = () =>
     run(async () => {
-      if (draft) await persist(await savedImageFile(draft), '头像改好了');
+      if (draft) await persist(await savedImageFile(draft));
     });
 
   return (

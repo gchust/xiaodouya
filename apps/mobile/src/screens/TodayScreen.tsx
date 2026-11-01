@@ -108,8 +108,8 @@ export function TodayScreen() {
     try {
       const [file] = await pickFromLibrary({ singleImage: true });
       if (!file) return;
-      const undo = await saveAvatar(app, file);
-      toast('头像换好了', { undo: () => void undo() });
+      await saveAvatar(app, file);
+      toast('头像换好了');
     } catch (error) {
       toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
     } finally {

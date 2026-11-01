@@ -75,7 +75,7 @@ const [babyRow] = await sql`
   JOIN users u ON u.id = ms.user_id
   WHERE u.email = ${`admin-${runId}@example.test`} AND r.collection = 'baby' AND r.deleted = false`;
 const avatar = babyRow?.data?.avatar;
-need(avatar?.mime === 'image/jpeg', '头像不是编辑后的 JPEG，撤销换图没有生效');
+need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
 const avatarSizes = new Map();
 
 for (const row of rows) {
