@@ -1,27 +1,26 @@
 import {
   type Dimension,
   type FamilyMember,
-  formatBytes,
   lengthUnits,
   type Role,
   regionFor,
   roleLabels,
   scaleFor,
-  storageProviderNames,
   temperatureUnits,
   type UnitPrefs,
   unitsSummary,
   volumeUnits,
   weightUnits,
 } from '@xiaodouya/shared';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { ensureNotificationPermission } from '../lib/notifications';
+import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -54,26 +53,29 @@ export function FamilyScreen() {
   const { me, role, prefs } = app;
   const isAdmin = role === 'admin';
   const canRecord = role !== 'viewer';
+  const showStorage = canOpenStorage(role);
 
   const loadStorage = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!showStorage) return;
     try {
-      const [config, usage] = await Promise.all([app.api.getStorage(), app.api.storageUsage()]);
-      if (config.source === 'none') {
-        setStorageSummary('还没有配置，上传前需要先设置');
-      } else {
-        const name = config.provider ? storageProviderNames[config.provider] : '服务器默认存储';
-        setStorageSummary(`${name} · 已用 ${usage.total ? formatBytes(usage.total) : '0'}`);
-      }
+      // 存储配置只有管理员能读。
+      const [config, usage] = await Promise.all([
+        isAdmin ? app.api.getStorage() : null,
+        app.api.storageUsage(),
+      ]);
+      setStorageSummary(storageSummaryText(usage, config));
     } catch {
       setStorageSummary('暂时读不到，联网后再看');
     }
-  }, [app.api, isAdmin]);
+  }, [app.api, isAdmin, showStorage]);
 
-  useEffect(() => {
-    void loadStorage();
-    void app.refreshMe();
-  }, [loadStorage, app.refreshMe]);
+  // 底部标签切走后页面不会卸载，只读一次的话，传完文件回来用量还是旧的。
+  useFocusEffect(
+    useCallback(() => {
+      void loadStorage();
+      void app.refreshMe();
+    }, [loadStorage, app.refreshMe]),
+  );
 
   const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
   const otherName = others.length === 1 ? (others[0]?.label ?? '家人') : '家人';
@@ -215,7 +217,7 @@ export function FamilyScreen() {
       <View style={s.section}>
         <SectionTitle>设置</SectionTitle>
         <ListCard>
-          {isAdmin ? (
+          {showStorage ? (
             <NavRow
               testID="open-storage"
               label="存储"

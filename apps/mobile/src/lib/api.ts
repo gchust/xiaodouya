@@ -5,6 +5,7 @@ import type {
   MediaVariant,
   MeResponse,
   Prefs,
+  PublicConfig,
   Role,
   StorageConfigInput,
   StorageConfigView,
@@ -157,5 +158,20 @@ export class Api {
   }
   storageUsage() {
     return this.request<StorageUsage>('GET', '/v1/storage/usage');
+  }
+  publicConfig() {
+    return this.request<PublicConfig>('GET', '/v1/config');
+  }
+  /**
+   * 连不上时抛错，不猜：猜“允许”会给普通用户看 S3 表单，猜“不允许”会让自建的管理员改不了配置。
+   * 只有明确的 404 才当作允许，那是还没有这个接口的旧版服务端，当时都能自定义。
+   */
+  async allowCustomStorage(): Promise<boolean> {
+    try {
+      return (await this.publicConfig()).allowCustomStorage !== false;
+    } catch (error) {
+      if (error instanceof ApiFailure && error.status === 404) return true;
+      throw error;
+    }
   }
 }

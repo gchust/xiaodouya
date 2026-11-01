@@ -165,6 +165,8 @@ const functionEnv: Record<string, string> = {
   S3_ACCESS_KEY_ID: example.S3_ACCESS_KEY_ID ?? '',
   S3_SECRET_ACCESS_KEY: example.S3_SECRET_ACCESS_KEY ?? '',
   S3_FORCE_PATH_STYLE: 'true',
+  // 配了 S3 默认就是托管模式。这里要测存储测试接口和 SSRF 拒绝，所以显式打开。
+  ALLOW_CUSTOM_STORAGE: 'true',
 };
 
 async function request<T>(

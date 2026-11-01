@@ -959,7 +959,7 @@ describe('文件上传（真实 S3 协议）', () => {
     await uploadAll(admin.token, { scope: 'document', mime: 'application/pdf' });
     await uploadUrl(admin.token);
     const { json } = await api<StorageUsage>('GET', '/v1/storage/usage', { token: admin.token });
-    expect(json).toEqual({
+    expect(json).toMatchObject({
       image: bytes.length,
       video: bytes.length,
       audio: 0,

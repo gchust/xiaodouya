@@ -26,6 +26,20 @@ const EnvSchema = DbEnvSchema.extend({
   PORT: z.coerce.number().int().default(8787),
   ALLOW_SIGNUP: bool(true),
   MAX_UPLOAD_MB: z.coerce.number().int().positive().default(4096),
+  MAX_IMAGE_MB: z.coerce.number().int().positive().default(50),
+  MAX_VIDEO_MB: z.coerce.number().int().positive().default(1024),
+  MAX_AUDIO_MB: z.coerce.number().int().positive().default(200),
+  MAX_DOCUMENT_MB: z.coerce.number().int().positive().default(50),
+  /** 依据见 docs/CAPACITY.md。0 表示不限。 */
+  FAMILY_QUOTA_MB: z.coerce.number().int().nonnegative().default(5120),
+  FAMILY_RECORDS_MB: z.coerce.number().int().nonnegative().default(100),
+  MEDIA_TRASH_DAYS: z.coerce.number().int().positive().default(30),
+  CLIENT_IP_HEADER: z.string().default('x-forwarded-for'),
+  CLIENT_IP_POSITION: z.enum(['first', 'last']).default('last'),
+  RATE_SYNC_PER_10MIN: z.coerce.number().int().nonnegative().default(600),
+  RATE_UPLOAD_URL_PER_HOUR: z.coerce.number().int().nonnegative().default(2000),
+  RATE_REGISTER_PER_IP_HOUR: z.coerce.number().int().nonnegative().default(20),
+  RATE_REGISTER_GLOBAL_HOUR: z.coerce.number().int().nonnegative().default(1000),
   S3_ENDPOINT: optionalText,
   S3_PUBLIC_ENDPOINT: optionalText,
   S3_REGION: optionalText,
@@ -33,7 +47,8 @@ const EnvSchema = DbEnvSchema.extend({
   S3_ACCESS_KEY_ID: optionalText,
   S3_SECRET_ACCESS_KEY: optionalText,
   S3_FORCE_PATH_STYLE: bool(false),
-  ALLOW_CUSTOM_STORAGE: bool(true),
+  S3_BIND_UPLOAD_SIZE: bool(true),
+  ALLOW_CUSTOM_STORAGE: optionalText,
   ALLOW_PRIVATE_STORAGE_ENDPOINTS: bool(false),
   PUSH_ENABLED: bool(false),
   EXPO_ACCESS_TOKEN: optionalText,
@@ -58,6 +73,21 @@ export interface DbConfig {
 
 type Env = Record<string, string | undefined>;
 
+export interface ClientIpConfig {
+  /** 小写的请求头名。 */
+  header: string;
+  /** 取这个头里逗号分隔的第几段。代理追加时最后一段才是可信的。 */
+  position: 'first' | 'last';
+}
+
+export interface RateLimits {
+  /** 0 表示不限，下同。 */
+  syncPerWindow: number;
+  uploadUrlPerWindow: number;
+  registerPerIpHour: number;
+  registerGlobalHour: number;
+}
+
 export interface Config {
   databaseUrl: string;
   db: DbConfig;
@@ -65,7 +95,16 @@ export interface Config {
   port: number;
   allowSignup: boolean;
   maxUploadBytes: number;
+  maxFileBytes: { image: number; video: number; audio: number; document: number };
+  /** null 表示不限。 */
+  familyQuotaBytes: number | null;
+  familyRecordsBytes: number | null;
+  mediaTrashDays: number;
+  clientIp: ClientIpConfig;
+  limits: RateLimits;
   serverStorage: ServerStorageEnv | null;
+  /** 把声明的大小签进上传链接。个别存储不支持时关掉，complete 的校验还在。 */
+  bindUploadSize: boolean;
   allowCustomStorage: boolean;
   allowPrivateEndpoints: boolean;
   pushEnabled: boolean;
@@ -93,6 +132,8 @@ export function loadDbConfig(env: Env = process.env): { databaseUrl: string; db:
   return { databaseUrl: e.DATABASE_URL, db: toDbConfig(e) };
 }
 
+const MB = 1024 * 1024;
+
 export function loadConfig(env: Env = process.env): Config {
   const e = parseEnv(EnvSchema, env);
   const hasStorage = e.S3_BUCKET && e.S3_ACCESS_KEY_ID && e.S3_SECRET_ACCESS_KEY;
@@ -102,7 +143,23 @@ export function loadConfig(env: Env = process.env): Config {
     appSecret: Buffer.from(e.APP_SECRET, 'base64').subarray(0, 32),
     port: e.PORT,
     allowSignup: e.ALLOW_SIGNUP,
-    maxUploadBytes: e.MAX_UPLOAD_MB * 1024 * 1024,
+    maxUploadBytes: e.MAX_UPLOAD_MB * MB,
+    maxFileBytes: {
+      image: e.MAX_IMAGE_MB * MB,
+      video: e.MAX_VIDEO_MB * MB,
+      audio: e.MAX_AUDIO_MB * MB,
+      document: e.MAX_DOCUMENT_MB * MB,
+    },
+    familyQuotaBytes: e.FAMILY_QUOTA_MB > 0 ? e.FAMILY_QUOTA_MB * MB : null,
+    familyRecordsBytes: e.FAMILY_RECORDS_MB > 0 ? e.FAMILY_RECORDS_MB * MB : null,
+    mediaTrashDays: e.MEDIA_TRASH_DAYS,
+    clientIp: { header: e.CLIENT_IP_HEADER.trim().toLowerCase(), position: e.CLIENT_IP_POSITION },
+    limits: {
+      syncPerWindow: e.RATE_SYNC_PER_10MIN,
+      uploadUrlPerWindow: e.RATE_UPLOAD_URL_PER_HOUR,
+      registerPerIpHour: e.RATE_REGISTER_PER_IP_HOUR,
+      registerGlobalHour: e.RATE_REGISTER_GLOBAL_HOUR,
+    },
     serverStorage: hasStorage
       ? {
           endpoint: e.S3_ENDPOINT,
@@ -114,7 +171,12 @@ export function loadConfig(env: Env = process.env): Config {
           forcePathStyle: e.S3_FORCE_PATH_STYLE,
         }
       : null,
-    allowCustomStorage: e.ALLOW_CUSTOM_STORAGE,
+    // 没写时：配了平台存储就是托管模式，普通用户不能填 S3 密钥；什么都没配的自建服务器只能让管理员自己填。
+    allowCustomStorage:
+      e.ALLOW_CUSTOM_STORAGE === undefined
+        ? !hasStorage
+        : e.ALLOW_CUSTOM_STORAGE === 'true' || e.ALLOW_CUSTOM_STORAGE === '1',
+    bindUploadSize: e.S3_BIND_UPLOAD_SIZE,
     allowPrivateEndpoints: e.ALLOW_PRIVATE_STORAGE_ENDPOINTS,
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,

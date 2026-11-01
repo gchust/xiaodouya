@@ -30,6 +30,12 @@ services:
       APP_SECRET: ${APP_SECRET:?请在 .env 里设置 APP_SECRET}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-4096}
+      # 自建默认不限：存储是自己的。托管的默认值和依据见 docs/CAPACITY.md。
+      MAX_VIDEO_MB: ${MAX_VIDEO_MB:-4096}
+      FAMILY_QUOTA_MB: ${FAMILY_QUOTA_MB:-0}
+      # Caddy 用 {remote_host} 覆盖了这个头，只有一段，是可信的。
+      CLIENT_IP_HEADER: x-forwarded-for
+      CLIENT_IP_POSITION: last
       S3_ENDPOINT: ${S3_ENDPOINT:-}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
       S3_REGION: ${S3_REGION:-}

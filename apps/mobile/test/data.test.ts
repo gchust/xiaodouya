@@ -133,6 +133,42 @@ describe('离线优先的记录和同步', () => {
     server = new FakeServer();
   });
 
+  it('一批记录太大时分几次发，不会撞上服务端的请求体上限永远卡住', async () => {
+    const a = device(server);
+    await a.engine.start();
+    // 200 封长信，每封 2 万字（UTF-8 约 60 KB），一次发就是 12 MB，服务端上限是 5 MB。
+    const text = '字'.repeat(20_000);
+    const sizes: number[] = [];
+    const original = server.sync.bind(server);
+    server.sync = async (req) => {
+      const bytes = Buffer.byteLength(JSON.stringify(req));
+      sizes.push(bytes);
+      if (bytes > 5 * 1024 * 1024) throw new Error('413');
+      return original(req);
+    };
+    for (let i = 0; i < 200; i++) {
+      await a.store.write('letter', randomUUID(), { title: '', text, at: 1000 + i });
+    }
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().pendingCount).toBe(0);
+    expect(server.log).toHaveLength(200);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(5 * 1024 * 1024);
+  });
+
+  it('单条就超过分批大小时也要发出去，不能被挡在队列里', async () => {
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('letter', randomUUID(), {
+      title: '',
+      text: 'x'.repeat(4 * 1024 * 1024),
+      at: 1000,
+    });
+    await a.store.write('event', randomUUID(), feed());
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().pendingCount).toBe(0);
+    expect(server.log).toHaveLength(2);
+  });
+
   it('断网时记录立即可见，恢复后自动上传', async () => {
     const a = device(server);
     server.offline = true;
@@ -441,6 +477,82 @@ describe('上传队列', () => {
     await queue.idle();
     expect(queue.getProgress().failedCount).toBe(0);
     expect(db.jobs.size).toBe(0);
+  });
+
+  it('空间满了算永久失败：显示原因，不反复重试，腾出空间后点重试能传上去', async () => {
+    let full = true;
+    let urlCalls = 0;
+    const message = '存储空间已满（共 5.0 GB），删除一些回忆或证件后可以重试';
+    const { transport, calls } = fakeUploads({
+      requestUrl: async () => {
+        urlCalls += 1;
+        if (full) throw new UploadHttpError(413, 'quota_exceeded', message);
+        return { url: 'u', headers: {}, expiresIn: 1 };
+      },
+    });
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport, { sleepMs: () => 1 });
+    await queue.enqueue([job()]);
+    await queue.idle();
+    await new Promise((r) => setTimeout(r, 20));
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(1);
+    expect(queue.getProgress().failedReason).toBe(message);
+    expect(urlCalls).toBe(1);
+    // 重启后也还记得原因，文件没有丢。
+    expect([...db.jobs.values()][0]?.failed).toBe(message);
+
+    full = false;
+    await queue.retryFailed();
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(0);
+    expect(queue.getProgress().failedReason).toBeNull();
+    expect(db.jobs.size).toBe(0);
+    expect(calls.some((c) => c.startsWith('done:'))).toBe(true);
+    queue.stop();
+  });
+
+  it('确认时才发现满了（预留过期）也一样：显示原因，重试时重新走一遍上传', async () => {
+    let full = true;
+    const message = '存储空间已满';
+    const { transport, calls } = fakeUploads({
+      complete: async () => {
+        if (full) throw new UploadHttpError(413, 'quota_exceeded', message);
+      },
+    });
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport, { sleepMs: () => 1 });
+    const j = job();
+    await queue.enqueue([j]);
+    await queue.idle();
+    expect(queue.getProgress().failedReason).toBe(message);
+    full = false;
+    await queue.retryFailed();
+    await queue.idle();
+    expect(db.jobs.size).toBe(0);
+    expect(calls.filter((c) => c.startsWith('put:'))).toHaveLength(2);
+    queue.stop();
+  });
+
+  it('被限流不是失败：退避后自动继续，不打扰用户', async () => {
+    let limited = true;
+    const { transport } = fakeUploads({
+      requestUrl: async () => {
+        if (limited) throw new UploadHttpError(429, 'rate_limited', '上传太频繁了');
+        return { url: 'u', headers: {}, expiresIn: 1 };
+      },
+    });
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport, { sleepMs: () => 5 });
+    await queue.enqueue([job()]);
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(0);
+    expect(queue.getProgress().total).toBe(1);
+    limited = false;
+    await new Promise((r) => setTimeout(r, 30));
+    await queue.idle();
+    expect(db.jobs.size).toBe(0);
+    queue.stop();
   });
 
   it('上次传完没来得及更新队列（already_uploaded）算成功', async () => {

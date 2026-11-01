@@ -4,6 +4,7 @@ export * from './domain/events';
 export * from './domain/feeding';
 export * from './domain/milestones';
 export * from './domain/recordTime';
+export * from './domain/storage';
 export * from './domain/units';
 export * from './domain/vaccines';
 export * from './health';
