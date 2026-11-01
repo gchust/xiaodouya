@@ -37,10 +37,8 @@ appId: com.gchust.xiaodouya
     notVisible: { id: upload-card }
     timeout: 240000
 - takeScreenshot: .artifacts/e2e-03a-uploaded
-- extendedWaitUntil:
-    notVisible: { id: toast }
-    timeout: 15000
 # 删掉，不留给后面的流程：它们默认时间线最上面是流程 03 的回忆。
+# 不用等 Toast 消失：它挡不到顶部的按钮，打开弹层时也会自动关掉。
 - tapOn:
     id: moment-more-.*
     index: 0
