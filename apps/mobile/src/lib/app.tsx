@@ -389,6 +389,6 @@ function announceRemote(
   const text =
     latest.collection === 'event'
       ? describeEvent(latest.data as EventData, now)
-      : ((latest.data as { title?: string }).title ?? '新的一刻');
+      : (latest.data as { title?: string }).title || '新的一刻';
   banner(author.slice(0, 1), `${author} 记录了 ${text}`);
 }
