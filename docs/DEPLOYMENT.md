@@ -21,11 +21,13 @@
 
 | 需要什么          | 建议                                                     |
 | ----------------- | -------------------------------------------------------- |
-| 一台 Linux 服务器 | 1 核 1 GB 内存够一家人用，选新加坡机房离你们最近         |
+| 一台 Linux 服务器 | 1 核 1 GB 内存够运行，选新加坡机房离你们最近             |
 | Docker            | 带 Compose 插件的版本（`docker compose version` 能运行） |
 | 一个域名          | 比如 `baby.example.com`，A 记录指向服务器 IP             |
 | 防火墙            | 放行 80 和 443                                           |
 | 对象存储          | 见下面第 2 步                                            |
+
+三个容器空闲时共占约 100 MB 内存。在服务器上构建镜像（下面的方式 B）要多用不少内存，没有在 1 GB 的机器上验证过，内存小的话先加 swap。
 
 ### 2. 创建存储
 
@@ -45,15 +47,18 @@
 git clone https://github.com/gchust/xiaodouya.git
 cd xiaodouya
 cp deploy/.env.example deploy/.env
+chmod 600 deploy/.env
 ```
 
-编辑 `deploy/.env`，至少填这三项：
+生成密钥并写入 `deploy/.env`，域名换成你自己的：
 
 ```bash
-DOMAIN=baby.example.com
-POSTGRES_PASSWORD=$(openssl rand -hex 24)   # 执行命令后把结果填进去
-APP_SECRET=$(openssl rand -base64 32)       # 同上
+sed -i "s|^DOMAIN=.*|DOMAIN=baby.example.com|" deploy/.env
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" deploy/.env
+sed -i "s|^APP_SECRET=.*|APP_SECRET=$(openssl rand -base64 32)|" deploy/.env
 ```
+
+> 不要把 `$(openssl ...)` 原样写进 `.env`。这个文件不会执行命令，密码会真的变成这串文字。
 
 存储可以在这里填（见[参数说明](#三参数说明)），也可以留空，之后由管理员在 App 的「家人 → 存储」里填。
 
@@ -63,9 +68,11 @@ APP_SECRET=$(openssl rand -base64 32)       # 同上
 # 方式 A：用发布好的镜像（打过 v* 标签后才有，见下文“发布新版本”）
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d
 
-# 方式 B：在服务器上自己构建镜像
+# 方式 B：在服务器上自己构建镜像，第一次要几分钟
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
 ```
+
+> 方式 A 拉不到镜像时（还没有发布过，或者仓库的镜像不公开，拉取时提示 `denied`），Compose 不会停下，而是自动改成在本机构建，所以看到它在构建不是出错。发布的镜像只有 x86-64 版本，ARM 服务器请用方式 B。
 
 ### 4. 验证
 
@@ -74,7 +81,7 @@ curl https://baby.example.com/healthz
 # {"ok":true}
 ```
 
-数据库迁移在服务启动时自动执行。
+数据库迁移在服务启动时自动执行。服务刚启动的几秒内可能返回 502，稍等再试。
 
 ### 5. 全家注册完之后
 
@@ -84,29 +91,42 @@ curl https://baby.example.com/healthz
 
 宝宝的记录丢了就找不回来了。
 
+先手动跑一次，确认能生成备份：
+
 ```bash
-# 每天凌晨 3 点备份数据库
-crontab -e
-0 3 * * * /path/to/xiaodouya/deploy/backup.sh >> /var/log/xiaodouya-backup.log 2>&1
+deploy/backup.sh
 ```
 
-备份文件在 `deploy/backups/`，请定期复制到**另一台机器或云存储**，只放在同一台服务器上不算备份。文件本身在 S3 里，建议打开 Bucket 的版本控制，防止误删。
+然后执行 `crontab -e`，在打开的编辑器里加一行，每天凌晨 3 点备份（路径换成实际路径）：
+
+```
+0 3 * * * /path/to/xiaodouya/deploy/backup.sh >> /path/to/xiaodouya/deploy/backups/backup.log 2>&1
+```
+
+备份文件在 `deploy/backups/`，只保留最近 30 份，只有部署者能读。请定期复制到**另一台机器或云存储**，只放在同一台服务器上不算备份。文件本身在 S3 里，建议打开 Bucket 的版本控制，防止误删。
 
 **恢复：**
 
 ```bash
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env stop server
-gunzip -c deploy/backups/xiaodouya-XXXX.sql.gz | \
-  docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T postgres psql -U xiaodouya xiaodouya
-docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env start server
+# 新机器上先按第 3 步启动，用原来的 APP_SECRET。旧机器上先备份一次当前数据，恢复会覆盖它。
+deploy/restore.sh deploy/backups/xiaodouya-XXXX.sql.gz
 ```
+
+脚本会先检查备份是否完整，不完整就不动数据库。恢复期间服务端会短暂停止，导入失败时自动回滚，旧数据还在。
+
+> **恢复的是备份那一刻的数据。** 备份之后写入的记录不在服务器上了，已经同步过的手机也不会重新上传。手机还会继续用恢复前的同步进度，**看不到家人之后新写的记录**。恢复之后，请让每位家人在 App 里退出登录再重新登录，从头拉取一遍。退出登录会清除手机上的副本，所以这些只留在手机上的记录会丢失，需要的话先在手机上记下来。
 
 > **`APP_SECRET` 要单独备份。** 它加密了 App 里配置的存储密钥，丢失后需要在 App 里重新填写存储配置（文件本身不受影响）。
 
 ### 7. 日常维护
 
 ```bash
-# 升级
+# 升级（方式 A，用发布好的镜像。只执行 up -d 不会更新已经下载过的镜像）
+git pull
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env pull server
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d
+
+# 升级（方式 B，自己构建）
 git pull
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
 
@@ -137,6 +157,8 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec ser
    ```
 
    > **这个文件和密码要妥善备份。** 丢了之后，新版本无法覆盖安装旧版本，只能卸载重装。不要提交到仓库。
+   >
+   > 现在的 `keytool` 默认生成 PKCS12 格式，密钥密码和密钥库密码是同一个，下面两个 Secret 填一样的值。
 
 2. 在 GitHub 仓库 → Settings → Secrets and variables → Actions 里添加：
 
@@ -157,6 +179,8 @@ git push origin v0.1.0
 
 大约 20–30 分钟后，签名 APK 会出现在 GitHub 的 Releases 页面，服务端镜像也会推到 GHCR。
 
+> 第一次发布后，确认一下 GitHub 上这个镜像的可见性。如果它不是公开的，服务器拉取时会提示 `denied`，要到包的设置里改成公开，或者在服务器上先执行 `docker login ghcr.io`。这个流程还没有实际跑过。
+
 ### 方式 B：本地构建
 
 需要 Node、Java 17、Android SDK。版本由 `.mise.toml` 固定。
@@ -169,6 +193,8 @@ export ANDROID_KEYSTORE_PASSWORD=... ANDROID_KEY_ALIAS=xiaodouya ANDROID_KEY_PAS
 pnpm android:build release --clean
 # 产物：.artifacts/xiaodouya-release.apk
 ```
+
+缺少任何一个签名参数，脚本会直接报错退出，不会用调试密钥签出正式版。之后想在同一个目录编 `debug` 或 `e2e`，也要加 `--clean`，否则 Gradle 会继续读上次写入的正式签名配置。
 
 ### 分发给家人
 
