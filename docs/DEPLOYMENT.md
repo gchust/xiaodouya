@@ -475,7 +475,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-大约 20–30 分钟后，签名 APK 会出现在 GitHub 的 Releases 页面，服务端镜像也会推到 GHCR。
+大约 20–30 分钟后，签名 APK 和上传 Google Play 用的 AAB 会出现在 GitHub 的 Releases 页面，服务端镜像也会推到 GHCR。
 
 > 第一次发布后，确认一下 GitHub 上这个镜像的可见性。如果它不是公开的，服务器拉取时会提示 `denied`，要到包的设置里改成公开，或者在服务器上先执行 `docker login ghcr.io`。这个流程还没有实际跑过。
 
@@ -489,7 +489,7 @@ export EXPO_PUBLIC_API_URL=https://baby.example.com
 export ANDROID_KEYSTORE_PATH=/绝对路径/release.keystore
 export ANDROID_KEYSTORE_PASSWORD=... ANDROID_KEY_ALIAS=xiaodouya ANDROID_KEY_PASSWORD=...
 pnpm android:build release --clean
-# 产物：.artifacts/xiaodouya-release.apk
+# 产物：.artifacts/xiaodouya-release.apk 和 .artifacts/xiaodouya-release.aab
 ```
 
 缺少任何一个签名参数，脚本会直接报错退出，不会用调试密钥签出正式版。之后想在同一个目录编 `debug` 或 `e2e`，也要加 `--clean`，否则 Gradle 会继续读上次写入的正式签名配置。
@@ -510,13 +510,84 @@ pnpm android:build release --clean
 
 **iPhone**
 
-代码已经是跨平台的，但**还没有在 iOS 上测试过**，需要：
+通过 TestFlight，见下面的“上架 App Store”。iOS 没有 APK 那样的直接安装方式。
 
-- Apple Developer 账号（99 美元/年）；
-- 一台 Mac 或 macOS 构建服务（`npx expo prebuild --platform ios`，然后用 Xcode 归档）；
-- 通过 TestFlight 分发给家人。
+### 需要你自己准备的东西
 
-上线前请先在真机上把录音、相册、通知和证件夹解锁都走一遍。
+Agent 不能注册账号、拿不到你的签名，也不能上传到商店。下面这些只有你能做：
+
+| 要准备什么 | 用在哪里 | 费用 |
+| ---------- | -------- | ---- |
+| [Apple Developer Program](https://developer.apple.com/programs/) 账号 | TestFlight、App Store、推送证书 | 99 美元/年 |
+| 一台 Mac，Xcode 26 或更新 | 给 iOS 版签名和归档。[2026-04-28 起](https://developer.apple.com/news/upcoming-requirements/)上传必须用 Xcode 26 和 iOS 26 SDK | — |
+| 一台 iPhone | 真机验证模拟器测不了的东西（见下） | — |
+| [Google Play 开发者账号](https://play.google.com/console/signup) | 上架 Google Play | 一次性 25 美元 |
+| Android 上传密钥 | 就是上面“第一次配置”生成的 `release.keystore`。启用 Play App 签名后它是上传密钥，丢了可以找 Google 重置 | — |
+| 隐私政策网址 | 两个商店都必填（F-94） | — |
+| App 内删除账号 | 两个商店都要求（F-93） | — |
+
+### 上架 Google Play
+
+发布流程已经同时产出 APK 和 AAB。Google Play 只收 AAB。
+
+1. 打一个 `v*` 标签（见上文），从 GitHub Releases 下载 `xiaodouya-<版本>.aab`。AAB 里有 `arm64-v8a` 和 `armeabi-v7a`，构建脚本用 `scripts/check-native-libs.mjs` 检查过 [64 位](https://developer.android.com/google/play/requirements/64-bit)和 [16 KB 页面](https://developer.android.com/guide/practices/page-sizes)的要求，不符合就直接失败。`targetSdk` 是 36，符合 [2026-08-31 起的要求](https://support.google.com/googleplay/android-developer/answer/11926878)。
+2. 在 [Play Console](https://play.google.com/console) 创建应用，包名 `com.gchust.xiaodouya`（或你的 `ANDROID_PACKAGE`，**上传后不能再改**）。
+3. 第一次上传时选择 **Play App 签名**：Google 保管正式的签名密钥，你的 keystore 只作为上传密钥。这样装 GitHub Releases 里 APK 的用户和从商店装的用户签名不同，不能互相覆盖安装，要选一个渠道。
+4. 测试和发布 → 测试 → **内部测试** → 创建新版本，上传 AAB，填写测试人员的邮箱，把链接发给他们。内部测试不需要审核，几分钟就能装。
+5. 上架前要填：商店资料、内容分级、目标受众、[数据安全表](https://support.google.com/googleplay/android-developer/answer/10787469)、健康应用声明。AAB 现在声明了 `FOREGROUND_SERVICE_MEDIA_PLAYBACK`（expo-audio 默认加的，App 没有用到后台播放），Play Console 会要求说明用途，见下面的待决定事项。
+6. 2023-11-13 之后注册的**个人**账号，要先让[至少 12 名测试人员连续参加封闭测试 14 天](https://support.google.com/googleplay/android-developer/answer/14151465)才能申请正式发布。
+
+> 只验证过构建：`android-bundle.yml` 用临时密钥走了一遍 AAB（结果见 PROGRESS 的 F-98）。真实密钥、`release.yml`、Play Console 上传都没有执行过。
+
+**待决定：** expo-audio 的 `enableBackgroundPlayback` 默认为真，Android 上因此多了前台服务和 `FOREGROUND_SERVICE_MEDIA_PLAYBACK`。App 不在后台放声音，在 `app.config.ts` 里关掉就不用向 Google 申报，但这会改变 Android 的清单，改完要重跑 Android E2E。iOS 上这个声明已经去掉。
+
+### 构建 iOS
+
+CI 的 `ios.yml` 编译的是模拟器版，只用本地签名（`-`），不能装到真机。正式版要在 Mac 上签名。
+
+**模拟器（不需要账号）：** 需要 Xcode 26、CocoaPods、Node、pnpm。
+
+```bash
+pnpm install
+pnpm ios:build                # 产物：.artifacts/xiaodouya-e2e.app，连 http://localhost:8787
+```
+
+`pnpm ios:e2e` 跑端到端测试，它依赖的 Postgres 和 SeaweedFS 用 `scripts/ios-infra.sh` 启动，见 `e2e/README.md`。
+
+**真机和 TestFlight：**
+
+1. 在 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list) 注册 Bundle ID `com.gchust.xiaodouya`（或你的 `IOS_BUNDLE_ID`），打开 **Push Notifications**。`expo-notifications` 给工程加了推送权限，这个能力没开的话签名会失败。
+2. 在 [App Store Connect](https://appstoreconnect.apple.com) 新建 App，选这个 Bundle ID。
+3. 在 Mac 上生成工程：
+
+   ```bash
+   pnpm install
+   cd apps/mobile
+   # 地址在 Xcode 归档时才写进 JS，而从访达或 open 打开的 Xcode 读不到终端里的环境变量，所以写进 .env（已被 git 忽略）。
+   # 必须是 https：iOS 的 ATS 不允许连公网的 http 服务器，没有 ANDROID_ALLOW_HTTP 那样的开关。
+   # 不要设置 EXPO_PUBLIC_E2E，那会把系统相册换成内置样例。
+   echo 'EXPO_PUBLIC_API_URL=https://baby.example.com' > .env
+   export APP_VERSION=0.1.0 APP_VERSION_CODE=1   # 每次上传 APP_VERSION_CODE 都要变大
+   CI=1 npx expo prebuild --platform ios --no-install --clean
+   (cd ios && pod install)
+   open ios/app.xcworkspace
+   ```
+
+4. 在 Xcode 里选中 `app` target → Signing & Capabilities → 勾选 Automatically manage signing，选你的 Team。
+5. 设备选 Any iOS Device → Product → Archive。
+6. 归档完成后 Distribute App → App Store Connect → Upload。
+7. 在 App Store Connect 的 TestFlight 页把家人加为测试人员，他们用 TestFlight App 安装。第一次外部测试要等 Apple 审核，内部测试不用。
+
+### 上架 App Store
+
+除了上面的步骤，还要在 App Store Connect 填：
+
+- **App 隐私**：App 收集邮箱、姓名、照片、视频、录音、健康数据和设备标识，都用于 App 功能，不用于追踪。隐私清单 `ios.privacyManifests` 只声明了系统 API 的使用理由，收集的数据要在这里填。
+- 隐私政策网址、年龄分级、截图（6.9 英寸 iPhone）。
+- 出口合规：`app.config.ts` 里写了 `usesNonExemptEncryption: false`（只用系统的 HTTPS 和哈希），如果以后加了自己的加密要改。
+- 审核备注和测试账号：审核员要能登录，服务器要在线。
+
+上线前必须在真机上验证（模拟器都测不了）：相册和相机、麦克风录音、静音键打开时的播放、面容解锁证件夹、喂奶本地提醒、后台切回后的同步。
 
 ### 远程推送（可选）
 
@@ -534,6 +605,7 @@ pnpm android:build release --clean
    | Variable | `EAS_PROJECT_ID`              | Expo 的 Project ID                |
 
 4. 在服务器的 `deploy/.env` 里设置 `PUSH_ENABLED=true`，如果在 Expo 开了访问令牌保护，再填 `EXPO_ACCESS_TOKEN`。
+5. iOS 另外要在 Apple Developer 创建 APNs 密钥（.p8），上传到 Expo 项目的 Credentials。这一步没有验证过：模拟器拿不到推送令牌。
 
 ---
 
@@ -670,7 +742,8 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 | `EXPO_PUBLIC_PRIVACY_URL`          | 否         | 隐私政策的网址，同上。两个都没有设置时不显示同意说明。公开发布前必须设置      |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
-| `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |
+| `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a,armeabi-v7a`。Google Play 要求有 64 位，32 位给旧手机   |
+| `IOS_BUNDLE_ID`                    | 否         | iOS 的 Bundle ID，默认 `com.gchust.xiaodouya`                                 |
 | `APP_VERSION` / `APP_VERSION_CODE` | 否         | 版本号，发布流程自动从标签设置                                                |
 | `GOOGLE_SERVICES_JSON`             | 否         | `google-services.json` 的路径，启用推送时需要                                 |
 | `EAS_PROJECT_ID`                   | 否         | 启用推送时需要                                                                |

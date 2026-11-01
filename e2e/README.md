@@ -46,6 +46,23 @@ CI 和本地的服务端都用 `apps/server/.env.example`，里面开着自定�
 
 CI 的 E2E 环境没有配置邮件，所以邮箱验证、找回密码没有 Maestro 流程，由服务端集成测试覆盖。
 
+## iOS
+
+同一批流程也在 iOS 模拟器上跑（`.github/workflows/ios.yml`，macOS Runner），需要 Xcode、CocoaPods 和 Homebrew：
+
+```bash
+bash scripts/ios-build.sh       # 第一次二三十分钟
+bash scripts/ios-infra.sh       # macOS Runner 没有 Docker：Homebrew 的 Postgres 16 加 SeaweedFS 原生版本
+bash scripts/install-maestro.sh
+bash scripts/ios-e2e.sh         # 或 bash scripts/ios-e2e.sh e2e/flows/01_onboarding.yaml
+```
+
+和 Android 的不同：
+
+- 一条流程失败后继续跑完其余流程，最后列出结果，失败现场和无障碍树（`hierarchy-<流程>.json`）在 `.artifacts/`。
+- 模拟器没有飞行模式，Maestro 的 `setAirplaneMode` 在 iOS 上不起作用。`subflows/net-off.yaml` 改为断开 `net-proxy.mjs` 这个转发，App 连不上服务端，但系统仍然报告在线。所以 iOS 上**没有验证过**“离线中”的提示和 NetInfo 的联动，流程 06 看的是“正在同步”。
+- 服务端监听 18787，转发监听 8787。`S3_PUBLIC_ENDPOINT` 是 `localhost:59000`，App 连 `localhost:8787`，模拟器和宿主机共用网络，不需要 `10.0.2.2`。
+
 ## 用什么是真的，什么是模拟的
 
 | 环节                           | 情况                                                     |

@@ -48,9 +48,13 @@ docs/              DEPLOYMENT.md、ARCHITECTURE.md、CAPACITY.md（容量和成�
 | 启动无窗口模拟器                                 | `pnpm emulator`                                |
 | 端到端测试                                       | `pnpm e2e`                                     |
 | 模拟器截图                                       | `pnpm screenshot <名字>`（存到 `.artifacts/`） |
+| 编译 iOS 模拟器版（只能在 macOS 上）             | `pnpm ios:build`                               |
+| iOS 端到端测试（只能在 macOS 上，见 `e2e/README.md`） | `pnpm ios:e2e`                            |
 
 本地端口（避开已有服务）：Postgres `55432`、S3 `59000`、服务端 `8787`。
-模拟器里访问宿主机要用 `10.0.2.2`。
+Android 模拟器里访问宿主机要用 `10.0.2.2`，iOS 模拟器用 `localhost`。
+
+这台开发机是 Linux，iOS 只能靠 CI（`.github/workflows/ios.yml`）。`expo prebuild --platform ios` 在 Linux 上也能跑，看 `Info.plist` 和隐私清单不用等 CI。
 
 ## 4. 完成的定义
 
