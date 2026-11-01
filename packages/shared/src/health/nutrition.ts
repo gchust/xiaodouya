@@ -356,8 +356,8 @@ export function nutritionEntryText(day: DayNutrition): string | null {
   if (day.feeds === 0) return null;
   if (day.uncountedFeeds > 0) return `数据不足 · 有 ${day.uncountedFeeds} 次喂奶没算进去`;
   const first = day.nutrients.find((n) => n.status === 'progress');
-  if (!first) return '数据不足';
-  return `目前已摄入${nutrientMeta[first.key].label} ${first.percent}%`;
+  if (first) return `目前已摄入${nutrientMeta[first.key].label} ${first.percent}%`;
+  return day.nutrients.every((n) => n.status === 'no-reference') ? '只显示摄入量' : '数据不足';
 }
 
 export function formatNutrientAmount(key: NutrientKey, amount: number): string {

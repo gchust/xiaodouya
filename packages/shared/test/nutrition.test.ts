@@ -690,6 +690,21 @@ describe('今天页的入口文字', () => {
     expect(text).toMatch(/^目前已摄入/);
   });
 
+  it('没有参考量时（满 12 个月）不能写成数据不足', () => {
+    const text = nutritionEntryText(
+      assess([feed(dayStart + 8 * HOUR, 120)], { now: during, ageMonths: 12 }),
+    );
+    expect(text).toBe('只显示摄入量');
+  });
+
+  it('奶粉只填了能量：没有能比较的项，算数据不足', () => {
+    const only = { name: '虚构', per100ml: { energyKcal: 68 } };
+    const text = nutritionEntryText(
+      assess([feed(dayStart + 8 * HOUR, 120, { formula: only })], { now: during }),
+    );
+    expect(text).toBe('数据不足');
+  });
+
   it('有没算进去的喂奶时说明数量', () => {
     const text = nutritionEntryText(
       assess(
