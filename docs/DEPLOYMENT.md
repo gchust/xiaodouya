@@ -514,11 +514,13 @@ pnpm android:build release --clean
 
 ### 需要你自己准备的东西
 
+**现在还不上线，两个商店的提交都没有做。** 下面几节是以后上架时的步骤，目前只验证到能构建、能在模拟器上跑通、AAB 能出包（见 PROGRESS 的 F-77、F-98、F-99）。
+
 Agent 不能注册账号、拿不到你的签名，也不能上传到商店。下面这些只有你能做：
 
 | 要准备什么 | 用在哪里 | 费用 |
 | ---------- | -------- | ---- |
-| [Apple Developer Program](https://developer.apple.com/programs/) 账号 | TestFlight、App Store、推送证书 | 99 美元/年 |
+| [Apple Developer Program](https://developer.apple.com/programs/) 账号 | TestFlight、App Store | 99 美元/年 |
 | 一台 Mac，Xcode 26 或更新 | 给 iOS 版签名和归档。[2026-04-28 起](https://developer.apple.com/news/upcoming-requirements/)上传必须用 Xcode 26 和 iOS 26 SDK | — |
 | 一台 iPhone | 真机验证模拟器测不了的东西（见下） | — |
 | [Google Play 开发者账号](https://play.google.com/console/signup) | 上架 Google Play | 一次性 25 美元 |
@@ -556,7 +558,7 @@ pnpm ios:build                # 产物：.artifacts/xiaodouya-e2e.app，连 http
 
 **真机和 TestFlight：**
 
-1. 在 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list) 注册 Bundle ID `com.gchust.xiaodouya`（或你的 `IOS_BUNDLE_ID`），打开 **Push Notifications**。`expo-notifications` 给工程加了推送权限，这个能力没开的话签名会失败。
+1. 在 [Certificates, Identifiers & Profiles](https://developer.apple.com/account/resources/identifiers/list) 注册 Bundle ID `com.gchust.xiaodouya`（或你的 `IOS_BUNDLE_ID`）。不用开通 Push Notifications：不做远程推送，喂奶提醒是本机通知，`app.config.ts` 去掉了推送权限。
 2. 在 [App Store Connect](https://appstoreconnect.apple.com) 新建 App，选这个 Bundle ID。
 3. 在 Mac 上生成工程：
 
@@ -605,7 +607,6 @@ pnpm ios:build                # 产物：.artifacts/xiaodouya-e2e.app，连 http
    | Variable | `EAS_PROJECT_ID`              | Expo 的 Project ID                |
 
 4. 在服务器的 `deploy/.env` 里设置 `PUSH_ENABLED=true`，如果在 Expo 开了访问令牌保护，再填 `EXPO_ACCESS_TOKEN`。
-5. iOS 另外要在 Apple Developer 创建 APNs 密钥（.p8），上传到 Expo 项目的 Credentials。这一步没有验证过：模拟器拿不到推送令牌。
 
 ---
 
