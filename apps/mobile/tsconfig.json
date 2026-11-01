@@ -6,5 +6,5 @@
     "types": ["node"],
     "allowJs": false
   },
-  "include": ["app", "src", "test", "app.config.ts", "expo-env.d.ts"]
+  "include": ["index.ts", "app", "src", "test", "app.config.ts", "expo-env.d.ts"]
 }
