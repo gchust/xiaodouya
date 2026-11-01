@@ -19,7 +19,7 @@ import { isPersonalCacheDirectory } from './accountLogic';
 import { type Api, ApiFailure } from './api';
 import { IS_E2E } from './config';
 import { e2eBulkMoment, e2ePickFiles } from './e2eFixtures';
-import { firstFound, importEach, pickDurationMs } from './mediaUtils';
+import { firstFound, importEach, isRecentPick, pickDurationMs } from './mediaUtils';
 
 export interface PickedFile {
   uri: string;
@@ -119,30 +119,36 @@ export async function pickFromLibrary(options?: {
     // 原生层的错误是一长串英文，用户看不懂。
     throw new Error('打不开相册，请再试一次');
   } finally {
-    // App 在选择器打开时被杀的话走不到这里，下次启动靠它知道该找回给回忆。
+    // App 在选择器打开时被杀的话走不到这里，下次启动靠它知道选图被打断了。
     if (!single && marker.exists) marker.delete();
   }
 }
 
 /**
- * 选择器打开时 App 被系统回收，用户点“添加”后 App 是冷启动的，原来的 Promise 已经没了，
- * 结果由原生层暂存。只找回给回忆用的：头像和证件照的结果不能跑到回忆里。
- * 原生层收到结果的时间可能晚于 JS 启动，所以多试几次。
+ * 选择器打开时 App 没了，用户点“添加”后 App 是冷启动的，原来的 Promise 已经不在。
+ * 只有 Activity 被销毁、进程还在时，原生层才会暂存结果，这里取回给回忆用，头像和证件照的结果不能跑进来。
+ * 进程被杀时取不回来：expo-modules-core 只在 onHostDestroy 保存请求，新进程对不上就丢弃结果。
+ * 这时能做的是告诉用户再选一次，原图还在相册里。见 docs/PITFALLS.md。
  */
-export async function recoverPendingPick(): Promise<PickedFile[]> {
-  if (IS_E2E || Platform.OS !== 'android') return [];
+export async function recoverPendingPick(): Promise<{
+  files: PickedFile[];
+  interrupted: boolean;
+}> {
+  if (IS_E2E || Platform.OS !== 'android') return { files: [], interrupted: false };
   const marker = pendingPickMarker();
-  if (!marker.exists) return [];
+  if (!marker.exists) return { files: [], interrupted: false };
+  const recent = isRecentPick(marker.modificationTime, Date.now());
   try {
     const assets = await firstFound(
       async () => {
         const result = await ImagePicker.getPendingResultAsync();
         return result && 'assets' in result && result.assets ? result.assets : null;
       },
-      [0, 1000, 2000, 4000],
+      [0, 1000, 2000],
       (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     );
-    return assets ? assets.map(fromAsset) : [];
+    if (assets) return { files: assets.map(fromAsset), interrupted: false };
+    return { files: [], interrupted: recent };
   } finally {
     if (marker.exists) marker.delete();
   }

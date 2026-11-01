@@ -8,7 +8,7 @@ import {
   type UploadQueueDb,
   type UploadTransport,
 } from '../src/data/uploadQueue';
-import { firstFound, importEach, mergePicked } from '../src/lib/mediaUtils';
+import { firstFound, importEach, isRecentPick, mergePicked } from '../src/lib/mediaUtils';
 
 class MemoryDb implements LocalDb, UploadQueueDb {
   records = new Map<string, StoredRecord>();
@@ -117,6 +117,20 @@ describe('批量导入', () => {
       },
     );
     expect(peak).toBe(1);
+  });
+});
+
+describe('选图被打断的提示', () => {
+  const now = 10 * 60 * 60_000;
+  it('刚发生的要提示', () => {
+    expect(isRecentPick(now - 60_000, now)).toBe(true);
+  });
+  it('隔了很久才打开就不提了', () => {
+    expect(isRecentPick(now - 2 * 60 * 60_000, now)).toBe(false);
+  });
+  it('读不到时间时不提示', () => {
+    expect(isRecentPick(null, now)).toBe(false);
+    expect(isRecentPick(undefined, now)).toBe(false);
   });
 });
 

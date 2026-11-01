@@ -34,6 +34,15 @@ export async function importEach<T, R>(
   return { done, failed };
 }
 
+/** 隔了很久才重新打开 App 时，用户早忘了选过图，这时再提示只会让人困惑。 */
+export function isRecentPick(
+  markedAt: number | null | undefined,
+  now: number,
+  maxAgeMs = 60 * 60_000,
+): boolean {
+  return typeof markedAt === 'number' && now - markedAt <= maxAgeMs;
+}
+
 /** 按给定的间隔反复尝试，拿到结果就停。出错当作没拿到。 */
 export async function firstFound<T>(
   attempt: () => Promise<T | null>,
