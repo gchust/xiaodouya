@@ -70,7 +70,8 @@ export async function e2ePickFiles(
       kind: 'image',
       mime: 'image/png',
       size: file.size ?? 0,
-      name: 'e2e-sample.png',
+      // 回忆用非 ASCII 的名字，流程 14b 要确认它能原样进相册（见 galleryUri）。
+      name: purpose === 'moment' ? '小豆芽 笑脸.png' : 'e2e-sample.png',
       width: 64,
       height: 64,
     },

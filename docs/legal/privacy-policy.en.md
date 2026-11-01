@@ -63,7 +63,7 @@ You can turn off each permission in your phone's settings. Only the related feat
 |---|---|
 | Camera | Photographing documents and records |
 | Microphone | Recording your baby's sounds |
-| Photos and files | Chosen through the system picker. The app receives only what you select and does not read your whole library |
+| Photos and files | Chosen through the system picker. The app receives only what you select and does not read your whole library. When you tap Download, that one file is saved to your photo library or a folder you choose; older Android versions ask for storage permission for this |
 | Biometrics | Verifying you before showing documents, if you turn on the document lock |
 | Notifications | Feed reminders (generated on your phone) and family-activity push notifications |
 

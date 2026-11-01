@@ -81,6 +81,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: { id: avatar-replace }
 - assertNotVisible: { id: avatar-rotate }
 - assertNotVisible: { id: avatar-crop }
+- assertNotVisible: { id: viewer-download }
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: .artifacts/e2e-20-viewer-avatar

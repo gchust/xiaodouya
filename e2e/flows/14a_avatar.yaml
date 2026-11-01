@@ -36,6 +36,8 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: avatar-rotate }
 - assertVisible: { id: avatar-crop }
 - assertNotVisible: { id: avatar-save }
+# 下载只在回忆里提供，头像这里不显示
+- assertNotVisible: { id: viewer-download }
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: .artifacts/e2e-14a-viewer

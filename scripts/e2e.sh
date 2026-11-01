@@ -52,4 +52,9 @@ for flow in "${FLOWS[@]}"; do
   maestro test --env "RUN_ID=$RUN_ID" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
 done
 node e2e/verify-uploads.mjs "$RUN_ID"
+# 流程 14b 存到相册的照片：不信界面提示，直接查系统媒体库。
+if printf '%s\n' "${FLOWS[@]}" | grep -q '14b_'; then
+  adb shell content query --uri content://media/external/images/media --projection _display_name \
+    | grep -q '小豆芽 笑脸.*\.png' || { echo "相册里没有流程 14b 保存的照片" >&2; exit 1; }
+fi
 echo "E2E 全部通过"
