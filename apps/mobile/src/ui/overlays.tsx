@@ -295,8 +295,8 @@ function BannerLayer({ banner }: { banner: { initial: string; message: string } 
         <Text style={s.bannerInitial}>{last.current?.initial}</Text>
       </View>
       <View style={{ flex: 1, gap: 1 }}>
-        <Text style={s.bannerApp}>小豆芽 · 刚刚</Text>
-        <Text style={s.bannerText} numberOfLines={1}>
+        <Text style={s.bannerApp}>小豆芽</Text>
+        <Text style={s.bannerText} numberOfLines={2}>
           {last.current?.message}
         </Text>
       </View>
@@ -325,7 +325,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       banner(initial, message) {
         if (bannerTimer.current) clearTimeout(bannerTimer.current);
         setBanner({ initial, message });
-        bannerTimer.current = setTimeout(() => setBanner(null), 4200);
+        bannerTimer.current = setTimeout(() => setBanner(null), 5000);
       },
     }),
     [],

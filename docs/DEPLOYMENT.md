@@ -522,7 +522,7 @@ pnpm android:build release --clean
 
 不配置也能正常使用：**喂奶提醒是手机本地通知**，App 打开时家人的记录也会实时同步并弹出横幅。
 
-只有“App 没打开时，收到家人记录的通知”才需要推送：
+**产品已决定不做远程推送（PROGRESS 的 F-47），新版 App 也不再注册推送令牌，保持 `PUSH_ENABLED=false` 即可。** 服务端代码还在，是因为已发布的 v0.1.0 还会调用这些接口。下面的步骤只对 v0.1.0 有效：
 
 1. 在 [Firebase](https://console.firebase.google.com) 创建项目，添加 Android 应用，包名 `com.gchust.xiaodouya`（或你设置的 `ANDROID_PACKAGE`），下载 `google-services.json`。
 2. 在 [Expo](https://expo.dev) 创建项目，记下 Project ID；在项目的 Credentials 里上传 FCM V1 服务账号密钥。
