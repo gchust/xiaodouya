@@ -33,7 +33,7 @@ import { keyboardLift, sheetMaxHeight } from '../lib/layout';
 import { colors, fonts, motion, spacing } from '../theme';
 
 /** CI 的模拟器取一次界面就要好几秒，E2E 构建放长一些，避免点撤销时已经消失、点到下面的内容。 */
-const TOAST_MS = IS_E2E ? 15_000 : 3600;
+const TOAST_MS = IS_E2E ? 8_000 : 3600;
 
 // ─── 底部弹层 ────────────────────────────────────────────
 
@@ -217,6 +217,7 @@ interface FeedbackApi {
   toast(message: string, options?: ToastOptions): void;
   /** 顶部深色横幅：其他家人刚同步过来的记录。 */
   banner(initial: string, message: string): void;
+  dismissToast(): void;
 }
 
 const FeedbackContext = createContext<FeedbackApi | null>(null);
@@ -317,6 +318,10 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
         setToast({ message, undo: options?.undo });
         toastTimer.current = setTimeout(() => setToast(null), options?.durationMs ?? TOAST_MS);
       },
+      dismissToast() {
+        if (toastTimer.current) clearTimeout(toastTimer.current);
+        setToast(null);
+      },
       banner(initial, message) {
         if (bannerTimer.current) clearTimeout(bannerTimer.current);
         setBanner({ initial, message });
@@ -344,6 +349,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 export function SheetProvider({ children }: { children: ReactNode }) {
   const [sheet, setSheet] = useState<{ title: string; render: () => ReactNode } | null>(null);
   const [visible, setVisible] = useState(false);
+  const { dismissToast } = useFeedback();
 
   const close = useCallback(() => {
     Keyboard.dismiss();
@@ -354,6 +360,8 @@ export function SheetProvider({ children }: { children: ReactNode }) {
   const api = useMemo<SheetApi>(
     () => ({
       open(title, render) {
+        // Toast 显示在弹层之上，正好盖住底部的按钮：喂完奶马上点尿布，点击全落在 Toast 上。
+        dismissToast();
         setSheet({ title, render });
         setVisible(true);
       },
@@ -368,7 +376,7 @@ export function SheetProvider({ children }: { children: ReactNode }) {
       },
       close,
     }),
-    [close],
+    [close, dismissToast],
   );
 
   return (

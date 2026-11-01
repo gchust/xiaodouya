@@ -48,6 +48,7 @@
 
 ## React Native 和 Expo
 
+- **打开弹层时要收起 Toast。** Toast 显示在弹层之上，会盖住底部按钮。
 - **`StyleSheet.absoluteFillObject` 在 RN 0.88 已移除。** 用 `absoluteFill` 或写明四个方向。
 - **自定义 Tab 栏的类型从 `expo-router/js-tabs` 导入。** expo-router 58 自带 react-navigation，props 是 `emitter` 和 `navigateToTab`，不是 `navigation`。
 - **不要在记录后直接请求系统权限。** 系统弹窗会盖住 Toast 和撤销，用户拒绝后下一次又会弹。用页面上的提示卡，由用户自己点开。
@@ -93,8 +94,8 @@
 ## 测试方法
 
 - **回归测试要先在修复前的代码上看它失败。** 没失败过的测试不能证明它抓得到问题。这个项目里压测没能复现游标竞态，看到失败才发现测试本身不够。
-- **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 15 秒。
-- **弹层滑入时 Maestro 的点击会落空。** 现象是断言失败、截图里弹层还开着。E2E 构建已把弹层动画关掉（`theme.ts`）。
+- **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 8 秒。
+- **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 
