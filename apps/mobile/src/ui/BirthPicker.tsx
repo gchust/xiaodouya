@@ -95,12 +95,24 @@ export function PastDatePicker({
         <DateTimePicker
           value={value}
           mode="date"
+          display={IOS ? 'spinner' : undefined}
           maximumDate={new Date()}
           onChange={(_event, date) => {
-            setOpen(false);
+            if (!IOS) setOpen(false);
             if (date) onChange(date);
           }}
         />
+      ) : null}
+      {open && IOS ? (
+        <Pressable
+          testID={`${testID}-done`}
+          accessibilityRole="button"
+          accessibilityLabel="完成"
+          onPress={() => setOpen(false)}
+          style={s.done}
+        >
+          <Text style={s.doneText}>完成</Text>
+        </Pressable>
       ) : null}
     </>
   );
