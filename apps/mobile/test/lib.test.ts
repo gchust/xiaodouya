@@ -2,12 +2,96 @@ import { describe, expect, it } from 'vitest';
 import { buildBookHtml } from '../src/lib/bookHtml';
 import { formatLastSeen } from '../src/lib/dates';
 import {
+  createExclusivePlayback,
   downsamplePeaks,
   escapeHtml,
   fallbackPeaks,
+  fileBadge,
   isUrlFresh,
+  mediaRetryDelayMs,
   pickDurationMs,
 } from '../src/lib/mediaUtils';
+
+describe('取不到链接时的重试间隔', () => {
+  it('逐步变长，最多 60 秒', () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 20].map(mediaRetryDelayMs)).toEqual([
+      2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000,
+    ]);
+  });
+  it('次数非常大也不会溢出', () => {
+    expect(mediaRetryDelayMs(5000)).toBe(60_000);
+  });
+});
+
+describe('同一时间只放一段录音', () => {
+  const player = () => {
+    const p = { paused: 0, pause: () => (p.paused += 1) };
+    return p;
+  };
+  it('新的开始时暂停旧的', () => {
+    const playback = createExclusivePlayback<ReturnType<typeof player>>();
+    const a = player();
+    const b = player();
+    playback.claim(a);
+    playback.claim(b);
+    expect(a.paused).toBe(1);
+    expect(b.paused).toBe(0);
+  });
+  it('同一段继续播放不会暂停自己', () => {
+    const playback = createExclusivePlayback<ReturnType<typeof player>>();
+    const a = player();
+    playback.claim(a);
+    playback.claim(a);
+    expect(a.paused).toBe(0);
+  });
+  it('已释放的播放器不再被暂停', () => {
+    const playback = createExclusivePlayback<ReturnType<typeof player>>();
+    const a = player();
+    playback.claim(a);
+    playback.release(a);
+    playback.claim(player());
+    expect(a.paused).toBe(0);
+  });
+  it('释放别的播放器不影响正在放的', () => {
+    const playback = createExclusivePlayback<ReturnType<typeof player>>();
+    const a = player();
+    playback.claim(a);
+    playback.release(player());
+    playback.claim(player());
+    expect(a.paused).toBe(1);
+  });
+  it('暂停时报错也能接着放新的', () => {
+    const playback = createExclusivePlayback<{ pause(): void }>();
+    playback.claim({
+      pause() {
+        throw new Error('已释放');
+      },
+    });
+    expect(() => playback.claim({ pause() {} })).not.toThrow();
+  });
+});
+
+describe('证件卡片标记', () => {
+  it('用扩展名并转成大写', () => {
+    expect(fileBadge({ name: '出生证明.pdf', mime: 'application/pdf', kind: 'pdf' })).toBe('PDF');
+    expect(fileBadge({ name: 'scan.png', mime: 'image/png', kind: 'image' })).toBe('PNG');
+  });
+  it('JPEG 统一写成 JPG', () => {
+    expect(fileBadge({ name: 'a.jpeg', mime: 'image/jpeg', kind: 'image' })).toBe('JPG');
+    expect(fileBadge({ mime: 'image/jpeg', kind: 'image' })).toBe('JPG');
+  });
+  it('拍照没有文件名时看 MIME', () => {
+    expect(fileBadge({ mime: 'image/heic', kind: 'image' })).toBe('HEIC');
+  });
+  it('名字里没有点时不把整个名字当扩展名', () => {
+    expect(fileBadge({ name: 'passport', mime: 'image/png', kind: 'image' })).toBe('PNG');
+  });
+  it('看不出来时退回通用标记', () => {
+    expect(fileBadge({ kind: 'image' })).toBe('IMG');
+    expect(fileBadge({ name: 'a.很长的扩展名', kind: 'pdf' })).toBe('PDF');
+    expect(fileBadge({ mime: 'application/vnd.oasis.document', kind: 'image' })).toBe('IMG');
+  });
+});
 
 describe('波形', () => {
   it('把电平压缩到固定数量，范围 0–1', () => {

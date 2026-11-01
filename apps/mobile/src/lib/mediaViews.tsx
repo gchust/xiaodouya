@@ -10,14 +10,30 @@ import {
 import { File } from 'expo-file-system';
 import { Image } from 'expo-image';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type ImageStyle, Pressable, type StyleProp, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  type ImageStyle,
+  Pressable,
+  type StyleProp,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { colors } from '../theme';
+import { useFeedback } from '../ui/overlays';
 import { Mono, Muted, Stripes } from '../ui/primitives';
 import type { Api } from './api';
 import { useApp } from './app';
 import type { PickedFile } from './media';
 import { localUriFor } from './media';
-import { type CachedUrl, downsamplePeaks, fallbackPeaks, isUrlFresh } from './mediaUtils';
+import {
+  type CachedUrl,
+  createExclusivePlayback,
+  downsamplePeaks,
+  fallbackPeaks,
+  isUrlFresh,
+  mediaRetryDelayMs,
+} from './mediaUtils';
 
 /** 把同一帧里请求的链接合并成一次接口调用：回忆页一屏可能有几十张图。 */
 class UrlBatcher {
@@ -78,38 +94,69 @@ export function mediaUrlBatcher(api: Api): UrlBatcher {
 
 /** 解析一个文件的显示地址：先用本地副本，否则取签名链接。 */
 export function useMediaSource(media: MediaRef, variant: MediaVariant) {
-  const { api, uploads } = useApp();
+  const { api, uploads, syncStatus } = useApp();
   const [source, setSource] = useState<{ uri: string; cacheKey: string } | null>(null);
+  const [retry, setRetry] = useState(0);
+  const failures = useRef(0);
+  const offline = useRef(syncStatus === 'offline');
   const effective = variant === 'thumb' && !media.hasThumb ? 'original' : variant;
   const pendingUpload = uploads.pendingIds().has(media.id);
+  const hasSource = source !== null;
+
+  // 离线时不空转，靠这里在状态变化后补一次。恢复联网后重新从最短的间隔开始。
+  const lastStatus = useRef(syncStatus);
+  useEffect(() => {
+    const wasOffline = lastStatus.current === 'offline';
+    const changed = lastStatus.current !== syncStatus;
+    lastStatus.current = syncStatus;
+    offline.current = syncStatus === 'offline';
+    if (!changed || hasSource) return;
+    if (wasOffline) failures.current = 0;
+    setRetry((n) => n + 1);
+  }, [syncStatus, hasSource]);
+
   // pendingUpload 变化时要重新解析：本地副本在上传完成后会被删掉。
+  // retry 变化时再取一次：链接是空的（离线，或家人还没传完），之后才可能拿到。
   // biome-ignore lint/correctness/useExhaustiveDependencies: 见上
   useEffect(() => {
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const local = localUriFor(media.id, effective);
     if (local) {
       setSource({ uri: local, cacheKey: `${media.id}/${effective}` });
       return;
     }
-    void mediaUrlBatcher(api)
-      .get(media.id, effective)
-      .then(async (url) => {
+    const resolve = async () => {
+      const batcher = mediaUrlBatcher(api);
+      const url = await batcher.get(media.id, effective);
+      if (!alive) return;
+      if (url) {
+        // 签名链接每次都变，用文件 id 做缓存键，否则同一张图会反复下载。
+        failures.current = 0;
+        setSource({ uri: url, cacheKey: `${media.id}/${effective}` });
+        return;
+      }
+      // 缩略图可能还没传到，或这是家人刚传的：退回原图。
+      if (effective === 'thumb') {
+        const original = await batcher.get(media.id, 'original');
         if (!alive) return;
-        if (url) {
-          // 签名链接每次都变，用文件 id 做缓存键，否则同一张图会反复下载。
-          setSource({ uri: url, cacheKey: `${media.id}/${effective}` });
+        if (original) {
+          failures.current = 0;
+          setSource({ uri: original, cacheKey: `${media.id}/original` });
           return;
         }
-        // 缩略图可能还没传到，或这是家人刚传的：退回原图。
-        if (effective === 'thumb') {
-          const original = await mediaUrlBatcher(api).get(media.id, 'original');
-          if (alive && original) setSource({ uri: original, cacheKey: `${media.id}/original` });
-        }
-      });
+      }
+      if (offline.current) return;
+      const delay = mediaRetryDelayMs(failures.current);
+      failures.current += 1;
+      timer = setTimeout(() => setRetry((n) => n + 1), delay);
+    };
+    void resolve();
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [api, media.id, effective, pendingUpload]);
+  }, [api, media.id, effective, pendingUpload, retry]);
   return source;
 }
 
@@ -184,7 +231,16 @@ export function AudioCard({ media }: { media: MediaRef }) {
   const [active, setActive] = useState(false);
   const peaks = media.peaks?.length ? media.peaks.slice(0, 28) : fallbackPeaks(media.id);
   const duration = media.durationMs ? formatMediaDuration(media.durationMs) : '';
-  if (active) return <ActiveAudio media={media} peaks={peaks} duration={duration} />;
+  if (active) {
+    return (
+      <ActiveAudio
+        media={media}
+        peaks={peaks}
+        duration={duration}
+        onFail={() => setActive(false)}
+      />
+    );
+  }
   return (
     <Pressable
       testID={`audio-${media.id}`}
@@ -205,44 +261,73 @@ export function AudioCard({ media }: { media: MediaRef }) {
   );
 }
 
+const audioPlayback = createExclusivePlayback<{ pause(): void }>();
+/** 这么久还没加载好就告诉用户。链接取不到时不会有任何错误事件，只能靠超时。 */
+const AUDIO_LOAD_TIMEOUT_MS = 20_000;
+
 function ActiveAudio({
   media,
   peaks,
   duration,
+  onFail,
 }: {
   media: MediaRef;
   peaks: readonly number[];
   duration: string;
+  onFail: () => void;
 }) {
   const source = useMediaSource(media, 'original');
   const player = useAudioPlayer(source ? { uri: source.uri } : null);
   const status = useAudioPlayerStatus(player);
+  const { toast } = useFeedback();
   const started = useRef(false);
+  const failRef = useRef(() => {});
+  failRef.current = () => {
+    toast('这段录音暂时打不开，联网后再试一次');
+    onFail();
+  };
+  const play = useCallback(() => {
+    audioPlayback.claim(player);
+    player.play();
+  }, [player]);
+  useEffect(() => () => audioPlayback.release(player), [player]);
   useEffect(() => {
     if (source && status.isLoaded && !started.current) {
       started.current = true;
-      player.play();
+      play();
     }
-  }, [source, status.isLoaded, player]);
+  }, [source, status.isLoaded, play]);
   useEffect(() => {
     if (status.didJustFinish) void player.seekTo(0);
   }, [status.didJustFinish, player]);
+  useEffect(() => {
+    if (status.error) failRef.current();
+  }, [status.error]);
+  const loading = !status.isLoaded;
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setTimeout(() => failRef.current(), AUDIO_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
   const progress = status.duration ? status.currentTime / status.duration : 0;
   const playing = status.playing;
   return (
     <Pressable
       testID={`audio-${media.id}`}
       accessibilityRole="button"
-      accessibilityLabel={playing ? '暂停录音' : '播放录音'}
-      accessibilityState={{ busy: !source }}
+      accessibilityLabel={loading ? '录音加载中' : playing ? '暂停录音' : '播放录音'}
+      accessibilityState={{ busy: loading }}
+      disabled={loading}
       style={s.audio}
       onPress={() => {
         if (playing) player.pause();
-        else player.play();
+        else play();
       }}
     >
       <View style={[s.audioBtn, { backgroundColor: playing ? colors.accent : colors.ink }]}>
-        {playing ? (
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.white} />
+        ) : playing ? (
           <View style={{ flexDirection: 'row', gap: 3 }}>
             <View style={s.pauseBar} />
             <View style={s.pauseBar} />
@@ -340,9 +425,11 @@ export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () 
         </View>
       ) : null}
       <Pressable
+        testID="selected-media-remove"
         accessibilityRole="button"
         accessibilityLabel="移除"
-        hitSlop={6}
+        // 缩略图裁剪了溢出，热区只能往图内扩：上右到图边，下左补足 44。
+        hitSlop={{ top: 3, right: 3, bottom: 23, left: 23 }}
         onPress={onRemove}
         style={s.remove}
       >

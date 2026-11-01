@@ -44,6 +44,41 @@ export function isUrlFresh(
   return Boolean(entry && entry.expiresAt - marginMs > now);
 }
 
+/** 拿不到链接时隔多久再试一次。failures 是已经连续失败的次数。 */
+export function mediaRetryDelayMs(failures: number): number {
+  return Math.min(60_000, 2_000 * 2 ** Math.max(0, failures));
+}
+
+/** 全局同一时间只放一段录音：新的开始时，暂停正在放的那段。 */
+export function createExclusivePlayback<P extends { pause(): void }>() {
+  let current: P | null = null;
+  return {
+    claim(player: P) {
+      if (current && current !== player) {
+        try {
+          current.pause();
+        } catch {
+          // 播放器可能已经被释放，这时本来也不会出声。
+        }
+      }
+      current = player;
+    },
+    release(player: P) {
+      if (current === player) current = null;
+    },
+  };
+}
+
+/** 证件卡片上的小标记：优先用扩展名（PDF、JPG），没有就看 MIME。 */
+export function fileBadge(file: { name?: string; mime?: string; kind: string }): string {
+  const fromName = file.name?.includes('.') ? file.name.split('.').pop() : undefined;
+  const raw = fromName || file.mime?.split('/').pop() || '';
+  const upper = raw.toUpperCase();
+  if (upper === 'JPEG') return 'JPG';
+  if (/^[A-Z0-9]{1,5}$/.test(upper)) return upper;
+  return file.kind === 'pdf' ? 'PDF' : 'IMG';
+}
+
 const escapes: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
