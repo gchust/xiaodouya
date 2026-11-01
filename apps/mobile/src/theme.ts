@@ -1,4 +1,5 @@
 import { Easing } from 'react-native-reanimated';
+import { IS_E2E } from './lib/config';
 
 /** 设计令牌，来源见 docs/design/SPEC.md。不要在页面里写新的颜色。 */
 export const colors = {
@@ -36,6 +37,7 @@ export const fonts = {
 export const spacing = { page: 22 } as const;
 
 export const motion = {
-  duration: 340,
+  // E2E 构建关掉动画：弹层滑入时元素在移动，Maestro 的点击会落空。
+  duration: IS_E2E ? 0 : 340,
   easing: Easing.bezier(0.2, 0.8, 0.2, 1),
 } as const;

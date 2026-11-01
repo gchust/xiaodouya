@@ -8,7 +8,7 @@ bash scripts/install-maestro.sh
 pnpm e2e                       # 或 pnpm e2e e2e/flows/02_records.yaml
 ```
 
-截图在 `.artifacts/e2e-*.png`，改 UI 后要逐张看。
+截图在 `.artifacts/maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在同级的 `screenshots/`。CI 上下载 `e2e-screenshots` 产物，路径相同。改 UI 后要逐张看。
 
 ## 流程的顺序
 
