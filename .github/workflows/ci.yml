@@ -124,4 +124,6 @@ jobs:
             .artifacts/maestro
             .artifacts/server.log
           retention-days: 14
-          if-no-files-found: ignore
+          if-no-files-found: warn
+          # .artifacts 是隐藏目录，默认会被跳过。
+          include-hidden-files: true
