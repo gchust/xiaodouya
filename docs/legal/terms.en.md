@@ -19,7 +19,7 @@ Xiaodouya lets a family record a baby's feeds, diapers, sleep, temperature, medi
 **Xiaodouya is not a medical device and does not give medical advice. It does not diagnose, treat, cure, or prevent any medical condition.**
 
 - The hints, next-feed estimate, knowledge cards and vaccine schedules in the app are **for reference only. When your baby is unwell, follow your doctor's advice.**
-- **Vaccine schedules are references only.** Follow your clinic's arrangements and your child's health booklet, and follow the advice of local clinicians. The schedule built into the app today follows Singapore's National Childhood Immunisation Schedule. It may not apply where you live and may not be the latest version.
+- **Vaccine schedules are references only.** Follow your clinic's arrangements and your child's health booklet, and follow the advice of local clinicians. The app shows a built-in schedule for the region you choose: today Singapore, mainland China and the United States, with no built-in schedule for other regions. A built-in schedule may not apply to your situation and may not be the latest version.
 - **Hints can be wrong or incomplete.** They are based only on what you entered, so incomplete records give unreliable results. The absence of a hint does not mean your baby is fine. The app's health content has not yet been reviewed by clinicians.
 - **Don't delay seeking care because of anything in the app.** For any question about feeding, fever, medicine or vaccination, ask a doctor or another qualified healthcare professional.
 - **In an emergency, contact local emergency services or seek care immediately.** The app cannot call for help and will not notify anyone for you.

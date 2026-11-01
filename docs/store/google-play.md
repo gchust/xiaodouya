@@ -28,7 +28,7 @@
 | 9 | **多余的权限** | 清单有 `SYSTEM_ALERT_WINDOW`（模板带的）、`READ/WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=32`）、`BIND_GET_INSTALL_REFERRER_SERVICE`（来自 `expo-application`，App 代码没有调用） | 逐个确认用不到后屏蔽。审核员会问为什么要悬浮窗权限 |
 | 10 | **明文流量** | 看到的 `AndroidManifest` 是 E2E 构建的，`usesCleartextTraffic="true"`。`android-build.sh release` 会设 `ANDROID_ALLOW_HTTP=0` | 打出正式包后确认实际是 false。数据安全表里“传输加密”的答案取决于它 |
 | 11 | **只有中文界面** | F-91 未开始。通知文字也写死中文 | 英文资料要等英文界面完成，否则只上传中文资料，或在描述里写明界面是中文 |
-| 12 | **地区内容** | 只有新加坡疫苗表（F-90），健康内容没有医护复核（F-11、F-37、F-100） | 上线地区的内容到位。不能说适用于各国 |
+| 12 | **地区内容** | 疫苗表只有新加坡、中国大陆、美国（F-90），健康内容没有医护复核（F-11、F-37、F-100） | 上线地区的内容到位。不能说适用于各国 |
 | 13 | **登录页的服务器地址** | 用户可以改服务器。App 内也能配置自己的 S3 | 决定商店版是否保留（COMPLIANCE D6） |
 
 ### 已经满足的
@@ -74,7 +74,7 @@ Google 要求非医疗器械的健康 App [在描述里明确声明](https://sup
 资料
 · 出生档案
 · 证件夹：保存证件照片和 PDF，证件号默认打码，可以打开指纹或面容验证
-· 体重图表和疫苗本（目前按新加坡国家儿童免疫计划排列，以诊所安排和健康手册为准）
+· 体重图表和疫苗本（内置新加坡、中国大陆和美国的疫苗表，以诊所安排和健康手册为准）
 
 家人
 · 用邀请码邀请家人
@@ -116,7 +116,7 @@ Memories
 Records
 - Birth profile
 - Document folder for document photos and PDFs. Document numbers are masked on screen by default, and you can turn on fingerprint or face verification
-- Weight chart and vaccine record (currently follows Singapore's National Childhood Immunisation Schedule; follow your clinic's arrangements and health booklet)
+- Weight chart and vaccine record (built-in schedules for Singapore, mainland China and the United States; follow your clinic's arrangements and health booklet)
 
 Family
 - Invite family members with a code
