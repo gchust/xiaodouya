@@ -18,8 +18,8 @@ import {
   type Units,
   vaccineStatuses,
 } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,7 +38,8 @@ import {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
-import { pickFromLibrary, queueForUpload } from '../lib/media';
+import { saveAvatar } from '../lib/avatar';
+import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import {
@@ -58,6 +59,7 @@ export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
+  const router = useRouter();
   const { events, baby, pendingCount } = useRecords();
   const region = useRegion();
   const units = useUnits();
@@ -106,15 +108,8 @@ export function TodayScreen() {
     try {
       const [file] = await pickFromLibrary({ singleImage: true });
       if (!file) return;
-      const avatar = await queueForUpload(app.uploads, file, {
-        id: Crypto.randomUUID(),
-        scope: 'avatar',
-        videoWifiOnly: false,
-      });
-      // 选照片可能花了一会儿，用最新的档案，不要盖掉家人刚改的内容。
-      const latest = app.store.getSnapshot().baby ?? baby;
-      await app.write('baby', { ...latest.data, avatar }, latest.id);
-      toast('头像换好了');
+      const undo = await saveAvatar(app, file);
+      toast('头像换好了', { undo: () => void undo() });
     } catch (error) {
       toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
     } finally {
@@ -123,6 +118,7 @@ export function TodayScreen() {
   };
 
   const openFeed = () => sheet.open('喂奶', () => <FeedSheet />);
+  const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
   const syncLine =
     app.syncStatus === 'offline'
@@ -167,14 +163,18 @@ export function TodayScreen() {
         </View>
         <PressScale
           testID="baby-avatar"
-          accessibilityLabel="换宝宝的头像"
-          accessibilityState={{ busy: changingAvatar, disabled: !canChangeAvatar }}
-          disabled={changingAvatar || !canChangeAvatar}
+          accessibilityLabel={avatar ? '查看宝宝的头像' : '添加宝宝的头像'}
+          accessibilityState={{ busy: changingAvatar, disabled: !avatar && !canChangeAvatar }}
+          disabled={changingAvatar || (!avatar && !canChangeAvatar)}
           style={s.avatar}
-          onPress={() => void changeAvatar()}
+          onPress={() => {
+            // 还没有头像时没什么可放大的，直接选图。
+            if (avatar) router.push({ pathname: '/viewer', params: { avatar: '1' } });
+            else void changeAvatar();
+          }}
         >
-          {baby.data.avatar ? (
-            <MediaImage media={baby.data.avatar} variant="thumb" style={StyleSheet.absoluteFill} />
+          {avatar ? (
+            <MediaImage media={avatar} variant="thumb" style={StyleSheet.absoluteFill} />
           ) : (
             <Stripes style={StyleSheet.absoluteFill} />
           )}

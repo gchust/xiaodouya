@@ -2,7 +2,7 @@ import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
 import { Image } from 'expo-image';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { ImageManipulator, type ImageRef, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
@@ -32,6 +32,8 @@ export interface PickedFile {
 }
 
 const THUMB_WIDTH = 720;
+/** 编辑时要把图解码进内存，手机原图可能有上亿像素，不限制的话旋转时会内存不足。头像用不到更高的清晰度。 */
+const EDIT_MAX_SIDE = 3000;
 
 function uploadsDir(): Directory {
   const dir = new Directory(Paths.document, 'uploads');
@@ -87,7 +89,7 @@ function fromAsset(asset: ImagePicker.ImagePickerAsset): PickedFile {
  * singleImage 用于头像这种只要一张照片的地方。
  */
 export async function pickFromLibrary(options?: { singleImage?: boolean }): Promise<PickedFile[]> {
-  if (IS_E2E) return e2ePickFiles('moment');
+  if (IS_E2E) return e2ePickFiles(options?.singleImage ? 'avatar' : 'moment');
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: options?.singleImage ? ['images'] : ['images', 'videos'],
     allowsMultipleSelection: !options?.singleImage,
@@ -207,6 +209,56 @@ export async function queueForUpload(
     height: file.height,
     peaks: file.peaks,
     hasThumb: Boolean(thumb),
+  };
+}
+
+/** 把一张已有的图读进内存准备编辑。本地有副本就不走网络，否则先下载。 */
+export async function loadForEditing(api: Api, ref: MediaRef): Promise<ImageRef> {
+  const load = (uri: string) =>
+    ImageManipulator.manipulate(uri, {
+      maxWidth: EDIT_MAX_SIDE,
+      maxHeight: EDIT_MAX_SIDE,
+    }).renderAsync();
+  const local = localUriFor(ref.id, 'original');
+  if (local) return load(local);
+  // 放在 uploads 目录而不是缓存：退出登录时会清掉，下一个登录的人看不到。
+  const target = new File(uploadsDir(), `${ref.id}-editing`);
+  try {
+    const { urls } = await api.mediaUrls([{ id: ref.id, variant: 'original' }]);
+    const url = urls[0]?.url;
+    if (!url) throw new Error('no url');
+    if (target.exists) target.delete();
+    await File.downloadFileAsync(url, target);
+    return await load(target.uri);
+  } catch {
+    // 不把原始错误显示出来：里面可能带着签名链接。
+    throw new Error('原图暂时取不到，联网后再试一次');
+  } finally {
+    if (target.exists) target.delete();
+  }
+}
+
+export function rotateImage(image: ImageRef): Promise<ImageRef> {
+  return ImageManipulator.manipulate(image).rotate(90).renderAsync();
+}
+
+export function cropImage(
+  image: ImageRef,
+  rect: { originX: number; originY: number; width: number; height: number },
+): Promise<ImageRef> {
+  return ImageManipulator.manipulate(image).crop(rect).renderAsync();
+}
+
+/** 编辑结果写成文件。旋转、裁剪都在内存里做，只在这里编码一次，画质不会一轮轮变差。 */
+export async function savedImageFile(image: ImageRef): Promise<PickedFile> {
+  const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.92 });
+  return {
+    uri: saved.uri,
+    kind: 'image',
+    mime: 'image/jpeg',
+    size: fileSize(saved.uri),
+    width: saved.width,
+    height: saved.height,
   };
 }
 
