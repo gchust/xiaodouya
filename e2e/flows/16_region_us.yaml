@@ -35,11 +35,11 @@ appId: com.gchust.xiaodouya
     element: { id: vaccine-row-hepb-1 }
 - assertVisible: { id: vaccine-row-hepb-1 }
 - takeScreenshot: .artifacts/e2e-16-us-book
+# 流程 10 在新加坡的表上记的卡介苗。滚到这一行本身：表很长，标题露出来时它可能还在屏幕外
 - scrollUntilVisible:
-    element: { id: vaccine-other-section }
+    element: 卡介苗 BCG
     timeout: 60000
-# 流程 10 在新加坡的表上记的卡介苗
-- assertVisible: 卡介苗 BCG
+- assertVisible: { id: vaccine-other-section }
 - scrollUntilVisible:
     element: { id: vaccine-disclaimer }
 - assertVisible:

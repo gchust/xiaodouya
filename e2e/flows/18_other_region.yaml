@@ -23,10 +23,9 @@ appId: com.gchust.xiaodouya
     timeout: 30000
 - assertNotVisible: { id: vaccine-row-bcg }
 - takeScreenshot: .artifacts/e2e-18-other-book
-# 流程 10 和 17 记的都在
+# 流程 10 和 17 记的都在。新的排在前面，所以滚到较早的那一条
 - scrollUntilVisible:
-    element: { id: vaccine-other-section }
-- assertVisible: 卡介苗 BCG
+    element: 卡介苗 BCG
 - assertVisible: Typhoid
 # 没有表可选，弹层直接填名字
 - scrollUntilVisible:
@@ -44,8 +43,7 @@ appId: com.gchust.xiaodouya
     notVisible: { id: vaccine-save }
     timeout: 10000
 - scrollUntilVisible:
-    element: { id: vaccine-other-section }
-- assertVisible: Rabies
+    element: Rabies
 # 今天页没有疫苗提醒
 - tapOn: { id: tab-today }
 - extendedWaitUntil:
