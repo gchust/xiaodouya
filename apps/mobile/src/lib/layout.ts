@@ -51,3 +51,39 @@ export function keyboardLift(
 export function sheetMaxHeight(currentHeight: number, lift: number, topInset: number): number {
   return Math.max(0, Math.min(currentHeight * 0.88, currentHeight - lift - topInset));
 }
+
+/**
+ * 正方形裁剪框里实际看到的是原图的哪一块。
+ * 图片先按短边铺满框（zoom = 1），再放大 zoom 倍、平移 (x, y)，平移量和 clampPan 一样以框的中心为原点。
+ */
+export function cropRect({
+  frame,
+  imageWidth,
+  imageHeight,
+  zoom,
+  x,
+  y,
+}: {
+  frame: number;
+  imageWidth: number;
+  imageHeight: number;
+  zoom: number;
+  x: number;
+  y: number;
+}): { originX: number; originY: number; width: number; height: number } {
+  const shortSide = Math.min(imageWidth, imageHeight);
+  const dpPerPixel = (frame / shortSide) * zoom;
+  const side = Math.max(1, Math.min(shortSide, Math.round(frame / dpPerPixel)));
+  // 原生裁剪只接受整数，也不接受超出图片的范围。
+  const origin = (imageSize: number, offset: number) =>
+    Math.min(
+      imageSize - side,
+      Math.max(0, Math.round(imageSize / 2 - offset / dpPerPixel - side / 2)),
+    );
+  return {
+    originX: origin(imageWidth, x),
+    originY: origin(imageHeight, y),
+    width: side,
+    height: side,
+  };
+}

@@ -1,7 +1,9 @@
+import { Buffer } from 'node:buffer';
 import {
   AcceptInviteRequest,
   type ApiError,
   type AuthResponse,
+  accountDeletionOutcome,
   type BabyData,
   CompleteUploadRequest,
   CreateFamilyRequest,
@@ -10,23 +12,32 @@ import {
   canReadMediaScope,
   canWriteCollection,
   collections,
+  DeleteAccountRequest,
   defaultPrefs,
   describeEvent,
+  EMAIL_CODE_COOLDOWN_SECONDS,
   type EventData,
   effectiveUnits,
+  type FamilyExport,
   type FamilyMember,
+  ForgotPasswordRequest,
+  formatBytes,
   isAllowedMime,
   isFormulaData,
   LoginRequest,
   MediaUrlsRequest,
   type MediaUrlsResponse,
   type MeResponse,
+  mediaCategory,
   type PendingInvite,
   Prefs,
+  type PublicConfig,
   PushTokenRequest,
   parseCollectionData,
   RegisterRequest,
+  ResetPasswordRequest,
   type Role,
+  type SendEmailCodeResponse,
   type ServerRecord,
   StorageConfigInput,
   type StorageConfigView,
@@ -37,13 +48,16 @@ import {
   UpdateMemberRequest,
   UploadUrlRequest,
   type UploadUrlResponse,
+  VerifyEmailRequest,
 } from '@xiaodouya/shared';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
 import type { z } from 'zod';
+import { clientIpFrom } from './client-ip';
 import type { Config } from './config';
 import {
+  burnPasswordCheck,
   encryptSecret,
   hashPassword,
   newInviteCode,
@@ -52,7 +66,18 @@ import {
   verifyPassword,
 } from './crypto';
 import type { Sql } from './db';
+import {
+  type CodePurpose,
+  consumeEmailCode,
+  emailCodeCooldown,
+  issueEmailCode,
+  matchEmailCode,
+} from './emailCodes';
+import type { Mailer } from './mailer';
+import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
 import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './notifier';
+import { enqueueFamilyObjects, processPendingDeletions } from './objectDeletions';
+import { countedBytes, familyQuotaBytes, liveReferences, platformUsage, uuidsIn } from './quota';
 import {
   activeStorage,
   assertEndpointAllowed,
@@ -76,6 +101,19 @@ const MEMORY_URL_TTL = 3600;
 const DOCUMENT_URL_TTL = 600;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const INVITE_WINDOW_MS = 15 * 60_000;
+const REGISTER_WINDOW_MS = 3_600_000;
+const UPLOAD_URL_WINDOW_MS = 3_600_000;
+/** 和 RATE_SYNC_PER_10MIN 对应，改了要一起改。 */
+const SYNC_WINDOW_MINUTES = 10;
+const SYNC_BODY_BYTES = 5 * 1024 * 1024;
+/**
+ * App 能产生的最大记录约 280 KB（2 万字占 60 KB，100 个带波形的文件引用约 220 KB），留点余量。
+ * 请求体上限挡不住这个：校验用的是 looseObject，多余字段会原样入库，而数据库是最贵的资源。
+ */
+const MAX_RECORD_BYTES = 512 * 1024;
+const HOUR_MS = 3_600_000;
+const INVALID_CODE_MESSAGE = '验证码不正确或已过期';
+const MAIL_DISABLED_MESSAGE = '这台服务器没有配置邮件，请联系部署它的人';
 /** 每次检查只是一条很轻的查询，但每台前台手机都在轮询，不能再密了。 */
 const DEFAULT_LONG_POLL = { intervalMs: 2_000, timeoutMs: 25_000 };
 
@@ -83,6 +121,8 @@ interface AppContext {
   sql: Sql;
   config: Config;
   notifier?: Notifier;
+  /** null 表示这台服务器不发邮件：跳过邮箱验证，也不能自助找回密码。 */
+  mailer?: Mailer | null;
   /** 路径前缀。Edge Function 收到的路径带函数名，比如 /api/v1/me。 */
   basePath?: string;
   longPoll?: { intervalMs: number; timeoutMs: number };
@@ -98,6 +138,7 @@ interface AuthedUser {
   email: string;
   displayName: string;
   prefs: Prefs;
+  emailVerified: boolean;
 }
 
 interface Membership {
@@ -196,11 +237,14 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  * 键里有邮箱，只存哈希。
  */
 async function allowAttempt(sql: Sql, key: string, limit: number, windowMs: number) {
-  await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
+  // 过期的行由 upsert 原地复用，不用每次都扫表清理。没配定时任务的自建服务器也要偶尔清一下。
+  if (Math.random() < 0.01) await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
   const [row] = await sql<{ count: number }[]>`
     INSERT INTO rate_limits (key_hash, count, reset_at)
     VALUES (${sha256(key)}, 1, now() + interval '1 millisecond' * ${windowMs})
-    ON CONFLICT (key_hash) DO UPDATE SET count = rate_limits.count + 1
+    ON CONFLICT (key_hash) DO UPDATE SET
+      count = CASE WHEN rate_limits.reset_at < now() THEN 1 ELSE rate_limits.count + 1 END,
+      reset_at = CASE WHEN rate_limits.reset_at < now() THEN EXCLUDED.reset_at ELSE rate_limits.reset_at END
     RETURNING count`;
   return (row?.count ?? 0) <= limit;
 }
@@ -229,6 +273,7 @@ export function createApp({
   sql,
   config,
   notifier = noopNotifier,
+  mailer = null,
   basePath = '/',
   longPoll = DEFAULT_LONG_POLL,
   background = () => {},
@@ -261,7 +306,43 @@ export function createApp({
     return c.json({ ok: true });
   });
 
+  app.get('/v1/config', (c) =>
+    c.json<PublicConfig>({
+      allowCustomStorage: config.allowCustomStorage,
+      passwordReset: Boolean(mailer),
+      emailVerification: Boolean(mailer),
+    }),
+  );
+
   // ─── 账号 ─────────────────────────────────────────────
+
+  /**
+   * 生成验证码和发信都在响应之后做：查账号、写库、调邮件 API 都会花时间，
+   * 放在响应之前的话，从响应时间就能看出邮箱有没有注册。
+   */
+  function sendCodeLater(
+    purpose: CodePurpose,
+    target: () => Promise<{ id: string; email: string } | undefined>,
+  ) {
+    if (!mailer) return;
+    const task = async () => {
+      const user = await target();
+      if (!user) return;
+      const code = await issueEmailCode(sql, config.appSecret, user.id, purpose);
+      if (!code) return;
+      await mailer.send(
+        purpose === 'verify_email'
+          ? verifyEmailMail(user.email, code)
+          : resetPasswordMail(user.email, code),
+      );
+    };
+    background(
+      task().catch((error: unknown) => {
+        // 只记错误原因，不记收件人和验证码。
+        console.error('验证码邮件发送失败', error instanceof Error ? error.message : 'unknown');
+      }),
+    );
+  }
 
   async function createSession(userId: string): Promise<string> {
     const token = newToken();
@@ -281,8 +362,11 @@ export function createApp({
     return invite ?? null;
   }
 
-  const clientKey = (c: { req: { header(name: string): string | undefined } }) =>
-    c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local';
+  const clientIp = (c: { req: { header(name: string): string | undefined } }) =>
+    clientIpFrom((name) => c.req.header(name), config.clientIp);
+  /** 带着邮箱，拿不到来源时共用 unknown 也只影响这一个邮箱。找回密码后要清除同一个键。 */
+  const loginIpKey = (c: Parameters<typeof clientIp>[0], email: string) =>
+    `login:${clientIp(c) ?? 'unknown'}:${email}`;
 
   app.post('/v1/auth/register', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
     const body = await parseBody(c, RegisterRequest);
@@ -290,6 +374,19 @@ export function createApp({
       if (!body.inviteCode) fail(403, 'signup_closed', '这台服务器不开放注册，需要家人的邀请码');
       if (!(await findValidInvite(body.inviteCode)))
         fail(403, 'invalid_invite', '邀请码无效或已过期');
+    }
+    // 放在算哈希之前：scrypt 是这个接口最贵的一步。
+    // 拿不到来源时不按来源限制，否则所有人共用一个计数；总量限制不看来源，换地址绕不过。
+    const ip = clientIp(c);
+    const { registerPerIpHour, registerGlobalHour } = config.limits;
+    if (
+      (ip &&
+        registerPerIpHour > 0 &&
+        !(await allowAttempt(sql, `register:${ip}`, registerPerIpHour, REGISTER_WINDOW_MS))) ||
+      (registerGlobalHour > 0 &&
+        !(await allowAttempt(sql, 'register', registerGlobalHour, REGISTER_WINDOW_MS)))
+    ) {
+      fail(429, 'too_many_attempts', '注册的人太多了，请过一会儿再试');
     }
     const email = normalizeEmail(body.email);
     const id = crypto.randomUUID();
@@ -300,21 +397,27 @@ export function createApp({
       ON CONFLICT (email) DO NOTHING RETURNING id`;
     if (inserted.length === 0) fail(409, 'email_taken', '这个邮箱已经注册过了，可以直接登录');
     const token = await createSession(id);
+    // 超过上限只是不发信，注册本身成功，App 的验证页可以重发。否则注册接口就成了给陌生邮箱群发的工具。
+    // 拿不到来源时跳过这一条，只剩上面不看来源的注册总量限制。
+    if (mailer && (!ip || (await allowAttempt(sql, `register-mail:${ip}`, 20, HOUR_MS)))) {
+      sendCodeLater('verify_email', async () => ({ id, email }));
+    }
     return c.json<AuthResponse>({ token, user: { id, email, displayName: body.displayName } }, 201);
   });
 
   app.post('/v1/auth/login', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
     const body = await parseBody(c, LoginRequest);
     const email = normalizeEmail(body.email);
-    // 第二条不看来源：代理后面 X-Forwarded-For 的第一段可能是客户端自己填的，换着填就能绕过第一条。
+    // 第二条不看来源：部署配错时来源可能是客户端自己填的，换着填就能绕过第一条。
     // 代价是有人能让某个邮箱 15 分钟内登录不了，已登录的设备不受影响。
     const allowed =
-      (await allowAttempt(sql, `login:${clientKey(c)}:${email}`, 10, LOGIN_WINDOW_MS)) &&
+      (await allowAttempt(sql, loginIpKey(c, email), 10, LOGIN_WINDOW_MS)) &&
       (await allowAttempt(sql, `login:${email}`, 50, LOGIN_WINDOW_MS));
     if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
     const [user] = await sql<
       { id: string; password_hash: string; display_name: string }[]
     >`SELECT id, password_hash, display_name FROM users WHERE email = ${email}`;
+    if (!user) await burnPasswordCheck(body.password);
     const valid = user ? await verifyPassword(body.password, user.password_hash) : false;
     if (!user || !valid) fail(401, 'bad_credentials', '邮箱或密码不正确');
     const token = await createSession(user.id);
@@ -322,6 +425,61 @@ export function createApp({
       token,
       user: { id: user.id, email, displayName: user.display_name },
     });
+  });
+
+  // 找回密码的两个接口，响应都不能泄露邮箱是否存在：限流只看来源和邮箱字符串，真假邮箱计数相同。
+  app.post('/v1/auth/password/forgot', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const body = await parseBody(c, ForgotPasswordRequest);
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const email = normalizeEmail(body.email);
+    // 拿不到来源时跳过这一条：所有人共用一个计数的话，一个人就能挡住全部用户找回密码。
+    const ip = clientIp(c);
+    if (ip && !(await allowAttempt(sql, `forgot:${ip}`, 20, LOGIN_WINDOW_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    }
+    // 超过发送上限只是不发信，响应不变：这条限制防的是轰炸别人的邮箱，也限制了换验证码继续猜的次数。
+    const allowed =
+      (await allowAttempt(sql, `forgot-hour:${email}`, 5, HOUR_MS)) &&
+      (await allowAttempt(sql, `forgot-day:${email}`, 10, 24 * HOUR_MS));
+    if (allowed) {
+      sendCodeLater('reset_password', async () => {
+        const [user] = await sql<{ id: string }[]>`SELECT id FROM users WHERE email = ${email}`;
+        return user ? { id: user.id, email } : undefined;
+      });
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post('/v1/auth/password/reset', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const body = await parseBody(c, ResetPasswordRequest);
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const email = normalizeEmail(body.email);
+    const allowed =
+      (await allowAttempt(sql, `reset:${clientIp(c) ?? 'unknown'}:${email}`, 20, HOUR_MS)) &&
+      (await allowAttempt(sql, `reset:${email}`, 20, HOUR_MS));
+    if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    const matched = await matchEmailCode(sql, config.appSecret, email, 'reset_password', body.code);
+    if (!matched) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    // 哈希放在事务外：scrypt 很慢，连接池可能只有 1 个连接。
+    const passwordHash = await hashPassword(body.newPassword);
+    const changed = await sql.begin(async (tx) => {
+      if (!(await consumeEmailCode(tx, 'reset_password', matched))) return false;
+      await tx`UPDATE users SET
+          password_hash = ${passwordHash},
+          email_verified_at = COALESCE(email_verified_at, now())
+        WHERE id = ${matched.userId}`;
+      // 和命令行重置一样：旧设备上的登录全部失效，防止遗失的手机继续访问。
+      await tx`DELETE FROM sessions WHERE user_id = ${matched.userId}`;
+      await tx`DELETE FROM email_codes WHERE user_id = ${matched.userId}`;
+      // 本人往往是猜错太多次才来改密码的，不解除的话改完还是登录不了。
+      await tx`DELETE FROM rate_limits WHERE key_hash = ANY(${[
+        sha256(loginIpKey(c, email)),
+        sha256(`login:${email}`),
+      ]})`;
+      return true;
+    });
+    if (!changed) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    return c.json({ ok: true });
   });
 
   // ─── 需要登录 ──────────────────────────────────────────
@@ -337,11 +495,12 @@ export function createApp({
         email: string;
         display_name: string;
         prefs: unknown;
+        email_verified_at: Date | null;
         family_id: string | null;
         role: Role | null;
         label: string | null;
       }[]
-    >`SELECT u.id, u.email, u.display_name, u.prefs, m.family_id, m.role, m.label
+    >`SELECT u.id, u.email, u.display_name, u.prefs, u.email_verified_at, m.family_id, m.role, m.label
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       LEFT JOIN memberships m ON m.user_id = u.id
@@ -355,6 +514,7 @@ export function createApp({
       email: row.email,
       displayName: row.display_name,
       prefs: mergePrefs(row.prefs),
+      emailVerified: row.email_verified_at !== null,
     });
     c.set(
       'membership',
@@ -416,6 +576,7 @@ export function createApp({
     }
     return {
       user: { id: user.id, email: user.email, displayName: user.displayName },
+      emailVerified: user.emailVerified || !mailer,
       family,
       role: m?.role ?? null,
       label: m?.label ?? null,
@@ -426,6 +587,52 @@ export function createApp({
   }
 
   v1.get('/me', async (c) => c.json(await buildMe(c.get('user'), c.get('membership'))));
+
+  v1.post('/me/email/send-code', async (c) => {
+    const user = c.get('user');
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    if (user.emailVerified) {
+      return c.json<SendEmailCodeResponse>({ emailVerified: true, retryAfterSeconds: 0 });
+    }
+    const wait = await emailCodeCooldown(sql, user.id, 'verify_email');
+    if (wait > 0) {
+      return c.json<SendEmailCodeResponse>({ emailVerified: false, retryAfterSeconds: wait });
+    }
+    if (!(await allowAttempt(sql, `verify-send:${user.id}`, 5, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '发送次数太多了，请稍后再试');
+    }
+    sendCodeLater('verify_email', async () => ({ id: user.id, email: user.email }));
+    return c.json<SendEmailCodeResponse>({
+      emailVerified: false,
+      retryAfterSeconds: EMAIL_CODE_COOLDOWN_SECONDS,
+    });
+  });
+
+  v1.post('/me/email/verify', async (c) => {
+    const user = c.get('user');
+    const membership = c.get('membership');
+    if (!mailer) fail(503, 'mail_disabled', MAIL_DISABLED_MESSAGE);
+    const body = await parseBody(c, VerifyEmailRequest);
+    if (user.emailVerified) return c.json(await buildMe(user, membership));
+    if (!(await allowAttempt(sql, `verify:${user.id}`, 20, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
+    }
+    const matched = await matchEmailCode(
+      sql,
+      config.appSecret,
+      user.email,
+      'verify_email',
+      body.code,
+    );
+    if (!matched) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    const verified = await sql.begin(async (tx) => {
+      if (!(await consumeEmailCode(tx, 'verify_email', matched))) return false;
+      await tx`UPDATE users SET email_verified_at = now() WHERE id = ${user.id}`;
+      return true;
+    });
+    if (!verified) fail(400, 'invalid_code', INVALID_CODE_MESSAGE);
+    return c.json(await buildMe({ ...user, emailVerified: true }, membership));
+  });
 
   v1.put('/me/prefs', async (c) => {
     const prefs = await parseBody(c, Prefs);
@@ -446,7 +653,127 @@ export function createApp({
     return c.json({ ok: true });
   });
 
+  // 用 POST 而不是带请求体的 DELETE：有些代理和客户端会丢掉 DELETE 的请求体。
+  v1.post('/me/delete', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const user = c.get('user');
+    const body = await parseBody(c, DeleteAccountRequest);
+    if (!(await allowAttempt(sql, `delete-account:${user.id}`, 10, LOGIN_WINDOW_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
+    }
+    const [row] = await sql<
+      { password_hash: string }[]
+    >`SELECT password_hash FROM users WHERE id = ${user.id}`;
+    // 不能用 401：App 收到 unauthenticated 会回到登录页。
+    if (!row || !(await verifyPassword(body.password, row.password_hash))) {
+      fail(403, 'wrong_password', '密码不正确');
+    }
+    const outcome = await sql.begin(async (tx) => {
+      const [mine] = await tx<
+        { family_id: string }[]
+      >`SELECT family_id FROM memberships WHERE user_id = ${user.id}`;
+      if (mine) {
+        // 锁住家庭再看成员：两个人同时删除时，不锁的话都以为对方还在，
+        // 会留下没有管理员的家庭，或者没有成员、文件再也删不掉的家庭。
+        await tx`SELECT id FROM families WHERE id = ${mine.family_id} FOR UPDATE`;
+        const members = await tx<{ user_id: string; role: Role }[]>`
+          SELECT user_id, role FROM memberships WHERE family_id = ${mine.family_id}`;
+        const decision = accountDeletionOutcome(
+          user.id,
+          members.map((m) => ({ userId: m.user_id, role: m.role })),
+        );
+        if (decision === 'blocked_only_admin') return decision;
+        if (decision === 'delete_family') {
+          // 顺序不能换：记录、文件记录、存储配置都随家庭级联删除，之后就不知道文件在哪了。
+          await enqueueFamilyObjects(tx, mine.family_id, UPLOAD_URL_TTL);
+          await tx`DELETE FROM families WHERE id = ${mine.family_id}`;
+        }
+      }
+      // 登录、推送令牌、成员关系、验证码随账号级联删除，记录的 created_by 置空后留给家庭。
+      await tx`DELETE FROM users WHERE id = ${user.id}`;
+      return 'deleted' as const;
+    });
+    if (outcome === 'blocked_only_admin') {
+      fail(
+        409,
+        'only_admin',
+        '你是这个家庭唯一的管理员。请先把另一位家人设为管理员，或者把其他家人都移出家庭，再删除账号。',
+      );
+    }
+    // 也会顺带处理之前失败的。没做完的留在队列里，由每天的 cli maintenance 兜底。
+    background(
+      processPendingDeletions(sql, config)
+        .then(() => {})
+        .catch((error: unknown) => {
+          console.error('清理文件失败', error instanceof Error ? error.message : 'unknown');
+        }),
+    );
+    return c.json({ ok: true });
+  });
+
   // ─── 家庭和邀请 ─────────────────────────────────────────
+
+  v1.get('/family/export', async (c) => {
+    const m = requireFamily(c);
+    const user = c.get('user');
+    if (!(await allowAttempt(sql, `export:${user.id}`, 10, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '导出太频繁了，请稍后再试');
+    }
+    const readable = collections.filter((name) => canReadCollection(m.role, name));
+    const [family] = await sql<
+      { id: string; name: string }[]
+    >`SELECT id, name FROM families WHERE id = ${m.familyId}`;
+    const members = await sql<{ user_id: string; label: string; role: Role }[]>`
+      SELECT user_id, label, role FROM memberships WHERE family_id = ${m.familyId} ORDER BY created_at`;
+    const records = await sql<RecordRow[]>`
+      SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
+      WHERE family_id = ${m.familyId} AND NOT deleted AND collection = ANY(${readable})
+      ORDER BY seq`;
+    // 字段逐个列出，不用 SELECT *：object_key 和存储配置不能出现在导出文件里。
+    const media = await sql<
+      {
+        id: string;
+        variant: FamilyExport['media'][number]['variant'];
+        scope: FamilyExport['media'][number]['scope'];
+        mime: string;
+        size: string;
+        filename: string | null;
+        created_at: Date;
+      }[]
+    >`SELECT id, variant, scope, mime, size, filename, created_at FROM media
+      WHERE family_id = ${m.familyId} AND status = 'ready' AND unreferenced_at IS NULL
+      ORDER BY created_at, id, variant`;
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 10).replaceAll('-', '');
+    c.header('content-disposition', `attachment; filename="xiaodouya-export-${stamp}.json"`);
+    c.header('cache-control', 'no-store');
+    return c.json<FamilyExport>({
+      format: 'xiaodouya-export',
+      version: 1,
+      exportedAt: now.getTime(),
+      account: { id: user.id, email: user.email, displayName: user.displayName },
+      family: { id: m.familyId, name: family?.name ?? '' },
+      role: m.role,
+      members: members.map((r) => ({ userId: r.user_id, label: r.label, role: r.role })),
+      records: records.map((r) => ({
+        id: r.id,
+        collection: r.collection,
+        data: r.data,
+        updatedAt: Number(r.updated_at_client),
+        createdBy: r.created_by,
+      })),
+      media: media
+        .filter((r) => canReadMediaScope(m.role, r.scope))
+        .map((r) => ({
+          id: r.id,
+          variant: r.variant,
+          scope: r.scope,
+          mime: r.mime,
+          size: Number(r.size),
+          filename: r.filename,
+          createdAt: r.created_at.getTime(),
+        })),
+    });
+  });
 
   v1.post('/families', async (c) => {
     const user = c.get('user');
@@ -536,9 +863,31 @@ export function createApp({
 
   // ─── 同步 ─────────────────────────────────────────────
 
-  v1.post('/sync', bodyLimit({ maxSize: 5 * 1024 * 1024 }), async (c) => {
+  const syncBodyLimit = bodyLimit({
+    maxSize: SYNC_BODY_BYTES,
+    onError: () => fail(413, 'too_large', '这次同步的内容太多了'),
+  });
+
+  v1.post('/sync', syncBodyLimit, async (c) => {
     const m = requireFamily(c);
     const user = c.get('user');
+    // 同步是高频接口，再写一行 rate_limits 不划算。这里本来就要更新 last_seen_at，计数放进同一条语句，
+    // 不多一次写入，也不多一次往返，而且跨 isolate 准确。
+    const [counter] = await sql<{ sync_count: number }[]>`
+      UPDATE memberships SET
+        last_seen_at = now(),
+        sync_count = CASE
+          WHEN sync_window_at IS NULL OR sync_window_at < now() - interval '1 minute' * ${SYNC_WINDOW_MINUTES}
+          THEN 1 ELSE sync_count + 1 END,
+        sync_window_at = CASE
+          WHEN sync_window_at IS NULL OR sync_window_at < now() - interval '1 minute' * ${SYNC_WINDOW_MINUTES}
+          THEN now() ELSE sync_window_at END
+      WHERE family_id = ${m.familyId} AND user_id = ${user.id}
+      RETURNING sync_count`;
+    const { syncPerWindow } = config.limits;
+    if (syncPerWindow > 0 && (counter?.sync_count ?? 0) > syncPerWindow) {
+      fail(429, 'rate_limited', '同步太频繁了，稍后会自动重试');
+    }
     const body = await parseBody(c, SyncRequest);
     const rejected: SyncResponse['rejected'] = [];
     const created: ServerRecord[] = [];
@@ -547,7 +896,11 @@ export function createApp({
     if (body.changes.length > 0) {
       await sql.begin(async (tx) => {
         // 按家庭串行写入，才能保证 seq 严格递增且提交顺序一致。否则游标可能跳过尚未提交的记录。
-        await tx`SELECT seq FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+        const [locked] = await tx<{ record_bytes: string }[]>`
+          SELECT record_bytes FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+        let recordBytes = Number(locked?.record_bytes ?? 0);
+        const referenced = new Set<string>();
+        const unlinked = new Set<string>();
         for (const change of body.changes) {
           if (!canWriteCollection(m.role, change.collection)) {
             rejected.push({ id: change.id, reason: 'forbidden' });
@@ -563,8 +916,14 @@ export function createApp({
             continue;
           }
           const [existing] = await tx<
-            { family_id: string; updated_at_client: string; collection: string }[]
-          >`SELECT family_id, updated_at_client, collection FROM records WHERE id = ${change.id}`;
+            {
+              family_id: string;
+              updated_at_client: string;
+              collection: string;
+              deleted: boolean;
+              data: unknown;
+            }[]
+          >`SELECT family_id, updated_at_client, collection, deleted, data FROM records WHERE id = ${change.id}`;
           if (
             existing &&
             (existing.family_id !== m.familyId || existing.collection !== change.collection)
@@ -584,8 +943,30 @@ export function createApp({
             change.collection === 'baby' && !change.deleted && m.role !== 'admin'
               ? withRegion(data as BabyData, await familyRegion(tx, m.familyId))
               : data;
+          // 大小和引用都按真正入库的内容算，不是客户端发来的内容。
+          const payloadJson = JSON.stringify(payload);
+          const payloadBytes = Buffer.byteLength(payloadJson);
+          if (payloadBytes > MAX_RECORD_BYTES) {
+            rejected.push({ id: change.id, reason: 'too_large' });
+            conflicted.push(change.id);
+            continue;
+          }
+          const existingJson = existing ? JSON.stringify(existing.data) : '';
+          const growth = payloadBytes - Buffer.byteLength(existingJson);
+          // 只拦让数据变多的写入：满了之后删除和改小还要能用。正常家庭一辈子也到不了，见 docs/CAPACITY.md。
+          if (
+            growth > 0 &&
+            config.familyRecordsBytes !== null &&
+            recordBytes >= config.familyRecordsBytes
+          ) {
+            rejected.push({ id: change.id, reason: 'family_data_full' });
+            conflicted.push(change.id);
+            continue;
+          }
+          recordBytes += growth;
           const [{ seq } = { seq: '0' }] = await tx<{ seq: string }[]>`
-            UPDATE families SET seq = seq + 1 WHERE id = ${m.familyId} RETURNING seq`;
+            UPDATE families SET seq = seq + 1, record_bytes = GREATEST(0, record_bytes + ${growth})
+            WHERE id = ${m.familyId} RETURNING seq`;
           const json = tx.json(payload as never);
           const [row] = await tx<RecordRow[]>`
             INSERT INTO records (id, family_id, collection, data, deleted, updated_at_client, seq, created_by, updated_by)
@@ -598,6 +979,24 @@ export function createApp({
               updated_by = EXCLUDED.updated_by
             RETURNING id, collection, data, deleted, updated_at_client, seq, created_by`;
           if (row && !existing && !change.deleted) created.push(toServerRecord(row));
+          const nowUsing = change.deleted ? [] : uuidsIn(payloadJson);
+          for (const id of nowUsing) referenced.add(id);
+          if (existing && !existing.deleted) {
+            const kept = new Set(nowUsing);
+            for (const id of uuidsIn(existingJson)) if (!kept.has(id)) unlinked.add(id);
+          }
+        }
+        if (referenced.size > 0) {
+          await tx`UPDATE media SET attached = true, unreferenced_at = NULL
+            WHERE family_id = ${m.familyId} AND id = ANY(${[...referenced]}::uuid[])
+              AND (NOT attached OR unreferenced_at IS NOT NULL)`;
+        }
+        if (unlinked.size > 0) {
+          // 要等这批全部写完再核对：同一批里可能有别的记录在引用它。
+          const live = await liveReferences(tx, m.familyId);
+          const gone = [...unlinked].filter((id) => !live.has(id));
+          await tx`UPDATE media SET unreferenced_at = now()
+            WHERE family_id = ${m.familyId} AND id = ANY(${gone}::uuid[]) AND unreferenced_at IS NULL`;
         }
       });
       if (created.length > 0) {
@@ -640,7 +1039,6 @@ export function createApp({
         records.push(...extra.map(toServerRecord));
       }
     }
-    await sql`UPDATE memberships SET last_seen_at = now() WHERE family_id = ${m.familyId} AND user_id = ${user.id}`;
     return c.json<SyncResponse>({ cursor, hasMore, records, rejected, role: m.role });
   });
 
@@ -714,17 +1112,37 @@ export function createApp({
   const objectKey = (familyId: string, scope: string, id: string, variant: string) =>
     `families/${familyId}/${scope}/${id}/${variant}`;
 
+  /** 用 4xx：上传队列把它当成永久失败，直接显示这句话，用户腾出空间后点重试。 */
+  const failOverQuota = (quota: number): never =>
+    fail(
+      413,
+      'quota_exceeded',
+      `存储空间已满（共 ${formatBytes(quota)}），删除一些回忆或证件后可以重试`,
+    );
+
   v1.post('/media/upload-url', async (c) => {
     const m = requireFamily(c);
     if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片');
+    const { uploadUrlPerWindow } = config.limits;
+    if (
+      uploadUrlPerWindow > 0 &&
+      !(await allowAttempt(
+        sql,
+        `upload-url:${c.get('user').id}`,
+        uploadUrlPerWindow,
+        UPLOAD_URL_WINDOW_MS,
+      ))
+    ) {
+      fail(429, 'rate_limited', '上传太频繁了，稍后会自动重试');
+    }
     const body = await parseBody(c, UploadUrlRequest);
     if (!isAllowedMime(body.mime, body.scope)) fail(400, 'bad_type', '不支持这种文件类型');
-    if (body.size > config.maxUploadBytes) {
-      fail(
-        413,
-        'too_large',
-        `文件太大了，最大 ${Math.round(config.maxUploadBytes / 1024 / 1024)} MB`,
-      );
+    const maxBytes = Math.min(
+      config.maxUploadBytes,
+      config.maxFileBytes[mediaCategory(body.mime, body.scope)],
+    );
+    if (body.size > maxBytes) {
+      fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(maxBytes)}`);
     }
     const [existing] = await sql<
       { family_id: string; status: string; object_key: string; storage_config_id: string | null }[]
@@ -735,13 +1153,33 @@ export function createApp({
     const storage = await activeStorage(sql, config, m.familyId);
     if (!storage) fail(503, 'no_storage', '还没有配置存储，请管理员先在「家人 → 存储」里设置');
     const key = objectKey(m.familyId, body.scope, body.id, body.variant);
-    await sql`
-      INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by)
-      VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${c.get('user').id})
-      ON CONFLICT (id, variant) DO UPDATE SET
-        mime = EXCLUDED.mime, size = EXCLUDED.size, filename = EXCLUDED.filename,
-        object_key = EXCLUDED.object_key, storage_config_id = EXCLUDED.storage_config_id`;
-    const url = await presignUpload(storage, key, body.mime, UPLOAD_URL_TTL);
+    await sql.begin(async (tx) => {
+      // 自己的存储不花平台的钱，不用配额。查询和预留要在同一把锁里，否则并行上传会一起通过检查。
+      if (!storage.configId) {
+        const [family] = await tx<{ quota_mb: string | null }[]>`
+          SELECT quota_mb FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+        const quota = familyQuotaBytes(config, family?.quota_mb ?? null);
+        if (quota !== null) {
+          const usage = await platformUsage(tx, m.familyId, body);
+          if (countedBytes(usage, quota) + body.size > quota) failOverQuota(quota);
+        }
+      }
+      await tx`
+        INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by)
+        VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${c.get('user').id})
+        ON CONFLICT (id, variant) DO UPDATE SET
+          mime = EXCLUDED.mime, size = EXCLUDED.size, filename = EXCLUDED.filename,
+          object_key = EXCLUDED.object_key, storage_config_id = EXCLUDED.storage_config_id,
+          reserved_at = now()`;
+    });
+    const url = await presignUpload(
+      storage,
+      key,
+      body.mime,
+      body.size,
+      UPLOAD_URL_TTL,
+      config.bindUploadSize,
+    );
     return c.json<UploadUrlResponse>({
       url,
       headers: { 'Content-Type': body.mime },
@@ -782,7 +1220,26 @@ export function createApp({
       await deleteObject(storage, row.object_key);
       fail(409, 'size_mismatch', '文件大小不一致，请重新上传');
     }
-    await sql`UPDATE media SET status = 'ready' WHERE id = ${id}::uuid AND variant = ${variant}`;
+    // 预留可能已经过期被别的文件占了，或者配额被调低了，所以这里要再查一次。
+    const overQuota = await sql.begin(async (tx) => {
+      if (!row.storage_config_id) {
+        const [family] = await tx<{ quota_mb: string | null }[]>`
+          SELECT quota_mb FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+        const quota = familyQuotaBytes(config, family?.quota_mb ?? null);
+        if (quota !== null) {
+          const usage = await platformUsage(tx, m.familyId, { id, variant });
+          if (countedBytes(usage, quota) + head.size > quota) {
+            await deleteObject(storage, row.object_key);
+            await tx`DELETE FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
+            return quota;
+          }
+        }
+      }
+      await tx`UPDATE media SET status = 'ready' WHERE id = ${id}::uuid AND variant = ${variant}`;
+      return null;
+    });
+    // 在事务外抛错：事务里抛错会把上面的删除回滚。
+    if (overQuota !== null) failOverQuota(overQuota);
     return c.json({ ok: true });
   });
 
@@ -872,9 +1329,13 @@ export function createApp({
     });
   });
 
-  async function validateStorageInput(input: StorageConfigInput) {
-    if (!config.allowCustomStorage)
-      fail(403, 'custom_storage_disabled', '这台服务器不允许自定义存储');
+  async function validateStorageInput(familyId: string, input: StorageConfigInput) {
+    if (!config.allowCustomStorage) {
+      // 已经在用自己存储的家庭继续可以改：关闭之前存进去的文件还在那里，密钥过期不能把他们锁死。
+      const [active] = await sql`
+        SELECT 1 AS ok FROM storage_configs WHERE family_id = ${familyId} AND active`;
+      if (!active) fail(403, 'custom_storage_disabled', '这台服务器不允许自定义存储');
+    }
     if (input.provider === 'r2' && !input.accountId)
       fail(400, 'invalid_input', '请填写 Account ID');
     if (input.provider === 'other' && !input.endpoint)
@@ -918,7 +1379,7 @@ export function createApp({
   v1.post('/storage/test', async (c) => {
     const m = requireAdmin(c);
     const input = await parseBody(c, StorageConfigInput);
-    await validateStorageInput(input);
+    await validateStorageInput(m.familyId, input);
     const secret = await secretFor(m.familyId, input);
     return c.json(await testStorage(resolvedFromInput(input, secret)));
   });
@@ -926,7 +1387,7 @@ export function createApp({
   v1.put('/storage', async (c) => {
     const m = requireAdmin(c);
     const input = await parseBody(c, StorageConfigInput);
-    await validateStorageInput(input);
+    await validateStorageInput(m.familyId, input);
     const secret = await secretFor(m.familyId, input);
     const result = await testStorage(resolvedFromInput(input, secret));
     if (!result.ok) fail(400, 'storage_test_failed', result.message);
@@ -944,7 +1405,8 @@ export function createApp({
   });
 
   v1.get('/storage/usage', async (c) => {
-    const m = requireAdmin(c);
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片');
     const rows = await sql<{ category: string; total: string }[]>`
       SELECT CASE
           WHEN scope = 'document' THEN 'document'
@@ -953,8 +1415,30 @@ export function createApp({
           ELSE 'image' END AS category,
         COALESCE(SUM(size), 0) AS total
       FROM media WHERE family_id = ${m.familyId} AND status = 'ready'
+        -- 平台存储上已删除的文件会被清理；用户自己存储上的不清理，还占着他们的 Bucket。
+        AND (unreferenced_at IS NULL OR storage_config_id IS NOT NULL)
       GROUP BY 1`;
-    const usage: StorageUsage = { image: 0, video: 0, audio: 0, document: 0, total: 0 };
+    const [family] = await sql<{ quota_mb: string | null; custom: boolean }[]>`
+      SELECT quota_mb, EXISTS (
+        SELECT 1 FROM storage_configs s WHERE s.family_id = families.id AND s.active
+      ) AS custom FROM families WHERE id = ${m.familyId}`;
+    const quota =
+      family?.custom || !config.serverStorage
+        ? null
+        : familyQuotaBytes(config, family?.quota_mb ?? null);
+    const platform = await platformUsage(sql, m.familyId);
+    const usage: StorageUsage = {
+      image: 0,
+      video: 0,
+      audio: 0,
+      document: 0,
+      total: 0,
+      quota,
+      quotaUsed: countedBytes(platform, quota ?? Number.MAX_SAFE_INTEGER),
+      pending: platform.pending,
+      trash: platform.trash,
+      trashDays: config.mediaTrashDays,
+    };
     for (const row of rows) {
       const value = Number(row.total);
       usage[row.category as 'image' | 'video' | 'audio' | 'document'] = value;

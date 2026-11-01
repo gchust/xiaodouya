@@ -29,7 +29,7 @@
 | **免费版没有自动备份** | 数据库出事就全没了 | 必须配置第 8 步的备份，并且演练一次恢复 |
 | **一周没有足够的数据库活动，项目会被暂停** | 暂停后 App 连不上服务器，手机上的记录还在，恢复后接着同步 | 全家天天用一般不会触发，每天的备份也是真实的数据库活动，但 Supabase 没有承诺这样一定不会暂停。暂停后到控制台点 Restore。不要为了防暂停写假请求 |
 
-其他额度（以 [Supabase 定价页](https://supabase.com/pricing)为准）：数据库 500 MB、流量 5 GB、Edge Function 调用每月 50 万次。App 在前台时每台手机每 25 秒调用一次长轮询，也就是每小时 144 次。
+其他额度（以 [Supabase 定价页](https://supabase.com/pricing)为准）：数据库 500 MB、流量 5 GB、Edge Function 调用每月 50 万次。App 在前台时每台手机每 25 秒调用一次长轮询，也就是每小时 144 次。能放多少家庭、什么时候要升级，算法见 [CAPACITY.md](CAPACITY.md)：免费版最先到的是调用次数，约 100 家。
 
 新记录最多晚 2 秒通知到家人：跨实例只能查数据库，每 2 秒查一次。
 
@@ -113,6 +113,11 @@ supabase secrets set --env-file supabase/.env
 | `S3_BUCKET` | Bucket 名称 |
 | `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | R2 令牌 |
 | `S3_FORCE_PATH_STYLE` | `true` |
+| `MAIL_PROVIDER` | 可选。`resend` 打开找回密码和邮箱验证；不设置就不发邮件，见[邮件和验证码](#邮件和验证码) |
+| `RESEND_API_KEY` | `MAIL_PROVIDER=resend` 时必填，Resend 控制台生成的 API Key |
+| `MAIL_FROM` | `MAIL_PROVIDER=resend` 时必填，比如 `小豆芽 <no-reply@baby.example.com>`，域名要先在 Resend 验证 |
+
+函数上不能用 `MAIL_PROVIDER=log`，设了函数会启动失败：日志在云端，验证码不能进去。
 
 Supabase 保留了 `SUPABASE_` 开头的名字，不要用它自动提供的 `SUPABASE_DB_URL`，这里要的是事务模式连接池。`DB_POOL_MAX=1`、`DB_PREPARE=false`、`DB_SSL=require` 是函数的默认值，不用设置。
 
@@ -228,10 +233,66 @@ DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouy
 pnpm build:edge
 supabase functions deploy api
 
-# 重置密码（没有邮件服务，忘记密码由部署者处理）
+# 重置密码（没有配置邮件时，忘记密码由部署者处理）
 DATABASE_URL='<Session pooler 连接串>' DB_SSL=require \
   pnpm --filter @xiaodouya/server cli reset-password someone@example.com
+
+# 想马上清掉账号删除留下的文件时手动执行。平时由下面的定时清理处理。
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require APP_SECRET='<和函数相同>' \
+S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_FORCE_PATH_STYLE=true \
+  pnpm --filter @xiaodouya/server cli purge-objects
 ```
+
+**定时清理（必须配，只有这一个定时任务）：** 清理放弃的上传、删除满 30 天的文件、账号删除后留下的文件和过期的限流计数。不配的话，这些文件一直占着 R2，已删除账号的文件也还在。在仓库添加 Variable `MAINTENANCE_ENABLED`，值是 `true`，`.github/workflows/maintenance.yml` 每天跑一次，用备份已有的那些 Secret。
+
+`APP_SECRET` 可选：只有已删除账号的家庭用过自带存储时才用到，因为要解密当时的存储密钥。平台存储（R2）的文件不需要它。
+
+- 不设置：平台存储的照常删；自带存储的留在队列里，不计重试次数，退出码不算失败，日志写明还有多少条。
+- 要处理这些文件：添加仓库 Secret `APP_SECRET`，值和函数里的相同。工作流已经读取它，没设置时是空的，不影响运行。设置了错误的值时这些记录会算失败，退出码是 1。
+
+到 Actions 页面手动运行一次，日志里是计数：
+
+```json
+{"pendingRemoved":0,"trashPurged":0,"unattachedPurged":0,"rescued":0,"failed":0,"rateLimitsRemoved":3,"deletionsDone":0,"deletionsFailed":0,"deletionsRemaining":0,"deletionsWaitingForSecret":0}
+```
+
+`rescued` 不是 0 说明同步时的标记有 Bug（文件没被删，已经救回来了），要查。`failed` 或 `deletionsFailed` 不是 0 时命令退出码是 1，下次会重试。`deletionsWaitingForSecret` 不是 0 不算失败，但这些文件要设置 `APP_SECRET` 才会删。
+
+**给单个家庭调配额**（默认值见下面的参数表）：
+
+```sql
+UPDATE families SET quota_mb = 20480 WHERE id = '<家庭 id>';  -- 20 GB；0 表示不限；NULL 恢复默认
+```
+
+**升级到带配额的版本（已上线的项目，只需要做一次）：** v0.1.0 的 APK 不用更新也能继续用：空间满时它显示服务端的那句话，有重试按钮。S3 表单还在它的界面上，保存时显示“这台服务器不允许自定义存储”。
+
+```bash
+# 1. 先确认 R2 接受把大小签进链接。不通过的话所有上传都会失败，要先 supabase secrets set S3_BIND_UPLOAD_SIZE=false
+S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_FORCE_PATH_STYLE=true \
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli check-upload-size
+# 2. 迁移。旧函数在新表结构上能继续跑，出问题可以只回滚函数
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli migrate
+# 3. 部署函数，见上面
+```
+
+已有家庭的文件从第一天起就算配额，超额的只是传不了新文件。迁移时，已删除记录里的文件进入待清理，从迁移当天算 30 天。
+
+**打开 `MAINTENANCE_ENABLED` 之前先看一眼会清掉什么。** 上传超过 30 天、从没有未删除的记录提到的文件，第一次运行就会被彻底删除，不再等宽限期。这些文件在 App 里本来就看不到，但它们是升级前就有的数据，不能恢复：
+
+```sql
+SELECT count(*), sum(size) FROM media
+WHERE status = 'ready' AND storage_config_id IS NULL AND NOT attached AND unreferenced_at IS NULL
+  AND created_at < now() - interval '30 days';
+```
+
+部署后**确认取到的是客户端地址**。依据只是一条没有官方回复的[社区讨论](https://github.com/orgs/supabase/discussions/34647)，它说 `x-forwarded-for` 是“伪造的,真实的”，而且讨论的是数据库接口，不是函数：
+
+1. 用一个**已注册**的邮箱，连续注册 21 次，每次在 `X-Forwarded-For` 里换一个假地址。前 20 次应该是 409，第 21 次是 429。如果一直是 409，说明地址能被伪造。
+2. 马上换一个网络（比如手机热点）再试一次，应该是 409。如果是 429，说明大家被算成了同一个来源，**全站每小时只能注册 20 个人**。
+
+任何一步不对，就改成 `CLIENT_IP_HEADER=cf-connecting-ip`（同一条讨论里提到它带真实地址，也没有官方确认）再试。都不行就设 `RATE_REGISTER_PER_IP_HOUR=0`，只留全站上限。
+
+升级顺序不能反的原因：新函数要读新加的列，没迁移就部署，所有需要登录的接口都会报错。反过来没问题，迁移只增加可空的列和新表，旧函数照常工作。
 
 日志在控制台的 **Edge Functions → api → Logs**。
 
@@ -359,9 +420,19 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --
 # 查看日志
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env logs -f server
 
-# 重置密码（没有邮件服务，忘记密码由部署者处理）
+# 重置密码（没有配置邮件时，忘记密码由部署者处理）
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec server \
   node dist/cli.mjs reset-password someone@example.com
+
+# 想马上清掉账号删除留下的文件时手动执行。平时由下面的定时清理处理。
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T server \
+  node dist/cli.mjs purge-objects
+```
+
+每天清理一次，这是唯一要配置的定时任务。它清理默认存储（`S3_*`）里放弃的上传和删除满 30 天的文件，也处理账号删除后留下的文件。只用 App 里配置的存储时也要配：还在用的家庭的 Bucket 它不碰，但已删除账号的文件要靠它删。容器里有 `APP_SECRET`，两种存储都能处理：
+
+```cron
+37 4 * * * cd /path/to/xiaodouya && docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T server node dist/cli.mjs maintenance
 ```
 
 ---
@@ -451,7 +522,7 @@ pnpm android:build release --clean
 
 不配置也能正常使用：**喂奶提醒是手机本地通知**，App 打开时家人的记录也会实时同步并弹出横幅。
 
-只有“App 没打开时，收到家人记录的通知”才需要推送：
+**产品已决定不做远程推送（PROGRESS 的 F-47），新版 App 也不再注册推送令牌，保持 `PUSH_ENABLED=false` 即可。** 服务端代码还在，是因为已发布的 v0.1.0 还会调用这些接口。下面的步骤只对 v0.1.0 有效：
 
 1. 在 [Firebase](https://console.firebase.google.com) 创建项目，添加 Android 应用，包名 `com.gchust.xiaodouya`（或你设置的 `ANDROID_PACKAGE`），下载 `google-services.json`。
 2. 在 [Expo](https://expo.dev) 创建项目，记下 Project ID；在项目的 Credentials 里上传 FCM V1 服务账号密钥。
@@ -466,6 +537,41 @@ pnpm android:build release --clean
 
 ---
 
+## 邮件和验证码
+
+不配置邮件也能完整使用：跳过邮箱验证，`/v1/me` 的 `emailVerified` 是 `true`，登录页显示“请部署者重置”的说明，`/v1/auth/password/*` 返回 503。自建和 CI 的 E2E 都是这样。
+
+配置 `MAIL_PROVIDER=resend` 之后：
+
+- 登录页出现“忘记密码”（App 问 `/v1/config`），凭邮件里的验证码改密码，改完所有设备都要重新登录。
+- 注册后发验证码，新版 App 在建家庭之前显示验证这一步，**可以跳过**，之后在「家人」的设置里验证。
+- 服务端不因为没验证拒绝任何操作。线上有不认识这一步的旧版 APK（v0.1.0），拒绝就等于把人锁在外面。旧版 APK 注册时用户也会收到验证邮件，只是没地方填。
+- 开启邮件之前注册的账号 `emailVerified` 是 `false`，不会被拦。设置里有“验证邮箱”，没验证也能找回密码，找回成功就算验证过。
+
+开启步骤（上线前再做，真实发信还没有验证过）：
+
+1. 在 Resend 添加并验证发件域名（SPF、DKIM）。没验证的域名发不到别人的邮箱。
+2. 把三个参数写进 `supabase secrets set` 或 `deploy/.env`，重启或重新部署。配错时服务拒绝启动，不会悄悄关掉邮件。
+3. 用一个真实邮箱走一遍注册和找回密码。发信失败只记在日志里（`验证码邮件发送失败`，只有状态码），响应不变，所以不看日志发现不了。
+
+限制：验证码 6 位，有效期 30 分钟，每个最多猜 5 次；重发冷却 60 秒。同一个邮箱的找回邮件每小时 5 封、每天 10 封，超过后响应不变但不发信；提交验证码每小时 20 次。这也意味着知道邮箱的人可以把这些额度用完，让本人一段时间内收不到邮件（已登录的设备不受影响）。
+
+## 账号删除和文件清理
+
+删除账号的请求在一个事务里删完数据库里的内容，存储里的文件写进 `pending_object_deletions` 队列，响应之后在后台开始删。后台没做完（函数被回收、存储暂时不可用）的留在队列里，失败的按 1 分钟起、最长约 17 小时退避重试。还没传完的文件要等预签名链接过期（65 分钟）后再删一次，因为手机手里的链接还有效。
+
+**兜底的是每天的定时清理 `cli maintenance`，不用单独配定时任务**，配置方法见上面两种部署的“日常维护”。没配的话，这些文件只有下一次有人删除账号时才顺带处理。想马上处理时手动跑 `cli purge-objects`，它只处理这个队列，对 `APP_SECRET` 的要求和定时清理一样。
+
+有失败时命令退出码非 0。查原因（不含密钥）：
+
+```sql
+SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_deletions ORDER BY attempts DESC LIMIT 20;
+```
+
+队列的 `storage` 列是家庭自带存储配置的快照，Secret 仍然是 `APP_SECRET` 加密的，所以更换 `APP_SECRET` 后这些记录会一直失败。对方的密钥被吊销时也会一直重试，确认不用再删后，手动删掉那一行。
+
+已经进入加密备份的数据要等备份过期才消失，公开的 CDN 域名也可能缓存文件一段时间。
+
 ## 三、参数说明
 
 ### 服务端（`deploy/.env`；Supabase 方案用 `supabase secrets`，不需要 `DOMAIN`、`POSTGRES_PASSWORD`、`SERVER_IMAGE`）
@@ -476,12 +582,26 @@ pnpm android:build release --clean
 | `POSTGRES_PASSWORD`               | 是   | —                                        | 数据库密码。用 `openssl rand -hex 24` 生成，只含十六进制字符才不会破坏连接串                              |
 | `APP_SECRET`                      | 是   | —                                        | 至少 32 字节的 base64，用 `openssl rand -base64 32` 生成。加密存储密钥。不要更换，要单独备份              |
 | `ALLOW_SIGNUP`                    | 否   | `true`                                   | `false` 时只有持邀请码才能注册                                                                            |
-| `MAX_UPLOAD_MB`                   | 否   | `4096`                                   | 单个文件的大小上限。R2 和 S3 单次上传上限都是 5 GB，不要超过                                              |
+| `MAX_UPLOAD_MB`                   | 否   | `4096`                                   | 单个文件的总上限。R2 和 S3 单次上传上限都是 5 GB，不要超过                                                |
+| `MAX_IMAGE_MB`、`MAX_AUDIO_MB`、`MAX_DOCUMENT_MB` | 否 | `50`、`200`、`50`                   | 各类文件的上限，同时受 `MAX_UPLOAD_MB` 限制。证件不管是照片还是 PDF 都算证件                              |
+| `MAX_VIDEO_MB`                    | 否   | `1024`（Compose 是 `4096`）              | 视频的上限                                                                                                |
+| `FAMILY_QUOTA_MB`                 | 否   | `5120`（Compose 是 `0`）                 | 每个家庭在默认存储上的配额，`0` 不限。依据见 [CAPACITY.md](CAPACITY.md)。单个家庭可以单独设置，见上文     |
+| `FAMILY_RECORDS_MB`               | 否   | `100`                                    | 每个家庭的记录总量，`0` 不限。正常家庭每年约 0.7 MB，防的是有人把数据库写满                               |
+| `MEDIA_TRASH_DAYS`                | 否   | `30`                                     | 记录删除后文件保留多少天。**函数和定时任务要设成一样**                                                    |
+| `CLIENT_IP_HEADER`                | 否   | `x-forwarded-for`                        | 从哪个请求头取客户端地址。Caddy 覆盖了这个头，是可信的；Supabase 要按上文确认                             |
+| `CLIENT_IP_POSITION`              | 否   | `last`                                   | 取这个头的第一段还是最后一段（`first`、`last`）。代理通常是追加，客户端能伪造前面的。取到内网地址算取不到 |
+| `RATE_REGISTER_PER_IP_HOUR`       | 否   | `20`                                     | 每个来源每小时能注册几次，`0` 不限。取不到来源时不按来源限制                                              |
+| `RATE_REGISTER_GLOBAL_HOUR`       | 否   | `1000`                                   | 全站每小时能注册几次，`0` 不限。换地址绕不过。爆发式增长时要调高                                          |
+| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次                                        |
+| `RATE_SYNC_PER_10MIN`             | 否   | `600`                                    | 每人每 10 分钟同步的次数，`0` 不限。被限流时 App 退避后自动重试，不丢数据                                 |
 | `SERVER_IMAGE`                    | 否   | `ghcr.io/gchust/xiaodouya-server:latest` | 服务端镜像，可以固定到某个版本，比如 `:v0.1.0`                                                            |
-| `ALLOW_CUSTOM_STORAGE`            | 否   | `true`                                   | `false` 时只用下面的默认存储，App 里不能改                                                                |
+| `ALLOW_CUSTOM_STORAGE`            | 否   | 配了 `S3_*` 时 `false`，否则 `true`（Compose 是 `true`） | `false` 时只用下面的默认存储，App 显示用量页，没有 S3 表单。已经在用自己存储的家庭不受影响，还能改配置 |
 | `ALLOW_PRIVATE_STORAGE_ENDPOINTS` | 否   | `false`                                  | 是否允许内网或 http 的存储地址。自建内网 MinIO 才需要打开。默认关闭是为了防止管理员探测服务器内网（SSRF） |
 | `PUSH_ENABLED`                    | 否   | `false`                                  | 启用家人记录的远程推送                                                                                    |
 | `EXPO_ACCESS_TOKEN`               | 否   | —                                        | Expo 开启推送安全时需要                                                                                   |
+| `MAIL_PROVIDER`                   | 否   | 不发邮件                                 | `resend`、`none` 或 `log`。`log` 把验证码打到终端，只能本地开发用，`NODE_ENV=production`（镜像里已设置）和 Edge Function 上会拒绝启动。拼错也拒绝启动 |
+| `RESEND_API_KEY`                  | resend 时必填 | —                               | Resend 的 API Key。是密钥，不要提交                                                                       |
+| `MAIL_FROM`                       | resend 时必填 | —                               | 发件人，比如 `小豆芽 <no-reply@baby.example.com>`，域名要先在 Resend 验证                                  |
 | `DB_POOL_MAX`                     | 否   | `10`（Edge Function 是 `1`）             | 数据库连接池大小                                                                                          |
 | `DB_PREPARE`                      | 否   | `true`（Edge Function 是 `false`）       | 是否用命名预处理语句。事务模式的连接池不支持，必须是 `false`                                              |
 | `DB_SSL`                          | 否   | 不设置（Edge Function 是 `require`）     | `require` 或 `verify-full`。不设置时遵守连接串里的 `sslmode`                                              |
@@ -499,6 +619,7 @@ pnpm android:build release --clean
 | `S3_ACCESS_KEY_ID`     | 访问密钥 ID                                                                                      |
 | `S3_SECRET_ACCESS_KEY` | 访问密钥 Secret                                                                                  |
 | `S3_FORCE_PATH_STYLE`  | R2 和大多数兼容存储用 `true`，AWS S3 用 `false`                                                  |
+| `S3_BIND_UPLOAD_SIZE`  | 默认 `true`，把声明的大小签进上传链接。`cli check-upload-size` 不通过时才关掉，文件大小仍会在上传完成时校验 |
 
 各服务商怎么填：
 
@@ -509,7 +630,7 @@ pnpm android:build release --clean
 | 阿里云 OSS（新加坡） | `https://oss-ap-southeast-1.aliyuncs.com`       | `ap-southeast-1` | `false`               |
 | MinIO                | `https://minio.example.com`                     | `us-east-1`      | `true`                |
 
-### App 内的存储设置（「家人 → 存储」，仅管理员）
+### App 内的存储设置（「家人 → 存储」，仅管理员，且服务器允许自定义存储）
 
 | 字段                          | 说明                                             |
 | ----------------------------- | ------------------------------------------------ |
@@ -545,6 +666,8 @@ pnpm android:build release --clean
 | ---------------------------------- | ---------- | ----------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_URL`              | 正式版必填 | 服务端地址，比如 `https://<project-ref>.supabase.co/functions/v1/api` 或 `https://baby.example.com`。会打包进 App，**不要放任何密钥** |
 | `EXPO_PUBLIC_API_REGION`           | 否         | Supabase Edge Function 执行区域，比如新加坡 `ap-southeast-1`；只对 Supabase 函数地址附加 `x-region` 请求标头 |
+| `EXPO_PUBLIC_TERMS_URL`            | 否         | 用户协议的网址，注册页的同意说明链接到这里。发布流程从同名的仓库变量读取。没有设置时不提这份文件 |
+| `EXPO_PUBLIC_PRIVACY_URL`          | 否         | 隐私政策的网址，同上。两个都没有设置时不显示同意说明。公开发布前必须设置      |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
 | `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |

@@ -7,7 +7,9 @@ import {
   EventData as EventDataSchema,
   emptyFormulaForm,
   type FormulaData,
+  feedDefaultsAt,
   feedMilkFields,
+  feedMilkOf,
   formulaFormFromData,
   formulaFromForm,
   formulaPresets,
@@ -16,6 +18,7 @@ import {
   iuToUg,
   kjToKcal,
   lastFeedDefaults,
+  mergeEdit,
   type NutrientKey,
   nutrientAmountText,
   nutrientKeys,
@@ -692,6 +695,101 @@ describe('沿用上一次喂奶', () => {
       formulaId: 'f1',
       formula: snapshot,
     });
+  });
+});
+
+describe('补记和修改', () => {
+  const formula = (id: string, proteinG: number) => ({
+    id,
+    data: {
+      type: 'formula',
+      name: `奶粉${id}`,
+      basis: 'per100ml',
+      values: { proteinG },
+    } as FormulaData,
+  });
+  const old = { name: '旧配方', per100ml: { proteinG: 1 } };
+  const history = [feed(dayStart + 2 * HOUR, 90, { formula: old })];
+
+  it('比所有喂奶都晚：和下一次一样，用现在的数值', () => {
+    const defaults = feedDefaultsAt(history, [formula('f1', 2)], dayStart + 5 * HOUR, during);
+    expect(defaults.formula?.per100ml.proteinG).toBe(2);
+  });
+
+  it('补记到两次喂奶之间：沿用那之前的奶粉和当时的数值，不用现在的', () => {
+    const events = [...history, feed(dayStart + 8 * HOUR, 90)];
+    const defaults = feedDefaultsAt(events, [formula('f1', 2)], dayStart + 5 * HOUR, during);
+    expect(defaults.formulaId).toBe('f1');
+    expect(defaults.formula).toEqual(old);
+  });
+
+  it('奶粉后来删了：以前的那天还是当时的奶粉', () => {
+    const events = [...history, feed(dayStart + 8 * HOUR, 90)];
+    expect(feedDefaultsAt(events, [], dayStart + 5 * HOUR, during).formula).toEqual(old);
+  });
+
+  it('补记到第一次标注之前：不猜，保持没标注', () => {
+    const defaults = feedDefaultsAt(history, [formula('f1', 2)], dayStart + HOUR, during);
+    expect(defaults.milkType).toBeUndefined();
+    expect(defaults.formula).toBeUndefined();
+    expect(feedMilkFields(defaults)).toEqual({});
+  });
+
+  it('补记到母乳那次之后：是母乳，不带奶粉', () => {
+    const events = [
+      feed(dayStart + 2 * HOUR, 60, {
+        milkType: 'breast',
+        formula: undefined,
+        formulaId: undefined,
+      }),
+      feed(dayStart + 8 * HOUR, 90),
+    ];
+    const defaults = feedDefaultsAt(events, [formula('f1', 2)], dayStart + 5 * HOUR, during);
+    expect(defaults.milkType).toBe('breast');
+    expect(defaults.formula).toBeUndefined();
+  });
+
+  /** 和 FeedSheet 保存时一样的写法。 */
+  const saved = (base: Feed, edits: Partial<Feed>, milk = feedMilkOf(base)): Feed =>
+    mergeEdit(base, base, {
+      ...base,
+      ...edits,
+      milkType: undefined,
+      formulaId: undefined,
+      formula: undefined,
+      ...feedMilkFields(milk),
+    });
+
+  it('只改时间：快照和奶粉都不变，也不换成现在的数值', () => {
+    const base = feed(dayStart + 2 * HOUR, 90, { formula: old });
+    const result = saved(base, { at: dayStart + 3 * HOUR });
+    expect(result.at).toBe(dayStart + 3 * HOUR);
+    expect(result.formula).toEqual(old);
+    expect(result.formulaId).toBe('f1');
+    expect(result.milkType).toBe('formula');
+  });
+
+  it('改时间不会给没标注的旧记录加上奶粉', () => {
+    const base: Feed = { type: 'feed', at: dayStart + 2 * HOUR, ml: 90 };
+    const result = saved(base, { at: dayStart + 3 * HOUR });
+    expect(result.milkType).toBeUndefined();
+    expect(result.formula).toBeUndefined();
+  });
+
+  it('改成母乳：奶粉字段清掉', () => {
+    const base = feed(dayStart + 2 * HOUR, 90);
+    const result = saved(base, {}, { milkType: 'breast' });
+    expect(result.milkType).toBe('breast');
+    expect(result.formulaId).toBeUndefined();
+    expect(result.formula).toBeUndefined();
+  });
+
+  it('换了奶粉：用选的那款', () => {
+    const base = feed(dayStart + 2 * HOUR, 90, { formula: old });
+    const next = { name: '新', per100ml: { proteinG: 2 } };
+    const result = saved(base, {}, { milkType: 'formula', formulaId: 'f2', formula: next });
+    expect(result.formulaId).toBe('f2');
+    expect(result.formula).toEqual(next);
   });
 });
 

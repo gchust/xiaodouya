@@ -1,4 +1,4 @@
-import { type DocumentData, formatBytes, type MediaRef } from '@xiaodouya/shared';
+import { type DocumentData, formatBytes, type MediaRef, mergeEdit } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { DownloadButton } from '../lib/DownloadButton';
+import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import {
   openDocumentFile,
@@ -107,7 +109,8 @@ export function DocumentScreen({ id }: { id: string }) {
   }
 
   const data = entry.data;
-  const update = (patch: Partial<DocumentData>) => app.write('document', { ...data, ...patch }, id);
+  // 选文件可能花了一会儿，用最新的版本，不要盖掉家人刚改的内容。
+  const latest = () => app.store.getSnapshot().documents.find((d) => d.id === id)?.data ?? data;
 
   const addFiles = async (files: PickedFile[]) => {
     if (files.length === 0) return;
@@ -121,7 +124,21 @@ export function DocumentScreen({ id }: { id: string }) {
         }),
       );
     }
-    await update({ files: [...data.files, ...refs] });
+    const current = latest();
+    await app.write('document', { ...current, files: [...current.files, ...refs] }, id);
+  };
+
+  // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。
+  const removeFile = async (file: MediaRef) => {
+    const current = latest();
+    const files = current.files.filter((f) => f.id !== file.id);
+    await app.write('document', { ...current, files }, id);
+    toast(`已移除${file.name ?? '文件'}`, {
+      undo: () => {
+        const now = latest();
+        void app.write('document', { ...now, files: [...now.files, file] }, id);
+      },
+    });
   };
 
   const guard = (kind: 'scan' | 'upload', run: () => Promise<PickedFile[]>) => async () => {
@@ -135,6 +152,8 @@ export function DocumentScreen({ id }: { id: string }) {
     }
   };
 
+  // 文件名只用文件自己的名字或证件名称，证件号码不能出现在手机的文件列表里。
+  const fileNames = downloadFileNames(data.files, { title: data.name });
   const number = data.number
     ? showNumber
       ? data.number
@@ -207,7 +226,7 @@ export function DocumentScreen({ id }: { id: string }) {
           }
           style={{ marginTop: -12 }}
         >
-          <Text style={{ fontSize: 12, color: colors.accent }}>编辑号码和日期</Text>
+          <Text style={{ fontSize: 12, color: colors.accent }}>编辑名称、号码和日期</Text>
         </Pressable>
 
         <View style={{ gap: 8 }}>
@@ -222,30 +241,51 @@ export function DocumentScreen({ id }: { id: string }) {
           ) : (
             <View style={s.files}>
               {data.files.map((file) => (
-                <Pressable
-                  key={file.id}
-                  testID={`doc-file-${file.name ?? file.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={file.name ?? '文件'}
-                  style={[s.file, { width: fileWidth }]}
-                  onPress={() => openFile(file)}
-                >
-                  <View style={s.preview}>
-                    {file.kind === 'image' ? (
-                      <MediaImage media={file} variant="thumb" style={StyleSheet.absoluteFill} />
-                    ) : (
-                      <Stripes style={[StyleSheet.absoluteFill, s.pdfBadge]}>
-                        <Mono weight="medium" style={{ fontSize: 14, color: colors.muted }}>
-                          PDF
-                        </Mono>
-                      </Stripes>
-                    )}
+                <View key={file.id} style={[s.file, { width: fileWidth }]}>
+                  <Pressable
+                    testID={`doc-file-${file.name ?? file.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={file.name ?? '文件'}
+                    style={s.fileOpen}
+                    onPress={() => openFile(file)}
+                  >
+                    <View style={s.preview}>
+                      {file.kind === 'image' ? (
+                        <MediaImage media={file} variant="thumb" style={StyleSheet.absoluteFill} />
+                      ) : (
+                        <Stripes style={[StyleSheet.absoluteFill, s.pdfBadge]}>
+                          <Mono weight="medium" style={{ fontSize: 14, color: colors.muted }}>
+                            PDF
+                          </Mono>
+                        </Stripes>
+                      )}
+                    </View>
+                    <Text numberOfLines={1} style={{ fontSize: 11, color: colors.ink }}>
+                      {file.name ?? '文件'}
+                    </Text>
+                  </Pressable>
+                  <View style={s.fileMeta}>
+                    <Muted style={{ fontSize: 10 }}>{formatBytes(file.size)}</Muted>
+                    <View style={s.fileActions}>
+                      <DownloadButton
+                        media={file}
+                        fileName={fileNames.get(file.id) ?? data.name}
+                        sensitive
+                        testID={`doc-file-download-${file.name ?? file.id}`}
+                      />
+                      <Pressable
+                        testID={`doc-file-remove-${file.name ?? file.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`移除${file.name ?? '文件'}`}
+                        // 左边紧挨着下载按钮（它的热区是 12），这边不能再往左扩，否则会点错。
+                        hitSlop={{ top: 14, bottom: 14, left: 4, right: 14 }}
+                        onPress={() => void removeFile(file)}
+                      >
+                        <Text style={{ fontSize: 11, color: colors.muted }}>移除</Text>
+                      </Pressable>
+                    </View>
                   </View>
-                  <Text numberOfLines={1} style={{ fontSize: 11, color: colors.ink }}>
-                    {file.name ?? '文件'}
-                  </Text>
-                  <Muted style={{ fontSize: 10 }}>{formatBytes(file.size)}</Muted>
-                </Pressable>
+                </View>
               ))}
             </View>
           )}
@@ -310,12 +350,20 @@ export function DocumentScreen({ id }: { id: string }) {
 function DocumentEditSheet({ id, data }: { id: string; data: DocumentData }) {
   const app = useApp();
   const sheet = useSheet();
+  const [name, setName] = useState(data.name);
   const [number, setNumber] = useState(data.number ?? '');
   const [issued, setIssued] = useState(data.issuedOn ?? '');
   const [expires, setExpires] = useState(data.expiresOn ?? '');
   const [subtitle, setSubtitle] = useState(data.subtitle ?? '');
   return (
     <>
+      <SoftInput
+        testID="doc-edit-name"
+        value={name}
+        onChangeText={setName}
+        placeholder="证件或资料名称"
+        maxLength={100}
+      />
       <SoftInput
         testID="doc-edit-subtitle"
         value={subtitle}
@@ -350,16 +398,18 @@ function DocumentEditSheet({ id, data }: { id: string; data: DocumentData }) {
       <Button
         testID="doc-edit-save"
         label="保存"
+        disabled={!name.trim()}
         onPress={() => {
+          const latest = app.store.getSnapshot().documents.find((d) => d.id === id)?.data ?? data;
           void app.write(
             'document',
-            {
-              ...data,
+            mergeEdit(data, latest, {
+              name: name.trim(),
               subtitle: subtitle.trim() || undefined,
               number: number.trim() || undefined,
               issuedOn: issued.trim() || undefined,
               expiresOn: expires.trim() || undefined,
-            },
+            }),
             id,
           );
           sheet.close();
@@ -375,7 +425,10 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   fileHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   files: { flexDirection: 'row', flexWrap: 'wrap', gap: FILE_GAP },
-  file: { gap: 6 },
+  file: { gap: 2 },
+  fileOpen: { gap: 6 },
+  fileMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  fileActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   preview: {
     aspectRatio: 3 / 4,
     borderRadius: 10,

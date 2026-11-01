@@ -9,6 +9,10 @@ import type { PickedFile } from './media';
 const PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAsElEQVRo3u3YwQnEQAwDwF24/lJLOkxpV4QfYoy2Ag+WRcj93ufI73fvTc8wAxwdcI8OsOffEKECwgA/Qn4L4QB8ASs2gAP4DfAt1AjlAekRhoBGKA5oC4UBfoR0AH4CC454QYRwAL8BHuBHKD3BFOBvoIAwoBGKA/RvIXz+DRHSAX4L4UfQCKWf/2+0EUoD2kJpgB8hHYCfwIIN8C3UIy5gCFgQofQIU0BbKAzQj/gPXRADEYK4A2MAAAAASUVORK5CYII=';
 
+// 320×160 的双色图，左上角有一块浅色：宽高不等、方向一眼能看出来，用来验证旋转和裁剪。由脚本生成。
+const AVATAR_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAUAAAACgCAIAAADywSLLAAACTklEQVR42u3TsQ0AEBRAQRuaxQBmsI7SPDqN2go68XPJG+Fd2mt+1yhZl9XWFbgEMMACGGCABTDAAAtgAQwwwAALYIABFsAAAyyAARbAAAMsgAEGWAALYIABBlgAAwywAAYYYAEsgAEGGGABDDDAAhhggAUwwAIYYIAFMMAAC2ABDDDAAAtggAEWwAADLIABFsAAAyyAAQZYAJMJsAAGWAADDLAABhhgASyAAQYYYAEMMMACGGCABTDAAhhggAUwwAALYAEMMMAAC2CAARbAAAMsgAUwwAADLIABBlgAAwywAAZYAAMMsAAGGGABLIABBhhgAQwwwAIYYIAFsCwOMMAAC2CAARbAAAMsgAFWCMAWB1gAC2ABLIAFsAAGWAALYAEsgAWwAAZYAAtgASyABbAABlgAC2ABLIAFsAAWwAALYAEsgAWwABbAAAtgASyABbAAFsAAC2ABLIAFsAAWwAALYAEsgAWwABbAAhhgASyABbAAFsACGGABLIAFsAAWwAIYYAEsgAWwABbAAhhglwMsgAWwABbAAlgAAyyABbAAFsACWAADLIAFsAAWwAJYAAMsgAWwABbAAlgAy+IAC2ABLIAFsAAWwAALYAEsgAWwABbAAAtgASyABbAAFsAAC2ABLIAFsAAWwAIYYAEsgAWwABbAAhhgASyABbAAFsACGGABLIAFsAAWwAIYYAEsgAWwABbAAlgAAyyABbAAFsACWAADLIAFsAAWwAJYAAMsgAWwABbAAlgAA+xygAWwABbAAlgAC2CABbAA1sMOYuQnSGqEqcAAAAAASUVORK5CYII=';
+
 // 最小的合法 PDF，能被系统阅读器打开。
 const PDF_TEXT = `%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
@@ -27,7 +31,7 @@ async function fixture(name: string, write: (file: File) => unknown): Promise<Fi
 }
 
 export async function e2ePickFiles(
-  purpose: 'moment' | 'document-photo' | 'document-pdf',
+  purpose: 'moment' | 'avatar' | 'document-photo' | 'document-pdf',
 ): Promise<PickedFile[]> {
   if (purpose === 'document-pdf') {
     const file = await fixture('e2e-sample.pdf', (f) => f.write(PDF_TEXT));
@@ -41,6 +45,22 @@ export async function e2ePickFiles(
       },
     ];
   }
+  if (purpose === 'avatar') {
+    const file = await fixture('e2e-avatar.png', (f) =>
+      f.write(AVATAR_PNG_BASE64, { encoding: 'base64' }),
+    );
+    return [
+      {
+        uri: file.uri,
+        kind: 'image',
+        mime: 'image/png',
+        size: file.size ?? 0,
+        name: 'e2e-avatar.png',
+        width: 320,
+        height: 160,
+      },
+    ];
+  }
   const file = await fixture(`e2e-${purpose}.png`, (f) =>
     f.write(PNG_BASE64, { encoding: 'base64' }),
   );
@@ -50,7 +70,8 @@ export async function e2ePickFiles(
       kind: 'image',
       mime: 'image/png',
       size: file.size ?? 0,
-      name: 'e2e-sample.png',
+      // 回忆用非 ASCII 的名字，流程 14b 要确认它能原样进相册（见 galleryUri）。
+      name: purpose === 'moment' ? '小豆芽 笑脸.png' : 'e2e-sample.png',
       width: 64,
       height: 64,
     },

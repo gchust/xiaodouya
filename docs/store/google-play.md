@@ -25,7 +25,7 @@
 | # | 问题 | 现状 | 要做什么 |
 |---|---|---|---|
 | 8 | **Foreground service 权限** | 生成的清单有 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`，来自依赖的默认配置。App 代码里没有打开后台播放的设置 | 不需要的话用 `android.blockedPermissions` 去掉，并回归测试。留下就要在 App content 里[声明并提供视频](https://support.google.com/googleplay/android-developer/answer/13392821) |
-| 9 | **多余的权限** | 清单有 `SYSTEM_ALERT_WINDOW`（模板带的）、`READ/WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=32`）、`BIND_GET_INSTALL_REFERRER_SERVICE`（来自 `expo-application`，App 代码没有调用） | 逐个确认用不到后屏蔽。审核员会问为什么要悬浮窗权限 |
+| 9 | **多余的权限** | 清单有 `SYSTEM_ALERT_WINDOW`（模板带的）、`READ/WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=32`，其中 `WRITE` 现在要留着：Android 12 及以下把照片和视频保存到相册时 expo-media-library 要检查它，见 F-114）、`BIND_GET_INSTALL_REFERRER_SERVICE`（来自 `expo-application`，App 代码没有调用） | 逐个确认用不到后屏蔽。审核员会问为什么要悬浮窗权限 |
 | 10 | **明文流量** | 看到的 `AndroidManifest` 是 E2E 构建的，`usesCleartextTraffic="true"`。`android-build.sh release` 会设 `ANDROID_ALLOW_HTTP=0` | 打出正式包后确认实际是 false。数据安全表里“传输加密”的答案取决于它 |
 | 11 | **只有中文界面** | F-91 未开始。通知文字也写死中文 | 英文资料要等英文界面完成，否则只上传中文资料，或在描述里写明界面是中文 |
 | 12 | **地区内容** | 疫苗表只有新加坡、中国大陆、美国（F-90），健康内容没有医护复核（F-11、F-37、F-100） | 上线地区的内容到位。不能说适用于各国 |
@@ -34,7 +34,7 @@
 ### 已经满足的
 
 - **Target API：** 生成的清单是 `targetSdkVersion=36`、`minSdkVersion=24`，满足 [2026-08-31 起新 App 和更新要 API 36](https://developer.android.com/google/play/requirements/target-sdk) 的要求。这个数字来自 React Native 的默认值，每年 8 月前后都要重新查。
-- **照片权限：** 用系统选择器，没有声明 `READ_MEDIA_IMAGES` 或 `READ_MEDIA_VIDEO`。
+- **照片权限：** 选照片用系统选择器，保存到相册只写不读，没有声明 `READ_MEDIA_IMAGES` 或 `READ_MEDIA_VIDEO`。`expo-media-library` 的默认配置会加上它们，`app.config.ts` 里已经关掉，升级依赖后要再看一眼清单。
 - **64 位：** 正式版默认 `arm64-v8a`。
 
 ### 还没确认的

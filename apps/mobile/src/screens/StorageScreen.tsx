@@ -1,5 +1,6 @@
 import {
   formatBytes,
+  quotaStatus,
   type StorageConfigInput,
   type StorageConfigView,
   type StorageProvider,
@@ -21,6 +22,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app';
+import { canEditStorage, storagePageMode } from '../lib/storagePage';
 import { colors, spacing } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import {
@@ -33,6 +35,7 @@ import {
   SectionTitle,
   Toggle,
 } from '../ui/primitives';
+import { StorageUsagePage } from './StorageUsagePage';
 
 const NOTES: Record<StorageProvider, string> = {
   r2: '推荐。下载流量不收费，适合照片和视频多的情况。创建 Bucket 时位置选离家人最近的区域。',
@@ -61,6 +64,56 @@ const emptyForm: Form = {
 };
 
 export function StorageScreen() {
+  const app = useApp();
+  const [allowCustom, setAllowCustom] = useState<boolean | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    try {
+      const allowed = await app.api.allowCustomStorage();
+      setAllowCustom(allowed || canEditStorage(allowed, (await app.api.getStorage()).source));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : '读取失败');
+    }
+  }, [app.api]);
+
+  useEffect(() => {
+    // 不是管理员的话不管服务器怎么答都只看用量，不用多等一次请求。
+    if (app.role === 'admin') void load();
+    else setAllowCustom(false);
+  }, [app.role, load]);
+
+  if (allowCustom === null) {
+    return (
+      <View style={[s.root, s.loading]} testID="storage-screen">
+        {loadError ? (
+          <>
+            <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text>
+            <Button
+              testID="storage-retry"
+              tone="outline"
+              label="重新读取"
+              height={44}
+              style={{ borderRadius: 14, alignSelf: 'stretch' }}
+              labelStyle={s.outlineLabel}
+              onPress={() => void load()}
+            />
+          </>
+        ) : (
+          <ActivityIndicator color={colors.accent} />
+        )}
+      </View>
+    );
+  }
+  return storagePageMode(app.role, allowCustom) === 'form' ? (
+    <CustomStorageForm />
+  ) : (
+    <StorageUsagePage />
+  );
+}
+
+function CustomStorageForm() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const app = useApp();
@@ -159,6 +212,7 @@ export function StorageScreen() {
     (Boolean(form.secretAccessKey) || secretKept);
 
   const total = usage?.total ?? 0;
+  const quota = usage ? quotaStatus(usage) : null;
   const share = (value: number) =>
     (total > 0 ? `${Math.max(1, (value / total) * 100)}%` : '0%') as `${number}%`;
   const statusText =
@@ -248,8 +302,22 @@ export function StorageScreen() {
             <Muted style={{ fontSize: 11 }}>证件 {formatBytes(usage?.document ?? 0)}</Muted>
           </View>
           <Muted testID="storage-total">
-            共 {formatBytes(total)} · 文件从手机直传，不经过服务器
+            共 {formatBytes(total)}
+            {usage?.quota ? `（上限 ${formatBytes(usage.quota)}）` : ''} ·
+            文件从手机直传，不经过服务器
           </Muted>
+          {quota?.warning ? (
+            <Text
+              testID="storage-quota-warning"
+              style={{
+                fontSize: 12,
+                lineHeight: 18,
+                color: quota.level === 'full' ? colors.danger : colors.accent,
+              }}
+            >
+              {quota.warning}
+            </Text>
+          ) : null}
         </View>
 
         <View style={{ gap: 8 }}>
@@ -419,6 +487,12 @@ export function StorageScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  loading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: spacing.page,
+  },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   outlineLabel: { fontSize: 15, fontWeight: '400' },

@@ -422,6 +422,95 @@ describe('同步', () => {
     expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
   });
 
+  it('viewer 不能修改已有的回忆和信，原内容不变', async () => {
+    const { admin } = await newFamily();
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const momentId = randomUUID();
+    const letterId = randomUUID();
+    const moment = { title: '第一次笑', text: '', at: 1, milestone: true, media: [] };
+    const letter = { title: '百天快乐', text: '虚构的内容', at: 1 };
+    await sync(admin.token, 0, [
+      { id: momentId, collection: 'moment', data: moment, deleted: false, updatedAt: 1 },
+      { id: letterId, collection: 'letter', data: letter, deleted: false, updatedAt: 1 },
+    ]);
+    const write = await sync(grandma.token, 0, [
+      {
+        id: momentId,
+        collection: 'moment',
+        data: { ...moment, title: '外公改的' },
+        deleted: false,
+        updatedAt: 2,
+      },
+      {
+        id: letterId,
+        collection: 'letter',
+        data: { ...letter, title: '外公改的' },
+        deleted: false,
+        updatedAt: 2,
+      },
+    ]);
+    expect(write.json.rejected.map((r) => r.reason)).toEqual(['forbidden', 'forbidden']);
+    // 被拒绝的手机拿回服务端的版本，不留下自己改的内容。
+    expect(write.json.records.find((r) => r.id === momentId)?.data).toMatchObject(moment);
+    const all = await sync(admin.token, 0);
+    expect(all.json.records.find((r) => r.id === momentId)?.data).toMatchObject(moment);
+    expect(all.json.records.find((r) => r.id === letterId)?.data).toMatchObject(letter);
+  });
+  it('修改记录时，时间可以改到以前，未知字段和记录人原样保存', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const id = randomUUID();
+    const data = { type: 'feed', at: 5000, ml: 90, byName: '爸爸', milkKind: 'formula' };
+    await sync(admin.token, 0, [{ id, collection: 'event', data, deleted: false, updatedAt: 1 }]);
+    const edited = { ...data, at: 1000, ml: 100 };
+    const result = await sync(mom.token, 0, [
+      { id, collection: 'event', data: edited, deleted: false, updatedAt: 2 },
+    ]);
+    expect(result.json.rejected).toEqual([]);
+    const all = await sync(admin.token, 0);
+    const record = all.json.records.find((r) => r.id === id);
+    expect(record?.data).toEqual(edited);
+    expect(record?.updatedAt).toBe(2);
+  });
+  it('修改回忆时新加的文件引用，未知字段不丢', async () => {
+    const { admin } = await newFamily();
+    const id = randomUUID();
+    const media = {
+      id: randomUUID(),
+      kind: 'image',
+      mime: 'image/png',
+      size: 1,
+      futureField: 'keep',
+    };
+    const moment = { title: '虚构的一刻', text: '', at: 1, milestone: false, media: [] };
+    await sync(admin.token, 0, [
+      { id, collection: 'moment', data: moment, deleted: false, updatedAt: 1 },
+    ]);
+    await sync(admin.token, 0, [
+      {
+        id,
+        collection: 'moment',
+        data: { ...moment, media: [media] },
+        deleted: false,
+        updatedAt: 2,
+      },
+    ]);
+    const all = await sync(admin.token, 0);
+    expect(all.json.records.find((r) => r.id === id)?.data).toMatchObject({ media: [media] });
+  });
+  it('viewer 能读宝宝档案，但不能换头像', async () => {
+    const { admin, family } = await newFamily();
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const avatar = (id: string) => ({ id, kind: 'image', mime: 'image/jpeg', size: 1 });
+    const mine = randomUUID();
+    await sync(admin.token, 0, [babyChange(family.id, { avatar: avatar(mine) }, 1000)]);
+    const write = await sync(grandma.token, 0, [
+      babyChange(family.id, { avatar: avatar(randomUUID()) }, 2000),
+    ]);
+    expect(write.json.rejected).toEqual([{ id: family.id, reason: 'forbidden' }]);
+    const stored = write.json.records.find((r) => r.id === family.id);
+    expect((stored!.data as { avatar: { id: string } }).avatar.id).toBe(mine);
+  });
   it('大量记录分页拉取，不遗漏', async () => {
     const { admin } = await newFamily();
     const ids = new Set<string>();
@@ -961,7 +1050,7 @@ describe('文件上传（真实 S3 协议）', () => {
     await uploadAll(admin.token, { scope: 'document', mime: 'application/pdf' });
     await uploadUrl(admin.token);
     const { json } = await api<StorageUsage>('GET', '/v1/storage/usage', { token: admin.token });
-    expect(json).toEqual({
+    expect(json).toMatchObject({
       image: bytes.length,
       video: bytes.length,
       audio: 0,

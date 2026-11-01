@@ -1,5 +1,5 @@
 # 只看回忆的家人：脚本走真实接口加入，再在 App 里用这个账号登录。
-# 必须是最后一个流程：跑完 App 里登录的是外公，不是管理员。
+# 要排在用管理员身份的流程之后：跑完 App 里登录的是外公，不是管理员。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
@@ -39,6 +39,9 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: { id: tab-today }
 - assertNotVisible: { id: tab-info }
 - assertNotVisible: { id: recall-fab }
+# 看不到修改入口。服务端也会拒绝，见 api.test.ts。
+- assertNotVisible:
+    id: moment-more-.*
 - takeScreenshot: .artifacts/e2e-20-viewer-recall
 # 能看大图
 - tapOn:
@@ -57,6 +60,8 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: recall-tab-letters }
 - assertVisible: Hello little one
 - assertNotVisible: { id: recall-fab }
+- assertNotVisible:
+    id: letter-more-.*
 - takeScreenshot: .artifacts/e2e-20-viewer-letters
 # 家人页没有管理入口
 - tapOn: { id: tab-family }
@@ -71,3 +76,21 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: export-book }
 - assertNotVisible: { id: open-storage }
 - assertNotVisible: { id: pref-doc-lock }
+# 头像能看大图，没有编辑入口。外公没有今天页，界面上到不了这里，所以用链接直接打开。
+- openLink: xiaodouya://viewer?avatar=1
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: .*的头像
+- assertNotVisible: { id: avatar-replace }
+- assertNotVisible: { id: avatar-rotate }
+- assertNotVisible: { id: avatar-crop }
+- assertNotVisible: { id: viewer-download }
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-20-viewer-avatar
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000

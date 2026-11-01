@@ -5,6 +5,11 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: tab-recall }
     timeout: 30000
+# 先打开家人页：标签切走后页面不卸载，最后要确认回来时用量是新的。
+- tapOn: { id: tab-family }
+- extendedWaitUntil:
+    visible: { id: open-storage }
+    timeout: 15000
 - tapOn: { id: tab-recall }
 - assertVisible: 第一个瞬间，从今天开始
 - takeScreenshot: .artifacts/e2e-03-recall-empty
@@ -48,3 +53,14 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: moment-save }
 - assertVisible: Hello little one
 - takeScreenshot: .artifacts/e2e-03-letters
+# Toast 可能盖住底部标签，等它消失再点
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-storage }
+- extendedWaitUntil:
+    visible:
+      text: .*已用 [0-9.]+ (KB|MB).*
+    timeout: 15000

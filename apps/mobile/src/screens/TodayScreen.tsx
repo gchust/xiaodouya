@@ -17,11 +17,11 @@ import {
   nutritionEntryText,
   summarize24h,
   summaryText,
+  timelineEntries,
   todayInsight,
   type Units,
   vaccineStatuses,
 } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -42,8 +42,9 @@ import {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
+import { saveAvatar } from '../lib/avatar';
 import { localDayBounds } from '../lib/dates';
-import { pickFromLibrary, queueForUpload } from '../lib/media';
+import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import {
@@ -59,11 +60,14 @@ import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
+/** 链接文字只有 16 高，上下各扩 14 才到 44。 */
+const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
+
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('today');
-  const router = useRouter();
   const app = useApp();
+  const router = useRouter();
   const { events, baby, pendingCount } = useRecords();
   const region = useRegion();
   const units = useUnits();
@@ -83,7 +87,7 @@ export function TodayScreen() {
   const sleepingEntry = sleeping ? events.find((e) => e.data === sleeping) : undefined;
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
-  const recent = events.filter((e) => e.data.type !== 'growth' && e.data.at <= now).slice(0, 8);
+  const recent = timelineEntries(events, now);
   const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
   const today = localDayBounds(now);
   const nutritionText = nutritionEntryText(
@@ -123,14 +127,7 @@ export function TodayScreen() {
     try {
       const [file] = await pickFromLibrary({ singleImage: true });
       if (!file) return;
-      const avatar = await queueForUpload(app.uploads, file, {
-        id: Crypto.randomUUID(),
-        scope: 'avatar',
-        videoWifiOnly: false,
-      });
-      // 选照片可能花了一会儿，用最新的档案，不要盖掉家人刚改的内容。
-      const latest = app.store.getSnapshot().baby ?? baby;
-      await app.write('baby', { ...latest.data, avatar }, latest.id);
+      await saveAvatar(app, file);
       toast('头像换好了');
     } catch (error) {
       toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
@@ -140,6 +137,7 @@ export function TodayScreen() {
   };
 
   const openFeed = () => sheet.open('喂奶', () => <FeedSheet />);
+  const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
   const syncLine =
     app.syncStatus === 'offline'
@@ -184,14 +182,18 @@ export function TodayScreen() {
         </View>
         <PressScale
           testID="baby-avatar"
-          accessibilityLabel="换宝宝的头像"
-          accessibilityState={{ busy: changingAvatar, disabled: !canChangeAvatar }}
-          disabled={changingAvatar || !canChangeAvatar}
+          accessibilityLabel={avatar ? '查看宝宝的头像' : '添加宝宝的头像'}
+          accessibilityState={{ busy: changingAvatar, disabled: !avatar && !canChangeAvatar }}
+          disabled={changingAvatar || (!avatar && !canChangeAvatar)}
           style={s.avatar}
-          onPress={() => void changeAvatar()}
+          onPress={() => {
+            // 还没有头像时没什么可放大的，直接选图。
+            if (avatar) router.push({ pathname: '/viewer', params: { avatar: '1' } });
+            else void changeAvatar();
+          }}
         >
-          {baby.data.avatar ? (
-            <MediaImage media={baby.data.avatar} variant="thumb" style={StyleSheet.absoluteFill} />
+          {avatar ? (
+            <MediaImage media={avatar} variant="thumb" style={StyleSheet.absoluteFill} />
           ) : (
             <Stripes style={StyleSheet.absoluteFill} />
           )}
@@ -311,6 +313,27 @@ export function TodayScreen() {
           ))
         )}
       </View>
+      {/* 放在时间线下面：补记不是半夜要做的事，不能和上面的快捷按钮抢位置。 */}
+      <View style={s.listFooter}>
+        <Pressable
+          testID="records-open"
+          accessibilityRole="button"
+          accessibilityLabel="查看全部记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => router.push('/records')}
+        >
+          <Text style={s.listLink}>全部记录 ›</Text>
+        </Pressable>
+        <Pressable
+          testID="backfill-open"
+          accessibilityRole="button"
+          accessibilityLabel="补记以前的记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => sheet.open('补记', () => <MoreSheet birthAt={birthAt} backfill />)}
+        >
+          <Text style={s.listLink}>＋ 补记</Text>
+        </Pressable>
+      </View>
 
       {vaccine ? (
         <Pressable
@@ -358,7 +381,7 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   );
 }
 
-function TimelineRow({
+export function TimelineRow({
   id,
   event,
   now,
@@ -475,6 +498,13 @@ const s = StyleSheet.create({
   },
   listTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink },
   list: { marginTop: 6, marginHorizontal: spacing.page },
+  listFooter: {
+    marginTop: 14,
+    marginHorizontal: spacing.page,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  listLink: { fontSize: 12, color: colors.accent },
   row: {
     flexDirection: 'row',
     gap: 8,

@@ -2,9 +2,10 @@ import postgres from 'postgres';
 import type { DbConfig } from './config';
 
 export type Sql = postgres.Sql;
+export type Tx = postgres.TransactionSql;
 
 /** 迁移只增不改：已发布的条目不能修改，需要变更就追加新的一条。 */
-const migrations: readonly string[] = [
+export const migrations: readonly string[] = [
   `
   CREATE TABLE users (
     id UUID PRIMARY KEY,
@@ -139,6 +140,62 @@ const migrations: readonly string[] = [
       END IF;
     END LOOP;
   END $$;
+  `,
+  // 配额和文件清理。
+  // reserved_at：created_at 不会随重新申请链接更新，用它判断预留过期，重传中的文件会被当成放弃。
+  // unreferenced_at：所在记录被删或文件被换下的时间，宽限期从这里算。
+  // attached：有过记录引用。没有的文件才需要定时核对，否则每次清理都要扫全部文件。
+  // sync_*：和 last_seen_at 写在同一行同一条语句里，同步限流不增加写入。
+  // record_bytes：防止一个账号把数据库写满，和 seq 一起更新。
+  `
+  ALTER TABLE families ADD COLUMN quota_mb BIGINT, ADD COLUMN record_bytes BIGINT NOT NULL DEFAULT 0;
+  ALTER TABLE media
+    ADD COLUMN reserved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN unreferenced_at TIMESTAMPTZ,
+    ADD COLUMN attached BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE memberships ADD COLUMN sync_window_at TIMESTAMPTZ, ADD COLUMN sync_count INT NOT NULL DEFAULT 0;
+  CREATE INDEX media_trash ON media(unreferenced_at) WHERE unreferenced_at IS NOT NULL;
+  CREATE INDEX media_abandoned ON media(reserved_at) WHERE status = 'pending';
+  CREATE INDEX media_unattached ON media(created_at) WHERE status = 'ready' AND NOT attached AND unreferenced_at IS NULL;
+  UPDATE families f SET record_bytes = COALESCE(
+    (SELECT SUM(octet_length(r.data::text)) FROM records r WHERE r.family_id = f.id), 0);
+  UPDATE media m SET attached = true WHERE EXISTS (
+    SELECT 1 FROM records r
+    WHERE r.family_id = m.family_id AND NOT r.deleted AND position(m.id::text IN lower(r.data::text)) > 0);
+  UPDATE media m SET unreferenced_at = now() WHERE m.status = 'ready' AND NOT m.attached AND EXISTS (
+    SELECT 1 FROM records r
+    WHERE r.family_id = m.family_id AND r.deleted AND position(m.id::text IN lower(r.data::text)) > 0);
+  `,
+  // 邮箱验证和找回密码。每人每种用途只有一个有效验证码：发新的就覆盖旧的，用过就删。
+  // 老账号不回填 email_verified_at：他们确实没验证过。服务端不因此拒绝任何操作：
+  // 线上的 v0.1.0 APK 不认识验证这一步，拒绝就等于把人锁在外面。验证由新版 App 引导。
+  `
+  ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMPTZ;
+  CREATE TABLE email_codes (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose TEXT NOT NULL CHECK (purpose IN ('verify_email', 'reset_password')),
+    code_hash TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, purpose)
+  );
+  ALTER TABLE email_codes ENABLE ROW LEVEL SECURITY;
+  `,
+  // 账号删除后还没从存储里删掉的文件，见 objectDeletions.ts。storage 是存储配置的快照（Secret 仍是加密的），
+  // 因为配置已经随家庭删除了；所以不引用 families，家庭没了这里的记录还要在。
+  `
+  CREATE TABLE pending_object_deletions (
+    id UUID PRIMARY KEY,
+    object_key TEXT NOT NULL,
+    storage JSONB,
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX pending_object_deletions_due ON pending_object_deletions(next_attempt_at);
+  ALTER TABLE pending_object_deletions ENABLE ROW LEVEL SECURITY;
   `,
 ];
 

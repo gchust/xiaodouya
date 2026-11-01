@@ -9,7 +9,7 @@ import {
 } from 'expo-audio';
 import { File } from 'expo-file-system';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   type ImageStyle,
@@ -24,6 +24,7 @@ import { useFeedback } from '../ui/overlays';
 import { Mono, Muted, Stripes } from '../ui/primitives';
 import type { Api } from './api';
 import { useApp } from './app';
+import { DownloadButton } from './DownloadButton';
 import type { PickedFile } from './media';
 import { localUriFor } from './media';
 import {
@@ -229,16 +230,20 @@ function Waveform({
 }
 
 /** 录音卡片。播放器只在点击后才加载文件，时间线上有很多录音时也不占资源。 */
-export function AudioCard({ media }: { media: MediaRef }) {
+export function AudioCard({ media, fileName }: { media: MediaRef; fileName: string }) {
   const [active, setActive] = useState(false);
   const peaks = media.peaks?.length ? media.peaks.slice(0, 28) : fallbackPeaks(media.id);
   const duration = media.durationMs ? formatMediaDuration(media.durationMs) : '';
+  const download = (
+    <DownloadButton media={media} fileName={fileName} testID={`audio-download-${media.id}`} />
+  );
   if (active) {
     return (
       <ActiveAudio
         media={media}
         peaks={peaks}
         duration={duration}
+        download={download}
         onFail={() => setActive(false)}
       />
     );
@@ -259,6 +264,7 @@ export function AudioCard({ media }: { media: MediaRef }) {
         <Waveform peaks={peaks} progress={0} />
       </View>
       <Mono style={s.audioDuration}>{duration}</Mono>
+      {download}
     </Pressable>
   );
 }
@@ -271,11 +277,13 @@ function ActiveAudio({
   media,
   peaks,
   duration,
+  download,
   onFail,
 }: {
   media: MediaRef;
   peaks: readonly number[];
   duration: string;
+  download: ReactNode;
   onFail: () => void;
 }) {
   const source = useMediaSource(media, 'original');
@@ -343,6 +351,7 @@ function ActiveAudio({
         <Waveform peaks={peaks} progress={progress} />
       </View>
       <Mono style={s.audioDuration}>{duration}</Mono>
+      {download}
     </Pressable>
   );
 }
@@ -402,6 +411,49 @@ export function useRecorder() {
   }, [recorder, elapsedMs, clearTimer]);
 
   return { recording, elapsedMs, start, stop };
+}
+
+/** 修改回忆时，已经在记录里的文件。样子和刚选的一样，用户不需要区分。 */
+export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: () => void }) {
+  const visual = media.kind === 'image' || media.kind === 'video';
+  return (
+    <View style={s.localThumb} testID="existing-media">
+      {visual ? (
+        <MediaImage media={media} variant="thumb" style={StyleSheet.absoluteFill} />
+      ) : (
+        <>
+          <Stripes style={StyleSheet.absoluteFill} />
+          <View style={s.localAudio}>
+            <Mono
+              weight="medium"
+              style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}
+            >
+              录音{'\n'}
+              {media.durationMs ? formatMediaDuration(media.durationMs) : ''}
+            </Mono>
+          </View>
+        </>
+      )}
+      {media.kind === 'video' && media.durationMs ? (
+        <View style={s.localDuration}>
+          <Mono weight="medium" style={{ fontSize: 9, color: colors.white }}>
+            ▶ {formatMediaDuration(media.durationMs)}
+          </Mono>
+        </View>
+      ) : null}
+      <Pressable
+        testID="existing-media-remove"
+        accessibilityRole="button"
+        accessibilityLabel="从这条回忆里移除"
+        // 同 LocalThumb：缩略图裁剪了溢出，热区只能往图内扩。
+        hitSlop={{ top: 3, right: 3, bottom: 23, left: 23 }}
+        onPress={onRemove}
+        style={s.remove}
+      >
+        <Text style={{ fontSize: 11, color: colors.white, lineHeight: 14 }}>×</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 /** 弹层里已选文件的小缩略图。 */

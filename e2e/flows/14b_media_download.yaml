@@ -1,0 +1,65 @@
+# 下载：回忆的照片进系统相册；证件先说明会离开 App 的保护范围，再存到选的位置。
+# 相册是真的，e2e.sh 收尾时查系统媒体库确认。系统文件夹选择器在 E2E 构建里换成 App 内的固定目录。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: First smile ${RUN_ID}
+    timeout: 15000
+- tapOn:
+    id: moment-cover-.*
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-14b-viewer
+- tapOn: { id: viewer-download }
+- extendedWaitUntil:
+    visible: 已保存到相册
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-14b-saved-to-gallery
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+# 证件
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: doc-card-护照 }
+- tapOn: { id: doc-card-护照 }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-14b-document
+- tapOn: { id: doc-file-download-sample-certificate.pdf }
+- extendedWaitUntil:
+    visible: { id: doc-download-note }
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-14b-document-note
+- tapOn: { id: doc-download-confirm }
+- extendedWaitUntil:
+    visible: 已保存到你选的文件夹
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-14b-document-saved
+# 再存一次：目标文件夹里已有同名文件，也要成功。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: { id: doc-file-download-sample-certificate.pdf }
+- extendedWaitUntil:
+    visible: { id: doc-download-confirm }
+    timeout: 5000
+- tapOn: { id: doc-download-confirm }
+- extendedWaitUntil:
+    visible: 已保存到你选的文件夹
+    timeout: 30000
+- tapOn: { id: doc-back }
+- assertVisible: { id: info-screen }

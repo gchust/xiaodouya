@@ -21,38 +21,60 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRecords } from '../lib/app';
+import { useApp, useRecords } from '../lib/app';
+import { DownloadButton } from '../lib/DownloadButton';
+import { downloadFileNames } from '../lib/downloadCore';
 import { clampPan, containedSize } from '../lib/layout';
 import { MediaImage, useMediaSource } from '../lib/mediaViews';
 import { colors } from '../theme';
+import { AvatarEditor } from '../ui/AvatarEditor';
 
-/** 全屏查看回忆里的照片和视频（左右滑动切换）或单个证件图片（可缩放）。 */
+/** 全屏查看回忆里的照片和视频（左右滑动切换）、单个证件图片（可缩放）或宝宝的头像（可编辑）。 */
 export function ViewerScreen() {
   const params = useLocalSearchParams<{
     moment?: string;
     document?: string;
     media?: string;
     index?: string;
+    avatar?: string;
   }>();
-  const { moments, documents } = useRecords();
+  const { moments, documents, baby } = useRecords();
+  const { role } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
-  const { items, title } = useMemo(() => {
+  const { items, title, fileNames } = useMemo(() => {
+    if (params.avatar) {
+      return {
+        items: baby?.data.avatar ? [baby.data.avatar] : [],
+        title: baby ? `${baby.data.name}的头像` : '',
+        // 头像不提供下载：它本来就是从相册选的，值得留的照片在回忆里能下载。
+        // 而且编辑时预览的是还没保存的图，这里下载到的却是旧图。
+        fileNames: null,
+      };
+    }
     if (params.document) {
       const doc = documents.find((d) => d.id === params.document);
       return {
         items: (doc?.data.files ?? []).filter((f) => f.id === params.media),
         title: doc?.data.name ?? '',
+        // 证件不在这里下载：这个页面能通过链接直接打开，没有经过证件夹解锁。
+        fileNames: null,
       };
     }
     const moment = moments.find((m) => m.id === params.moment);
     return {
       items: (moment?.data.media ?? []).filter((x) => x.kind === 'image' || x.kind === 'video'),
       title: moment ? `${moment.data.title || '这一刻'} · ${formatMonthDay(moment.data.at)}` : '',
+      fileNames: moment
+        ? downloadFileNames(moment.data.media, {
+            title: moment.data.title || '这一刻',
+            at: moment.data.at,
+          })
+        : null,
     };
-  }, [params.document, params.moment, params.media, documents, moments]);
+  }, [params.avatar, params.document, params.moment, params.media, baby, documents, moments]);
 
   const initial = Math.min(Number(params.index ?? 0), Math.max(0, items.length - 1));
   const [index, setIndex] = useState(initial);
@@ -62,41 +84,52 @@ export function ViewerScreen() {
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
   };
+  const current = items[index];
+  const currentName = current && fileNames?.get(current.id);
+
+  const pages = (
+    <FlatList
+      ref={list}
+      data={items}
+      horizontal
+      pagingEnabled
+      // 放大时手指是用来拖动图片的，不能翻页。
+      scrollEnabled={!zoomed}
+      initialScrollIndex={initial}
+      getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+      keyExtractor={(item) => item.id}
+      showsHorizontalScrollIndicator={false}
+      onMomentumScrollEnd={onScrollEnd}
+      renderItem={({ item, index: i }) => (
+        <View style={{ width, flex: 1 }}>
+          {item.kind === 'video' ? (
+            // 只挂载当前页的播放器：同时解码多个视频会很吃内存。
+            i === index ? (
+              <VideoPage media={item} />
+            ) : (
+              <MediaImage
+                media={item}
+                variant="thumb"
+                contentFit="contain"
+                style={StyleSheet.absoluteFill}
+              />
+            )
+          ) : (
+            <ZoomableImage media={item} onZoomChange={setZoomed} />
+          )}
+        </View>
+      )}
+    />
+  );
 
   return (
     <View style={s.root} testID="viewer-screen">
-      <FlatList
-        ref={list}
-        data={items}
-        horizontal
-        pagingEnabled
-        // 放大时手指是用来拖动图片的，不能翻页。
-        scrollEnabled={!zoomed}
-        initialScrollIndex={initial}
-        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
-        keyExtractor={(item) => item.id}
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={onScrollEnd}
-        renderItem={({ item, index: i }) => (
-          <View style={{ width, flex: 1 }}>
-            {item.kind === 'video' ? (
-              // 只挂载当前页的播放器：同时解码多个视频会很吃内存。
-              i === index ? (
-                <VideoPage media={item} />
-              ) : (
-                <MediaImage
-                  media={item}
-                  variant="thumb"
-                  contentFit="contain"
-                  style={StyleSheet.absoluteFill}
-                />
-              )
-            ) : (
-              <ZoomableImage media={item} onZoomChange={setZoomed} />
-            )}
-          </View>
-        )}
-      />
+      {/* 真正的权限在服务端，这里只是不给 viewer 看入口。 */}
+      {params.avatar && role !== 'viewer' ? (
+        <AvatarEditor media={items[0]}>{pages}</AvatarEditor>
+      ) : (
+        pages
+      )}
       <View style={[s.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <Pressable
           testID="viewer-close"
@@ -111,6 +144,15 @@ export function ViewerScreen() {
           {title}
         </Text>
         <Text style={s.count}>{items.length > 1 ? `${index + 1} / ${items.length}` : ''}</Text>
+        {current && currentName ? (
+          <DownloadButton
+            key={current.id}
+            media={current}
+            fileName={currentName}
+            tone="dark"
+            testID="viewer-download"
+          />
+        ) : null}
       </View>
     </View>
   );

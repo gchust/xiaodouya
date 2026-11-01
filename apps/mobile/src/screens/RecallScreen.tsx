@@ -1,5 +1,5 @@
 import {
-  dayNumber,
+  dayLabel,
   formatMediaDuration,
   formatMonthDay,
   type MediaRef,
@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -137,6 +138,16 @@ function Timeline({ birthAt }: { birthAt: number }) {
   const openActions = (m: (typeof moments)[number]) =>
     sheet.open(m.data.title || '这一刻', () => (
       <>
+        <Button
+          testID="moment-edit"
+          tone="outline"
+          label="修改"
+          onPress={() =>
+            sheet.replace('修改这一刻', () => (
+              <MomentSheet editMoment={{ id: m.id, data: m.data }} />
+            ))
+          }
+        />
         <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这条回忆了。</Muted>
         <Button
           testID="moment-delete"
@@ -158,6 +169,10 @@ function Timeline({ birthAt }: { birthAt: number }) {
         const visual = m.data.media.filter((x) => x.kind === 'image' || x.kind === 'video');
         const audios = m.data.media.filter((x) => x.kind === 'audio');
         const cover = visual[0];
+        const fileNames = downloadFileNames(m.data.media, {
+          title: m.data.title || '这一刻',
+          at: m.data.at,
+        });
         return (
           <View key={m.id} style={{ gap: 10 }} testID={`moment-${m.id}`}>
             <View style={s.momentHeadRow}>
@@ -170,7 +185,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
               >
                 <Text style={s.momentTitle}>{m.data.title || '这一刻'}</Text>
                 <Mono style={s.momentMeta}>
-                  {formatMonthDay(m.data.at)} · 第 {dayNumber(birthAt, m.data.at)} 天
+                  {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
                 </Mono>
                 {m.data.milestone ? (
                   <View style={s.milestoneTag}>
@@ -215,7 +230,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
               </Pressable>
             ) : null}
             {audios.map((a) => (
-              <AudioCard key={a.id} media={a} />
+              <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? '录音'} />
             ))}
             {m.data.text ? <Serif>{m.data.text}</Serif> : null}
             {m.data.byName ? <Muted style={{ fontSize: 11 }}>{m.data.byName}写</Muted> : null}
@@ -317,7 +332,7 @@ function Milestones({
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={{ fontSize: 14, color: colors.ink }}>{m.data.title || '这一刻'}</Text>
             <Muted style={{ fontSize: 11 }}>
-              {formatMonthDay(m.data.at)} · 第 {dayNumber(birthAt, m.data.at)} 天
+              {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
             </Muted>
           </View>
           <Text style={s.milestoneAction}>查看</Text>
@@ -361,11 +376,43 @@ function Milestones({
 
 function Letters() {
   const { letters } = useRecords();
+  const app = useApp();
+  const sheet = useSheet();
+  const { toast } = useFeedback();
   if (letters.length === 0) {
     return (
       <Empty title="写一封信给长大后的宝宝" sub="现在的心情，等宝宝长大了再读，会很不一样。" />
     );
   }
+  const canWrite = app.role !== 'viewer';
+  const openActions = (l: (typeof letters)[number]) =>
+    sheet.open(l.data.title || '无题', () => (
+      <>
+        <Button
+          testID="letter-edit"
+          tone="outline"
+          label="修改"
+          onPress={() =>
+            sheet.replace('修改这封信', () => (
+              <MomentSheet editLetter={{ id: l.id, data: l.data }} />
+            ))
+          }
+        />
+        <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这封信了。</Muted>
+        <Button
+          testID="letter-delete"
+          tone="ghost"
+          label="删除这封信"
+          onPress={() => {
+            void app.remove(l.id);
+            sheet.close();
+            toast('已删除这封信', {
+              undo: () => void app.write('letter', l.data, l.id),
+            });
+          }}
+        />
+      </>
+    ));
   return (
     <View style={s.letters}>
       {letters.map((l) => (
@@ -373,6 +420,17 @@ function Letters() {
           <View style={s.letterHead}>
             <Text style={s.letterTitle}>{l.data.title || '无题'}</Text>
             <Mono style={{ fontSize: 11, color: colors.muted }}>{formatMonthDay(l.data.at)}</Mono>
+            {canWrite ? (
+              <Pressable
+                testID={`letter-more-${l.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${l.data.title || '无题'}的更多操作`}
+                hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+                onPress={() => openActions(l)}
+              >
+                <Text style={s.momentMore}>⋯</Text>
+              </Pressable>
+            ) : null}
           </View>
           <Serif style={{ fontSize: 13, color: colors.inkSoft, lineHeight: 23 }}>
             {l.data.text}
@@ -466,7 +524,7 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     gap: 8,
   },
-  letterTitle: { fontFamily: fonts.serifBold, fontSize: 16, color: colors.ink, flexShrink: 1 },
+  letterTitle: { fontFamily: fonts.serifBold, fontSize: 16, color: colors.ink, flex: 1 },
   fab: {
     position: 'absolute',
     right: 20,

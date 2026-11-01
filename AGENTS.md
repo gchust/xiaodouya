@@ -12,7 +12,7 @@
 三条产品底线，任何改动都不能破坏：
 
 1. **半夜单手一两下就能记好。** 记录永远先写本地、立即成功，不等网络。
-2. **不丢数据。** 离线写入、上传失败、App 被杀之后都要能恢复；撤销之外不做硬删除。
+2. **不丢数据。** 离线写入、上传失败、App 被杀之后都要能恢复；撤销之外不做硬删除。例外只有两个：用户主动删除账号（输入密码确认后，账号和只属于这个账号的数据立即删除）；文件清理（所在记录删除满 30 天、且核对过没有其他记录在用，才由维护任务清理）。见 `docs/ARCHITECTURE.md`。
 3. **美观好用是验收标准，不是加分项。** 视觉必须符合 `docs/design/SPEC.md`，UI 改动必须看过模拟器截图才算完成。
 
 ## 2. 仓库结构
@@ -24,7 +24,7 @@ packages/shared/   前后端共用：zod 契约、领域逻辑（喂奶估算、
 e2e/               Maestro 端到端流程和测试辅助脚本
 supabase/          Edge Function 入口和配置，代码由 scripts/build-edge.mjs 从 apps/server 打包
 deploy/            生产 Docker Compose、Caddy、备份脚本
-docs/              DEPLOYMENT.md、ARCHITECTURE.md、PROGRESS.md（功能进展）、PITFALLS.md（踩坑记录）、design/SPEC.md
+docs/              DEPLOYMENT.md、ARCHITECTURE.md、CAPACITY.md（容量和成本）、PROGRESS.md（功能进展）、PITFALLS.md（踩坑记录）、design/SPEC.md
 .github/workflows/ CI
 ```
 
@@ -107,7 +107,7 @@ App 不是医疗器械，健康内容错了会伤人。
 ## 9. Git 工作流
 
 - `main` 保持可发布，功能在分支上开发，通过 PR 合并，CI 全绿才能合并。
-- 只改 `docs/` 和 Markdown 的提交不触发 CI（`ci.yml` 的 `paths-ignore`）。
+- `pull_request` 的 `paths-ignore`（`ci.yml`）看的是整个 PR 的差异：只有全是 `docs/` 和 Markdown 的 PR 才不跑 CI，含代码的 PR 只推文档也会重跑全量 CI。
 - 不要在 CI 运行中推送同一分支，除非已知这轮会失败：新推送会取消正在跑的 Android 流程（约 30 分钟）。
 - 提交信息用 Conventional Commits（`feat:`、`fix:`、`docs:`、`test:`、`ci:`、`chore:`），一个提交只做一件事。
 - 提交前确认 `git status` 里没有 `.env`、`.artifacts/`、APK 或真实数据。

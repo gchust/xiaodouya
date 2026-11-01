@@ -1,11 +1,14 @@
 import type {
   ApiError,
   AuthResponse,
+  FamilyExport,
   MediaUrlsResponse,
   MediaVariant,
   MeResponse,
   Prefs,
+  PublicConfig,
   Role,
+  SendEmailCodeResponse,
   StorageConfigInput,
   StorageConfigView,
   StorageTestResult,
@@ -93,14 +96,37 @@ export class Api {
   logout() {
     return this.request('POST', '/v1/auth/logout');
   }
+  /** 旧服务器没有这个接口或字段、或者连不上时，都当作没开邮件。登录页不能因此出错。 */
+  async passwordResetEnabled(): Promise<boolean> {
+    try {
+      return (await this.publicConfig()).passwordReset === true;
+    } catch {
+      return false;
+    }
+  }
+  forgotPassword(email: string) {
+    return this.request('POST', '/v1/auth/password/forgot', { email });
+  }
+  resetPassword(body: { email: string; code: string; newPassword: string }) {
+    return this.request('POST', '/v1/auth/password/reset', body);
+  }
+  sendEmailCode() {
+    return this.request<SendEmailCodeResponse>('POST', '/v1/me/email/send-code');
+  }
+  verifyEmail(code: string) {
+    return this.request<MeResponse>('POST', '/v1/me/email/verify', { code });
+  }
+  deleteAccount(password: string) {
+    return this.request('POST', '/v1/me/delete', { password });
+  }
+  exportFamily() {
+    return this.request<FamilyExport>('GET', '/v1/family/export');
+  }
   me() {
     return this.request<MeResponse>('GET', '/v1/me');
   }
   updatePrefs(prefs: Prefs) {
     return this.request<Prefs>('PUT', '/v1/me/prefs', prefs);
-  }
-  registerPushToken(token: string, deviceId: string) {
-    return this.request('POST', '/v1/me/push-token', { token, deviceId });
   }
   unregisterPushToken(deviceId: string) {
     return this.request('DELETE', `/v1/me/push-token/${encodeURIComponent(deviceId)}`);
@@ -157,5 +183,20 @@ export class Api {
   }
   storageUsage() {
     return this.request<StorageUsage>('GET', '/v1/storage/usage');
+  }
+  publicConfig() {
+    return this.request<PublicConfig>('GET', '/v1/config');
+  }
+  /**
+   * 连不上时抛错，不猜：猜“允许”会给普通用户看 S3 表单，猜“不允许”会让自建的管理员改不了配置。
+   * 只有明确的 404 才当作允许，那是还没有这个接口的旧版服务端，当时都能自定义。
+   */
+  async allowCustomStorage(): Promise<boolean> {
+    try {
+      return (await this.publicConfig()).allowCustomStorage !== false;
+    } catch (error) {
+      if (error instanceof ApiFailure && error.status === 404) return true;
+      throw error;
+    }
   }
 }
