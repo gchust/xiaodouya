@@ -437,6 +437,22 @@ describe('删除后释放空间', () => {
     expect((await usage(token)).trash).toBe(0);
   });
 
+  it('修改回忆时移除文件后撤销，文件不再待清理，对象还在', async () => {
+    const { token, familyId } = await newFamily();
+    const keep = await upload(token);
+    const removed = await upload(token);
+    const moment = randomUUID();
+    await writeMoment(token, moment, [keep, removed]);
+    await writeMoment(token, moment, [keep]);
+    expect((await usage(token)).trash).toBe(FILE);
+    await writeMoment(token, moment, [keep, removed]);
+    expect((await usage(token)).trash).toBe(0);
+    const [row] = await sql<{ unreferenced_at: Date | null }[]>`
+      SELECT unreferenced_at FROM media WHERE id = ${removed}`;
+    expect(row?.unreferenced_at).toBeNull();
+    expect(await objectExists(familyId, removed)).toBe(true);
+  });
+
   it('编辑时去掉一张照片、换头像，被换下的文件进入待清理', async () => {
     const { token } = await newFamily();
     const keep = await upload(token);

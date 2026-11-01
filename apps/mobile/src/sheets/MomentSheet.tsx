@@ -137,7 +137,7 @@ export function MomentSheet({
         if (editMoment) {
           const { id, data } = editMoment;
           const latest = app.store.getSnapshot().moments.find((m) => m.id === id)?.data ?? data;
-          // 移除只是从记录里摘掉，文件还在存储里，撤销后还能看到。
+          // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。
           const media = mergeMediaEdit(data.media, latest.media, [...kept, ...refs]);
           await app.write('moment', mergeEdit(data, latest, { ...fields, media }), id);
           sheet.close();

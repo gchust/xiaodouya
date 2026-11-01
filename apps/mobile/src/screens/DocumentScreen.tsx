@@ -128,7 +128,7 @@ export function DocumentScreen({ id }: { id: string }) {
     await app.write('document', { ...current, files: [...current.files, ...refs] }, id);
   };
 
-  // 只从记录里摘掉，文件还在存储里，所以能撤销。
+  // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。
   const removeFile = async (file: MediaRef) => {
     const current = latest();
     const files = current.files.filter((f) => f.id !== file.id);
