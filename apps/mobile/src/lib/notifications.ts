@@ -1,4 +1,4 @@
-import { type EventData, estimateNextFeed } from '@xiaodouya/shared';
+import { type EventData, feedReminderDelayMs } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
@@ -66,13 +66,12 @@ export async function unregisterPushToken(api: Api): Promise<void> {
   await api.unregisterPushToken(await deviceId());
 }
 
-/** 只在已经学到喂奶规律时才提醒，默认间隔不够可靠，不应该半夜吵醒人。 */
 export async function scheduleFeedReminder(events: EventData[], enabled: boolean): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(FEED_REMINDER_ID);
     if (!enabled) return;
-    const estimate = estimateNextFeed(events, Date.now());
-    if (!estimate.last || !estimate.isLearned || estimate.remainingMs <= 0) return;
+    const delayMs = feedReminderDelayMs(events, Date.now());
+    if (delayMs === null) return;
     const current = await Notifications.getPermissionsAsync();
     if (!current.granted) return;
     await ensureChannels();
@@ -81,7 +80,7 @@ export async function scheduleFeedReminder(events: EventData[], enabled: boolean
       content: { title: '差不多该喂奶了', body: '已到平时的喂奶间隔。' },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(60, Math.round(estimate.remainingMs / 1000)),
+        seconds: Math.max(60, Math.round(delayMs / 1000)),
         channelId: 'feed',
       },
     });

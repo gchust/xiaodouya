@@ -79,6 +79,49 @@ export function summarize24h(events: readonly EventData[], now: number): DaySumm
   return summary;
 }
 
+const TIMELINE_LIMIT = 8;
+
+/**
+ * 今天页的时间线，`entries` 按时间倒序。
+ * 只放真的在过去 24 小时里的记录：这一栏只显示钟点，补记的旧记录混进来会被看成今天的。
+ * 跨过窗口起点的睡眠算在摘要里，没结束的睡眠要能点开改，所以也放进来。
+ */
+export function timelineEntries<E extends { data: EventData }>(
+  entries: readonly E[],
+  now: number,
+): E[] {
+  const start = now - 86_400_000;
+  return entries
+    .filter(({ data }) => {
+      if (data.type === 'growth' || data.at > now) return false;
+      if (data.at > start) return true;
+      return data.type === 'sleep' && (data.endAt === undefined || data.endAt > start);
+    })
+    .slice(0, TIMELINE_LIMIT);
+}
+
+export interface EventDay<E> {
+  dayStart: number;
+  data: E[];
+}
+
+/** 全部记录页：按当地日历日分组，新的在前。 */
+export function eventsByDay<E extends { data: EventData }>(entries: readonly E[]): EventDay<E>[] {
+  const days = new Map<number, E[]>();
+  for (const entry of entries) {
+    const dayStart = new Date(entry.data.at).setHours(0, 0, 0, 0);
+    const day = days.get(dayStart);
+    if (day) day.push(entry);
+    else days.set(dayStart, [entry]);
+  }
+  return [...days.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([dayStart, data]) => ({
+      dayStart,
+      data: data.sort((a, b) => b.data.at - a.data.at),
+    }));
+}
+
 export function summaryText(s: DaySummary, units: Units = metricUnits): string {
   return `喂奶 ${s.feeds} 次 · ${formatVolume(s.ml, units.volume)}　尿布 ${s.diapers}　睡 ${(s.sleepMs / 3_600_000).toFixed(1)}h`;
 }
