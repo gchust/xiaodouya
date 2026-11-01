@@ -32,3 +32,8 @@ appId: com.gchust.xiaodouya
 - assertVisible: 喂奶 75ml
 - assertVisible:
     text: .*妈妈记录.*
+- extendedWaitUntil:
+    visible:
+      text: 玥喆的第.*
+    timeout: 40000
+- takeScreenshot: .artifacts/e2e-05-rare-name

@@ -32,3 +32,16 @@ call('POST', '/v1/sync', mom.token, {
     },
   ],
 });
+
+// 名字常用 GB2312 以外的字（玥、喆）。字体子集里没有，必须能回退到系统字体，不能显示成方块。
+const all = call('POST', '/v1/sync', admin.token, { cursor: 0, changes: [] });
+const baby = all.records.filter((r) => r.collection === 'baby')[0];
+const renamed = {};
+for (const key in baby.data) renamed[key] = baby.data[key];
+renamed.name = '玥喆';
+call('POST', '/v1/sync', admin.token, {
+  cursor: 0,
+  changes: [
+    { id: baby.id, collection: 'baby', data: renamed, deleted: false, updatedAt: Date.now() },
+  ],
+});
