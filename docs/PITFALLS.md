@@ -91,7 +91,8 @@
 - **`hitSlop` 只在父视图没有裁剪时才生效，后面的兄弟视图还会抢走重叠区域。** `overflow: hidden` 的卡片里，× 的热区要向卡片内部扩。紧贴滚动区的控件（回忆页子标签）用内边距加负外边距，再给头部 `zIndex`。
 - **RN 的 `lineHeight` 按网页规则把差额平分到字的上下。** 衬线标题行高 31 时，g、y 的下伸部分会超出文字框 1dp 左右（按 `CustomLineHeightSpan` 源码推算，没有在设备上看过）。加 `paddingBottom` 和相同的负 `marginBottom`，布局不变，也不会被裁掉。
 - **要让卡片不挡住下面的点击，整条路径都要处理。** 容器用 `box-none` 还不够：里面的普通 View 和 Text 仍会成为点击目标，点击不会穿透给下面的页面。不需要响应的部分要包在 `pointerEvents="none"` 里。
-- **后台任务已经把 JS 跑起来时，从链接打开 App 会丢初始链接。** 这时界面渲染得比 Activity 恢复还早，`Linking.getInitialURL()` 拿不到 Activity，返回空，也不报错，App 只是停在首页。模拟器上要先让进程真的死掉、点小工具记录、再从小工具点进去才能复现；进程本来活着或 JS 完全没启动时都正常。`useWidgetLink` 在 Activity 恢复后再取一次。
+- **系统回收进程后，从外部链接打开 App 时链接不在初始 Intent 里。** Activity 记录还在，重建时 `getIntent()` 是最初从桌面打开的那个，链接只通过 `onNewIntent` 送来：JS 已经在跑时发一次 `url` 事件，这时 expo-router 还没监听；JS 没跑时直接丢弃。App 只是停在首页，不报错。`with-latest-intent` 插件存下新 Intent，入口文件的 `linkInbox` 接住事件，`useWidgetLink` 都处理并去重。进程活着时测不出来，要先用 `am kill` 杀掉再点。
+- **弹层刚挂载时马上打开会被清掉。** 挂载时那次“收起”动画的回调可能比 `open` 晚到 JS，把刚设置的内容清成 null，界面上什么都没有也不报错。`onHidden` 要先判断现在是不是真的收起。
 
 ## Android 构建和模拟器
 

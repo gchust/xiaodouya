@@ -355,7 +355,13 @@ export function SheetProvider({ children }: { children: ReactNode }) {
     Keyboard.dismiss();
     setVisible(false);
   }, []);
-  const onHidden = useCallback(() => setSheet(null), []);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  // 收起动画的回调在 UI 线程结束后才排到 JS。挂载时那次“收起”的回调可能比刚打开的弹层还晚到
+  // （从小工具的链接启动时就是这样），不判断的话刚打开的弹层会被清掉。
+  const onHidden = useCallback(() => {
+    if (!visibleRef.current) setSheet(null);
+  }, []);
 
   const api = useMemo<SheetApi>(
     () => ({
