@@ -33,9 +33,44 @@ const eventBase = {
 export const diaperKinds = ['wee', 'poo', 'both'] as const;
 export type DiaperKind = (typeof diaperKinds)[number];
 
+export const milkTypes = ['formula', 'breast', 'mixed'] as const;
+export type MilkType = (typeof milkTypes)[number];
+
+/**
+ * 营养标签上的数值。没有的项必须保持缺失：缺失是“不知道”，0 是“标签写了 0”。
+ * 单位固定：能量 kcal，维生素 D 是 µg，输入时的 kJ、IU 换算见 health/nutrition。
+ * 单项格式不对只丢这一项，不能让整条记录校验失败。
+ */
+const nutrientAmount = z.number().min(0).max(100_000).optional().catch(undefined);
+export const NutrientValues = z.looseObject({
+  energyKcal: nutrientAmount,
+  proteinG: nutrientAmount,
+  fatG: nutrientAmount,
+  carbsG: nutrientAmount,
+  calciumMg: nutrientAmount,
+  ironMg: nutrientAmount,
+  vitaminDUg: nutrientAmount,
+});
+export type NutrientValues = z.infer<typeof NutrientValues>;
+
+/** 喂奶当时奶粉的数值。之后改配方或删掉奶粉，已经记下的那天不跟着变。 */
+export const FormulaSnapshot = z.looseObject({
+  name: shortText,
+  per100ml: NutrientValues,
+});
+export type FormulaSnapshot = z.infer<typeof FormulaSnapshot>;
+
 /** 喂奶、尿布等“今天”页的记录。 */
 export const EventData = z.discriminatedUnion('type', [
-  z.looseObject({ ...eventBase, type: z.literal('feed'), ml: z.number().int().min(0).max(1000) }),
+  z.looseObject({
+    ...eventBase,
+    type: z.literal('feed'),
+    ml: z.number().int().min(0).max(1000),
+    // v0.1.0 的记录没有这三个字段，算“没标注”。都带 catch：不认识的值不能让喂奶从时间线消失。
+    milkType: z.enum(milkTypes).optional().catch(undefined),
+    formulaId: z.string().max(64).optional().catch(undefined),
+    formula: FormulaSnapshot.optional().catch(undefined),
+  }),
   z.looseObject({ ...eventBase, type: z.literal('diaper'), kind: z.enum(diaperKinds) }),
   z.looseObject({ ...eventBase, type: z.literal('sleep'), endAt: timestamp.optional() }),
   z.looseObject({ ...eventBase, type: z.literal('temp'), celsius: z.number().min(30).max(45) }),
@@ -62,6 +97,34 @@ export const EventData = z.discriminatedUnion('type', [
 ]);
 export type EventData = z.infer<typeof EventData>;
 export type EventType = EventData['type'];
+
+export const formulaBases = ['per100ml', 'per100g'] as const;
+export type FormulaBasis = (typeof formulaBases)[number];
+
+/**
+ * 家庭配置的一款奶粉。
+ *
+ * 放在 `event` 集合而不是新集合，理由写在 docs/ARCHITECTURE.md 的“奶粉和营养”：v0.1.0 收到不认识的
+ * 集合会在启动时崩溃，旧服务端会拒绝整批同步。放在这里，viewer 也和喂奶记录一样读不到。
+ *
+ * 不能有 `at`：v0.1.0 的横幅和服务端推送只处理一小时内的 `at`，没有它才不会弹“记录了 undefined”。
+ * `basis` 不认识时整条不显示（校验失败的记录会保留），不能猜数值是按什么算的。
+ */
+export const FormulaData = z.looseObject({
+  type: z.literal('formula'),
+  name: shortText.min(1),
+  /** 从哪个预置来的。数值已经复制进来，预置更新不会改变这个家庭的配置。 */
+  presetId: z.string().max(64).optional().catch(undefined),
+  basis: z.enum(formulaBases),
+  values: NutrientValues,
+  /** 每 100 ml 冲好的奶用多少克粉。`basis` 是 per100g 时靠它换算，缺了就不换算。 */
+  powderGPer100ml: z.number().positive().max(100).optional().catch(undefined),
+});
+export type FormulaData = z.infer<typeof FormulaData>;
+
+export function isFormulaData(data: unknown): data is FormulaData {
+  return (data as { type?: unknown } | null)?.type === 'formula';
+}
 
 export const MomentData = z.looseObject({
   title: shortText,
@@ -110,7 +173,7 @@ export type BabyData = z.infer<typeof BabyData>;
 
 export const collectionSchemas = {
   baby: BabyData,
-  event: EventData,
+  event: z.union([EventData, FormulaData]),
   moment: MomentData,
   letter: LetterData,
   document: DocumentData,
@@ -121,7 +184,7 @@ export type Collection = (typeof collections)[number];
 
 export interface CollectionData {
   baby: BabyData;
-  event: EventData;
+  event: EventData | FormulaData;
   moment: MomentData;
   letter: LetterData;
   document: DocumentData;
