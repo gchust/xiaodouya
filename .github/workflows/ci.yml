@@ -45,6 +45,13 @@ jobs:
       - name: 启动 Postgres 和 S3
         run: docker compose -f deploy/docker-compose.dev.yml up -d --wait
       - run: pnpm test:server
+      - uses: denoland/setup-deno@e95548e56dfa95d4e1a28d6f422fafe75c4c26fb # v2.0.3
+        with:
+          deno-version: "2.9.6"
+      - name: 在 Deno 上跑 Edge Function 入口
+        run: |
+          pnpm test:edge
+          deno check --no-lock supabase/functions/api/index.ts
       - name: 构建服务端镜像
         run: docker build -f deploy/server.Dockerfile -t xiaodouya-server:ci .
       - name: 冒烟测试镜像

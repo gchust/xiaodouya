@@ -25,5 +25,10 @@ apps/mobile/ios/
 google-services.json
 GoogleService-Info.plist
 
+# Supabase：Edge 产物由 pnpm build:edge 生成，.temp 里有项目信息
+supabase/functions/api/_bundle/
+supabase/.temp/
+supabase/.branches/
+
 # Agent 的 worktree
 .claude/worktrees/

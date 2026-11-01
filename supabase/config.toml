@@ -1,0 +1,35 @@
+# 只用 Supabase 的 Postgres 和 Edge Functions。账号、同步、文件都是自己的，见 docs/DEPLOYMENT.md。
+project_id = "xiaodouya"
+
+[db]
+major_version = 17
+
+# Data API 会把 public 里的表暴露给公开的 anon key，这个项目不用它。
+# 这里只影响本地；线上要在控制台关掉，见 docs/DEPLOYMENT.md。
+[api]
+enabled = false
+
+[auth]
+enabled = false
+
+[realtime]
+enabled = false
+
+[storage]
+enabled = false
+
+[studio]
+enabled = false
+
+[edge_runtime]
+enabled = true
+# 默认的 oneshot 每次请求后都销毁实例，长轮询和后台任务在本地都看不到真实行为。
+policy = "per_worker"
+deno_version = 2
+
+[functions.api]
+enabled = true
+# 接口有自己的令牌。开着的话网关会把我们的令牌当 Supabase JWT 校验，所有请求都是 401。
+verify_jwt = false
+entrypoint = "./functions/api/index.ts"
+import_map = "./functions/api/deno.json"
