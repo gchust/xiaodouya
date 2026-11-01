@@ -1,21 +1,247 @@
 # 小豆芽部署文档
 
-这份文档讲三件事：[服务端怎么部署](#一服务端部署)、[App 怎么构建和分发](#二app-构建和分发)、[每个参数怎么填](#三参数说明)。
+这份文档讲四件事：[推荐的部署方式：Supabase + R2](#零推荐部署supabase--r2)、[备选方式：自己的服务器加 Docker](#一服务端部署备选自己的服务器和-docker)、[App 怎么构建和分发](#二app-构建和分发)、[每个参数怎么填](#三参数说明)。
 
-整体结构很简单：
+两种方式跑的是同一份服务端代码，App 的接口完全一样：
 
 ```
-手机 App ──HTTPS──> Caddy ──> 服务端（Hono）──> Postgres
-    │                             │
-    │                             │ 签发短时效链接
-    └──────直传/下载───────> S3 兼容存储（Cloudflare R2 / AWS S3 / ...）
+推荐：手机 App ──HTTPS──> Supabase Edge Function（Hono）──> Supabase Postgres
+备选：手机 App ──HTTPS──> Caddy ──> 服务端（Hono）──> Postgres
+          │                             │
+          │                             │ 签发短时效链接
+          └──────直传/下载───────> S3 兼容存储（Cloudflare R2 / AWS S3 / ...）
 ```
 
 照片和视频从手机直接传到存储，不经过服务器，所以服务器配置要求很低。
 
 ---
 
-## 一、服务端部署
+## 零、推荐部署：Supabase + R2
+
+不用自己维护服务器，免费版够一家人用。只用 Supabase 的 Postgres 和 Edge Functions，账号、同步还是自己的，文件放在 R2。**不用** Supabase Auth、Realtime、Storage，也不让 App 直接访问数据库。
+
+> **这一节还没有在真实的 Supabase 项目上走过。** 代码在 Supabase 开源的 edge-runtime 镜像和本地事务模式连接池上验证过（见 [PROGRESS.md](PROGRESS.md) 的 F-79），云上的步骤来自 Supabase 文档。第一次照做时如果和文档不一致，请修正这里。
+
+### 两个必须知道的限制
+
+| 限制 | 影响 | 怎么办 |
+| ---- | ---- | ------ |
+| **免费版没有自动备份** | 数据库出事就全没了 | 必须配置第 8 步的备份，并且演练一次恢复 |
+| **一周没有足够的数据库活动，项目会被暂停** | 暂停后 App 连不上服务器，手机上的记录还在，恢复后接着同步 | 全家天天用一般不会触发，每天的备份也是真实的数据库活动，但 Supabase 没有承诺这样一定不会暂停。暂停后到控制台点 Restore。不要为了防暂停写假请求 |
+
+其他额度（以 [Supabase 定价页](https://supabase.com/pricing)为准）：数据库 500 MB、流量 5 GB、Edge Function 调用每月 50 万次。App 在前台时每台手机每 25 秒调用一次长轮询，也就是每小时 144 次。
+
+新记录最多晚 2 秒通知到家人：跨实例只能查数据库，每 2 秒查一次。
+
+### 1. 创建 Supabase 项目
+
+1. 到 [Supabase 控制台](https://supabase.com/dashboard) 新建项目，区域选 **Southeast Asia (Singapore)**，也就是 `ap-southeast-1`。
+2. 数据库密码用 `openssl rand -hex 24` 生成，只含十六进制字符才不会破坏连接串。记下来。
+3. 记下 **Project ref**，就是项目地址 `https://<project-ref>.supabase.co` 里的那一段。
+
+### 2. 关掉 Data API（必须）
+
+Supabase 默认通过 Data API 把 `public` 里的表开放出去，用的 anon key 本来就是公开的。这个项目用不到它，而表里有密码哈希和存储密钥。
+
+到控制台的 **Integrations → Data API**（或创建项目时的同名选项），把 **Enable Data API** 关掉。
+
+迁移里已经给每张表开了 RLS 并收回了 `anon`、`authenticated` 的权限，这是第二道防线，不能代替这一步。第 5 步之后用下面的命令确认，**不能**返回 200：
+
+```bash
+curl -i "https://<project-ref>.supabase.co/rest/v1/users?select=id" -H "apikey: <控制台里的 anon key>"
+```
+
+### 3. 创建 R2 Bucket
+
+按[第一节第 2 步](#2-创建存储)创建 Bucket 和 API 令牌，记下 Account ID、Access Key ID、Secret Access Key。
+
+备份也放在这个 Bucket 的 `backups/` 前缀下。到 Bucket 的 **Settings → Object lifecycle rules** 加一条规则：前缀 `backups/`，30 天后删除。备份脚本自己不删旧文件。
+
+> **不要开 Bucket 的公开访问。** 备份是加密的，但证件文件不是，见下文“公开 CDN 域名要不要填”。
+
+### 4. 准备工具和连接串
+
+需要 Node 和 pnpm（版本见 `.mise.toml`）、Docker（Supabase CLI 打包函数时要用）和 [Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)。CLI 可以直接从 [Releases](https://github.com/supabase/cli/releases) 下载，或者把下面的 `supabase` 换成 `npx supabase@latest`。
+
+```bash
+git clone https://github.com/gchust/xiaodouya.git
+cd xiaodouya
+pnpm install
+supabase login
+supabase link --project-ref <project-ref>
+```
+
+在控制台点项目顶部的 **Connect**，复制两个连接串。主机名里有编号，不能自己拼：
+
+| 连接串 | 端口 | 用途 |
+| ------ | ---- | ---- |
+| **Transaction pooler** | 6543 | Edge Function 用，第 6 步的 `DATABASE_URL` |
+| **Session pooler** | 5432 | 迁移、备份、恢复用 |
+
+两个的用户名都是 `postgres.<project-ref>`。免费版的 Direct connection 只有 IPv6，GitHub Actions 和很多家庭宽带连不上，所以这里不用它。
+
+### 5. 执行迁移
+
+Edge Function 不会自己建表。**第一次部署前和每次升级前**都要执行一次，重复执行没有副作用：
+
+```bash
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require \
+  pnpm --filter @xiaodouya/server cli migrate
+# 迁移已完成
+```
+
+### 6. 设置 Secret
+
+```bash
+cp supabase/.env.example supabase/.env
+chmod 600 supabase/.env
+```
+
+填好 `supabase/.env`（已被 `.gitignore` 忽略），然后上传：
+
+```bash
+supabase secrets set --env-file supabase/.env
+```
+
+| 名称 | 值 |
+| ---- | -- |
+| `DATABASE_URL` | Transaction pooler 连接串（6543） |
+| `APP_SECRET` | `openssl rand -base64 32`。**不要更换，要单独备份** |
+| `ALLOW_SIGNUP` | 先填 `true`，全家注册完改成 `false` |
+| `S3_ENDPOINT` | `https://<account-id>.r2.cloudflarestorage.com` |
+| `S3_REGION` | `auto` |
+| `S3_BUCKET` | Bucket 名称 |
+| `S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | R2 令牌 |
+| `S3_FORCE_PATH_STYLE` | `true` |
+
+Supabase 保留了 `SUPABASE_` 开头的名字，不要用它自动提供的 `SUPABASE_DB_URL`，这里要的是事务模式连接池。`DB_POOL_MAX=1`、`DB_PREPARE=false`、`DB_SSL=require` 是函数的默认值，不用设置。
+
+### 7. 部署函数
+
+```bash
+pnpm build:edge
+supabase functions deploy api
+```
+
+`pnpm build:edge` 把服务端打成 `supabase/functions/api/_bundle/server.mjs`，这个文件不提交，**每次部署前都要重新生成**。`supabase/config.toml` 里已经写了 `verify_jwt = false`，接口用自己的令牌。部署时默认用 Docker 在本地打包，`--use-api`（不用 Docker）还没有试过。
+
+验证：
+
+```bash
+curl https://<project-ref>.supabase.co/functions/v1/api/healthz
+# {"ok":true}
+curl https://<project-ref>.supabase.co/functions/v1/api/v1/me
+# {"error":{"code":"unauthenticated","message":"请先登录"}}
+```
+
+第二条如果返回的不是这个格式，而是 Supabase 自己的 401，说明 JWT 校验没关，在部署命令后面加 `--no-verify-jwt` 重新部署。
+
+然后回到第 2 步，确认 Data API 读不到表。
+
+把 App 指向这个地址（配置方法见[第二节](#二app-构建和分发)），末尾不带 `/v1`：
+
+```
+EXPO_PUBLIC_API_URL=https://<project-ref>.supabase.co/functions/v1/api
+```
+
+全家注册完之后关闭注册，陌生人就注册不了了：
+
+```bash
+supabase secrets set ALLOW_SIGNUP=false
+```
+
+### 8. 配置备份（务必）
+
+`deploy/cloud-backup.sh` 用 `pg_dump` 导出 `public`，用 `openssl` 加密，上传到 R2 的 `backups/`。明文不落盘，上传前会解密检查一遍。
+
+先准备一个口令，**丢了备份就打不开**，存到密码管理器里，不要和备份放在一起：
+
+```bash
+openssl rand -base64 32
+```
+
+| 配置 | 说明 |
+| ---- | ---- |
+| `BACKUP_DATABASE_URL` | Session pooler 连接串（5432）。事务模式不能 `pg_dump` |
+| `BACKUP_PASSPHRASE` | 上面生成的口令 |
+| `S3_ENDPOINT`、`S3_REGION`、`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY` | 和第 6 步相同 |
+| `BACKUP_PREFIX` | 可选，默认 `backups/` |
+| `BACKUP_PG_IMAGE` | 可选，用 Docker 镜像里的 `pg_dump`，比如 `postgres:17`。`pg_dump` 版本不能比服务器旧，本机不够新时用它 |
+
+下面两种方式选一种。
+
+**方式 A：GitHub Actions（推荐）。** 在仓库 Settings → Secrets and variables → Actions 里添加 Secret `BACKUP_DATABASE_URL`、`BACKUP_PASSPHRASE`、`S3_ENDPOINT`、`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`，再添加 Variable `CLOUD_BACKUP_ENABLED`，值是 `true`。然后到 Actions 页面手动运行一次“云端数据库备份”，确认成功。之后每天新加坡时间凌晨 3 点左右自动运行。
+
+> 这是公开仓库，任何人都能看日志和产物。这个流程不上传产物，日志里只有对象名和大小。**不要改成上传备份文件。**
+>
+> 仓库 60 天没有活动时，GitHub 会自动停用定时任务，并发邮件提醒。Actions 失败时也会发邮件，要留意。
+
+**方式 B：自己电脑上的 cron。** 需要 `bash`、`curl`（7.75 以上）、`openssl`（1.1.1 以上）、`gzip`，还有 `pg_dump` 或 Docker。把配置写进 `deploy/.env.backup`（已被 `.gitignore` 忽略），`chmod 600`，然后：
+
+```bash
+deploy/cloud-backup.sh backup
+# 已备份：backups/xiaodouya-20261101T031700Z.sql.gz.enc（12345 字节）
+```
+
+执行 `crontab -e`，加一行（路径换成实际路径）：
+
+```
+17 3 * * * /path/to/xiaodouya/deploy/cloud-backup.sh backup >> $HOME/xiaodouya-backup.log 2>&1
+```
+
+电脑关机的时候不会备份。
+
+### 9. 恢复
+
+先演练一次，备份只有恢复过才算数。在本机起一个临时的 Postgres，恢复进去看看（`deploy/.env.backup` 或环境变量里要有上面的口令和 S3 配置）：
+
+```bash
+docker run -d --rm --name xiaodouya-restore-check -e POSTGRES_PASSWORD=throwaway -p 55499:5432 postgres:17
+deploy/cloud-backup.sh list
+RESTORE_DATABASE_URL=postgres://postgres:throwaway@localhost:55499/postgres \
+  BACKUP_PG_IMAGE=postgres:17 deploy/cloud-backup.sh restore latest
+docker exec xiaodouya-restore-check psql -U postgres -c 'SELECT count(*) FROM records'
+docker rm -f xiaodouya-restore-check
+```
+
+真正要恢复时，`RESTORE_DATABASE_URL` 填目标项目的 Session pooler 连接串：
+
+```bash
+RESTORE_DATABASE_URL='<Session pooler 连接串>' BACKUP_PG_IMAGE=postgres:17 \
+  deploy/cloud-backup.sh restore backups/xiaodouya-XXXX.sql.gz.enc
+```
+
+- 脚本先解密并检查备份是否完整，口令不对或文件不完整都不会动数据库。
+- 要求输入 `restore` 确认。导入在一个事务里，失败时自动回滚，旧数据还在。
+- 恢复的 Postgres 大版本不能比导出时用的 `pg_dump` 旧。比如用 17 导出的备份恢复到 16 会报错并回滚。
+- 换了新项目时，`APP_SECRET` 要用原来的，并重新做第 5 到第 7 步（迁移会跳过已经执行过的部分）。App 打包时写死了地址，换项目要重新打包。
+
+> **恢复的是备份那一刻的数据。** 备份之后写入的记录不在服务器上了。手机发现同步进度比服务器新时，会自动从头拉取。
+
+### 10. 日常维护
+
+```bash
+# 升级：顺序不能反，新代码可能用到新表
+git pull
+pnpm install
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli migrate
+pnpm build:edge
+supabase functions deploy api
+
+# 重置密码（没有邮件服务，忘记密码由部署者处理）
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require \
+  pnpm --filter @xiaodouya/server cli reset-password someone@example.com
+```
+
+日志在控制台的 **Edge Functions → api → Logs**。
+
+本地调试函数（需要 `pnpm dev:infra` 和 Deno）：`pnpm test:edge`。
+
+---
+
+## 一、服务端部署（备选：自己的服务器和 Docker）
+
+不想依赖 Supabase，或者想要完全自己掌控时用这种方式。
 
 ### 1. 准备
 
@@ -241,7 +467,7 @@ pnpm android:build release --clean
 
 ## 三、参数说明
 
-### 服务端（`deploy/.env`）
+### 服务端（`deploy/.env`；Supabase 方案用 `supabase secrets`，不需要 `DOMAIN`、`POSTGRES_PASSWORD`、`SERVER_IMAGE`）
 
 | 参数                              | 必填 | 默认值                                   | 说明                                                                                                      |
 | --------------------------------- | ---- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -255,6 +481,9 @@ pnpm android:build release --clean
 | `ALLOW_PRIVATE_STORAGE_ENDPOINTS` | 否   | `false`                                  | 是否允许内网或 http 的存储地址。自建内网 MinIO 才需要打开。默认关闭是为了防止管理员探测服务器内网（SSRF） |
 | `PUSH_ENABLED`                    | 否   | `false`                                  | 启用家人记录的远程推送                                                                                    |
 | `EXPO_ACCESS_TOKEN`               | 否   | —                                        | Expo 开启推送安全时需要                                                                                   |
+| `DB_POOL_MAX`                     | 否   | `10`（Edge Function 是 `1`）             | 数据库连接池大小                                                                                          |
+| `DB_PREPARE`                      | 否   | `true`（Edge Function 是 `false`）       | 是否用命名预处理语句。事务模式的连接池不支持，必须是 `false`                                              |
+| `DB_SSL`                          | 否   | 不设置（Edge Function 是 `require`）     | `require` 或 `verify-full`。不设置时遵守连接串里的 `sslmode`                                              |
 
 ### 默认存储（可选）
 
@@ -313,7 +542,7 @@ pnpm android:build release --clean
 
 | 参数                               | 必填       | 说明                                                                          |
 | ---------------------------------- | ---------- | ----------------------------------------------------------------------------- |
-| `EXPO_PUBLIC_API_URL`              | 正式版必填 | 服务端地址，比如 `https://baby.example.com`。会打包进 App，**不要放任何密钥** |
+| `EXPO_PUBLIC_API_URL`              | 正式版必填 | 服务端地址，比如 `https://<project-ref>.supabase.co/functions/v1/api` 或 `https://baby.example.com`。会打包进 App，**不要放任何密钥** |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
 | `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |
@@ -326,7 +555,9 @@ pnpm android:build release --clean
 
 ## 四、常见问题
 
-**App 提示“连不上服务器”**：确认 `curl https://域名/healthz` 能通；确认手机不是用 http 连正式版。
+**App 提示“连不上服务器”**：确认 `curl https://域名/healthz` 能通（Supabase 方案是 `https://<project-ref>.supabase.co/functions/v1/api/healthz`）；确认手机不是用 http 连正式版。Supabase 项目可能被暂停了，到控制台看一下。
+
+**函数日志里有 `write CONNECT_TIMEOUT` 或 `invalid peer certificate`**：函数连不上数据库。先确认 `DATABASE_URL` 是 Transaction pooler 的地址（6543）。Deno 即使在 `DB_SSL=require` 时也校验证书，所以连自签名证书的数据库会失败。
 
 **上传一直失败**：先在「家人 → 存储」点「测试连接」。如果是用环境变量配置的存储，确认 `S3_PUBLIC_ENDPOINT` 是手机能访问的地址。
 
