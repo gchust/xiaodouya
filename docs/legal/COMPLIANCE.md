@@ -28,7 +28,7 @@
 
 | 数据 | 具体字段 | 存放 | 目的 | 能看到的人和接收方 | 敏感 | 今天的保留情况 |
 |---|---|---|---|---|---|---|
-| 账号 | `email`、`display_name`、`prefs`（提醒、夜间安静、时区、证件锁、仅 Wi-Fi 传视频）、`created_at` | `users` | 登录、设置 | 本人。其他成员的接口不返回邮箱 | 否 | 一直保留。没有自助删除（F-93） |
+| 账号 | `email`、`display_name`、`prefs`（提醒、夜间安静、时区、单位、证件锁、仅 Wi-Fi 传视频）、`created_at` | `users` | 登录、设置 | 本人。其他成员的接口不返回邮箱 | 否 | 一直保留。没有自助删除（F-93） |
 | 密码 | `password_hash`（scrypt，N=2^15） | `users` | 登录 | 无人能还原密码 | 高 | 同上 |
 | 登录令牌 | `token_hash`（SHA-256）、`expires_at` | `sessions`；明文令牌只在手机 SecureStore | 保持登录 | 无 | 高 | 365 天，常用时自动续期。退出或被移出时删除；过期的行没有清理任务 |
 | 家庭和成员 | `families.name`、`memberships.role/label/last_seen_at` | `families`、`memberships` | 共享和权限 | 全部成员能看到称呼、角色、最后上线时间 | 否 | 随家庭保留。没有删除家庭的接口 |
@@ -179,7 +179,7 @@
 - [ ] 上传前去除 EXIF 等元数据（注 3）
 - [ ] 决定 `viewer` 能否看到血型和出生医院（注 4）
 - [ ] 推送内容去掉健康细节（D4）
-- [ ] 去掉 `prefs.timezone` 写死的问题：`apps/mobile` 里没有设置时区的代码，默认是 `Asia/Singapore`，其他国家的用户的“夜间安静”时间会错
+- [x] 去掉 `prefs.timezone` 写死的问题：App 启动后写入手机的时区（F-90）。没存过时区的旧账号在服务端仍按 `Asia/Singapore`，因为 v0.1.0 不上报时区
 - [ ] 确认 iOS 的 iCloud 设备备份是否包含 SQLite 和 `uploads/`，Apple 5.1.3(ii) 不允许把个人健康信息存在 iCloud（详见 [App Store 资料](../store/app-store.md)）
 
 **必须由运营者完成（不写代码）：**
