@@ -16,12 +16,29 @@ import {
   todayInsight,
   vaccineStatuses,
 } from '@xiaodouya/shared';
+import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import {
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords } from '../lib/app';
+import { pickFromLibrary, queueForUpload } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
+import { useTabScrollRef } from '../lib/tabScroll';
 import {
   DiaperSheet,
   EventActionsSheet,
@@ -37,6 +54,7 @@ import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
+  const scrollRef = useTabScrollRef('today');
   const app = useApp();
   const { events, baby, pendingCount } = useRecords();
   const sheet = useSheet();
@@ -45,6 +63,7 @@ export function TodayScreen() {
   useNow(15_000);
   const now = Date.now();
   const [refreshing, setRefreshing] = useState(false);
+  const [changingAvatar, setChangingAvatar] = useState(false);
 
   if (!baby) return <SyncingPlaceholder />;
   const birthAt = baby.data.birthAt;
@@ -79,7 +98,29 @@ export function TodayScreen() {
     }
   };
 
+  const changeAvatar = async () => {
+    setChangingAvatar(true);
+    try {
+      const [file] = await pickFromLibrary({ singleImage: true });
+      if (!file) return;
+      const avatar = await queueForUpload(app.uploads, file, {
+        id: Crypto.randomUUID(),
+        scope: 'avatar',
+        videoWifiOnly: false,
+      });
+      // 选照片可能花了一会儿，用最新的档案，不要盖掉家人刚改的内容。
+      const latest = app.store.getSnapshot().baby ?? baby;
+      await app.write('baby', { ...latest.data, avatar }, latest.id);
+      toast('头像换好了');
+    } catch (error) {
+      toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
+    } finally {
+      setChangingAvatar(false);
+    }
+  };
+
   const openFeed = () => sheet.open('喂奶', () => <FeedSheet />);
+  const canChangeAvatar = app.role !== 'viewer';
   const syncLine =
     app.syncStatus === 'offline'
       ? pendingCount > 0
@@ -91,9 +132,10 @@ export function TodayScreen() {
 
   return (
     <ScrollView
+      ref={scrollRef}
       testID="today-screen"
       style={s.scroll}
-      contentContainerStyle={{ paddingTop: insets.top + 12, paddingBottom: 24 }}
+      contentContainerStyle={{ paddingTop: insets.top + 18, paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
       refreshControl={
         <RefreshControl
@@ -110,7 +152,7 @@ export function TodayScreen() {
       <View style={s.header}>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={s.date}>{formatDateHeader(now)}</Text>
-          <Text accessibilityRole="header" style={s.title} testID="today-title">
+          <Text accessibilityRole="header" style={s.title} testID="today-title" numberOfLines={2}>
             {baby.data.name}的第 {dayNumber(birthAt, now)} 天
           </Text>
           <Muted>{ageText(birthAt, now)}</Muted>
@@ -120,13 +162,21 @@ export function TodayScreen() {
             </Muted>
           ) : null}
         </View>
-        <View style={s.avatar}>
+        <PressScale
+          testID="baby-avatar"
+          accessibilityLabel="换宝宝的头像"
+          accessibilityState={{ busy: changingAvatar, disabled: !canChangeAvatar }}
+          disabled={changingAvatar || !canChangeAvatar}
+          style={s.avatar}
+          onPress={() => void changeAvatar()}
+        >
           {baby.data.avatar ? (
             <MediaImage media={baby.data.avatar} variant="thumb" style={StyleSheet.absoluteFill} />
           ) : (
             <Stripes style={StyleSheet.absoluteFill} />
           )}
-        </View>
+          {changingAvatar ? <ActivityIndicator size="small" color={colors.accent} /> : null}
+        </PressScale>
       </View>
 
       <PressScale
@@ -173,20 +223,7 @@ export function TodayScreen() {
           <Dot color={colors.diaper} />
           <Text style={s.actionLabel}>尿布</Text>
         </PressScale>
-        <PressScale
-          testID="action-sleep"
-          accessibilityLabel={sleeping ? '醒了' : '睡眠'}
-          style={[
-            s.action,
-            sleeping ? { backgroundColor: colors.sleep, borderColor: colors.sleep } : null,
-          ]}
-          onPress={() => void toggleSleep()}
-        >
-          <Dot color={sleeping ? colors.white : colors.sleep} />
-          <Text style={[s.actionLabel, sleeping ? { color: colors.white } : null]}>
-            {sleeping ? '醒了' : '睡眠'}
-          </Text>
-        </PressScale>
+        <SleepAction sleeping={Boolean(sleeping)} onPress={() => void toggleSleep()} />
         <PressScale
           testID="action-more"
           accessibilityLabel="更多"
@@ -247,7 +284,7 @@ export function TodayScreen() {
           onPress={() =>
             sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} preselect={vaccine.id} />)
           }
-          style={{ marginHorizontal: spacing.page, marginTop: 16 }}
+          style={s.vaccineWrap}
         >
           <Card style={s.vaccineCard}>
             <Text style={s.vaccineLabel}>疫苗提醒</Text>
@@ -256,8 +293,39 @@ export function TodayScreen() {
             </Text>
           </Card>
         </Pressable>
-      ) : null}
+      ) : (
+        <View testID="vaccine-reminder" style={s.vaccineWrap}>
+          <Card style={s.vaccineCard}>
+            <Text style={s.vaccineLabel}>疫苗提醒</Text>
+            <Text style={s.vaccineText}>目前没有待接种的疫苗。</Text>
+          </Card>
+        </View>
+      )}
     </ScrollView>
+  );
+}
+
+function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => void }) {
+  const progress = useSharedValue(sleeping ? 1 : 0);
+  useEffect(() => {
+    progress.value = withTiming(sleeping ? 1 : 0, { duration: 250 });
+  }, [sleeping, progress]);
+  const tint = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.card, colors.sleep]),
+    borderColor: interpolateColor(progress.value, [0, 1], [colors.line, colors.sleep]),
+  }));
+  return (
+    <PressScale
+      testID="action-sleep"
+      accessibilityLabel={sleeping ? '醒了' : '睡眠'}
+      style={[s.action, tint]}
+      onPress={onPress}
+    >
+      <Dot color={sleeping ? colors.white : colors.sleep} />
+      <Text style={[s.actionLabel, sleeping ? { color: colors.white } : null]}>
+        {sleeping ? '醒了' : '睡眠'}
+      </Text>
+    </PressScale>
   );
 }
 
@@ -302,7 +370,15 @@ const s = StyleSheet.create({
     gap: 12,
   },
   date: { fontSize: 12, color: colors.muted, letterSpacing: 1 },
-  title: { fontFamily: fonts.serifBold, fontSize: 26, lineHeight: 34, color: colors.ink },
+  // 行高 31 比字体本身矮，留点内边距给下伸部分，见 primitives 的 pageTitle。
+  title: {
+    fontFamily: fonts.serifBold,
+    fontSize: 26,
+    lineHeight: 31,
+    paddingBottom: 2,
+    marginBottom: -2,
+    color: colors.ink,
+  },
   avatar: {
     width: 44,
     height: 44,
@@ -311,6 +387,8 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.white,
     backgroundColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   feedCard: {
     marginTop: 16,
@@ -331,7 +409,7 @@ const s = StyleSheet.create({
   },
   feedLabel: { fontSize: 13, color: colors.muted },
   feedHint: { fontSize: 11, flexShrink: 1, textAlign: 'right' },
-  timer: { fontSize: 32, lineHeight: 38, letterSpacing: -0.6 },
+  timer: { fontSize: 32, lineHeight: 32, letterSpacing: -0.6 },
   actions: { flexDirection: 'row', gap: 8, marginTop: 12, marginHorizontal: spacing.page },
   action: {
     flex: 1,
@@ -376,6 +454,7 @@ const s = StyleSheet.create({
   },
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
+  vaccineWrap: { marginHorizontal: spacing.page, marginTop: 16 },
   vaccineCard: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 4 },
   vaccineLabel: { fontSize: 11, color: colors.green, letterSpacing: 0.7 },
   vaccineText: { fontSize: 13, lineHeight: 20, color: colors.ink },

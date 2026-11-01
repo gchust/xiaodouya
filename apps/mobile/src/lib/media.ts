@@ -82,12 +82,15 @@ function fromAsset(asset: ImagePicker.ImagePickerAsset): PickedFile {
   };
 }
 
-/** 系统照片选择器：不需要相册权限，只把用户选中的文件交给 App。 */
-export async function pickFromLibrary(): Promise<PickedFile[]> {
+/**
+ * 系统照片选择器：不需要相册权限，只把用户选中的文件交给 App。
+ * singleImage 用于头像这种只要一张照片的地方。
+ */
+export async function pickFromLibrary(options?: { singleImage?: boolean }): Promise<PickedFile[]> {
   if (IS_E2E) return e2ePickFiles('moment');
   const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: ['images', 'videos'],
-    allowsMultipleSelection: true,
+    mediaTypes: options?.singleImage ? ['images'] : ['images', 'videos'],
+    allowsMultipleSelection: !options?.singleImage,
     quality: 1,
     videoMaxDuration: 0,
     exif: false,
