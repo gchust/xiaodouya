@@ -20,6 +20,7 @@
 - **角色变化后游标已经越过当时读不到的记录。** 升级要归零重新拉取，降级要清掉本地无权查看的集合。
 - **“服务端说有更新但同步失败”的循环要有退避。** `/sync/wait` 在游标落后时立刻返回，没有退避就是死循环，会占满 JS 线程，整个 App 卡死。
 - **宝宝档案的记录 id 用家庭 id。** 否则换手机的管理员在同步完成前再建一次档，新记录会覆盖全家的出生时间。同时要等第一次同步成功才显示建档页。
+- **恢复旧备份会让家庭 seq 回退，手机的游标就超前了。** 服务端返回 `Math.max(upperBound, cursor)`，手机看不到家人新写的记录，也不报错，直到 seq 追上游标。协议还没有处理这种情况，目前只在部署文档里要求恢复后全家退出再登录。
 
 ## 账号和登录
 
@@ -36,6 +37,7 @@
 - **退出登录的警告要同时算记录和上传队列。** 记录都同步了不代表视频也传了。
 - **SeaweedFS 写入时会自动建 Bucket，R2 和 S3 不会。** “Bucket 不存在”在本地测不出来，要测错误翻译函数。
 - **内网地址判断不能用字符串。** `::ffff:7f00:1` 就是 127.0.0.1，用 `net.BlockList`。
+- **开发 SeaweedFS 的卷位用满后，写入新 Bucket 返回 500。** 它给每个 Bucket 单独分卷，`-volume.max=20` 用完就报 `No writable volume`，已有的 Bucket 不受影响。看起来像预签名出错，先看 S3 容器的日志。
 
 ## 健康内容
 
@@ -58,6 +60,7 @@
 - **`adb input text` 批量注入会丢字符。** 它和输入法组字冲突，看起来像 App 的 Bug，其实不是。用 `scripts/adb-ui.py` 逐字输入。
 - **键盘没开时按返回键会退出页面。** 用 `adb-ui.py hide`，它会先判断键盘状态。
 - **本机不能直接下载运行 Maestro。** 权限系统会拦下外部代码。本地用 `adb-ui.py` 做探索性测试，Maestro 流程在 CI 上跑。
+- **改 `build.gradle` 不能用跨块的正则。** 旧脚本在 release 排在 debug 前面时，会把正式密钥配给 debug，自己还正常退出。要先按花括号找到 release 块，只在块内替换，找不到就报错。
 
 ## 依赖和环境
 
@@ -67,11 +70,19 @@
 - **慢网下 `expo install` 会超时。** 从 `node_modules/expo/bundledNativeModules.json` 取版本写进 `package.json`，再用长超时运行 `pnpm install`。
 - **Git worktree 里不能软链 `node_modules`。** `@xiaodouya/shared` 解析不到，每个 worktree 要自己 `pnpm install`。
 - **`pkill -f 模式` 会匹配到自己所在的 shell。** 模式出现在命令行里就会把脚本自己杀掉，后面的清理步骤不会执行。
+- **`nodeLinker: hoisted` 下 `pnpm install --filter` 不起过滤作用。** 服务端镜像曾因此下载全部 React Native（640 多个包），慢网下超时。Dockerfile 要加 `--node-linker=isolated`（104 个包），之后的 `pnpm run` 还要关掉 `verify-deps-before-run`，否则它会重新安装并报 Broken lockfile。
 
 ## CI
 
 - **`upload-artifact` 默认跳过隐藏目录。** 上传 `.artifacts` 要加 `include-hidden-files: true`，否则失败时什么现场都没有。
 - **`setup-android` 默认安装已不存在的 `tools` 包。** 要写 `packages: platform-tools`。
+
+## 部署
+
+- **psql 遇到错误默认继续执行，最后还退出 0。** 把备份导入已有表的库，报了 48 个错，数据没恢复，看起来却成功了。必须加 `-v ON_ERROR_STOP=1 --single-transaction`。
+- **不完整的备份可能是合法的 SQL。** 先删库再导入时，截断的备份不报错，提交后是一个空数据库。清空之前先检查结尾的 `dump complete` 标记，`deploy/restore.sh` 就是这样做的。
+- **同时有 `image` 和 `build` 的服务，拉取被拒绝时 Compose 会自动改成本机构建。** 没有发布过镜像时“方式 A”其实在构建，还能成功，所以这样测不出镜像的问题。
+- **在本机验证生产配置时，`ports` 会合并而不是覆盖。** 覆盖文件要写 `ports: !override [...]`，否则还是会占用 80 和 443。`COMPOSE_PROJECT_NAME` 优先于文件里的 `name:`，不改 `backup.sh` 也能指向测试环境。
 
 ## 测试方法
 
