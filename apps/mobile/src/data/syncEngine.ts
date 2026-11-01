@@ -27,10 +27,25 @@ export interface SyncEvents {
 
 const ROLE_KEY = 'role';
 const OUTBOX_BATCH = 200;
+/**
+ * 服务端的请求体上限是 5 MB。超了会一直 413，退避重试也没用，后面的记录全被堵住。
+ * 用字符数乘 3 估算：一个汉字在 UTF-8 里 3 字节。估高了只是多发一次请求。
+ */
+const OUTBOX_MAX_BYTES = 4 * 1024 * 1024;
 const LIVE_BACKOFF_MS = 5_000;
 const MAX_ROUNDS = 50;
 const MIN_RETRY_MS = 2_000;
 const MAX_RETRY_MS = 60_000;
+
+/** 取开头不超过大小上限的一段。至少一条：单条太大也要发出去，让服务端决定，不能卡在队列里。 */
+export function batchWithinBytes<T extends { data: unknown }>(records: T[], maxBytes: number): T[] {
+  let bytes = 0;
+  for (const [index, record] of records.entries()) {
+    bytes += (JSON.stringify(record.data)?.length ?? 0) * 3 + 200;
+    if (bytes > maxBytes && index > 0) return records.slice(0, index);
+  }
+  return records;
+}
 
 /**
  * 双向同步。约定：
@@ -108,7 +123,7 @@ export class SyncEngine {
     this.events.onStatus?.('syncing');
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
-        const sent = this.store.dirtyRecords(OUTBOX_BATCH);
+        const sent = batchWithinBytes(this.store.dirtyRecords(OUTBOX_BATCH), OUTBOX_MAX_BYTES);
         for (const record of sent) this.lastSentIds.add(record.id);
         const response = await this.transport.sync({
           cursor: this.cursor,

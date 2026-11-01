@@ -1,13 +1,11 @@
 import {
   type Dimension,
   type FamilyMember,
-  formatBytes,
   lengthUnits,
   type Role,
   regionFor,
   roleLabels,
   scaleFor,
-  storageProviderNames,
   temperatureUnits,
   type UnitPrefs,
   unitsSummary,
@@ -22,6 +20,7 @@ import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { ensureNotificationPermission } from '../lib/notifications';
+import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -54,21 +53,21 @@ export function FamilyScreen() {
   const { me, role, prefs } = app;
   const isAdmin = role === 'admin';
   const canRecord = role !== 'viewer';
+  const showStorage = canOpenStorage(role);
 
   const loadStorage = useCallback(async () => {
-    if (!isAdmin) return;
+    if (!showStorage) return;
     try {
-      const [config, usage] = await Promise.all([app.api.getStorage(), app.api.storageUsage()]);
-      if (config.source === 'none') {
-        setStorageSummary('还没有配置，上传前需要先设置');
-      } else {
-        const name = config.provider ? storageProviderNames[config.provider] : '服务器默认存储';
-        setStorageSummary(`${name} · 已用 ${usage.total ? formatBytes(usage.total) : '0'}`);
-      }
+      // 存储配置只有管理员能读。
+      const [config, usage] = await Promise.all([
+        isAdmin ? app.api.getStorage() : null,
+        app.api.storageUsage(),
+      ]);
+      setStorageSummary(storageSummaryText(usage, config));
     } catch {
       setStorageSummary('暂时读不到，联网后再看');
     }
-  }, [app.api, isAdmin]);
+  }, [app.api, isAdmin, showStorage]);
 
   useEffect(() => {
     void loadStorage();
@@ -215,7 +214,7 @@ export function FamilyScreen() {
       <View style={s.section}>
         <SectionTitle>设置</SectionTitle>
         <ListCard>
-          {isAdmin ? (
+          {showStorage ? (
             <NavRow
               testID="open-storage"
               label="存储"
