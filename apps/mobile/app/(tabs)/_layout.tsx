@@ -1,5 +1,6 @@
 import { Redirect, Tabs } from 'expo-router';
 import { useApp } from '../../src/lib/app';
+import { PendingPickRecovery } from '../../src/lib/pendingPick';
 import { colors } from '../../src/theme';
 import { StatusBarScrim } from '../../src/ui/StatusBarScrim';
 import { TabBar } from '../../src/ui/TabBar';
@@ -21,6 +22,7 @@ export default function TabsLayout() {
         <Tabs.Screen name="family" options={{ title: '家人' }} />
       </Tabs>
       <StatusBarScrim />
+      {viewer ? null : <PendingPickRecovery />}
     </>
   );
 }

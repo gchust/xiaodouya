@@ -30,6 +30,32 @@ async function fixture(name: string, write: (file: File) => unknown): Promise<Fi
   return file;
 }
 
+/** 选两次就超过 100 个，流程 03a 要走到“放不下”的提示。 */
+const BULK_PICK_COUNT = 60;
+let fixtureSerial = 0;
+
+/**
+ * 流程 03a 要走“一次选很多张”，系统相册点不了，所以 E2E 构建里长按选图按钮给一批样例。
+ * 每张的路径都不一样，和系统选择器一致：保存时文件是被挪走的。
+ */
+export async function e2eBulkMoment(): Promise<PickedFile[]> {
+  const files: PickedFile[] = [];
+  for (let i = 0; i < BULK_PICK_COUNT; i++) {
+    const name = `e2e-bulk-${++fixtureSerial}.png`;
+    const file = await fixture(name, (f) => f.write(PNG_BASE64, { encoding: 'base64' }));
+    files.push({
+      uri: file.uri,
+      kind: 'image',
+      mime: 'image/png',
+      size: file.size ?? 0,
+      name,
+      width: 64,
+      height: 64,
+    });
+  }
+  return files;
+}
+
 export async function e2ePickFiles(
   purpose: 'moment' | 'avatar' | 'document-photo' | 'document-pdf',
 ): Promise<PickedFile[]> {

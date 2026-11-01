@@ -6,6 +6,9 @@ const timestamp = z.number().int().nonnegative();
 const shortText = z.string().max(200);
 const longText = z.string().max(20_000);
 
+/** 一条记录最多带多少个文件。改大之前要想到旧版 App：校验不过的记录它们显示不出来。 */
+export const MAX_MEDIA_PER_RECORD = 100;
+
 export const mediaKinds = ['image', 'video', 'audio', 'pdf'] as const;
 export type MediaKind = (typeof mediaKinds)[number];
 
@@ -131,7 +134,7 @@ export const MomentData = z.looseObject({
   text: longText,
   at: timestamp,
   milestone: z.boolean(),
-  media: z.array(MediaRef).max(100),
+  media: z.array(MediaRef).max(MAX_MEDIA_PER_RECORD),
   byName: shortText.optional(),
 });
 export type MomentData = z.infer<typeof MomentData>;
@@ -150,7 +153,7 @@ export const DocumentData = z.looseObject({
   number: shortText.optional(),
   issuedOn: shortText.optional(),
   expiresOn: shortText.optional(),
-  files: z.array(MediaRef).max(100),
+  files: z.array(MediaRef).max(MAX_MEDIA_PER_RECORD),
 });
 export type DocumentData = z.infer<typeof DocumentData>;
 

@@ -1,5 +1,57 @@
 /** 不依赖 React Native 的纯函数，方便单元测试。 */
 
+/**
+ * 把新选的文件并进已选列表，放不下的算出个数让界面提示。
+ * 不用系统选择器的 selectionLimit：没有原生上限的回退选择器上，它会把多选的结果悄悄截掉。
+ */
+export function mergePicked<T>(
+  existing: readonly T[],
+  picked: readonly T[],
+  otherCount: number,
+  max: number,
+): { files: T[]; dropped: number } {
+  const room = Math.max(0, max - otherCount - existing.length);
+  return {
+    files: [...existing, ...picked.slice(0, room)],
+    dropped: Math.max(0, picked.length - room),
+  };
+}
+
+/** 逐个处理。一个失败不挡后面的，失败原因交给界面告诉用户。 */
+export async function importEach<T, R>(
+  items: readonly T[],
+  run: (item: T) => Promise<R>,
+): Promise<{ done: R[]; failed: string[] }> {
+  const done: R[] = [];
+  const failed: string[] = [];
+  for (const item of items) {
+    try {
+      done.push(await run(item));
+    } catch (error) {
+      failed.push(error instanceof Error ? error.message : '有一个文件没有添加成功');
+    }
+  }
+  return { done, failed };
+}
+
+/** 按给定的间隔反复尝试，拿到结果就停。出错当作没拿到。 */
+export async function firstFound<T>(
+  attempt: () => Promise<T | null>,
+  delaysMs: readonly number[],
+  sleep: (ms: number) => Promise<void>,
+): Promise<T | null> {
+  for (const delay of delaysMs) {
+    await sleep(delay);
+    try {
+      const found = await attempt();
+      if (found !== null) return found;
+    } catch {
+      // 继续试下一次。
+    }
+  }
+  return null;
+}
+
 export function pickDurationMs(duration: number | null | undefined): number | undefined {
   return duration && duration > 0 ? Math.round(duration) : undefined;
 }

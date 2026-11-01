@@ -1,17 +1,19 @@
 import {
   formatMediaDuration,
   type LetterData,
+  MAX_MEDIA_PER_RECORD,
   type MediaRef,
   type MomentData,
   mergeEdit,
   mergeMediaEdit,
 } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
-import { type PickedFile, pickFromLibrary, queueForUpload } from '../lib/media';
+import { IS_E2E } from '../lib/config';
+import { type PickedFile, pickFromLibrary, queueAllForUpload } from '../lib/media';
+import { mergePicked } from '../lib/mediaUtils';
 import { ExistingThumb, LocalThumb, useRecorder } from '../lib/mediaViews';
 import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -20,14 +22,13 @@ import { RecordTimeField, useRecordTime } from '../ui/TimeField';
 
 export type MomentKind = 'moment' | 'letter';
 
-/** 和 MomentData 的上限一致。超过了记录过不了校验，会整条显示不出来。 */
-const MAX_MEDIA = 100;
 const NOW_ONLY = [{ minutes: 0, label: '现在' }] as const;
 
 export function MomentSheet({
   initialKind = 'moment',
   initialMilestone = false,
   initialTitle = '',
+  initialFiles = [],
   onSaved,
   editMoment,
   editLetter,
@@ -35,6 +36,8 @@ export function MomentSheet({
   initialKind?: MomentKind;
   initialMilestone?: boolean;
   initialTitle?: string;
+  /** App 被系统回收后找回的选择结果。 */
+  initialFiles?: PickedFile[];
   /** 保存后由回忆页切到能看到这条内容的子标签。 */
   onSaved?: (kind: MomentKind) => void;
   /** 修改已有的回忆。类型不能换：回忆和信是两个集合。 */
@@ -53,7 +56,7 @@ export function MomentSheet({
   const [text, setText] = useState(editing?.data.text ?? '');
   const [milestone, setMilestone] = useState(editMoment?.data.milestone ?? initialMilestone);
   const [kept, setKept] = useState<MediaRef[]>(editMoment?.data.media ?? []);
-  const [files, setFiles] = useState<PickedFile[]>([]);
+  const [files, setFiles] = useState<PickedFile[]>(initialFiles);
   const [saving, setSaving] = useState(false);
   const [picking, setPicking] = useState(false);
   const recorder = useRecorder();
@@ -71,11 +74,17 @@ export function MomentSheet({
       Boolean(title.trim() || text.trim() || kept.length || files.length || recorder.recording);
   const canSave = hasContent && !time.check.error;
 
-  const pick = async () => {
+  const pick = async (options?: { e2eBulk?: boolean }) => {
     setPicking(true);
     try {
-      const picked = await pickFromLibrary();
-      if (picked.length > 0) setFiles((prev) => [...prev, ...picked]);
+      const picked = await pickFromLibrary(options);
+      const merged = mergePicked(files, picked, kept.length, MAX_MEDIA_PER_RECORD);
+      setFiles(merged.files);
+      if (merged.dropped > 0) {
+        toast(
+          `一条回忆最多放 ${MAX_MEDIA_PER_RECORD} 个文件，这次有 ${merged.dropped} 个没放进来，可以再记一条。`,
+        );
+      }
     } catch (error) {
       toast(error instanceof Error ? error.message : '打不开相册');
     } finally {
@@ -103,8 +112,8 @@ export function MomentSheet({
         if (last) files.push(last);
       }
       const at = time.resolve();
-      if (!isLetter && kept.length + files.length > MAX_MEDIA) {
-        toast(`一条回忆最多放 ${MAX_MEDIA} 个文件，可以再记一条。`);
+      if (!isLetter && kept.length + files.length > MAX_MEDIA_PER_RECORD) {
+        toast(`一条回忆最多放 ${MAX_MEDIA_PER_RECORD} 个文件，可以再记一条。`);
         return;
       }
       if (isLetter) {
@@ -123,16 +132,16 @@ export function MomentSheet({
         toast('信已保存');
       } else {
         // 先进上传队列再写记录，文件传不上去也不会丢：队列会一直重试，记录里已经有引用。
-        const refs: MediaRef[] = [];
-        for (const file of files) {
-          refs.push(
-            await queueForUpload(app.uploads, file, {
-              id: Crypto.randomUUID(),
-              scope: 'memory',
-              videoWifiOnly: app.prefs.videoWifiOnly,
-            }),
-          );
+        const { refs, failed } = await queueAllForUpload(app.uploads, files, {
+          scope: 'memory',
+          videoWifiOnly: app.prefs.videoWifiOnly,
+        });
+        // 全部失败又没写别的内容时不存空记录，让用户留在弹层里看到原因。
+        if (failed[0] && refs.length === 0 && !kept.length && !title.trim() && !text.trim()) {
+          toast(failed[0]);
+          return;
         }
+        const failedNote = failed[0] ? `有 ${failed.length} 个文件没有添加：${failed[0]}` : null;
         const fields = { title: title.trim(), text: text.trim(), at, milestone };
         if (editMoment) {
           const { id, data } = editMoment;
@@ -141,12 +150,13 @@ export function MomentSheet({
           const media = mergeMediaEdit(data.media, latest.media, [...kept, ...refs]);
           await app.write('moment', mergeEdit(data, latest, { ...fields, media }), id);
           sheet.close();
-          toast('已保存', { undo: () => void app.write('moment', latest, id) });
+          toast(failedNote ?? '已保存', { undo: () => void app.write('moment', latest, id) });
           return;
         }
         await app.write('moment', { ...fields, media: refs, byName: app.label });
         sheet.close();
-        if (refs.length === 0) toast('已保存到回忆');
+        if (failedNote) toast(failedNote);
+        else if (refs.length === 0) toast('已保存到回忆');
       }
       onSaved?.(kind);
       router.navigate('/recall');
@@ -186,6 +196,7 @@ export function MomentSheet({
               accessibilityLabel="选择照片或视频"
               disabled={picking}
               onPress={() => void pick()}
+              onLongPress={IS_E2E ? () => void pick({ e2eBulk: true }) : undefined}
               style={s.picker}
             >
               <Text style={s.pickerLabel}>{picking ? '正在打开…' : '照片 / 视频'}</Text>

@@ -128,6 +128,13 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
       setSource({ uri: local, cacheKey: `${media.id}/${effective}` });
       return;
     }
+    // 缩略图在队列里排队时先显示本地原图，不然刚保存的照片要等上传才看得到。视频不行：原图不是图片。
+    const localOriginal =
+      effective === 'thumb' && media.kind === 'image' ? localUriFor(media.id, 'original') : null;
+    if (localOriginal) {
+      setSource({ uri: localOriginal, cacheKey: `${media.id}/original` });
+      return;
+    }
     const resolve = async () => {
       const batcher = mediaUrlBatcher(api);
       const url = await batcher.get(media.id, effective);

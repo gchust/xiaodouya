@@ -1,5 +1,10 @@
-import { type DocumentData, formatBytes, type MediaRef, mergeEdit } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
+import {
+  type DocumentData,
+  formatBytes,
+  MAX_MEDIA_PER_RECORD,
+  type MediaRef,
+  mergeEdit,
+} from '@xiaodouya/shared';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -13,7 +18,7 @@ import {
   openDocumentFile,
   type PickedFile,
   pickDocument,
-  queueForUpload,
+  queueAllForUpload,
   takePhoto,
 } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
@@ -114,18 +119,18 @@ export function DocumentScreen({ id }: { id: string }) {
 
   const addFiles = async (files: PickedFile[]) => {
     if (files.length === 0) return;
-    const refs: MediaRef[] = [];
-    for (const file of files) {
-      refs.push(
-        await queueForUpload(app.uploads, file, {
-          id: Crypto.randomUUID(),
-          scope: 'document',
-          videoWifiOnly: false,
-        }),
-      );
+    if (latest().files.length + files.length > MAX_MEDIA_PER_RECORD) {
+      throw new Error(`一份证件最多放 ${MAX_MEDIA_PER_RECORD} 个文件`);
     }
-    const current = latest();
-    await app.write('document', { ...current, files: [...current.files, ...refs] }, id);
+    const { refs, failed } = await queueAllForUpload(app.uploads, files, {
+      scope: 'document',
+      videoWifiOnly: false,
+    });
+    if (refs.length > 0) {
+      const current = latest();
+      await app.write('document', { ...current, files: [...current.files, ...refs] }, id);
+    }
+    if (failed[0]) throw new Error(failed[0]);
   };
 
   // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。

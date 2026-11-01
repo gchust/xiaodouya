@@ -151,6 +151,10 @@ export class RecordStore {
     id: string,
     data: CollectionData[C],
   ): Promise<void> {
+    // rebuild 会跳过校验不过的记录：不在这里拦的话，它存得下却看不见，服务端也不收，改已有记录时原来的内容也没了。
+    if (!parseCollectionData(collection, data)) {
+      throw new Error('内容超出了限制，没有保存');
+    }
     const record: StoredRecord = {
       id,
       collection,

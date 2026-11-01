@@ -1,4 +1,5 @@
 import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
+import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
 import { Image } from 'expo-image';
@@ -17,8 +18,8 @@ import {
 import { isPersonalCacheDirectory } from './accountLogic';
 import { type Api, ApiFailure } from './api';
 import { IS_E2E } from './config';
-import { e2ePickFiles } from './e2eFixtures';
-import { pickDurationMs } from './mediaUtils';
+import { e2eBulkMoment, e2ePickFiles } from './e2eFixtures';
+import { firstFound, importEach, pickDurationMs } from './mediaUtils';
 
 export interface PickedFile {
   uri: string;
@@ -33,6 +34,8 @@ export interface PickedFile {
 }
 
 const THUMB_WIDTH = 720;
+/** 解码时就缩小。12 MP 整张解码要 48 MB，108 MP 要 430 MB，而缩略图只有 720 宽。 */
+const THUMB_DECODE_MAX_SIDE = 1440;
 /** 编辑时要把图解码进内存，手机原图可能有上亿像素，不限制的话旋转时会内存不足。头像用不到更高的清晰度。 */
 const EDIT_MAX_SIDE = 3000;
 
@@ -85,20 +88,64 @@ function fromAsset(asset: ImagePicker.ImagePickerAsset): PickedFile {
   };
 }
 
+function pendingPickMarker(): File {
+  return new File(Paths.document, 'pending-moment-pick');
+}
+
 /**
  * 系统照片选择器：不需要相册权限，只把用户选中的文件交给 App。
  * singleImage 用于头像这种只要一张照片的地方。
  */
-export async function pickFromLibrary(options?: { singleImage?: boolean }): Promise<PickedFile[]> {
+export async function pickFromLibrary(options?: {
+  singleImage?: boolean;
+  /** 只在 E2E 构建里有效，见 e2eBulkMoment。 */
+  e2eBulk?: boolean;
+}): Promise<PickedFile[]> {
+  if (IS_E2E && options?.e2eBulk) return e2eBulkMoment();
   if (IS_E2E) return e2ePickFiles(options?.singleImage ? 'avatar' : 'moment');
-  const result = await ImagePicker.launchImageLibraryAsync({
-    mediaTypes: options?.singleImage ? ['images'] : ['images', 'videos'],
-    allowsMultipleSelection: !options?.singleImage,
-    quality: 1,
-    videoMaxDuration: 0,
-    exif: false,
-  });
-  return result.canceled ? [] : result.assets.map(fromAsset);
+  const single = Boolean(options?.singleImage);
+  const marker = pendingPickMarker();
+  try {
+    if (!single && !marker.exists) marker.create();
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: single ? ['images'] : ['images', 'videos'],
+      allowsMultipleSelection: !single,
+      quality: 1,
+      videoMaxDuration: 0,
+      exif: false,
+    });
+    return result.canceled ? [] : result.assets.map(fromAsset);
+  } catch {
+    // 原生层的错误是一长串英文，用户看不懂。
+    throw new Error('打不开相册，请再试一次');
+  } finally {
+    // App 在选择器打开时被杀的话走不到这里，下次启动靠它知道该找回给回忆。
+    if (!single && marker.exists) marker.delete();
+  }
+}
+
+/**
+ * 选择器打开时 App 被系统回收，用户点“添加”后 App 是冷启动的，原来的 Promise 已经没了，
+ * 结果由原生层暂存。只找回给回忆用的：头像和证件照的结果不能跑到回忆里。
+ * 原生层收到结果的时间可能晚于 JS 启动，所以多试几次。
+ */
+export async function recoverPendingPick(): Promise<PickedFile[]> {
+  if (IS_E2E || Platform.OS !== 'android') return [];
+  const marker = pendingPickMarker();
+  if (!marker.exists) return [];
+  try {
+    const assets = await firstFound(
+      async () => {
+        const result = await ImagePicker.getPendingResultAsync();
+        return result && 'assets' in result && result.assets ? result.assets : null;
+      },
+      [0, 1000, 2000, 4000],
+      (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    );
+    return assets ? assets.map(fromAsset) : [];
+  } finally {
+    if (marker.exists) marker.delete();
+  }
 }
 
 export async function takePhoto(): Promise<PickedFile[]> {
@@ -130,62 +177,95 @@ export async function pickDocument(): Promise<PickedFile[]> {
 }
 
 async function makeThumbnail(
-  file: PickedFile,
-  id: string,
-): Promise<{ uri: string; size: number } | null> {
+  source: { uri: string; kind: 'image' | 'video' },
+  targetUri: string,
+): Promise<{ size: number } | null> {
+  let videoFrame: string | null = null;
   try {
-    let sourceUri = file.uri;
-    if (file.kind === 'video') {
-      sourceUri = (await VideoThumbnails.getThumbnailAsync(file.uri, { time: 500, quality: 0.8 }))
-        .uri;
-    } else if (file.kind !== 'image') {
-      return null;
+    if (source.kind === 'video') {
+      videoFrame = (
+        await VideoThumbnails.getThumbnailAsync(source.uri, { time: 500, quality: 0.8 })
+      ).uri;
     }
-    const context = ImageManipulator.manipulate(sourceUri);
-    context.resize({ width: THUMB_WIDTH });
-    const image = await context.renderAsync();
-    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
-    const target = localFile(id, 'thumb');
-    if (target.exists) target.delete();
-    await new File(saved.uri).move(target);
-    return { uri: target.uri, size: target.size ?? 0 };
+    const context = ImageManipulator.manipulate(videoFrame ?? source.uri, {
+      maxWidth: THUMB_DECODE_MAX_SIDE,
+      maxHeight: THUMB_DECODE_MAX_SIDE,
+    });
+    let image: ImageRef | null = null;
+    try {
+      context.resize({ width: THUMB_WIDTH });
+      image = await context.renderAsync();
+      const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
+      const target = new File(targetUri);
+      if (target.exists) target.delete();
+      await new File(saved.uri).move(target);
+      return { size: target.size ?? 0 };
+    } finally {
+      // 图片在原生内存里，JS 的垃圾回收感觉不到它的大小，等它来回收的话几张大图就能撑爆内存。
+      image?.release();
+      context.release();
+    }
   } catch {
     // 缩略图失败不阻止上传：界面会退回显示原图或占位。
     return null;
+  } finally {
+    if (videoFrame) {
+      try {
+        new File(videoFrame).delete();
+      } catch {
+        // 留在缓存里也无妨，退出登录时会清。
+      }
+    }
   }
 }
 
 /**
- * 把选中的文件复制进 App 私有目录并加入上传队列，返回可以写入记录的引用。
- * 必须先复制：相册 URI 和缓存文件都可能在 App 重启后失效，而上传可能要等到连上 Wi-Fi。
+ * 把文件收进 App 私有目录。选择器和录音的副本都在缓存目录，直接挪过去是瞬间完成的，
+ * 也不用占两份空间；其他来源，或者挪不动时才复制。
+ * 必须在写记录前做：缓存文件随时可能被系统清掉，而上传可能要等到连上 Wi-Fi。
  */
-export async function queueForUpload(
-  queue: UploadQueue,
+async function adoptFile(file: PickedFile, target: File): Promise<void> {
+  if (file.uri === target.uri && target.exists) return;
+  if (target.exists) target.delete();
+  const source = new File(file.uri);
+  if (file.uri.startsWith(Paths.cache.uri)) {
+    try {
+      await source.move(target);
+      file.uri = target.uri;
+      return;
+    } catch {
+      // 退回复制。
+    }
+  }
+  await new File(file.uri).copy(target);
+}
+
+async function prepareFile(
   file: PickedFile,
   options: { id: string; scope: MediaScope; videoWifiOnly: boolean },
-): Promise<MediaRef> {
+): Promise<{ ref: MediaRef; jobs: Omit<UploadJob, 'key' | 'attempts'>[] }> {
   const { id, scope } = options;
   const target = localFile(id, 'original');
-  if (target.exists) target.delete();
-  await new File(file.uri).copy(target);
+  await adoptFile(file, target);
   const size = target.size ?? file.size;
   if (!size) {
     target.delete();
     throw new Error(`${file.name ?? '这个文件'}是空的，没有添加`);
   }
-  const thumb = await makeThumbnail(file, id);
   const wifiOnly = file.kind === 'video' && options.videoWifiOnly;
+  const thumbKind = file.kind === 'image' || file.kind === 'video' ? file.kind : null;
   const jobs: Omit<UploadJob, 'key' | 'attempts'>[] = [];
-  // 缩略图排在前面：它小，传得快，家人能先看到。
-  if (thumb) {
+  // 缩略图排在前面：它小，传得快，家人能先看到。解码原图很慢也很占内存，交给队列一张一张做，不让用户等。
+  if (thumbKind) {
     jobs.push({
       id,
       variant: 'thumb',
       scope,
-      localUri: thumb.uri,
+      localUri: localFile(id, 'thumb').uri,
       mime: 'image/jpeg',
-      size: thumb.size,
+      size: 0,
       wifiOnly: false,
+      thumbSource: { uri: target.uri, kind: thumbKind },
     });
   }
   jobs.push({
@@ -198,19 +278,62 @@ export async function queueForUpload(
     filename: file.name,
     wifiOnly,
   });
-  await queue.enqueue(jobs);
   return {
-    id,
-    kind: file.kind,
-    name: file.name,
-    mime: file.mime,
-    size,
-    durationMs: file.durationMs,
-    width: file.width,
-    height: file.height,
-    peaks: file.peaks,
-    hasThumb: Boolean(thumb),
+    jobs,
+    ref: {
+      id,
+      kind: file.kind,
+      name: file.name,
+      mime: file.mime,
+      size,
+      durationMs: file.durationMs,
+      width: file.width,
+      height: file.height,
+      peaks: file.peaks,
+      // 还没生成也写 true：显示时取不到缩略图会退回原图，生成后不用再改一次记录。
+      hasThumb: Boolean(thumbKind),
+    },
   };
+}
+
+/** 加入上传队列，返回可以写入记录的引用。 */
+export async function queueForUpload(
+  queue: UploadQueue,
+  file: PickedFile,
+  options: { id: string; scope: MediaScope; videoWifiOnly: boolean },
+): Promise<MediaRef> {
+  const { ref, jobs } = await prepareFile(file, options);
+  await queue.enqueue(jobs);
+  return ref;
+}
+
+const fileIds = new WeakMap<PickedFile, string>();
+const queuedRefs = new WeakMap<PickedFile, MediaRef>();
+
+/**
+ * 一批文件一起入队。一个文件失败不挡后面的。
+ * 写记录失败时用户会再点一次保存：同一个文件用同一个 id，不会重复上传。
+ */
+export async function queueAllForUpload(
+  queue: UploadQueue,
+  files: readonly PickedFile[],
+  options: { scope: MediaScope; videoWifiOnly: boolean },
+): Promise<{ refs: MediaRef[]; failed: string[] }> {
+  const jobs: Omit<UploadJob, 'key' | 'attempts'>[] = [];
+  const fresh: [PickedFile, MediaRef][] = [];
+  const { done, failed } = await importEach(files, async (file) => {
+    const existing = queuedRefs.get(file);
+    if (existing) return existing;
+    const id = fileIds.get(file) ?? Crypto.randomUUID();
+    fileIds.set(file, id);
+    const prepared = await prepareFile(file, { ...options, id });
+    jobs.push(...prepared.jobs);
+    fresh.push([file, prepared.ref]);
+    return prepared.ref;
+  });
+  if (jobs.length > 0) await queue.enqueue(jobs);
+  for (const [file, ref] of fresh) queuedRefs.set(file, ref);
+  return { refs: done, failed };
 }
 
 /** 把一张已有的图读进内存准备编辑。本地有副本就不走网络，否则先下载。 */
@@ -301,6 +424,10 @@ export function createUploadTransport(api: Api): UploadTransport {
     async removeLocal(uri) {
       const file = new File(uri);
       if (file.exists) file.delete();
+    },
+    async makeThumb(job) {
+      if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
+      return makeThumbnail(job.thumbSource, job.localUri);
     },
   };
 }

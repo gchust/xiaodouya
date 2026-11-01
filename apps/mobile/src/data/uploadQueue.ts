@@ -21,6 +21,8 @@ export interface UploadJob {
   attempts: number;
   /** 不可恢复的错误（例如文件类型被拒绝），需要用户处理。 */
   failed?: string;
+  /** 缩略图还没生成时才有：记录要先写下来，解码原图放到队列里一张一张做。 */
+  thumbSource?: { uri: string; kind: 'image' | 'video' };
 }
 
 export interface UploadQueueDb {
@@ -39,6 +41,8 @@ export interface UploadTransport {
   complete(id: string, variant: MediaVariant): Promise<void>;
   /** 上传成功后清理本地副本。 */
   removeLocal(uri: string): Promise<void>;
+  /** 把缩略图生成到 job.localUri。做不出来返回 null，这个文件就只有原图。 */
+  makeThumb?(job: UploadJob): Promise<{ size: number } | null>;
 }
 
 /** 带状态码的错误，用来区分“可以重试”和“重试也没用”。 */
@@ -176,6 +180,9 @@ export class UploadQueue {
     for (const job of this.jobs.values()) {
       if (job.failed || skip.has(job.key)) continue;
       if (job.wifiOnly && this.network !== 'wifi') continue;
+      // 原图传完本地副本就删了，还没做的缩略图要排在它前面。重启后读出来的顺序不一定是入队顺序。
+      const thumb = this.jobs.get(`${job.id}/thumb`);
+      if (thumb?.thumbSource && !skip.has(thumb.key)) return thumb;
       return job;
     }
     return null;
@@ -232,6 +239,7 @@ export class UploadQueue {
   private async runJob(job: UploadJob): Promise<boolean> {
     this.batchSent = 0;
     this.publish(true);
+    if (job.thumbSource && !(await this.prepareThumb(job))) return true;
     try {
       const target = await this.transport.requestUrl({
         id: job.id,
@@ -270,6 +278,24 @@ export class UploadQueue {
       this.publish();
       return Boolean(job.failed);
     }
+  }
+
+  /** 返回 false 表示这个任务不用再传了。缩略图只是省流量，任何失败都不能挡住原图。 */
+  private async prepareThumb(job: UploadJob): Promise<boolean> {
+    const made = await Promise.resolve(this.transport.makeThumb?.(job)).catch(() => null);
+    // 队列已经被清空：写回去的话，下一个登录的人会看到别人的任务。
+    if (this.jobs.get(job.key) !== job) return false;
+    if (!made) {
+      await this.db.deleteJob(job.key);
+      this.jobs.delete(job.key);
+      this.publish();
+      return false;
+    }
+    job.size = made.size;
+    job.thumbSource = undefined;
+    this.batchBytes += made.size;
+    await this.db.saveJob(job);
+    return true;
   }
 
   private async finish(job: UploadJob): Promise<void> {
