@@ -1,0 +1,550 @@
+# 修改和补记：每种记录都能改，时间能改到以前，补记不影响“距上次喂奶”，回忆能加减文件，证件能改名和移除文件。
+# 系统日期和时刻选择器不好自动化，这里用“今天 / 昨天 / 前天”胶囊，系统选择器在模拟器上手动看过。
+# 测试用的记录、回忆、信和证件最后都删掉，卡介苗的日期也改回今天，后面的流程不受影响。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 喂奶：把时间改到昨天，再改回来 ────────────────
+- tapOn: { id: action-feed }
+- takeScreenshot: .artifacts/e2e-11a-feed-new
+- tapOn: { id: ml-chip-60 }
+- tapOn: { id: ml-dec }
+- assertVisible: "50"
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 喂奶 50ml
+    timeout: 30000
+- tapOn: 喂奶 50ml
+- assertVisible: { id: event-detail }
+- takeScreenshot: .artifacts/e2e-11a-event-actions
+- tapOn: { id: event-edit }
+- assertVisible: 修改喂奶
+- assertVisible: { id: time-date }
+- assertVisible: { id: time-clock }
+- tapOn: { id: time-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-feed-edit-time
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+# 昨天的记录不在过去 24 小时里，也不再是“上次喂奶”。正则把喂奶卡片和 Toast 都算上。
+- extendedWaitUntil:
+    notVisible:
+      text: .*喂奶 50ml.*
+    timeout: 20000
+- takeScreenshot: .artifacts/e2e-11a-after-move
+- scrollUntilVisible:
+    element: { id: records-open }
+- takeScreenshot: .artifacts/e2e-11a-today-footer
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- tapOn: { id: records-filter-feed }
+- scrollUntilVisible:
+    element: 喂奶 50ml
+- takeScreenshot: .artifacts/e2e-11a-records
+- tapOn: 喂奶 50ml
+- tapOn: { id: event-edit }
+- tapOn: { id: time-day-0 }
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: action-feed }
+    direction: UP
+- extendedWaitUntil:
+    visible: 喂奶 50ml
+    timeout: 15000
+- tapOn: 喂奶 50ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 喂奶 50ml
+    timeout: 15000
+
+# ─── 补记喂奶：早于最后一次，距上次喂奶不变 ──────────
+- scrollUntilVisible:
+    element: { id: backfill-open }
+- tapOn: { id: backfill-open }
+- assertVisible: { id: more-feed }
+- takeScreenshot: .artifacts/e2e-11a-backfill-menu
+- tapOn: { id: more-feed }
+- assertVisible: 补记喂奶
+- tapOn: { id: time-day-1 }
+- tapOn: { id: ml-chip-120 }
+- tapOn: { id: ml-inc }
+- tapOn: { id: ml-inc }
+- tapOn: { id: ml-inc }
+- assertVisible: "150"
+- takeScreenshot: .artifacts/e2e-11a-backfill-feed
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+# 卡片要在屏幕上，下面的断言才有意义。
+- scrollUntilVisible:
+    element: { id: last-feed }
+    direction: UP
+- extendedWaitUntil:
+    notVisible:
+      text: .*喂奶 150ml.*
+    timeout: 20000
+- assertVisible: { id: last-feed }
+- takeScreenshot: .artifacts/e2e-11a-after-backfill
+- scrollUntilVisible:
+    element: { id: records-open }
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- tapOn: { id: records-filter-feed }
+- scrollUntilVisible:
+    element: 喂奶 150ml
+- tapOn: 喂奶 150ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 喂奶 150ml
+    timeout: 15000
+
+# ─── 补记睡眠：有开始和结束，选昨天后时长不变 ────────
+- tapOn: { id: records-filter-all }
+- tapOn: { id: records-backfill }
+- tapOn: { id: more-sleep }
+- assertVisible: 补记睡眠
+- assertVisible: { id: sleep-end-date }
+- tapOn: { id: sleep-start-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-backfill-sleep
+- tapOn: { id: sleep-save }
+- extendedWaitUntil:
+    notVisible: { id: sleep-save }
+    timeout: 10000
+- tapOn: { id: records-filter-sleep }
+- scrollUntilVisible:
+    element: 睡了 1小时
+- tapOn: 睡了 1小时
+- tapOn: { id: event-edit }
+- assertVisible: 修改睡眠
+- assertVisible: { id: sleep-start-date }
+- assertVisible: { id: sleep-end-date }
+- assertNotVisible: { id: sleep-still }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: sleep-save }
+    timeout: 10000
+- tapOn: 睡了 1小时
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 睡了 1小时
+    timeout: 15000
+
+# ─── 补记身高体重：今天页不显示，要从全部记录改 ──────
+- tapOn: { id: records-backfill }
+- tapOn: { id: more-growth }
+- assertVisible: 补记身高体重
+- tapOn: { id: time-day-2 }
+- tapOn: { id: weight-inc }
+- assertVisible: 3.8 kg
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- tapOn: { id: records-filter-growth }
+- scrollUntilVisible:
+    element: 体重 3.8kg · 身长 50.5cm
+- tapOn: 体重 3.8kg · 身长 50.5cm
+- tapOn: { id: event-edit }
+- assertVisible: 修改身高体重
+- assertVisible: 3.8 kg
+- tapOn: { id: weight-inc }
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: 体重 3.9kg · 身长 50.5cm
+- assertNotVisible: 体重 3.8kg · 身长 50.5cm
+- tapOn: 体重 3.9kg · 身长 50.5cm
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 体重 3.9kg · 身长 50.5cm
+    timeout: 15000
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+
+# ─── 尿布：改类型 ──────────────────────────────
+- scrollUntilVisible:
+    element: { id: action-diaper }
+    direction: UP
+- tapOn: { id: action-diaper }
+- tapOn: { id: diaper-poo }
+- extendedWaitUntil:
+    visible: 换尿布 · 便便
+    timeout: 30000
+- tapOn: 换尿布 · 便便
+- tapOn: { id: event-edit }
+- assertVisible: 修改尿布
+- tapOn: { id: diaper-both }
+- takeScreenshot: .artifacts/e2e-11a-diaper-edit
+- tapOn: { id: diaper-save }
+- extendedWaitUntil:
+    notVisible: { id: diaper-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 换尿布 · 尿尿 + 便便
+    timeout: 15000
+- assertNotVisible: 换尿布 · 便便
+- tapOn: 换尿布 · 尿尿 + 便便
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 换尿布 · 尿尿 + 便便
+    timeout: 15000
+
+# ─── 没结束的睡眠：补上结束时间 ─────────────────────
+- tapOn: { id: action-sleep }
+- extendedWaitUntil:
+    visible:
+      text: 睡觉中.*
+    timeout: 15000
+- tapOn:
+    text: 睡觉中.*
+- tapOn: { id: event-edit }
+- assertVisible: { id: sleep-still }
+- assertNotVisible: { id: sleep-end-date }
+- tapOn: { id: sleep-still }
+- assertVisible: { id: sleep-end-date }
+- takeScreenshot: .artifacts/e2e-11a-sleep-edit
+- tapOn: { id: sleep-save }
+- extendedWaitUntil:
+    notVisible: { id: sleep-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible:
+      text: 睡觉中.*
+    timeout: 15000
+- assertVisible: 睡眠
+- tapOn:
+    text: 睡了.*
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+
+# ─── 体温：改了数值，提示要跟着变 ────────────────────
+- tapOn: { id: action-more }
+- tapOn: { id: more-temp }
+- tapOn: { id: temp-save }
+- extendedWaitUntil:
+    notVisible: { id: temp-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 体温 36.8℃
+    timeout: 30000
+- tapOn: 体温 36.8℃
+- tapOn: { id: event-edit }
+- assertVisible: 修改体温
+- tapOn: { id: temp-inc }
+- takeScreenshot: .artifacts/e2e-11a-temp-edit
+- tapOn: { id: temp-save }
+- extendedWaitUntil:
+    notVisible: { id: temp-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 体温 36.9℃
+    timeout: 15000
+- tapOn: 体温 36.9℃
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 体温 36.9℃
+    timeout: 15000
+
+# ─── 吃药：改剂量 ──────────────────────────────
+- tapOn: { id: action-more }
+- tapOn: { id: more-med }
+- tapOn: { id: med-name }
+- eraseText: 10
+- inputText: Edit med
+- hideKeyboard
+- tapOn: { id: med-save }
+- extendedWaitUntil:
+    notVisible: { id: med-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 吃药 · Edit med 1 滴
+    timeout: 30000
+- tapOn: 吃药 · Edit med 1 滴
+- tapOn: { id: event-edit }
+- assertVisible: 修改吃药
+- tapOn: { id: med-dose }
+- eraseText: 10
+- inputText: 2 ml
+- hideKeyboard
+- tapOn: { id: med-save }
+- extendedWaitUntil:
+    notVisible: { id: med-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 吃药 · Edit med 2 ml
+    timeout: 15000
+- tapOn: 吃药 · Edit med 2 ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 吃药 · Edit med 2 ml
+    timeout: 15000
+
+# ─── 洗澡：加备注 ──────────────────────────────
+- tapOn: { id: action-more }
+- tapOn: { id: more-bath }
+- tapOn: { id: bath-save }
+- extendedWaitUntil:
+    notVisible: { id: bath-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 洗澡
+    timeout: 30000
+# 流程 08 也留了一条洗澡，新的排在最前面。
+- tapOn: 洗澡
+- tapOn: { id: event-edit }
+- assertVisible: 修改洗澡
+- tapOn: { id: event-note }
+- inputText: Warm bath
+- hideKeyboard
+- tapOn: { id: bath-save }
+- extendedWaitUntil:
+    notVisible: { id: bath-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      text: Warm bath.*
+    timeout: 15000
+- tapOn:
+    text: Warm bath.*
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible:
+      text: Warm bath.*
+    timeout: 15000
+
+# ─── 回忆：改标题、里程碑，加文件，移除文件，改时间 ───
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+- tapOn: { id: recall-fab }
+- takeScreenshot: .artifacts/e2e-11a-moment-new
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Edit me ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Edit me ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+- tapOn: Edit me ${RUN_ID}的更多操作
+- takeScreenshot: .artifacts/e2e-11a-moment-actions
+- tapOn: { id: moment-edit }
+- assertVisible: 修改这一刻
+- assertVisible: { id: existing-media }
+- assertNotVisible: { id: kind-letter }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- eraseText: 40
+- inputText: Edited ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-milestone }
+- takeScreenshot: .artifacts/e2e-11a-moment-edit
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Edited ${RUN_ID}
+    timeout: 15000
+- assertVisible: 共 2 项
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-11a-moment-after-add
+# 移除一个，再撤销
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- tapOn:
+    id: existing-media-remove
+    index: 0
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    notVisible: { id: moment-save }
+    timeout: 10000
+- assertNotVisible: 共 2 项
+- tapOn: { id: toast-undo }
+- extendedWaitUntil:
+    visible: 共 2 项
+    timeout: 10000
+# 移除一个，不撤销。时间改到昨天，排到前面那条回忆的后面。
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- tapOn:
+    id: existing-media-remove
+    index: 0
+- tapOn: { id: time-day-1 }
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    notVisible: { id: moment-save }
+    timeout: 10000
+- assertNotVisible: 共 2 项
+- takeScreenshot: .artifacts/e2e-11a-moment-after-remove
+- scrollUntilVisible:
+    element: Edited ${RUN_ID}的更多操作
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Edited ${RUN_ID}
+    timeout: 15000
+
+# ─── 信：改标题和正文 ─────────────────────────
+- tapOn: { id: recall-tab-letters }
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Letter ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: First words
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Letter ${RUN_ID}
+    timeout: 15000
+- tapOn: Letter ${RUN_ID}的更多操作
+- tapOn: { id: letter-edit }
+- assertVisible: 修改这封信
+- assertNotVisible: { id: pick-media }
+- tapOn: { id: moment-text }
+- eraseText: 20
+- inputText: Second words
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-11a-letter-edit
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Second words
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-11a-letters
+- tapOn: Letter ${RUN_ID}的更多操作
+- tapOn: { id: letter-delete }
+- extendedWaitUntil:
+    notVisible: Letter ${RUN_ID}
+    timeout: 15000
+- tapOn: { id: recall-tab-timeline }
+
+# ─── 疫苗：已记的改日期 ─────────────────────────
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-status-bcg }
+    timeout: 30000
+- copyTextFrom: { id: vaccine-status-bcg }
+- evalScript: ${output.doseBefore = maestro.copiedText}
+- tapOn: { id: vaccine-row-bcg }
+- tapOn: { id: event-edit }
+- assertVisible: { id: vaccine-date }
+- tapOn: { id: vaccine-date-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-vaccine-edit
+- scrollUntilVisible:
+    element: { id: vaccine-edit-save }
+- tapOn: { id: vaccine-edit-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-edit-save }
+    timeout: 10000
+- copyTextFrom: { id: vaccine-status-bcg }
+- assertTrue: ${maestro.copiedText != output.doseBefore}
+- takeScreenshot: .artifacts/e2e-11a-vaccine-moved
+# 改回今天，后面的流程按今天看
+- tapOn: { id: vaccine-row-bcg }
+- tapOn: { id: event-edit }
+- tapOn: { id: vaccine-date-day-0 }
+- scrollUntilVisible:
+    element: { id: vaccine-edit-save }
+- tapOn: { id: vaccine-edit-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-edit-save }
+    timeout: 10000
+- copyTextFrom: { id: vaccine-status-bcg }
+- assertTrue: ${maestro.copiedText == output.doseBefore}
+
+# ─── 证件：改名字，移除文件 ──────────────────────
+- scrollUntilVisible:
+    element: { id: doc-add }
+    direction: UP
+- tapOn: { id: doc-add }
+- tapOn: { id: doc-name }
+- inputText: Edit doc
+- hideKeyboard
+- tapOn: { id: doc-create }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- tapOn: { id: doc-upload }
+- extendedWaitUntil:
+    visible: sample-certificate.pdf
+    timeout: 15000
+- tapOn: { id: doc-scan }
+- extendedWaitUntil:
+    visible: 2 个
+    timeout: 15000
+- tapOn: { id: doc-edit }
+- tapOn: { id: doc-edit-name }
+- eraseText: 20
+- inputText: Renamed doc
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-11a-doc-edit
+- tapOn: { id: doc-edit-save }
+- extendedWaitUntil:
+    visible: Renamed doc
+    timeout: 10000
+- assertVisible: 2 个
+- takeScreenshot: .artifacts/e2e-11a-doc-files
+- scrollUntilVisible:
+    element: { id: doc-file-remove-sample-certificate.pdf }
+- tapOn: { id: doc-file-remove-sample-certificate.pdf }
+- extendedWaitUntil:
+    visible: 1 个
+    timeout: 10000
+- assertNotVisible: sample-certificate.pdf
+- takeScreenshot: .artifacts/e2e-11a-doc-after-remove
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+- scrollUntilVisible:
+    element: { id: doc-delete }
+- tapOn: { id: doc-delete }
+- tapOn: { id: doc-delete-confirm }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertNotVisible: Renamed doc
