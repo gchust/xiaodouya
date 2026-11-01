@@ -47,8 +47,18 @@ curl -fs http://localhost:8787/healthz >/dev/null || {
   exit 1
 }
 
-# 默认接着 Mac 的硬件键盘，软键盘不会弹出来，弹层遇到键盘的布局就测不到了。要在开机前设置。
-defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+# Maestro 的 hideKeyboard 收不起 iOS 的软键盘（React Native 的输入框没有它能点的收起动作），
+# 所以流程在硬件键盘模式下跑，软键盘不弹出来。弹层遇到键盘的布局用 e2e/ios/sheet-keyboard.yaml 单独测。
+defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true
+
+# 这个设置只在 Simulator.app 启动时读取，设备不用重启。
+use_hardware_keyboard() {
+  defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool "$1"
+  killall Simulator 2>/dev/null
+  sleep 3
+  open -a Simulator --args -CurrentDeviceUDID "$UDID"
+  sleep 10
+}
 
 RUNTIME="$(xcrun simctl list runtimes available -j |
   node -e 'const r=JSON.parse(require("fs").readFileSync(0)).runtimes.filter((x)=>x.name.startsWith("iOS "));console.log(r.at(-1).identifier)')"
@@ -85,25 +95,40 @@ fi
 RUN_ID="$(date +%s)"
 PASSED=()
 FAILED=()
-for flow in "${FLOWS[@]}"; do
+run_flow() {
+  local flow="$1" name
+  name="$(basename "$flow" .yaml)"
   echo "▶ $flow"
   if maestro --device "$UDID" test --env "RUN_ID=$RUN_ID" \
     --debug-output .artifacts/maestro --flatten-debug-output "$flow"; then
-    PASSED+=("$(basename "$flow")")
-  else
-    FAILED+=("$(basename "$flow")")
-    name="$(basename "$flow" .yaml)"
-    # iOS 上控件是否可见取决于无障碍树，失败时留一份，不用猜。
-    maestro --device "$UDID" hierarchy >".artifacts/hierarchy-$name.json" 2>/dev/null || true
-    xcrun simctl io "$UDID" screenshot ".artifacts/failed-$name.png" || true
+    PASSED+=("$name")
+    return 0
+  fi
+  FAILED+=("$name")
+  # iOS 上控件是否可见取决于无障碍树，失败时留一份，不用猜。
+  maestro --device "$UDID" hierarchy >".artifacts/hierarchy-$name.json" 2>/dev/null || true
+  xcrun simctl io "$UDID" screenshot ".artifacts/failed-$name.png" || true
+  return 1
+}
+
+for flow in "${FLOWS[@]}"; do
+  if ! run_flow "$flow"; then
     # 其他流程都从建好的账号开始。它失败时后面每条都要等满超时，白白占一个小时。
-    case "$name" in
-      01_*)
+    case "$flow" in
+      */01_*)
         echo "流程 01 失败，后面的流程都依赖它，不再继续" >&2
         break
         ;;
     esac
   fi
+  # 要用管理员身份，紧接着建好账号后面跑，流程 17 之后 App 里就不是管理员了。
+  case "$flow" in
+    */01_*)
+      use_hardware_keyboard false
+      run_flow e2e/ios/sheet-keyboard.yaml
+      use_hardware_keyboard true
+      ;;
+  esac
 done
 
 echo "校验上传的文件"

@@ -1,0 +1,18 @@
+# iOS 键盘不会缩小窗口，弹层要靠 overlays.tsx 自己抬起来。这条流程要在软键盘打开时跑，见 scripts/ios-e2e.sh。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- tapOn: { id: action-feed }
+- tapOn: { id: feed-note }
+- inputText: note
+- takeScreenshot: .artifacts/e2e-ios-feed-sheet-keyboard
+# 保存按钮和取消都要在键盘上方，点得到。
+- assertVisible: { id: feed-save }
+- assertVisible: { id: sheet-cancel }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000

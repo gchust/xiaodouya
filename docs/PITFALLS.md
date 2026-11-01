@@ -122,6 +122,15 @@
 - **不要给小工具里的文字容器 `flex: 1`。** react-native-android-widget 量出来的宽度偏大，旁边定宽的文字也会被挤出卡片。要截短就在 JS 里截（`shortBabyName`）。
 - **模拟器锁不会提醒你到期。** `flock ... sleep 900` 一到时间别的会话马上拿到锁，并且 `e2e.sh` 会卸载 App，桌面上的小工具随之消失。要跨多次命令用模拟器时，把整段写成脚本交给 `flock` 跑，不要自己估时间：这个 PR 走查时就有一次命令落在锁到期之后，差点盖掉别人刚装的 APK。
 
+## iOS 构建和模拟器
+
+- **模拟器版不能用 `CODE_SIGNING_ALLOWED=NO` 编译。** 没有签名就没有钥匙串权限，SecureStore 报 `-34018`。`AppProvider` 启动时的 Promise 没有 catch，于是 App 不崩溃、没有报错提示，永远停在纸色空白页。用 `CODE_SIGN_IDENTITY=-` 本地签名，不需要 Apple 账号。遇到空白页先搜 `simulator.log` 里的 `com.facebook.react.log:javascript`。
+- **字体文件里的 PostScript 名字必须互不相同。** 两个 Noto 子集都叫 `NotoSerifSC-ExtraLight`，iOS 只注册得上第一个，日志里是 `GSFont: ... already exists`，界面上两个字重一样粗。Android 按文件加载，看不出来。`fonts.test.ts` 把关，`subset-fonts.py` 生成时会改名。
+- **“小豆芽”没有 ASCII 字符，Expo 生成的工程、workspace 和 scheme 都叫 `app`。** 进程名也是 `app`，搜日志时按这个找。
+- **`EXPO_PUBLIC_*` 是 Xcode 打包 JS 时写进去的。** 只在 prebuild 时设置不起作用；从访达打开的 Xcode 也读不到终端的环境变量，要写进 `apps/mobile/.env`。
+- **iOS 模拟器没有飞行模式，和宿主机共用网络。** 流程要断网就用 `e2e/subflows/net-off.yaml`，它在 iOS 上断开 `net-proxy.mjs`，App 只是连不上服务端，NetInfo 仍然报告在线。
+- **`expo-audio` 默认声明 `audio` 后台模式，Android 上还有媒体播放前台服务。** 只有在 `app.config.ts` 里显式处理才去得掉，prebuild 后看一眼 `Info.plist` 就能发现，不用等 CI。
+
 ## 依赖和环境
 
 - **`minio/minio` 镜像已无法公开拉取。** 本地和 CI 的 S3 用 `chrislusf/seaweedfs`。
@@ -147,6 +156,9 @@
 - **GitHub 只遮盖完整的 Secret。** 连接串里的主机名和用户名是片段，`pg_dump` 报错时会打印出来，进入公开日志。`deploy/cloud-backup.sh` 在 Actions 里用 `::add-mask::` 单独登记。
 - **CI 的 E2E 直接用 `apps/server/.env.example`。** 在里面打开 `MAIL_PROVIDER` 的话，每个流程都会多出邮箱验证这一步。保持注释。
 - **`pull_request` 的 `paths-ignore` 看的是整个 PR 的差异，不是这次推送。** 含代码的 PR 只推一个文档提交，也会重跑全量 CI，还会取消正在跑的那一轮。所以 CI 编号要写进 PROGRESS 时，等要再推的时候一起带上，别为它单独推一次。
+- **macOS Runner 的 `bash` 是 3.2。** 变量后面紧跟中文时会把中文算进变量名，`set -u` 下报 `unbound variable`。一律写 `${NAME}`。空数组展开和 `mapfile` 也不能用。
+- **SeaweedFS 的 gRPC 端口默认是 HTTP 端口加 10000。** `-s3.port=59000` 就成了 69000，进程直接退出，日志里还有一条无害的 IAM 错误容易看错。要加 `-s3.port.grpc`。
+- **`actions/cache` 只在任务成功时保存。** macOS 上编译要十几分钟，端到端测试失败时缓存就白编了。用 `cache/restore` 和 `cache/save` 分开，编译后马上存。
 
 ## 部署
 
