@@ -29,8 +29,7 @@ else
   curl -fs http://localhost:8787/healthz >/dev/null || { echo "服务端没有启动" >&2; exit 1; }
 fi
 
-# 刚开机的模拟器很忙，系统桌面可能弹“isn't responding”挡住界面，和 App 无关。
-adb shell settings put global hide_error_dialogs 1 || true
+# 刚开机的模拟器很忙，等它稳定一下再开始。
 sleep "${E2E_SETTLE_SECONDS:-30}"
 
 adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
