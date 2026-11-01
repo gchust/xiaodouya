@@ -176,7 +176,8 @@ export function MediaImage({
   const source = useMediaSource(media, variant);
   return (
     <View style={style as object}>
-      <Stripes style={StyleSheet.absoluteFill} />
+      {/* contain 模式会留白，留白处要显示背景（查看器是黑底），不能露出占位条纹。 */}
+      {contentFit === 'contain' && source ? null : <Stripes style={StyleSheet.absoluteFill} />}
       {source ? (
         <Image
           testID={`media-${media.id}`}
