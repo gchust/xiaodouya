@@ -1,8 +1,10 @@
 /**
  * 构建时注入的默认服务器地址。用户也可以在登录页改成自己部署的服务器。
- * 模拟器访问宿主机用 10.0.2.2。
+ * Android 模拟器访问宿主机用 10.0.2.2；iOS 模拟器和宿主机共用网络，用 localhost。
  */
-export const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2.2:8787';
+export const DEFAULT_API_URL =
+  process.env.EXPO_PUBLIC_API_URL ??
+  (process.env.EXPO_OS === 'ios' ? 'http://localhost:8787' : 'http://10.0.2.2:8787');
 
 /** 用户协议和隐私政策的地址，构建时注入。没有设置时注册页不提这份文件。 */
 export const TERMS_URL = process.env.EXPO_PUBLIC_TERMS_URL || null;

@@ -13,6 +13,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   type ImageStyle,
+  Platform,
   Pressable,
   type StyleProp,
   StyleSheet,
@@ -305,6 +306,13 @@ function ActiveAudio({
   };
   const play = useCallback(() => {
     audioPlayback.claim(player);
+    if (Platform.OS === 'ios') {
+      // iOS 默认跟随静音键。半夜手机静音时点播放，会一点声音也没有。
+      void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).finally(() =>
+        player.play(),
+      );
+      return;
+    }
     player.play();
   }, [player]);
   useEffect(() => () => audioPlayback.release(player), [player]);

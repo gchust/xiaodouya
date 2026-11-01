@@ -9,6 +9,7 @@ import * as IntentLauncher from 'expo-intent-launcher';
 import * as Sharing from 'expo-sharing';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Platform } from 'react-native';
+import { resolveUploadPath, toStoredUploadPath } from '../data/uploadPaths';
 import {
   UploadHttpError,
   type UploadJob,
@@ -267,18 +268,18 @@ async function prepareFile(
       id,
       variant: 'thumb',
       scope,
-      localUri: localFile(id, 'thumb').uri,
+      localUri: toStoredUploadPath(localFile(id, 'thumb').uri, Paths.document.uri),
       mime: 'image/jpeg',
       size: 0,
       wifiOnly: false,
-      thumbSource: { uri: target.uri, kind: thumbKind },
+      thumbSource: { uri: toStoredUploadPath(target.uri, Paths.document.uri), kind: thumbKind },
     });
   }
   jobs.push({
     id,
     variant: 'original',
     scope,
-    localUri: target.uri,
+    localUri: toStoredUploadPath(target.uri, Paths.document.uri),
     mime: file.mime,
     size,
     filename: file.name,
@@ -409,14 +410,15 @@ export function createUploadTransport(api: Api): UploadTransport {
       }
     },
     async put(job, target, onProgress) {
-      const file = new File(job.localUri);
+      const file = new File(resolveUploadPath(job.localUri, Paths.document.uri));
       if (!file.exists)
         throw new UploadHttpError(410, 'local_missing', '本地文件不见了，请重新添加');
       const result = await file.upload(target.url, {
         httpMethod: 'PUT',
         uploadType: UploadType.BINARY_CONTENT,
         headers: target.headers,
-        onProgress: ({ bytesSent }) => onProgress(bytesSent),
+        // iOS 上这个值是 BigInt，进度计算里 Math.min 会抛 Cannot convert BigInt to number。
+        onProgress: ({ bytesSent }) => onProgress(Number(bytesSent)),
       });
       return { status: result.status };
     },
@@ -428,12 +430,17 @@ export function createUploadTransport(api: Api): UploadTransport {
       }
     },
     async removeLocal(uri) {
-      const file = new File(uri);
+      const file = new File(resolveUploadPath(uri, Paths.document.uri));
       if (file.exists) file.delete();
     },
     async makeThumb(job) {
-      if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
-      return makeThumbnail(job.thumbSource, job.localUri);
+      if (!job.thumbSource) return null;
+      const source = {
+        ...job.thumbSource,
+        uri: resolveUploadPath(job.thumbSource.uri, Paths.document.uri),
+      };
+      if (!new File(source.uri).exists) return null;
+      return makeThumbnail(source, resolveUploadPath(job.localUri, Paths.document.uri));
     },
   };
 }
@@ -461,7 +468,16 @@ export async function openDocumentFile(api: Api, queue: UploadQueue, ref: MediaR
     });
     return;
   }
-  await Sharing.shareAsync(uri, { mimeType: ref.mime });
+  // iOS 没有“用系统应用打开”，用 Quick Look 在 App 里看，右上角可以转发。它按扩展名判断类型，
+  // 而本地副本叫 <id>-original，下载的文件名也不一定以 .pdf 结尾。
+  const viewing = new File(Paths.cache, `view-${ref.id}.pdf`);
+  if (viewing.exists) viewing.delete();
+  await new File(uri).copy(viewing);
+  if (await viewing.canPreview()) {
+    await viewing.preview({ title: ref.name });
+    return;
+  }
+  await Sharing.shareAsync(viewing.uri, { mimeType: ref.mime, UTI: 'com.adobe.pdf' });
 }
 
 /** 退出登录时清掉手机上的文件副本和图片缓存，下一个登录的人不能看到。 */

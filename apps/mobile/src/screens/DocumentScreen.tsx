@@ -8,7 +8,15 @@ import {
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import {
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { DownloadButton } from '../lib/DownloadButton';
@@ -56,10 +64,20 @@ export function DocumentScreen({ id }: { id: string }) {
 
   const authenticate = async () => {
     setAuthFailed(false);
-    const enrolled = await LocalAuthentication.isEnrolledAsync().catch(() => false);
+    // iOS 的 isEnrolledAsync 只看生物识别。只设了锁屏密码的 iPhone 也能验证，不能当成没上锁。
+    const enrolled =
+      Platform.OS === 'ios'
+        ? (await LocalAuthentication.getEnrolledLevelAsync().catch(
+            () => LocalAuthentication.SecurityLevel.NONE,
+          )) !== LocalAuthentication.SecurityLevel.NONE
+        : await LocalAuthentication.isEnrolledAsync().catch(() => false);
     if (!enrolled) {
       // 手机没设锁屏就无从验证，放行但不静默：提示用户这个开关现在不起作用。
-      toast('这台手机没有设置指纹或锁屏密码，证件夹无法上锁');
+      toast(
+        Platform.OS === 'ios'
+          ? '这台手机没有设置锁屏密码，证件夹无法上锁'
+          : '这台手机没有设置指纹或锁屏密码，证件夹无法上锁',
+      );
       setUnlocked(true);
       return;
     }
@@ -106,7 +124,13 @@ export function DocumentScreen({ id }: { id: string }) {
         {back}
         <Empty
           title="证件夹已上锁"
-          sub={authFailed ? '验证没有通过，可以再试一次。' : '验证指纹或锁屏密码后查看。'}
+          sub={
+            authFailed
+              ? '验证没有通过，可以再试一次。'
+              : Platform.OS === 'ios'
+                ? '验证面容、指纹或锁屏密码后查看。'
+                : '验证指纹或锁屏密码后查看。'
+          }
         />
         <Button testID="doc-unlock" label="验证" onPress={() => void authenticate()} />
       </View>

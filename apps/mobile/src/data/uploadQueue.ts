@@ -11,7 +11,10 @@ export interface UploadJob {
   id: string;
   variant: MediaVariant;
   scope: MediaScope;
-  /** App 私有目录里的文件副本，上传完成前不会被系统回收。 */
+  /**
+   * App 私有目录里的文件副本，上传完成前不会被系统回收。
+   * 存的是相对 Paths.document 的路径，旧版本写的行是绝对路径，见 uploadPaths.ts。
+   */
   localUri: string;
   mime: string;
   size: number;

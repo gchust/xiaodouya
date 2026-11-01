@@ -14,7 +14,7 @@ import {
 } from '@xiaodouya/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { accountText } from '../lib/accountText';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
@@ -215,8 +215,12 @@ export function FamilyScreen() {
           {canRecord ? (
             <Toggle
               testID="pref-doc-lock"
-              label="证件夹指纹解锁"
-              sub="打开证件前需要验证指纹或锁屏密码"
+              label={Platform.OS === 'ios' ? '证件夹解锁验证' : '证件夹指纹解锁'}
+              sub={
+                Platform.OS === 'ios'
+                  ? '打开证件前需要验证面容、指纹或锁屏密码'
+                  : '打开证件前需要验证指纹或锁屏密码'
+              }
               value={prefs.documentLock}
               onChange={(v) => void app.updatePrefs({ documentLock: v })}
             />

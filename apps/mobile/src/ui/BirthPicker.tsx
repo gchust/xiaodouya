@@ -1,9 +1,11 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { formatClock, formatFullDate } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '../theme';
 import { Muted } from './primitives';
+
+const IOS = Platform.OS === 'ios';
 
 /** 出生日期和时刻：建档页和资料页共用。 */
 export function BirthPicker({ value, onChange }: { value: Date; onChange: (next: Date) => void }) {
@@ -38,12 +40,25 @@ export function BirthPicker({ value, onChange }: { value: Date; onChange: (next:
           value={value}
           mode={picker}
           is24Hour
+          display={IOS ? 'spinner' : undefined}
           maximumDate={picker === 'date' ? new Date() : undefined}
           onChange={(_event, date) => {
-            setPicker(null);
+            // Android 是系统对话框，选完就没了。iOS 是页面里的滚轮，每滚一格都会触发，收起要等用户点完成。
+            if (!IOS) setPicker(null);
             if (date) onChange(date);
           }}
         />
+      ) : null}
+      {picker && IOS ? (
+        <Pressable
+          testID="birth-picker-done"
+          accessibilityRole="button"
+          accessibilityLabel="完成"
+          onPress={() => setPicker(null)}
+          style={s.done}
+        >
+          <Text style={s.doneText}>完成</Text>
+        </Pressable>
       ) : null}
     </>
   );
@@ -103,4 +118,6 @@ const s = StyleSheet.create({
     paddingVertical: 13,
   },
   text: { fontFamily: fonts.monoRegular, fontSize: 14, color: colors.ink },
+  done: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8 },
+  doneText: { fontSize: 14, fontWeight: '500', color: colors.accent },
 });
