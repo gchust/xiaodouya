@@ -230,6 +230,18 @@ describe('后台任务', () => {
       token: member.token,
       body: { deviceId: randomUUID(), token: 'ExponentPushToken[fictional]' },
     });
+    // 否则这条测试在新加坡时间 23:00–07:00 必然失败：夜间安静默认打开，推送被跳过。
+    await call(app, 'PUT', '/v1/me/prefs', {
+      token: member.token,
+      body: {
+        feedReminder: true,
+        familyNotify: true,
+        quietNight: false,
+        timezone: 'Asia/Singapore',
+        documentLock: false,
+        videoWifiOnly: true,
+      },
+    });
     await write(app, owner.token);
     expect(tasks).toHaveLength(1);
     await Promise.all(tasks);
