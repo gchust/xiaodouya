@@ -1,12 +1,14 @@
 import type {
   ApiError,
   AuthResponse,
+  FamilyExport,
   MediaUrlsResponse,
   MediaVariant,
   MeResponse,
   Prefs,
   PublicConfig,
   Role,
+  SendEmailCodeResponse,
   StorageConfigInput,
   StorageConfigView,
   StorageTestResult,
@@ -93,6 +95,32 @@ export class Api {
   }
   logout() {
     return this.request('POST', '/v1/auth/logout');
+  }
+  /** 旧服务器没有这个接口或字段、或者连不上时，都当作没开邮件。登录页不能因此出错。 */
+  async passwordResetEnabled(): Promise<boolean> {
+    try {
+      return (await this.publicConfig()).passwordReset === true;
+    } catch {
+      return false;
+    }
+  }
+  forgotPassword(email: string) {
+    return this.request('POST', '/v1/auth/password/forgot', { email });
+  }
+  resetPassword(body: { email: string; code: string; newPassword: string }) {
+    return this.request('POST', '/v1/auth/password/reset', body);
+  }
+  sendEmailCode() {
+    return this.request<SendEmailCodeResponse>('POST', '/v1/me/email/send-code');
+  }
+  verifyEmail(code: string) {
+    return this.request<MeResponse>('POST', '/v1/me/email/verify', { code });
+  }
+  deleteAccount(password: string) {
+    return this.request('POST', '/v1/me/delete', { password });
+  }
+  exportFamily() {
+    return this.request<FamilyExport>('GET', '/v1/family/export');
   }
   me() {
     return this.request<MeResponse>('GET', '/v1/me');

@@ -92,6 +92,14 @@ function fromEnv(config: Config): ResolvedStorage | null {
   };
 }
 
+/** 待删除队列里记下的存储配置。null 表示服务端默认存储。 */
+export function storageFromSnapshot(
+  snapshot: StorageRow | null,
+  config: Config,
+): ResolvedStorage | null {
+  return snapshot ? fromRow(snapshot, config.appSecret) : fromEnv(config);
+}
+
 export async function activeStorage(
   sql: Sql,
   config: Config,

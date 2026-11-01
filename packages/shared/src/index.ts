@@ -1,3 +1,4 @@
+export * from './account';
 export * from './domain/age';
 export * from './domain/events';
 export * from './domain/feeding';

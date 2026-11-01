@@ -60,6 +60,8 @@ export class SyncEngine {
   private online = true;
   private live: AbortController | null = null;
   private stopped = true;
+  /** 每次 stop 加一。请求发出后才退出登录的话，响应属于上一个会话，不能写进本地。 */
+  private session = 0;
   private cursor = 0;
   private lastSentIds = new Set<string>();
   private lastRole: Role | null = null;
@@ -85,6 +87,7 @@ export class SyncEngine {
 
   stop(): void {
     this.stopped = true;
+    this.session += 1;
     this.live?.abort();
     this.live = null;
     if (this.retryTimer) this.scheduler.clearTimeout(this.retryTimer);
@@ -120,6 +123,7 @@ export class SyncEngine {
 
   private async runOnce(): Promise<void> {
     if (!this.online) return;
+    const session = this.session;
     this.events.onStatus?.('syncing');
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -135,6 +139,7 @@ export class SyncEngine {
             updatedAt: r.updatedAt,
           })),
         });
+        if (session !== this.session) return;
         const rejected = new Set(response.rejected.map((r) => r.id));
         const applied = await this.store.applySyncResult(
           sent,

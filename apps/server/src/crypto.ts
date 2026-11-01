@@ -3,7 +3,9 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   randomBytes,
+  randomInt,
   scrypt as scryptCb,
   timingSafeEqual,
 } from 'node:crypto';
@@ -33,6 +35,36 @@ export async function verifyPassword(password: string, stored: string): Promise<
     N: Number(n),
   });
   return timingSafeEqual(actual, expected);
+}
+
+/**
+ * 邮箱不存在时也算一遍 scrypt，否则响应时间就暴露了邮箱是否存在。
+ * 这是虚构密码的哈希，参数要和 SCRYPT 一致，改 N 时一起改。
+ */
+const DUMMY_PASSWORD_HASH =
+  'scrypt$32768$AAAAAAAAAAAAAAAAAAAAAA==$Y8MYoqnX4lWGWuAOv64MBPfBINQKVV0WkGusAfOtPo4=';
+
+export async function burnPasswordCheck(password: string): Promise<void> {
+  await verifyPassword(password, DUMMY_PASSWORD_HASH);
+}
+
+/** 6 位验证码，首位可以是 0。 */
+export function newEmailCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+/**
+ * 验证码只有一百万种，不带密钥的哈希在数据库泄露时一秒就能撞出来，所以用 APP_SECRET 做 HMAC。
+ * 用途和账号也算进去：一种用途的验证码不能拿去当另一种用。
+ */
+export function hashEmailCode(secret: Buffer, scope: string, code: string): string {
+  return createHmac('sha256', secret).update(`${scope}:${code}`).digest('hex');
+}
+
+export function safeEqualHex(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'hex');
+  const right = Buffer.from(b, 'hex');
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 export function newToken(): string {
