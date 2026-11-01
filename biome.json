@@ -11,7 +11,8 @@
       "!.artifacts",
       "!**/assets/fonts",
       "!**/assets/src",
-      "!.claude"
+      "!.claude",
+      "!**/*.md"
     ]
   },
   "formatter": {

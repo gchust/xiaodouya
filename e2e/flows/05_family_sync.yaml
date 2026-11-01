@@ -34,6 +34,6 @@ appId: com.gchust.xiaodouya
     text: .*妈妈记录.*
 - extendedWaitUntil:
     visible:
-      text: 玥喆的第.*
+      text: 玥㐂的第.*
     timeout: 40000
 - takeScreenshot: .artifacts/e2e-05-rare-name
