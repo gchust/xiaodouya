@@ -20,7 +20,7 @@
 
 不用自己维护服务器，免费版够一家人用。只用 Supabase 的 Postgres 和 Edge Functions，账号、同步还是自己的，文件放在 R2。**不用** Supabase Auth、Realtime、Storage，也不让 App 直接访问数据库。
 
-> **这一节还没有在真实的 Supabase 项目上走过。** 代码在 Supabase 开源的 edge-runtime 镜像和本地事务模式连接池上验证过（见 [PROGRESS.md](PROGRESS.md) 的 F-79），云上的步骤来自 Supabase 文档。第一次照做时如果和文档不一致，请修正这里。
+> **已在新加坡项目验证。** Edge Function 部署、数据库迁移、R2 签名上传下载、加密备份及本地恢复均已跑通（见 [PROGRESS.md](PROGRESS.md) 的 F-80）。真机访问和项目暂停后的恢复还未验证。
 
 ### 两个必须知道的限制
 
