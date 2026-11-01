@@ -258,7 +258,7 @@ export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {})
               key={kind}
               testID={`diaper-${kind}`}
               accessibilityLabel={label}
-              accessibilityState={{ selected: on, disabled: invalid }}
+              accessibilityState={{ selected: on, disabled: invalid && !id }}
               disabled={invalid && !id}
               style={[s.diaperBtn, on ? s.diaperOn : null]}
               // 新记录点一下就记好。修改时先选，和别的字段一起保存。
