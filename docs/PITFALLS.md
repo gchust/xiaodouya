@@ -90,6 +90,7 @@
 - **弹层不能假设键盘有没有把窗口顶起来。** `softwareKeyboardLayoutMode: 'resize'` 在 edge-to-edge 下不一定缩小窗口，假设错了要么被键盘挡住，要么抬高两次。`overlays.tsx` 用量到的层高算差额（`keyboardLift`）。还没在设备上看过，改这里要在模拟器上打开喂奶弹层点备注确认。
 - **`hitSlop` 只在父视图没有裁剪时才生效，后面的兄弟视图还会抢走重叠区域。** `overflow: hidden` 的卡片里，× 的热区要向卡片内部扩。紧贴滚动区的控件（回忆页子标签）用内边距加负外边距，再给头部 `zIndex`。
 - **RN 的 `lineHeight` 按网页规则把差额平分到字的上下。** 衬线标题行高 31 时，g、y 的下伸部分会超出文字框 1dp 左右（按 `CustomLineHeightSpan` 源码推算，没有在设备上看过）。加 `paddingBottom` 和相同的负 `marginBottom`，布局不变，也不会被裁掉。
+- **“文件都上传好了”的 Toast 会盖掉当前的 Toast，撤销按钮也跟着没了。** 小文件一两秒就传完，所以保存时带上传的操作，不要靠 Toast 里的撤销，也不要在 Maestro 里等这种操作自己的 Toast（头像流程因此失败过）。等“文件都上传好了”或按钮的变化。
 - **要让卡片不挡住下面的点击，整条路径都要处理。** 容器用 `box-none` 还不够：里面的普通 View 和 Text 仍会成为点击目标，点击不会穿透给下面的页面。不需要响应的部分要包在 `pointerEvents="none"` 里。
 
 ## Android 构建和模拟器
@@ -125,6 +126,7 @@
 - **公开仓库的定时任务 60 天没有活动会被自动停用。** 备份流程放在定时任务上要留意这一点，Actions 的 `schedule` 也可能晚点或跳过。
 - **GitHub 只遮盖完整的 Secret。** 连接串里的主机名和用户名是片段，`pg_dump` 报错时会打印出来，进入公开日志。`deploy/cloud-backup.sh` 在 Actions 里用 `::add-mask::` 单独登记。
 - **CI 的 E2E 直接用 `apps/server/.env.example`。** 在里面打开 `MAIL_PROVIDER` 的话，每个流程都会多出邮箱验证这一步。保持注释。
+- **`pull_request` 的 `paths-ignore` 看的是整个 PR 的差异，不是这次推送。** 含代码的 PR 只推一个文档提交，也会重跑全量 CI，还会取消正在跑的那一轮。所以 CI 编号要写进 PROGRESS 时，等要再推的时候一起带上，别为它单独推一次。
 
 ## 部署
 

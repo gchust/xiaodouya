@@ -71,3 +71,21 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: export-book }
 - assertNotVisible: { id: open-storage }
 - assertNotVisible: { id: pref-doc-lock }
+# 头像能看大图，没有编辑入口。外公没有今天页，界面上到不了这里，所以用链接直接打开。
+- openLink: xiaodouya://viewer?avatar=1
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: .*的头像
+- assertNotVisible: { id: avatar-replace }
+- assertNotVisible: { id: avatar-rotate }
+- assertNotVisible: { id: avatar-crop }
+- assertNotVisible: { id: viewer-download }
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-20-viewer-avatar
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000

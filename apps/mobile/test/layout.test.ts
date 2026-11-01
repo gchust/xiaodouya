@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   clampPan,
   containedSize,
+  cropRect,
   gridItemWidth,
   keyboardLift,
   sheetMaxHeight,
@@ -28,6 +29,63 @@ describe('查看大图', () => {
   });
   it('没有放大时不能拖', () => {
     expect(clampPan(100, 1, 400, 400)).toBe(0);
+  });
+});
+
+describe('裁剪头像', () => {
+  const frame = 300;
+  it('没有放大也没有拖动时，取短边居中的正方形', () => {
+    expect(cropRect({ frame, imageWidth: 2000, imageHeight: 1000, zoom: 1, x: 0, y: 0 })).toEqual({
+      originX: 500,
+      originY: 0,
+      width: 1000,
+      height: 1000,
+    });
+    expect(cropRect({ frame, imageWidth: 160, imageHeight: 320, zoom: 1, x: 0, y: 0 })).toEqual({
+      originX: 0,
+      originY: 80,
+      width: 160,
+      height: 160,
+    });
+  });
+  it('放大两倍后框里只剩一半宽度', () => {
+    expect(cropRect({ frame, imageWidth: 1000, imageHeight: 1000, zoom: 2, x: 0, y: 0 })).toEqual({
+      originX: 250,
+      originY: 250,
+      width: 500,
+      height: 500,
+    });
+  });
+  it('图片往右拖时，框里看到的是图片左边的部分', () => {
+    // 2000×1000 放进 300 的框，每个图片像素显示 0.3dp，最多能往右拖 150dp。
+    expect(cropRect({ frame, imageWidth: 2000, imageHeight: 1000, zoom: 1, x: 150, y: 0 })).toEqual(
+      { originX: 0, originY: 0, width: 1000, height: 1000 },
+    );
+    expect(
+      cropRect({ frame, imageWidth: 2000, imageHeight: 1000, zoom: 1, x: -150, y: 0 }),
+    ).toEqual({ originX: 1000, originY: 0, width: 1000, height: 1000 });
+  });
+  it('放大后图片往下拖时，框里看到的是图片上面的部分', () => {
+    expect(cropRect({ frame, imageWidth: 1000, imageHeight: 1000, zoom: 2, x: 0, y: 150 })).toEqual(
+      { originX: 250, originY: 0, width: 500, height: 500 },
+    );
+  });
+  it('结果永远落在图片里面，否则原生裁剪会报错', () => {
+    for (const zoom of [1, 1.37, 2.5, 3.3, 5]) {
+      for (const x of [-9999, -33.3, 0, 77.7, 9999]) {
+        const rect = cropRect({ frame: 327.3, imageWidth: 4031, imageHeight: 3023, zoom, x, y: x });
+        expect(rect.originX).toBeGreaterThanOrEqual(0);
+        expect(rect.originY).toBeGreaterThanOrEqual(0);
+        expect(rect.originX + rect.width).toBeLessThanOrEqual(4031);
+        expect(rect.originY + rect.height).toBeLessThanOrEqual(3023);
+        expect(rect.width).toBe(rect.height);
+        expect(Number.isInteger(rect.originX + rect.originY + rect.width)).toBe(true);
+      }
+    }
+  });
+  it('很小的图放到最大也至少留一个像素', () => {
+    const rect = cropRect({ frame, imageWidth: 2, imageHeight: 2, zoom: 5, x: 0, y: 0 });
+    expect(rect.width).toBe(1);
   });
 });
 
