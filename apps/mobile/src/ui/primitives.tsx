@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import {
   ActivityIndicator,
   ImageBackground,
+  Platform,
   Pressable,
   type PressableProps,
   type StyleProp,
@@ -23,6 +24,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { IS_E2E } from '../lib/config';
 import { colors, fonts, motion } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -292,6 +294,12 @@ export function Toggle({
   );
 }
 
+/**
+ * iOS 在密码框消失后弹“存储密码”。它是系统界面，Maestro 看不到也点不到，还会挡住后面所有的点击。
+ * 所以 iOS 的 E2E 构建里输入框不当成密码框，用户装到的版本不受影响。
+ */
+const E2E_NO_SECURE_ENTRY = IS_E2E && Platform.OS === 'ios';
+
 export function Field({
   label,
   mono,
@@ -306,6 +314,7 @@ export function Field({
         selectionColor={colors.accent}
         accessibilityLabel={label ?? rest.placeholder}
         {...rest}
+        secureTextEntry={E2E_NO_SECURE_ENTRY ? false : rest.secureTextEntry}
         style={[styles.field, mono ? { fontFamily: fonts.monoRegular, fontSize: 13 } : null, style]}
       />
     </View>
