@@ -39,6 +39,9 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: { id: tab-today }
 - assertNotVisible: { id: tab-info }
 - assertNotVisible: { id: recall-fab }
+# 看不到修改入口。服务端也会拒绝，见 api.test.ts。
+- assertNotVisible:
+    id: moment-more-.*
 - takeScreenshot: .artifacts/e2e-20-viewer-recall
 # 能看大图
 - tapOn:
@@ -57,6 +60,8 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: recall-tab-letters }
 - assertVisible: Hello little one
 - assertNotVisible: { id: recall-fab }
+- assertNotVisible:
+    id: letter-more-.*
 - takeScreenshot: .artifacts/e2e-20-viewer-letters
 # 家人页没有管理入口
 - tapOn: { id: tab-family }

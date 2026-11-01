@@ -375,6 +375,129 @@ describe('同步', () => {
     const write = await sync(grandma.token, 0, [feedChange()]);
     expect(write.json.rejected[0]?.reason).toBe('forbidden');
   });
+  it('奶粉配置和喂奶上的奶粉字段能同步，viewer 读不到也不能写', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const formulaId = randomUUID();
+    const formula = {
+      id: formulaId,
+      collection: 'event' as const,
+      data: { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: { proteinG: 1.4 } },
+      deleted: false,
+      updatedAt: Date.now(),
+    };
+    const fed = feedChange();
+    const feedData = {
+      ...fed.data,
+      milkType: 'formula',
+      formulaId,
+      formula: { name: '虚构奶粉', per100ml: { proteinG: 1.4 } },
+    };
+    const write = await sync(admin.token, 0, [formula, { ...fed, data: feedData }]);
+    expect(write.json.rejected).toEqual([]);
+
+    const seen = await sync(mom.token, 0);
+    expect(seen.json.records.find((r) => r.id === formulaId)?.data).toEqual(formula.data);
+    expect(seen.json.records.find((r) => r.id === fed.id)?.data).toEqual(feedData);
+
+    const view = await sync(grandma.token, 0);
+    expect(view.json.records).toEqual([]);
+    const forbidden = await sync(grandma.token, 0, [{ ...formula, id: randomUUID() }]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+    // 猜到 id 提交改动，也不能把奶粉配置补发出来。
+    const guessed = await sync(grandma.token, 0, [{ ...formula, updatedAt: 1 }]);
+    expect(guessed.json.records).toEqual([]);
+  });
+
+  it('删除奶粉是软删除，能同步给其他设备', async () => {
+    const { admin } = await newFamily();
+    const id = randomUUID();
+    const data = { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} };
+    await sync(admin.token, 0, [
+      { id, collection: 'event', data, deleted: false, updatedAt: 1000 },
+    ]);
+    await sync(admin.token, 0, [{ id, collection: 'event', data, deleted: true, updatedAt: 2000 }]);
+    const after = await sync(admin.token, 0);
+    expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
+  });
+
+  it('viewer 不能修改已有的回忆和信，原内容不变', async () => {
+    const { admin } = await newFamily();
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const momentId = randomUUID();
+    const letterId = randomUUID();
+    const moment = { title: '第一次笑', text: '', at: 1, milestone: true, media: [] };
+    const letter = { title: '百天快乐', text: '虚构的内容', at: 1 };
+    await sync(admin.token, 0, [
+      { id: momentId, collection: 'moment', data: moment, deleted: false, updatedAt: 1 },
+      { id: letterId, collection: 'letter', data: letter, deleted: false, updatedAt: 1 },
+    ]);
+    const write = await sync(grandma.token, 0, [
+      {
+        id: momentId,
+        collection: 'moment',
+        data: { ...moment, title: '外公改的' },
+        deleted: false,
+        updatedAt: 2,
+      },
+      {
+        id: letterId,
+        collection: 'letter',
+        data: { ...letter, title: '外公改的' },
+        deleted: false,
+        updatedAt: 2,
+      },
+    ]);
+    expect(write.json.rejected.map((r) => r.reason)).toEqual(['forbidden', 'forbidden']);
+    // 被拒绝的手机拿回服务端的版本，不留下自己改的内容。
+    expect(write.json.records.find((r) => r.id === momentId)?.data).toMatchObject(moment);
+    const all = await sync(admin.token, 0);
+    expect(all.json.records.find((r) => r.id === momentId)?.data).toMatchObject(moment);
+    expect(all.json.records.find((r) => r.id === letterId)?.data).toMatchObject(letter);
+  });
+  it('修改记录时，时间可以改到以前，未知字段和记录人原样保存', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const id = randomUUID();
+    const data = { type: 'feed', at: 5000, ml: 90, byName: '爸爸', milkKind: 'formula' };
+    await sync(admin.token, 0, [{ id, collection: 'event', data, deleted: false, updatedAt: 1 }]);
+    const edited = { ...data, at: 1000, ml: 100 };
+    const result = await sync(mom.token, 0, [
+      { id, collection: 'event', data: edited, deleted: false, updatedAt: 2 },
+    ]);
+    expect(result.json.rejected).toEqual([]);
+    const all = await sync(admin.token, 0);
+    const record = all.json.records.find((r) => r.id === id);
+    expect(record?.data).toEqual(edited);
+    expect(record?.updatedAt).toBe(2);
+  });
+  it('修改回忆时新加的文件引用，未知字段不丢', async () => {
+    const { admin } = await newFamily();
+    const id = randomUUID();
+    const media = {
+      id: randomUUID(),
+      kind: 'image',
+      mime: 'image/png',
+      size: 1,
+      futureField: 'keep',
+    };
+    const moment = { title: '虚构的一刻', text: '', at: 1, milestone: false, media: [] };
+    await sync(admin.token, 0, [
+      { id, collection: 'moment', data: moment, deleted: false, updatedAt: 1 },
+    ]);
+    await sync(admin.token, 0, [
+      {
+        id,
+        collection: 'moment',
+        data: { ...moment, media: [media] },
+        deleted: false,
+        updatedAt: 2,
+      },
+    ]);
+    const all = await sync(admin.token, 0);
+    expect(all.json.records.find((r) => r.id === id)?.data).toMatchObject({ media: [media] });
+  });
   it('viewer 能读宝宝档案，但不能换头像', async () => {
     const { admin, family } = await newFamily();
     const grandma = await join(admin.token, 'viewer', '奶奶');
@@ -752,6 +875,37 @@ describe('推送', () => {
     await sync(admin.token, 0, [old]);
     await flush();
     expect(pushes).toEqual([]);
+  });
+  it('配置奶粉不是一条记录，不打扰家人', async () => {
+    const { admin } = await familyWithToken();
+    await sync(admin.token, 0, [
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await flush();
+    expect(pushes).toEqual([]);
+  });
+  it('带奶粉字段的喂奶，通知文字和以前一样', async () => {
+    const { admin } = await familyWithToken();
+    const fed = feedChange();
+    await sync(admin.token, 0, [
+      {
+        ...fed,
+        data: {
+          ...fed.data,
+          milkType: 'formula',
+          formulaId: randomUUID(),
+          formula: { name: '虚构奶粉', per100ml: {} },
+        },
+      },
+    ]);
+    await flush();
+    expect(pushes[0]?.body).toBe('喂奶 90ml');
   });
   it('viewer 不会收到喂奶通知', async () => {
     const { admin } = await newFamily();

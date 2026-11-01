@@ -11,6 +11,12 @@ export function dayNumber(birthAt: number, at: number): number {
   return Math.round((startOfDay(at).getTime() - startOfDay(birthAt).getTime()) / DAY_MS) + 1;
 }
 
+/** 回忆可以早于出生（孕期的照片），不能显示成“第 -3 天”。 */
+export function dayLabel(birthAt: number, at: number): string {
+  const day = dayNumber(birthAt, at);
+  return day > 0 ? `第 ${day} 天` : `出生前 ${1 - day} 天`;
+}
+
 export interface Age {
   months: number;
   days: number;

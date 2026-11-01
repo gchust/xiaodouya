@@ -1,6 +1,8 @@
 import {
   activeSleep,
+  ageParts,
   ageText,
+  assessDayNutrition,
   dayNumber,
   describeEvent,
   dueVaccine,
@@ -12,8 +14,10 @@ import {
   formatDuration,
   formatHoursMinutes,
   formatVolume,
+  nutritionEntryText,
   summarize24h,
   summaryText,
+  timelineEntries,
   todayInsight,
   type Units,
   vaccineStatuses,
@@ -39,6 +43,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
 import { saveAvatar } from '../lib/avatar';
+import { localDayBounds } from '../lib/dates';
 import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -54,6 +59,9 @@ import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+
+/** 链接文字只有 16 高，上下各扩 14 才到 44。 */
+const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
@@ -79,8 +87,19 @@ export function TodayScreen() {
   const sleepingEntry = sleeping ? events.find((e) => e.data === sleeping) : undefined;
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
-  const recent = events.filter((e) => e.data.type !== 'growth' && e.data.at <= now).slice(0, 8);
+  const recent = timelineEntries(events, now);
   const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
+  const today = localDayBounds(now);
+  const nutritionText = nutritionEntryText(
+    assessDayNutrition({
+      events: data,
+      dayStart: today.start,
+      dayEnd: today.end,
+      now,
+      ageMonths: ageParts(birthAt, now).months,
+      reference: region.nutrition,
+    }),
+  );
 
   const feedHint = !estimate.last
     ? ''
@@ -249,6 +268,21 @@ export function TodayScreen() {
 
       {events.length > 0 ? <NotificationPrompt /> : null}
 
+      {nutritionText ? (
+        <Pressable
+          testID="nutrition-entry"
+          accessibilityRole="button"
+          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
+          onPress={() => router.push('/nutrition')}
+          style={s.nutritionEntry}
+        >
+          <Text style={s.nutritionLabel}>奶粉营养</Text>
+          <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
+            {nutritionText} ›
+          </Muted>
+        </Pressable>
+      ) : null}
+
       <View style={s.listHeader}>
         <Text style={s.listTitle}>过去 24 小时</Text>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
@@ -278,6 +312,27 @@ export function TodayScreen() {
             />
           ))
         )}
+      </View>
+      {/* 放在时间线下面：补记不是半夜要做的事，不能和上面的快捷按钮抢位置。 */}
+      <View style={s.listFooter}>
+        <Pressable
+          testID="records-open"
+          accessibilityRole="button"
+          accessibilityLabel="查看全部记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => router.push('/records')}
+        >
+          <Text style={s.listLink}>全部记录 ›</Text>
+        </Pressable>
+        <Pressable
+          testID="backfill-open"
+          accessibilityRole="button"
+          accessibilityLabel="补记以前的记录"
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => sheet.open('补记', () => <MoreSheet birthAt={birthAt} backfill />)}
+        >
+          <Text style={s.listLink}>＋ 补记</Text>
+        </Pressable>
       </View>
 
       {vaccine ? (
@@ -326,7 +381,7 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   );
 }
 
-function TimelineRow({
+export function TimelineRow({
   id,
   event,
   now,
@@ -443,6 +498,13 @@ const s = StyleSheet.create({
   },
   listTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink },
   list: { marginTop: 6, marginHorizontal: spacing.page },
+  listFooter: {
+    marginTop: 14,
+    marginHorizontal: spacing.page,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  listLink: { fontSize: 12, color: colors.accent },
   row: {
     flexDirection: 'row',
     gap: 8,
@@ -453,6 +515,17 @@ const s = StyleSheet.create({
   },
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
+  nutritionEntry: {
+    marginTop: 8,
+    marginHorizontal: spacing.page,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+  },
+  nutritionLabel: { fontSize: 13, color: colors.ink },
+  nutritionText: { flexShrink: 1, textAlign: 'right' },
   vaccineWrap: { marginHorizontal: spacing.page, marginTop: 16 },
   vaccineCard: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 4 },
   vaccineLabel: { fontSize: 11, color: colors.green, letterSpacing: 0.7 },
