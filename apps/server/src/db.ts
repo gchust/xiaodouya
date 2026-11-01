@@ -4,7 +4,7 @@ import type { DbConfig } from './config';
 export type Sql = postgres.Sql;
 
 /** 迁移只增不改：已发布的条目不能修改，需要变更就追加新的一条。 */
-const migrations: readonly string[] = [
+export const migrations: readonly string[] = [
   `
   CREATE TABLE users (
     id UUID PRIMARY KEY,
@@ -139,6 +139,31 @@ const migrations: readonly string[] = [
       END IF;
     END LOOP;
   END $$;
+  `,
+  // 配额和文件清理。
+  // reserved_at：created_at 不会随重新申请链接更新，用它判断预留过期，重传中的文件会被当成放弃。
+  // unreferenced_at：所在记录被删或文件被换下的时间，宽限期从这里算。
+  // attached：有过记录引用。没有的文件才需要定时核对，否则每次清理都要扫全部文件。
+  // sync_*：和 last_seen_at 写在同一行同一条语句里，同步限流不增加写入。
+  // record_bytes：防止一个账号把数据库写满，和 seq 一起更新。
+  `
+  ALTER TABLE families ADD COLUMN quota_mb BIGINT, ADD COLUMN record_bytes BIGINT NOT NULL DEFAULT 0;
+  ALTER TABLE media
+    ADD COLUMN reserved_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ADD COLUMN unreferenced_at TIMESTAMPTZ,
+    ADD COLUMN attached BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE memberships ADD COLUMN sync_window_at TIMESTAMPTZ, ADD COLUMN sync_count INT NOT NULL DEFAULT 0;
+  CREATE INDEX media_trash ON media(unreferenced_at) WHERE unreferenced_at IS NOT NULL;
+  CREATE INDEX media_abandoned ON media(reserved_at) WHERE status = 'pending';
+  CREATE INDEX media_unattached ON media(created_at) WHERE status = 'ready' AND NOT attached AND unreferenced_at IS NULL;
+  UPDATE families f SET record_bytes = COALESCE(
+    (SELECT SUM(octet_length(r.data::text)) FROM records r WHERE r.family_id = f.id), 0);
+  UPDATE media m SET attached = true WHERE EXISTS (
+    SELECT 1 FROM records r
+    WHERE r.family_id = m.family_id AND NOT r.deleted AND position(m.id::text IN lower(r.data::text)) > 0);
+  UPDATE media m SET unreferenced_at = now() WHERE m.status = 'ready' AND NOT m.attached AND EXISTS (
+    SELECT 1 FROM records r
+    WHERE r.family_id = m.family_id AND r.deleted AND position(m.id::text IN lower(r.data::text)) > 0);
   `,
 ];
 

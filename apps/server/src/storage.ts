@@ -127,16 +127,21 @@ function client(s: ResolvedStorage, endpoint: string | undefined): S3Client {
   });
 }
 
+/**
+ * 把声明的大小签进链接。否则拿到链接的人可以传任意大小，还能在 complete 校验之后用同一个链接覆盖成大文件，
+ * 配额和大小限制都形同虚设。complete 时的 HEAD 校验仍然保留，它才是最终依据。
+ */
 export async function presignUpload(
   s: ResolvedStorage,
   key: string,
   mime: string,
+  size: number,
   expiresIn: number,
 ): Promise<string> {
   return getSignedUrl(
     client(s, s.publicEndpoint),
-    new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime }),
-    { expiresIn },
+    new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime, ContentLength: size }),
+    { expiresIn, signableHeaders: new Set(['content-length']) },
   );
 }
 

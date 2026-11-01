@@ -393,7 +393,24 @@ export interface StorageUsage {
   video: number;
   audio: number;
   document: number;
+  /** 上面四类之和：已传完、没有被删除的文件。 */
   total: number;
+  /** 这个家庭在平台存储上的上限（字节）。null 表示不限，比如用自己的存储。 */
+  quota: number | null;
+  /** 算进上限的用量：total 里在平台存储上的部分，加上传中的预留。 */
+  quotaUsed: number;
+  /** 正在上传、已经预留的空间。 */
+  pending: number;
+  /** 所在记录已删除、等待清理的文件。还占着存储，但在配额以内不算用量，这样删除能马上腾出空间。 */
+  trash: number;
+  /** 已删除的文件保留多少天后彻底清理。 */
+  trashDays: number;
+}
+
+/** 不用登录就能读的服务器能力，App 据此决定显示什么。只能加字段，旧版 App 还在读。 */
+export interface PublicConfig {
+  /** false 时普通用户只能用平台托管的存储，App 不显示 S3 表单。 */
+  allowCustomStorage: boolean;
 }
 
 export interface ApiError {

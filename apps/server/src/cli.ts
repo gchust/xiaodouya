@@ -5,9 +5,13 @@
  * Edge Function 不会自己执行迁移，部署时在本机或 CI 上执行：
  *   DATABASE_URL=... pnpm --filter @xiaodouya/server cli migrate
  * 这些命令只需要数据库连接，不需要 APP_SECRET。
+ *
+ * 定时任务每天执行一次，清理放弃的上传和已删除的文件，见 docs/DEPLOYMENT.md：
+ *   pnpm --filter @xiaodouya/server cli maintenance
+ * 它要连存储，所以需要和服务端一样的完整配置（S3_*、APP_SECRET）。
  */
 import { randomBytes } from 'node:crypto';
-import { loadDbConfig } from './config';
+import { loadConfig, loadDbConfig } from './config';
 import { hashPassword } from './crypto';
 import { connect, migrate, type Sql } from './db';
 
@@ -29,8 +33,12 @@ async function resetPassword(sql: Sql, email: string): Promise<boolean> {
 
 const [command, email] = process.argv.slice(2);
 
-if (command !== 'migrate' && !(command === 'reset-password' && email)) {
-  console.error('用法：cli migrate | cli reset-password <邮箱>');
+if (
+  command !== 'migrate' &&
+  command !== 'maintenance' &&
+  !(command === 'reset-password' && email)
+) {
+  console.error('用法：cli migrate | cli maintenance | cli reset-password <邮箱>');
   process.exit(1);
 }
 
@@ -41,6 +49,13 @@ try {
   if (command === 'migrate') {
     await migrate(sql);
     console.log('迁移已完成');
+  } else if (command === 'maintenance') {
+    // 动态引入：迁移和重置密码不需要加载 AWS SDK。
+    const { runMaintenance } = await import('./maintenance');
+    const report = await runMaintenance(sql, loadConfig());
+    console.log(JSON.stringify(report));
+    // 让定时任务看得出失败。记录还在，下次会重试。
+    ok = report.failed === 0;
   } else {
     ok = await resetPassword(sql, email!);
   }
