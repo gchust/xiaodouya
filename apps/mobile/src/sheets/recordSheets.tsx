@@ -489,7 +489,7 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
         <PressScale
           key={item.key}
           testID={`more-${item.key}`}
-          accessibilityLabel={item.label}
+          accessibilityLabel={item.sub ? `${item.label}，${item.sub}` : item.label}
           accessibilityState={{ disabled: !item.onPress }}
           disabled={!item.onPress}
           onPress={item.onPress}

@@ -305,7 +305,7 @@ function NavRow({
     <Pressable
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={sub ? `${label}，${sub}` : label}
       onPress={onPress}
       style={[s.navRow, last ? null : s.divider]}
     >
@@ -340,7 +340,7 @@ function MemberRow({
     <Pressable
       testID={`member-${member.label}`}
       accessibilityRole={onPress ? 'button' : undefined}
-      accessibilityLabel={member.label}
+      accessibilityLabel={`${member.label}，${roleLabels[member.role]}，${isMe ? '我' : seen.text}`}
       disabled={!onPress}
       onPress={onPress}
       style={[s.memberRow, last ? null : s.divider]}

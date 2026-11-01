@@ -146,7 +146,9 @@ export function Row({
       onPress={onPress}
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityLabel={
+        accessibilityLabel ?? (typeof value === 'string' ? `${label}，${value}` : label)
+      }
     >
       {content}
     </Pressable>
@@ -277,7 +279,7 @@ export function Toggle({
     <Pressable
       testID={testID}
       accessibilityRole="switch"
-      accessibilityLabel={label}
+      accessibilityLabel={sub ? `${label}，${sub}` : label}
       accessibilityState={{ checked: value, disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={() => onChange(!value)}

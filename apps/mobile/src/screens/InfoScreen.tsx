@@ -185,7 +185,7 @@ export function InfoScreen() {
                 <PressScale
                   key={d.id}
                   testID={`doc-card-${d.data.name}`}
-                  accessibilityLabel={d.data.name}
+                  accessibilityLabel={`${d.data.name}，${d.data.files.length ? `${d.data.files.length} 个文件` : '待上传'}`}
                   scaleTo={0.97}
                   style={[s.docCard, { width: docWidth }]}
                   onPress={() => router.push({ pathname: '/doc/[id]', params: { id: d.id } })}
@@ -306,7 +306,7 @@ export function InfoScreen() {
                   key={record.id}
                   testID={`vaccine-other-${record.id}`}
                   accessibilityRole="button"
-                  accessibilityLabel={record.name}
+                  accessibilityLabel={`${record.name}，已接种 ${formatFullDate(record.at)}`}
                   onPress={() => openShot(record.id)}
                   style={[s.vaccineRow, i < others.length - 1 ? s.divider : null]}
                 >
@@ -362,7 +362,7 @@ function VaccineRow({
     <Pressable
       testID={`vaccine-row-${dose.localId}`}
       accessibilityRole="button"
-      accessibilityLabel={dose.name}
+      accessibilityLabel={`${dose.name}，${status}`}
       onPress={onPress}
       style={[s.vaccineRow, last ? null : s.divider]}
     >

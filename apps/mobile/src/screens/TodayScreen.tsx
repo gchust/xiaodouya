@@ -413,7 +413,7 @@ export function TimelineRow({
     <Pressable
       testID={`event-row-${id}`}
       accessibilityRole="button"
-      accessibilityLabel={describeEvent(event, now, units)}
+      accessibilityLabel={[describeEvent(event, now, units), sub].filter(Boolean).join('，')}
       onPress={onPress}
       style={s.row}
     >
