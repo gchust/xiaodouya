@@ -157,6 +157,7 @@ appId: com.gchust.xiaodouya
 # ── 一次补记几剂：勾两剂，同一个日期，一个按钮记下。撤销之后回到原样 ──
 - scrollUntilVisible:
     element: { id: vaccine-backfill }
+    direction: UP
     timeout: 30000
 - tapOn: { id: vaccine-backfill }
 - assertVisible: { id: backfill-date }
@@ -192,6 +193,7 @@ appId: com.gchust.xiaodouya
 # 再记一次，这次不撤销：疫苗本显示已接种。然后一条条删掉，给后面的流程留下干净的状态
 - scrollUntilVisible:
     element: { id: vaccine-backfill }
+    direction: UP
     timeout: 30000
 - tapOn: { id: vaccine-backfill }
 - scrollUntilVisible:
@@ -211,7 +213,6 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - scrollUntilVisible:
     element: { id: vaccine-status-5in1-2 }
-    direction: UP
     timeout: 30000
 - assertVisible:
     id: vaccine-status-5in1-2

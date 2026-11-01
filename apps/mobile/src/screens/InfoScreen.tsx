@@ -235,15 +235,33 @@ export function InfoScreen() {
       <View style={s.section}>
         <View style={s.sectionHead}>
           <SectionTitle>疫苗本</SectionTitle>
-          <Pressable
-            testID="vaccine-add-custom"
-            accessibilityRole="button"
-            accessibilityLabel="记一剂其他疫苗"
-            hitSlop={LINK_HIT_SLOP}
-            onPress={() => sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} custom />)}
-          >
-            <Text style={s.link}>＋ 其他疫苗</Text>
-          </Pressable>
+          <View style={s.headLinks}>
+            {/* 放在标题这里：建档时一眼能看到，不用先滑过十几行的表。 */}
+            {canBackfill ? (
+              <Pressable
+                testID="vaccine-backfill"
+                accessibilityRole="button"
+                accessibilityLabel="一次补记几剂"
+                hitSlop={LINK_HIT_SLOP}
+                onPress={() =>
+                  sheet.open('一次补记几剂', () => <VaccineBackfillSheet birthAt={birthAt} />)
+                }
+              >
+                <Text style={s.link}>一次补记</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              testID="vaccine-add-custom"
+              accessibilityRole="button"
+              accessibilityLabel="记一剂其他疫苗"
+              hitSlop={LINK_HIT_SLOP}
+              onPress={() =>
+                sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} custom />)
+              }
+            >
+              <Text style={s.link}>＋ 其他疫苗</Text>
+            </Pressable>
+          </View>
         </View>
         {region.emptyScheduleNote ? (
           <Muted testID="vaccine-empty-note" style={{ fontSize: 13, lineHeight: 20 }}>
@@ -262,37 +280,17 @@ export function InfoScreen() {
             ))}
           </ListCard>
         ) : null}
-        {canBackfill || planned.hidden.length > 0 ? (
-          <View style={s.vaccineLinks}>
-            {canBackfill ? (
-              <Pressable
-                testID="vaccine-backfill"
-                accessibilityRole="button"
-                accessibilityLabel="一次补记几剂"
-                hitSlop={LINK_HIT_SLOP}
-                onPress={() =>
-                  sheet.open('一次补记几剂', () => <VaccineBackfillSheet birthAt={birthAt} />)
-                }
-              >
-                <Text style={s.link}>一次补记几剂</Text>
-              </Pressable>
-            ) : (
-              <View />
-            )}
-            {planned.hidden.length > 0 ? (
-              <Pressable
-                testID="vaccine-hidden"
-                accessibilityRole="button"
-                accessibilityLabel={`已隐藏 ${planned.hidden.length} 剂，点开可以恢复`}
-                hitSlop={LINK_HIT_SLOP}
-                onPress={() =>
-                  sheet.open('已隐藏的剂次', () => <HiddenDosesSheet birthAt={birthAt} />)
-                }
-              >
-                <Text style={s.linkMuted}>已隐藏 {planned.hidden.length} 剂 ›</Text>
-              </Pressable>
-            ) : null}
-          </View>
+        {planned.hidden.length > 0 ? (
+          <Pressable
+            testID="vaccine-hidden"
+            accessibilityRole="button"
+            accessibilityLabel={`已隐藏 ${planned.hidden.length} 剂，点开可以恢复`}
+            hitSlop={LINK_HIT_SLOP}
+            onPress={() => sheet.open('已隐藏的剂次', () => <HiddenDosesSheet birthAt={birthAt} />)}
+            style={s.hiddenLink}
+          >
+            <Text style={s.linkMuted}>已隐藏 {planned.hidden.length} 剂 ›</Text>
+          </Pressable>
         ) : null}
         {inert > 0 ? (
           <Muted testID="vaccine-inert-note" style={{ fontSize: 11, lineHeight: 18 }}>
@@ -663,7 +661,8 @@ const s = StyleSheet.create({
   },
   link: { fontSize: 12, color: colors.accent },
   linkMuted: { fontSize: 12, color: colors.muted },
-  vaccineLinks: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  headLinks: { flexDirection: 'row', gap: 18 },
+  hiddenLink: { alignSelf: 'flex-end', paddingVertical: 2 },
   subTitle: { fontSize: 13, fontWeight: '500', color: colors.ink, marginTop: 4 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
   docCard: {

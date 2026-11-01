@@ -171,10 +171,9 @@ function PlanDateField({
 }
 
 function PlanNote() {
-  const region = useRegion();
   return (
     <Muted testID="vaccine-plan-note" style={{ fontSize: 11, lineHeight: 18 }}>
-      这是你们家的安排，App 不判断时间是否合适。{region.disclaimer}
+      这是你们家的安排，App 不判断时间是否合适，以诊所安排和健康手册为准。
     </Muted>
   );
 }
@@ -340,7 +339,7 @@ export function HiddenDosesSheet({ birthAt }: { birthAt: number }) {
   return (
     <>
       <Muted style={{ fontSize: 13, lineHeight: 20 }}>
-        隐藏只是不显示、不提醒。{region.disclaimer}
+        隐藏只是不显示、不提醒，已经记下的接种不受影响。以诊所安排和健康手册为准。
       </Muted>
       <View>
         {hidden.map((dose, i) => (
