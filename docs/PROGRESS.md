@@ -24,7 +24,7 @@
 
 ## 当前结论
 
-**核心流程已通过自动化验证，但还不能放行。** 后端已部署到 Supabase 新加坡项目，R2 实际签名上传下载、云端备份和本地恢复已验证；真机和签名 APK 首次发布还没有验证。
+**核心流程已通过自动化验证，但还不能放行。** 后端已部署到 Supabase 新加坡项目，R2 实际签名上传下载、云端备份和本地恢复已验证；`v0.1.0` 签名 APK 已发布为预发布版，真机还没有验证。
 
 E2E 列的 ✅ 指 CI run 41278806145（提交 `cce3497`）中对应编号的流程通过。这些流程跑在 CI 的 AOSP 模拟器上，系统相册和相机用内置样例代替。
 
@@ -117,11 +117,13 @@ E2E 列的 ✅ 指 CI run 41278806145（提交 `cce3497`）中对应编号的流
 | F-73 | 服务端 Docker 镜像 | 完成 | ✅ CI 构建并冒烟测试 | 是 |  |
 | F-74 | 生产 Docker Compose + Caddy | 待验证 | ⬜ 没有公网部署过。只在本机跑通：DOMAIN=localhost、Caddy 内部证书、临时覆盖的高位端口，无缓存构建后用 curl 走通 healthz、注册、建家庭、同步、开发 SeaweedFS 直传和下载（sha256 一致）、无存储时 503、容器内 reset-password、伪造 X-Forwarded-For 仍被限流、25 秒长轮询。Let's Encrypt、真实域名、R2 和 S3 都没测 | 否 |  |
 | F-75 | 数据库备份和恢复 | 待验证 | ⬜ 只在上述本机环境验证：backup.sh 和新增的 restore.sh 跑通，改坏数据后能恢复，down -v 销毁全部卷后记录和文件都回来了，截断或损坏的备份被拒绝，坏 SQL 会回滚。cron 只用 env -i 模拟过，没有装 crontab。**未解决：** 恢复较旧备份后手机游标超前，看不到家人的新记录（已用 API 复现，协议没改）；文档里“退出再登录”的办法只读过代码，没有真机验证 | 否 |  |
-| F-76 | 发布流程（签名 APK、GHCR） | 待验证 | ⬜ 端到端未验证，没有打过标签。只审查了 release.yml，没有运行。android-signing.mjs 只验证了文本：真实 build.gradle 的副本上 release 换成正式配置、debug 不变，另有 7 条 node 测试。Gradle 实际签名、GHCR 推送、镜像可见性都没跑；android-build.sh 缺密钥时退出的改动也没有实际执行 | 否 |  |
+| F-76 | 发布流程（签名 APK、GHCR） | 待验证 | ✅ `v0.1.0` Release run 41292441848 中 APK 和 server-image 两项成功；下载的 APK 通过 apksig v2 验签，证书 SHA-256 与本地发布密钥一致。APK 的 Hermes bundle 含新加坡项目 ref、函数路径和 `ap-southeast-1`。GHCR 镜像可见性、真机安装及登录未验证 | 否 | docs/singapore-release-status |
 | F-77 | iOS | 未开始 | ⬜ 从未运行 | 否 |  |
 | F-78 | 部署文档 | 待验证 | ⬜ 第一节第 3 到第 7 步的命令在本机照做跑通并修正（测试时加了项目名和端口覆盖，用 git archive 代替 git clone）。没做的：第 2 步创建云存储、真实域名和证书、git clone 和 git pull、方式 A 成功拉取镜像、crontab。origin/main 目前还没有 deploy/，合并前按文档 clone 默认分支走不通 | 否 |  |
 | F-79 | Supabase 部署（Edge Function、事务模式连接池、R2、加密备份） | 待验证 | ⬜ **没有在真实 Supabase 项目和真实 R2 上跑过。** 已验证：① 全部服务端测试在默认配置、连接池 1 且不用预处理语句、以及经过本地 PgBouncer 事务模式（`max_prepared_statements=0`）三种配置下通过；同样经过 PgBouncer 打开预处理语句时 12 条失败，说明这个环境确实能发现问题。PgBouncer 不是 Supabase 用的 Supavisor。② `pnpm test:edge` 在 Deno 2.9.6 和 `supabase/edge-runtime:v1.77.9` 镜像上通过（镜像里自己写的主服务设了 256 MB 内存、2 秒 CPU 硬限制，不是 Supabase 线上的主服务），连开发 Postgres 和 SeaweedFS，也经过要求 TLS 的 PgBouncer（自建 CA）。覆盖注册、登录、Node 和函数互相验证密码、事务、同步、长轮询唤醒、预签名上传下载、存储测试、SSRF 拒绝；一次带哈希的登录约 150–180 ms。`EdgeRuntime.waitUntil` 在镜像里单独探测过，响应后任务能跑完；但真实推送没有发送。③ `edge-runtime bundle` 打包成功（0.82 MB），Supabase CLI 2.122.0 能读 `config.toml`，但没有执行过 `functions deploy`。④ 备份：`cloud-backup.test.ts` 对开发 Postgres 的临时库和开发 S3 跑通加密、上传、恢复，口令错误、截断、坏 SQL 都不动数据。⑤ 迁移在模拟 Supabase 默认授权的临时 Postgres 上跑过，`anon`、`authenticated` 读写都被拒绝，真实 Data API 没测。⑥ 服务端 Docker 镜像重新构建，在空数据库上启动后自动迁移，healthz 和注册通过。⑦ 服务端测试和备份往返（pg_dump 17）也在临时的 Postgres 17 上通过。**没做：** GitHub 定时备份流程、curl 对真实 R2 的签名、Supavisor、暂停和恢复项目、真机连 Edge Function | 否 | worktree-agent-a1405ad7ede856910 |
-| F-80 | 新加坡生产部署与 APK 区域配置 | 待验证 | Supabase `ap-southeast-1` 已部署；`healthz` 200，真实登录查询返回预期 401，指定区域响应头为新加坡。Data API 已关闭且 REST 入口 503。R2 APAC Bucket 的签名上传下载成功，`backups/` 设置 30 天过期。GitHub 手动备份 run 41289245178 成功；密文从 R2 恢复到本地 Postgres 17，11 张表及 3 条迁移版本存在。APK 区域请求标头测试先红后绿，`pnpm check` 通过；签名 APK 和真机仍待验证 | 否 | chore/singapore-deploy |
+| F-80 | 新加坡生产部署与 APK 区域配置 | 待验证 | Supabase `ap-southeast-1` 已部署；`healthz` 200，真实登录查询返回预期 401，指定区域响应头为新加坡。Data API 已关闭且 REST 入口 503。R2 APAC Bucket 的签名上传下载成功，`backups/` 设置 30 天过期。GitHub 手动备份 run 41289245178 成功；密文从 R2 恢复到本地 Postgres 17，11 张表及 3 条迁移版本存在。APK 区域请求标头测试先红后绿，`pnpm check` 通过；`v0.1.0` 签名 APK 已发布并验签，真机仍待验证 | 否 | docs/singapore-release-status |
+
+F-79 记录的是部署前的本地验证阶段；真实云端验证结果见 F-80。
 
 ## 公开发布前必须解决
 
