@@ -19,6 +19,7 @@
 - [设计规范](docs/design/SPEC.md)
 - [功能进展](docs/PROGRESS.md)：每个功能的状态、验证方式和是否放行
 - [踩坑记录](docs/PITFALLS.md)
+- 法律和上架草稿（**未经律师审核，不能直接使用**）：[隐私政策](docs/legal/privacy-policy.zh.md)、[用户协议](docs/legal/terms.zh.md)、[合规清单](docs/legal/COMPLIANCE.md)、[Google Play](docs/store/google-play.md)、[App Store](docs/store/app-store.md)
 - [端到端测试](e2e/README.md)
 
 ## 本地开发
