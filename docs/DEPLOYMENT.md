@@ -123,7 +123,7 @@ pnpm build:edge
 supabase functions deploy api
 ```
 
-`pnpm build:edge` 把服务端打成 `supabase/functions/api/_bundle/server.mjs`，这个文件不提交，**每次部署前都要重新生成**。`supabase/config.toml` 里已经写了 `verify_jwt = false`，接口用自己的令牌。部署时默认用 Docker 在本地打包，`--use-api`（不用 Docker）还没有试过。
+`pnpm build:edge` 把服务端打成 `supabase/functions/api/_bundle/server.mjs`，这个文件不提交，**每次部署前都要重新生成**。`supabase/config.toml` 里已经写了 `verify_jwt = false`，接口用自己的令牌。部署时默认用 Docker 在本地打包；镜像仓库无法访问时可加 `--use-api` 改为服务端打包，已在真实 Supabase 项目部署成功。
 
 验证：
 
@@ -395,6 +395,7 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec ser
    | Secret   | `ANDROID_KEY_ALIAS`         | `xiaodouya`                |
    | Secret   | `ANDROID_KEY_PASSWORD`      | 密钥密码                   |
    | Variable | `EXPO_PUBLIC_API_URL`       | `https://baby.example.com` |
+   | Variable | `EXPO_PUBLIC_API_REGION`    | Supabase 部署在新加坡时填 `ap-southeast-1`；其他部署留空 |
 
 **发布新版本：**
 
@@ -543,6 +544,7 @@ pnpm android:build release --clean
 | 参数                               | 必填       | 说明                                                                          |
 | ---------------------------------- | ---------- | ----------------------------------------------------------------------------- |
 | `EXPO_PUBLIC_API_URL`              | 正式版必填 | 服务端地址，比如 `https://<project-ref>.supabase.co/functions/v1/api` 或 `https://baby.example.com`。会打包进 App，**不要放任何密钥** |
+| `EXPO_PUBLIC_API_REGION`           | 否         | Supabase Edge Function 执行区域，比如新加坡 `ap-southeast-1`；只对 Supabase 函数地址附加 `x-region` 请求标头 |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
 | `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |

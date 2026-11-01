@@ -106,6 +106,8 @@
 - **在本机验证生产配置时，`ports` 会合并而不是覆盖。** 覆盖文件要写 `ports: !override [...]`，否则还是会占用 80 和 443。`COMPOSE_PROJECT_NAME` 优先于文件里的 `name:`，不改 `backup.sh` 也能指向测试环境。
 - **Supabase 的 Data API 默认能读 `public` 里的表，而 anon key 是公开的。** 没有 RLS 的话，知道项目地址就能读密码哈希和存储密钥。部署时要关掉 Data API，迁移里也开了 RLS 并收回权限，两道都要。
 - **Supabase 免费版的 Direct connection 只有 IPv6。** GitHub Actions 连不上。迁移和 `pg_dump` 走 Session pooler（5432），函数走 Transaction pooler（6543）。
+- **Supabase Edge Function 默认就近执行，不保证跟数据库同区域。** 实际从本机代理请求新加坡项目时落在东京；加 `x-region: ap-southeast-1` 后响应头 `x-sb-edge-region` 才显示新加坡。APK 构建通过 `EXPO_PUBLIC_API_REGION` 固定区域。
+- **Supabase CLI 默认用 Docker 打包函数，镜像仓库连接失败会阻止部署。** 实际从 ECR、GHCR、Docker Hub 拉取 Edge Runtime 都遇到 EOF；`supabase functions deploy api --use-api --no-verify-jwt` 在真实项目成功部署同一份已生成的 bundle。
 - **事务模式连接池不能跑 `pg_dump`，也不能用命名预处理语句。** 后者报 `prepared statement "xxx" does not exist`，只在语句落到另一条服务端连接时才出现，是偶发的。
 - **`pg_dump` 不能比服务器旧，导出的文件也不能恢复到比它旧的 Postgres。** 用 18 导出的备份恢复到 16 报 `unrecognized configuration parameter "transaction_timeout"`。脚本用 `BACKUP_PG_IMAGE` 指定版本，Supabase 升级大版本时要跟着改。
 - **`pg_dump --schema=public` 的结果里有 `CREATE SCHEMA public`。** 恢复前只能 `DROP`，不能再 `CREATE`，否则报已存在。

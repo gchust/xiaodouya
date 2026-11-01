@@ -70,3 +70,25 @@ describe('什么时候清除本地数据', () => {
     expect(shouldClearLocalData(null, sessionOwner('u1', 'f1'))).toBe(false);
   });
 });
+
+describe('Supabase 请求区域', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it('构建时指定新加坡后，只给 Supabase 函数请求附加区域标头', async () => {
+    vi.stubEnv('EXPO_PUBLIC_API_REGION', 'ap-southeast-1');
+    const fetcher = vi.fn(async (_url: string, _options?: RequestInit) => new Response('{}'));
+    vi.stubGlobal('fetch', fetcher);
+    const api = new Api();
+
+    api.baseUrl = 'https://example.supabase.co/functions/v1/api';
+    await api.me();
+    expect(fetcher.mock.calls[0]?.[1]?.headers).toMatchObject({ 'x-region': 'ap-southeast-1' });
+
+    api.baseUrl = 'https://baby.example.com';
+    await api.me();
+    expect(fetcher.mock.calls[1]?.[1]?.headers).not.toHaveProperty('x-region');
+  });
+});
