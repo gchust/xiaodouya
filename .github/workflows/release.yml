@@ -37,10 +37,16 @@ jobs:
       - name: 检查必需配置
         env:
           API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           [ -n "$API_URL" ] || { echo "::error::请在仓库变量里设置 EXPO_PUBLIC_API_URL"; exit 1; }
-          [ -n "$KEYSTORE" ] || { echo "::error::请在仓库 Secrets 里设置 ANDROID_KEYSTORE_BASE64"; exit 1; }
+          # 这里先查齐，否则要等 Gradle 跑到签名那一步才失败。
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [ -n "${!name}" ] || { echo "::error::请在仓库 Secrets 里设置 $name"; exit 1; }
+          done
       - name: 释放磁盘空间
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
       - uses: pnpm/action-setup@v4

@@ -10,7 +10,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "pnpm -r --parallel typecheck",
-    "test": "pnpm --filter @xiaodouya/shared test && pnpm --filter @xiaodouya/mobile test",
+    "test": "pnpm --filter @xiaodouya/shared test && pnpm --filter @xiaodouya/mobile test && node --test scripts/android-signing.test.mjs",
     "test:server": "pnpm --filter @xiaodouya/server test",
     "dev:infra": "docker compose -f deploy/docker-compose.dev.yml up -d --wait && pnpm --filter @xiaodouya/server dev:bucket",
     "dev:server": "pnpm --filter @xiaodouya/server dev",

@@ -23,6 +23,11 @@ case "$MODE" in
     ;;
   release)
     : "${EXPO_PUBLIC_API_URL:?正式版必须设置 EXPO_PUBLIC_API_URL}"
+    # 少了这些不能继续：否则 APK 会用调试密钥签名，换正式密钥后家人无法覆盖安装。
+    : "${ANDROID_KEYSTORE_PATH:?正式版必须设置 ANDROID_KEYSTORE_PATH}"
+    : "${ANDROID_KEYSTORE_PASSWORD:?正式版必须设置 ANDROID_KEYSTORE_PASSWORD}"
+    : "${ANDROID_KEY_ALIAS:?正式版必须设置 ANDROID_KEY_ALIAS}"
+    : "${ANDROID_KEY_PASSWORD:?正式版必须设置 ANDROID_KEY_PASSWORD}"
     export ANDROID_ARCHS="${ANDROID_ARCHS:-arm64-v8a}"
     export ANDROID_ALLOW_HTTP="${ANDROID_ALLOW_HTTP:-0}"
     TASK=assembleRelease
@@ -37,7 +42,7 @@ PREBUILD_ARGS=(--platform android --no-install)
 [ "$CLEAN" = "--clean" ] && PREBUILD_ARGS+=(--clean)
 CI=1 npx expo prebuild "${PREBUILD_ARGS[@]}"
 
-if [ "$MODE" = "release" ] && [ -n "${ANDROID_KEYSTORE_PATH:-}" ]; then
+if [ "$MODE" = "release" ]; then
   node "$ROOT/scripts/android-signing.mjs" android/app/build.gradle
 fi
 
