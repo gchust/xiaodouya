@@ -90,6 +90,8 @@ export function RecordsScreen() {
               label={f.label}
               selected={filter === f.key}
               onPress={() => setFilter(f.key)}
+              // 胶囊默认的底色和这一页的背景相同，看起来像一排普通文字。
+              style={filter === f.key ? null : s.filterOff}
             />
           ))}
         </View>
@@ -139,6 +141,7 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   link: { fontSize: 13, color: colors.accent, padding: 4 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  filterOff: { backgroundColor: colors.card },
   dayTitle: {
     marginTop: 18,
     marginBottom: 2,
