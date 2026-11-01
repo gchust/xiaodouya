@@ -558,16 +558,16 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
       { seq: string }[]
     >`SELECT seq FROM families WHERE id = ${m.familyId}`;
     const upperBound = Number(family?.seq ?? body.cursor);
+    // 游标比服务端还新，只可能是从旧备份恢复过：seq 退回去了。从头发一遍，否则这台手机会漏掉之后的记录。
+    const fromCursor = body.cursor > upperBound ? 0 : body.cursor;
     const rows = await sql<RecordRow[]>`
       SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
-      WHERE family_id = ${m.familyId} AND seq > ${body.cursor} AND seq <= ${upperBound}
+      WHERE family_id = ${m.familyId} AND seq > ${fromCursor} AND seq <= ${upperBound}
         AND collection = ANY(${readable})
       ORDER BY seq LIMIT ${SYNC_PAGE_SIZE + 1}`;
     const hasMore = rows.length > SYNC_PAGE_SIZE;
     const page = rows.slice(0, SYNC_PAGE_SIZE);
-    const cursor = hasMore
-      ? Number(page[page.length - 1]?.seq ?? body.cursor)
-      : Math.max(upperBound, body.cursor);
+    const cursor = hasMore ? Number(page[page.length - 1]?.seq ?? fromCursor) : upperBound;
     const records = page.map(toServerRecord);
     if (conflicted.length > 0) {
       // 客户端手里的版本没有生效，而服务端版本可能已在游标之前，必须显式补发。

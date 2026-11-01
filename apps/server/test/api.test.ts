@@ -479,6 +479,20 @@ describe('审查发现的同步问题（回归）', () => {
     expect(injected).toHaveLength(2);
     expect([before.id, ...injected].filter((id) => !seen.has(id))).toEqual([]);
   });
+  it('从备份恢复后，手机的游标超前也能重新拿到记录，且不漏新记录', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const kept = feedChange();
+    await sync(admin.token, 0, [kept]);
+    const fresh = feedChange();
+    // 手机的游标来自恢复之前，比现在的 seq 大。
+    await sync(admin.token, 0, [fresh]);
+    const { json } = await sync(mom.token, 999_999);
+    expect(json.records.map((r) => r.id)).toEqual(expect.arrayContaining([kept.id, fresh.id]));
+    expect(json.cursor).toBeLessThan(999_999);
+    const next = await sync(mom.token, json.cursor);
+    expect(next.json.records).toEqual([]);
+  });
   it('响应里带当前角色，客户端才能发现权限变化', async () => {
     const { admin } = await newFamily();
     expect((await sync(admin.token, 0)).json.role).toBe('admin');
