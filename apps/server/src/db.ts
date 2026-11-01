@@ -167,7 +167,8 @@ export const migrations: readonly string[] = [
     WHERE r.family_id = m.family_id AND r.deleted AND position(m.id::text IN lower(r.data::text)) > 0);
   `,
   // 邮箱验证和找回密码。每人每种用途只有一个有效验证码：发新的就覆盖旧的，用过就删。
-  // 老账号不回填 email_verified_at：他们确实没验证过。已有家庭的不会被拦（见 app.ts 的 requireVerifiedEmail）。
+  // 老账号不回填 email_verified_at：他们确实没验证过。服务端不因此拒绝任何操作：
+  // 线上的 v0.1.0 APK 不认识验证这一步，拒绝就等于把人锁在外面。验证由新版 App 引导。
   `
   ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMPTZ;
   CREATE TABLE email_codes (
@@ -180,6 +181,21 @@ export const migrations: readonly string[] = [
     PRIMARY KEY (user_id, purpose)
   );
   ALTER TABLE email_codes ENABLE ROW LEVEL SECURITY;
+  `,
+  // 账号删除后还没从存储里删掉的文件，见 objectDeletions.ts。storage 是存储配置的快照（Secret 仍是加密的），
+  // 因为配置已经随家庭删除了；所以不引用 families，家庭没了这里的记录还要在。
+  `
+  CREATE TABLE pending_object_deletions (
+    id UUID PRIMARY KEY,
+    object_key TEXT NOT NULL,
+    storage JSONB,
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX pending_object_deletions_due ON pending_object_deletions(next_attempt_at);
+  ALTER TABLE pending_object_deletions ENABLE ROW LEVEL SECURITY;
   `,
 ];
 

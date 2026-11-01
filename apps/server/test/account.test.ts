@@ -501,39 +501,108 @@ describe('邮箱验证', () => {
     return { ...user, code: mail.lastCode(user.email, 'verify') };
   }
 
-  it('注册时发 6 位验证码，验证前不能建家庭', async () => {
+  it('注册时发 6 位验证码，验证后 emailVerified 变成 true', async () => {
     const user = await registered();
     expect(user.code).toMatch(/^\d{6}$/);
     const before = await me(user.token);
     expect(before.json.emailVerified).toBe(false);
-    const blocked = await createFamily(user.token);
-    expect(blocked.status).toBe(403);
-    expect(blocked.json.error?.code).toBe('email_not_verified');
     const done = await verify(user.token, user.code);
     expect(done.status).toBe(200);
     expect(done.json.emailVerified).toBe(true);
-    expect((await createFamily(user.token)).status).toBe(201);
+    expect((await me(user.token)).json.emailVerified).toBe(true);
   });
 
-  it('验证前不能接受邀请，服务端校验，不靠 App 隐藏入口', async () => {
-    const { admin } = await newFamily(plainApp);
-    const invite = await call<{ code: string }>(plainApp, 'POST', '/v1/invites', {
-      token: admin.token,
-      body: { role: 'caregiver', label: '妈妈' },
+  describe('线上的 v0.1.0 APK 不知道邮箱验证，打开邮件后也不能被锁在外面', () => {
+    it('只走旧接口：注册、建家庭、邀请、加入、同步全部照常', async () => {
+      const owner = await newUser(app);
+      const family = await createFamily(owner.token);
+      expect(family.status).toBe(201);
+      const invite = await call<{ code: string }>(app, 'POST', '/v1/invites', {
+        token: owner.token,
+        body: { role: 'caregiver', label: '妈妈' },
+      });
+      expect(invite.status).toBe(201);
+      const member = await newUser(app);
+      const joined = await call(app, 'POST', '/v1/invites/accept', {
+        token: member.token,
+        body: { code: invite.json.code },
+      });
+      expect(joined.status).toBe(200);
+      for (const token of [owner.token, member.token]) {
+        const synced = await call(app, 'POST', '/v1/sync', {
+          token,
+          body: { cursor: 0, changes: [] },
+        });
+        expect(synced.status).toBe(200);
+      }
     });
-    const user = await registered();
-    const blocked = await call<{ error: { code: string } }>(app, 'POST', '/v1/invites/accept', {
-      token: user.token,
-      body: { code: invite.json.code },
+
+    it('注册和登录的响应结构不变，/v1/me 只是多了字段', async () => {
+      const email = uniqueEmail();
+      const registeredResponse = await call<AuthResponse>(app, 'POST', '/v1/auth/register', {
+        body: { email, password: PASSWORD, displayName: '虚构用户' },
+      });
+      expect(Object.keys(registeredResponse.json).sort()).toEqual(['token', 'user']);
+      expect(Object.keys(registeredResponse.json.user).sort()).toEqual([
+        'displayName',
+        'email',
+        'id',
+      ]);
+      const loggedIn = await login(email, PASSWORD);
+      expect(Object.keys(loggedIn.json).sort()).toEqual(['token', 'user']);
+      const profile = await me(loggedIn.json.token);
+      for (const key of ['user', 'family', 'role', 'label', 'members', 'invites', 'prefs']) {
+        expect(profile.json).toHaveProperty(key);
+      }
     });
-    expect(blocked.status).toBe(403);
-    expect(blocked.json.error.code).toBe('email_not_verified');
-    await verify(user.token, user.code);
-    const joined = await call(app, 'POST', '/v1/invites/accept', {
-      token: user.token,
-      body: { code: invite.json.code },
+  });
+
+  describe('打开邮件之前注册的老账号', () => {
+    /** 老账号：没配邮件时注册的，从来没有验证过，也没有验证码。 */
+    const existing = async () => {
+      const user = await newUser(plainApp);
+      const [row] = await db.sql<{ email_verified_at: Date | null }[]>`
+        SELECT email_verified_at FROM users WHERE id = ${user.user.id}`;
+      expect(row?.email_verified_at).toBeNull();
+      return user;
+    };
+
+    it('没有家庭也能直接建家庭，不会被拦', async () => {
+      const user = await existing();
+      expect((await me(user.token)).json.emailVerified).toBe(false);
+      expect((await createFamily(user.token)).status).toBe(201);
     });
-    expect(joined.status).toBe(200);
+
+    it('已经有家庭的，同步照常，可以随时自己选择验证', async () => {
+      const { admin } = await newFamily(plainApp);
+      expect((await me(admin.token)).json.emailVerified).toBe(false);
+      const send = await call<{ retryAfterSeconds: number }>(
+        app,
+        'POST',
+        '/v1/me/email/send-code',
+        { token: admin.token },
+      );
+      expect(send.json.retryAfterSeconds).toBe(60);
+      await bg.flush();
+      const done = await verify(admin.token, mail.lastCode(admin.email, 'verify'));
+      expect(done.status).toBe(200);
+      expect(done.json.emailVerified).toBe(true);
+      expect(done.json.family).not.toBeNull();
+    });
+
+    it('没验证过也能找回密码：不能因为没验证就把人关在外面', async () => {
+      const user = await existing();
+      expect((await reset(user.email, await forgotCode(user.email))).status).toBe(200);
+      expect((await login(user.email, NEW_PASSWORD)).status).toBe(200);
+    });
+  });
+
+  it('Supabase 没有设置邮件 Secret 时函数正常启动，走跳过的路径', async () => {
+    const env = { ...testEnv(), MAIL_PROVIDER: undefined, RESEND_API_KEY: undefined };
+    const handler = createEdgeHandler(env, () => {});
+    expect(handler).toBeTypeOf('function');
+    const response = await handler(new Request('http://localhost/api/v1/config'));
+    expect(await response.json()).toEqual({ passwordReset: false, emailVerification: false });
   });
 
   it('没有配置邮件时跳过这一步：不发信，算作已验证，直接建家庭', async () => {
@@ -542,18 +611,6 @@ describe('邮箱验证', () => {
     expect((await createFamily(user.token, plainApp)).status).toBe(201);
     const send = await call(plainApp, 'POST', '/v1/me/email/send-code', { token: user.token });
     expect(send.status).toBe(503);
-  });
-
-  it('打开邮件之前已经有家庭的老账号不会被挡住', async () => {
-    const { admin } = await newFamily(plainApp);
-    const after = await me(admin.token);
-    expect(after.json.emailVerified).toBe(false);
-    expect(after.json.family).not.toBeNull();
-    const synced = await call(app, 'POST', '/v1/sync', {
-      token: admin.token,
-      body: { cursor: 0, changes: [] },
-    });
-    expect(synced.status).toBe(200);
   });
 
   it('验证码错误、过期、用过都不行', async () => {

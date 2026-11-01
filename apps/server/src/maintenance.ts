@@ -1,5 +1,6 @@
 import type { Config } from './config';
 import type { Sql } from './db';
+import { processPendingDeletions } from './objectDeletions';
 import { liveReferences } from './quota';
 import { deleteObject, type ResolvedStorage, storageById } from './storage';
 
@@ -25,6 +26,13 @@ export interface MaintenanceReport {
   /** 存储删除失败的文件。记录保留，下次再试。 */
   failed: number;
   rateLimitsRemoved: number;
+  /** 账号删除留下的文件（pending_object_deletions），删掉了多少。 */
+  deletionsDone: number;
+  deletionsFailed: number;
+  /** 队列里还剩多少，包括还没到重试时间的和下面这种。 */
+  deletionsRemaining: number;
+  /** 在家庭自带的存储里、因为没有 APP_SECRET 这次没处理的。不算失败。 */
+  deletionsWaitingForSecret: number;
 }
 
 interface MediaRow {
@@ -38,11 +46,18 @@ interface MediaRow {
  * 定时任务调用（`cli maintenance`）。可以重复执行，中途失败下次接着来。
  *
  * 只处理这个项目自己知道的对象（media 表里有记录的），不列举 Bucket。
- * 只处理平台存储：用户自己的 Bucket 不花平台的钱，那里的文件由他们自己决定，密钥也可能早就失效了。
+ * 还在用的家庭只清理平台存储：用户自己的 Bucket 不花平台的钱，那里的文件由他们自己决定，密钥也可能早就失效了。
  * 超过配额的家庭不会因此丢任何东西，这里不看配额。
- * 账号删除有自己的待删除队列（pending_object_deletions），将来可以合并。
+ *
+ * 账号删除的待删除队列（pending_object_deletions）也在这里处理，部署只需要配一个定时任务。
+ * 那些文件的主人要求删除，所以自带存储的也要删。这要解密快照里的密钥：
+ * customStorage 为 false 表示没有真实的 APP_SECRET，自带存储的留在队列里，平台存储的照常处理。
  */
-export async function runMaintenance(sql: Sql, config: Config): Promise<MaintenanceReport> {
+export async function runMaintenance(
+  sql: Sql,
+  config: Config,
+  { customStorage = true }: { customStorage?: boolean } = {},
+): Promise<MaintenanceReport> {
   const report: MaintenanceReport = {
     pendingRemoved: 0,
     trashPurged: 0,
@@ -50,9 +65,21 @@ export async function runMaintenance(sql: Sql, config: Config): Promise<Maintena
     rescued: 0,
     failed: 0,
     rateLimitsRemoved: 0,
+    deletionsDone: 0,
+    deletionsFailed: 0,
+    deletionsRemaining: 0,
+    deletionsWaitingForSecret: 0,
   };
   const storage = await storageById(sql, config, '', null);
   if (storage) report.failed = await purgeObjects(sql, storage, config.mediaTrashDays, report);
+  const queue = await processPendingDeletions(sql, config, {
+    customStorage,
+    maxMs: Number.POSITIVE_INFINITY,
+  });
+  report.deletionsDone = queue.deleted;
+  report.deletionsFailed = queue.failed;
+  report.deletionsRemaining = queue.remaining;
+  report.deletionsWaitingForSecret = queue.waitingForSecret;
   const removed = await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
   report.rateLimitsRemoved = removed.count;
   return report;

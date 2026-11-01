@@ -4,6 +4,7 @@ import {
   type ApiError,
   type AuthResponse,
   type BabyData,
+  accountDeletionOutcome,
   CompleteUploadRequest,
   CreateFamilyRequest,
   CreateInviteRequest,
@@ -11,11 +12,13 @@ import {
   canReadMediaScope,
   canWriteCollection,
   collections,
+  DeleteAccountRequest,
   defaultPrefs,
   describeEvent,
   EMAIL_CODE_COOLDOWN_SECONDS,
   type EventData,
   effectiveUnits,
+  type FamilyExport,
   type FamilyMember,
   formatBytes,
   ForgotPasswordRequest,
@@ -73,6 +76,7 @@ import type { Mailer } from './mailer';
 import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
 import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './notifier';
 import { countedBytes, familyQuotaBytes, liveReferences, platformUsage, uuidsIn } from './quota';
+import { enqueueFamilyObjects, processPendingDeletions } from './objectDeletions';
 import {
   activeStorage,
   assertEndpointAllowed,
@@ -530,13 +534,6 @@ export function createApp({
     if (m.role !== 'admin') fail(403, 'forbidden', '只有管理员可以这样做');
     return m;
   };
-  /**
-   * 只在建家庭和加入家庭时检查。打开邮件之前注册、已经有家庭的账号不受影响，
-   * 记录同步也永远不等验证：半夜记一笔不能被邮件卡住。
-   */
-  const requireVerifiedEmail = (user: AuthedUser) => {
-    if (mailer && !user.emailVerified) fail(403, 'email_not_verified', '请先验证邮箱');
-  };
 
   v1.post('/auth/logout', async (c) => {
     const token = c.req.header('authorization')!.slice(7);
@@ -655,12 +652,131 @@ export function createApp({
     return c.json({ ok: true });
   });
 
+  // 用 POST 而不是带请求体的 DELETE：有些代理和客户端会丢掉 DELETE 的请求体。
+  v1.post('/me/delete', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const user = c.get('user');
+    const body = await parseBody(c, DeleteAccountRequest);
+    if (!(await allowAttempt(sql, `delete-account:${user.id}`, 10, LOGIN_WINDOW_MS))) {
+      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
+    }
+    const [row] = await sql<
+      { password_hash: string }[]
+    >`SELECT password_hash FROM users WHERE id = ${user.id}`;
+    // 不能用 401：App 收到 unauthenticated 会回到登录页。
+    if (!row || !(await verifyPassword(body.password, row.password_hash))) {
+      fail(403, 'wrong_password', '密码不正确');
+    }
+    const outcome = await sql.begin(async (tx) => {
+      const [mine] = await tx<
+        { family_id: string }[]
+      >`SELECT family_id FROM memberships WHERE user_id = ${user.id}`;
+      if (mine) {
+        // 锁住家庭再看成员：两个人同时删除时，不锁的话都以为对方还在，
+        // 会留下没有管理员的家庭，或者没有成员、文件再也删不掉的家庭。
+        await tx`SELECT id FROM families WHERE id = ${mine.family_id} FOR UPDATE`;
+        const members = await tx<{ user_id: string; role: Role }[]>`
+          SELECT user_id, role FROM memberships WHERE family_id = ${mine.family_id}`;
+        const decision = accountDeletionOutcome(
+          user.id,
+          members.map((m) => ({ userId: m.user_id, role: m.role })),
+        );
+        if (decision === 'blocked_only_admin') return decision;
+        if (decision === 'delete_family') {
+          // 顺序不能换：记录、文件记录、存储配置都随家庭级联删除，之后就不知道文件在哪了。
+          await enqueueFamilyObjects(tx, mine.family_id, UPLOAD_URL_TTL);
+          await tx`DELETE FROM families WHERE id = ${mine.family_id}`;
+        }
+      }
+      // 登录、推送令牌、成员关系、验证码随账号级联删除，记录的 created_by 置空后留给家庭。
+      await tx`DELETE FROM users WHERE id = ${user.id}`;
+      return 'deleted' as const;
+    });
+    if (outcome === 'blocked_only_admin') {
+      fail(
+        409,
+        'only_admin',
+        '你是这个家庭唯一的管理员。请先把另一位家人设为管理员，或者把其他家人都移出家庭，再删除账号。',
+      );
+    }
+    // 也会顺带处理之前失败的。没做完的留在队列里，由 cli purge-objects 兜底。
+    background(
+      processPendingDeletions(sql, config)
+        .then(() => {})
+        .catch((error: unknown) => {
+          console.error('清理文件失败', error instanceof Error ? error.message : 'unknown');
+        }),
+    );
+    return c.json({ ok: true });
+  });
+
   // ─── 家庭和邀请 ─────────────────────────────────────────
+
+  v1.get('/family/export', async (c) => {
+    const m = requireFamily(c);
+    const user = c.get('user');
+    if (!(await allowAttempt(sql, `export:${user.id}`, 10, HOUR_MS))) {
+      fail(429, 'too_many_attempts', '导出太频繁了，请稍后再试');
+    }
+    const readable = collections.filter((name) => canReadCollection(m.role, name));
+    const [family] = await sql<
+      { id: string; name: string }[]
+    >`SELECT id, name FROM families WHERE id = ${m.familyId}`;
+    const members = await sql<{ user_id: string; label: string; role: Role }[]>`
+      SELECT user_id, label, role FROM memberships WHERE family_id = ${m.familyId} ORDER BY created_at`;
+    const records = await sql<RecordRow[]>`
+      SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
+      WHERE family_id = ${m.familyId} AND NOT deleted AND collection = ANY(${readable})
+      ORDER BY seq`;
+    // 字段逐个列出，不用 SELECT *：object_key 和存储配置不能出现在导出文件里。
+    const media = await sql<
+      {
+        id: string;
+        variant: FamilyExport['media'][number]['variant'];
+        scope: FamilyExport['media'][number]['scope'];
+        mime: string;
+        size: string;
+        filename: string | null;
+        created_at: Date;
+      }[]
+    >`SELECT id, variant, scope, mime, size, filename, created_at FROM media
+      WHERE family_id = ${m.familyId} AND status = 'ready' AND unreferenced_at IS NULL
+      ORDER BY created_at, id, variant`;
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 10).replaceAll('-', '');
+    c.header('content-disposition', `attachment; filename="xiaodouya-export-${stamp}.json"`);
+    c.header('cache-control', 'no-store');
+    return c.json<FamilyExport>({
+      format: 'xiaodouya-export',
+      version: 1,
+      exportedAt: now.getTime(),
+      account: { id: user.id, email: user.email, displayName: user.displayName },
+      family: { id: m.familyId, name: family?.name ?? '' },
+      role: m.role,
+      members: members.map((r) => ({ userId: r.user_id, label: r.label, role: r.role })),
+      records: records.map((r) => ({
+        id: r.id,
+        collection: r.collection,
+        data: r.data,
+        updatedAt: Number(r.updated_at_client),
+        createdBy: r.created_by,
+      })),
+      media: media
+        .filter((r) => canReadMediaScope(m.role, r.scope))
+        .map((r) => ({
+          id: r.id,
+          variant: r.variant,
+          scope: r.scope,
+          mime: r.mime,
+          size: Number(r.size),
+          filename: r.filename,
+          createdAt: r.created_at.getTime(),
+        })),
+    });
+  });
 
   v1.post('/families', async (c) => {
     const user = c.get('user');
     if (c.get('membership')) fail(409, 'already_in_family', '你已经在一个家庭里了');
-    requireVerifiedEmail(user);
     const body = await parseBody(c, CreateFamilyRequest);
     const id = crypto.randomUUID();
     await sql.begin(async (tx) => {
@@ -691,7 +807,6 @@ export function createApp({
   v1.post('/invites/accept', async (c) => {
     const user = c.get('user');
     if (c.get('membership')) fail(409, 'already_in_family', '你已经在一个家庭里了');
-    requireVerifiedEmail(user);
     const body = await parseBody(c, AcceptInviteRequest);
     if (!(await allowAttempt(sql, `invite:${user.id}`, 20, INVITE_WINDOW_MS))) {
       fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
