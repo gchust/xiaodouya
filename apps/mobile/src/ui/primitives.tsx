@@ -16,6 +16,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Animated, {
+  type AnimatedStyle,
+  interpolateColor,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -25,9 +27,9 @@ import { colors, fonts, motion } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-type PressScaleProps = PressableProps & {
+type PressScaleProps = Omit<PressableProps, 'style'> & {
   scaleTo?: number;
-  style?: StyleProp<ViewStyle>;
+  style?: StyleProp<AnimatedStyle<ViewStyle>>;
   children?: ReactNode;
 };
 
@@ -116,6 +118,7 @@ export function Row({
   onPress,
   testID,
   valueStyle,
+  accessibilityLabel,
 }: {
   label: string;
   value: ReactNode;
@@ -123,6 +126,7 @@ export function Row({
   onPress?: () => void;
   testID?: string;
   valueStyle?: StyleProp<TextStyle>;
+  accessibilityLabel?: string;
 }) {
   const content = (
     <View style={[styles.kvRow, !last && styles.divider]}>
@@ -140,7 +144,7 @@ export function Row({
       onPress={onPress}
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
     >
       {content}
     </Pressable>
@@ -158,6 +162,7 @@ export function Button({
   style,
   testID,
   height = 54,
+  labelStyle,
 }: {
   label: string;
   onPress: () => void;
@@ -167,6 +172,7 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   testID?: string;
   height?: number;
+  labelStyle?: StyleProp<TextStyle>;
 }) {
   const tones: Record<ButtonTone, { bg: string; ink: string; border?: string }> = {
     accent: { bg: colors.accent, ink: colors.white },
@@ -195,7 +201,7 @@ export function Button({
       {busy ? (
         <ActivityIndicator color={t.ink} />
       ) : (
-        <Text style={[styles.buttonLabel, { color: t.ink }]}>{label}</Text>
+        <Text style={[styles.buttonLabel, { color: t.ink }, labelStyle]}>{label}</Text>
       )}
     </PressScale>
   );
@@ -222,6 +228,8 @@ export function Chip({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected }}
+      // 胶囊看起来只有 30 高；相邻胶囊间隔 8，左右只能各扩 4。
+      hitSlop={{ top: 7, bottom: 7, left: 4, right: 4 }}
       onPress={onPress}
       style={[styles.chip, { backgroundColor: selected ? colors.ink : colors.paper }, style]}
     >
@@ -260,6 +268,9 @@ export function Toggle({
     position.value = withTiming(value ? 1 : 0, { duration: 200 });
   }, [value, position]);
   const knob = useAnimatedStyle(() => ({ left: 3 + position.value * 16 }));
+  const track = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(position.value, [0, 1], [colors.off, colors.accent]),
+  }));
   return (
     <Pressable
       testID={testID}
@@ -274,9 +285,9 @@ export function Toggle({
         <Body style={{ fontSize: 14 }}>{label}</Body>
         {sub ? <Muted style={{ fontSize: 11 }}>{sub}</Muted> : null}
       </View>
-      <View style={[styles.track, { backgroundColor: value ? colors.accent : colors.off }]}>
+      <Animated.View style={[styles.track, track]}>
         <Animated.View style={[styles.knob, knob]} />
-      </View>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -291,7 +302,7 @@ export function Field({
     <View style={{ gap: 5 }}>
       {label ? <Muted style={{ fontSize: 12 }}>{label}</Muted> : null}
       <TextInput
-        placeholderTextColor={colors.hint}
+        placeholderTextColor={colors.muted}
         selectionColor={colors.accent}
         accessibilityLabel={label ?? rest.placeholder}
         {...rest}
@@ -373,7 +384,15 @@ export const styles = StyleSheet.create({
   body: { color: colors.ink, fontSize: 14 },
   muted: { color: colors.muted, fontSize: 12 },
   serif: { fontFamily: fonts.serifMedium, color: colors.ink, fontSize: 14, lineHeight: 24.5 },
-  pageTitle: { fontFamily: fonts.serifBold, fontSize: 26, lineHeight: 34, color: colors.ink },
+  // 行高 31 比字体本身矮，下伸部分会超出文字框。内边距给它留位置，负外边距抵消，布局不变。
+  pageTitle: {
+    fontFamily: fonts.serifBold,
+    fontSize: 26,
+    lineHeight: 31,
+    paddingBottom: 2,
+    marginBottom: -2,
+    color: colors.ink,
+  },
   sectionTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink, lineHeight: 22 },
   card: {
     backgroundColor: colors.card,

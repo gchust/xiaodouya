@@ -145,6 +145,7 @@ export function FeedSheet({
               accessibilityRole="button"
               accessibilityLabel={`${v} 毫升`}
               accessibilityState={{ selected: on }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
               onPress={() => setMl(v)}
               style={[s.mlChip, { backgroundColor: on ? colors.ink : colors.paper }]}
             >
@@ -634,7 +635,7 @@ const s = StyleSheet.create({
   },
   stepSign: { fontSize: 24, color: colors.ink },
   stepValue: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  bigNumber: { fontSize: 52, lineHeight: 60 },
+  bigNumber: { fontSize: 52, lineHeight: 52 },
   unit: { fontSize: 16 },
   mlChips: { flexDirection: 'row', gap: 8 },
   mlChip: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
