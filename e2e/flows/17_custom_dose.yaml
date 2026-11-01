@@ -31,5 +31,6 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: Typhoid
     timeout: 30000
+- runFlow: ../subflows/ios-scroll-past-tab-bar.yaml
 - assertVisible: { id: vaccine-other-section }
 - takeScreenshot: .artifacts/e2e-17-custom-record
