@@ -23,12 +23,15 @@
 - **恢复旧备份会让家庭 seq 回退，手机的游标就超前了。** 服务端返回 `Math.max(upperBound, cursor)`，手机看不到家人新写的记录，也不报错，直到 seq 追上游标。协议还没有处理这种情况，目前只在部署文档里要求恢复后全家退出再登录。
 
 - **从旧备份恢复后 seq 会倒退。** 手机游标比服务端还新时，如果不处理就会永远漏掉新记录。服务端发现这种情况要从头发送。
+- **Edge Function 上进程内存不能放共享状态。** isolate 随时被回收，也可能同时有多个。事件唤醒和内存限流都只在同一个 isolate 里生效，本地单进程的测试发现不了，要用两个 `createApp` 实例共享一个数据库来测。
+- **长轮询要和开始等待时的 seq 比，不能和游标比。** 从旧备份恢复后游标比 seq 大，和游标比的话家人的新写入唤醒不了。
 
 ## 账号和登录
 
 - **401 只代表要重新登录，不代表要清数据。** 本地可能有未同步的记录。只有换人或换家庭才清，主动退出才全清。
 - **只认服务端返回的 `unauthenticated`。** 公共 Wi-Fi 的登录页和代理也可能返回 401。
 - **处理 401 前要确认令牌还是发请求时那个。** 否则旧请求的响应晚到，会踢掉刚登录的新会话。
+- **`X-Forwarded-For` 的第一段不一定可信。** Caddy 会覆盖它，别的网关可能只是追加，换着填就能绕过按来源的限流。所以同一个邮箱还有一条不看来源的总量限制。
 
 ## 上传和存储
 
@@ -80,12 +83,20 @@
 - **Git worktree 里不能软链 `node_modules`。** `@xiaodouya/shared` 解析不到，每个 worktree 要自己 `pnpm install`。
 - **`pkill -f 模式` 会匹配到自己所在的 shell。** 模式出现在命令行里就会把脚本自己杀掉，后面的清理步骤不会执行。
 - **`nodeLinker: hoisted` 下 `pnpm install --filter` 不起过滤作用。** 服务端镜像曾因此下载全部 React Native（640 多个包），慢网下超时。Dockerfile 要加 `--node-linker=isolated`（104 个包），之后的 `pnpm run` 还要关掉 `verify-deps-before-run`，否则它会重新安装并报 Broken lockfile。
+- **Deno 不解析没有扩展名的相对导入。** 服务端和 `packages/shared` 都这样写，而 shared 还要给 Metro 用，所以 Edge Function 用 esbuild 打包（`scripts/build-edge.mjs`），不用 import map。
+- **Edge 产物要用 `platform: browser`。** 这样 AWS SDK 走 fetch 和 WebCrypto，不会去读 `~/.aws/config`。postgres 写的是不带前缀的 `import net from 'net'`，要插件改成 `node:net`。打包后依赖算用户代码，旧版 Deno 不给用户代码提供 `Buffer`、`process` 全局变量，要在 banner 里补上。
+- **`request.signal` 不一定会触发。** 普通 Deno 在客户端断开时会触发，但在 `edge-runtime` 镜像里经主服务转发到 Worker 时，断开后一直是 `aborted=false`，Supabase 线上是否一样还不知道。依赖它的逻辑必须另有时限。
+- **Deno 在 `ssl: 'require'` 时也校验证书链。** postgres.js 传了 `rejectUnauthorized: false`，在 edge-runtime 里依然报 `invalid peer certificate`，随后表现成 `write CONNECT_TIMEOUT`，看起来像网络问题。本地连自签名的数据库要设 `SSL_CERT_FILE` 和 `DENO_TLS_CA_STORE=mozilla,system`，而且证书不能是 CA 证书。
+- **本机的 DNS 会把外部域名解析成 `198.18.x.x`。** 这是代理的假 IP，属于 SSRF 检查拦截的范围。在这台机器上测“公网地址放行”会失败，不是代码的问题。
+- **`/tmp` 是共享配额。** 在里面下载大文件会让所有命令报 `EDQUOT`，输出也会丢。大文件放到 worktree 的 `.artifacts/`。
 
 ## CI
 
 - **CI 不要用 `google_apis` 镜像。** Pixel Launcher 和 Google 服务在 CI 上太重，开机后会弹“isn't responding”挡住 App，现象是流程 01 失败、截图里 App 其实已经渲染。`hide_error_dialogs` 压不住这个弹窗。CI 改用 `target: default`。
 - **`upload-artifact` 默认跳过隐藏目录。** 上传 `.artifacts` 要加 `include-hidden-files: true`，否则失败时什么现场都没有。
 - **`setup-android` 默认安装已不存在的 `tools` 包。** 要写 `packages: platform-tools`。
+- **公开仓库的定时任务 60 天没有活动会被自动停用。** 备份流程放在定时任务上要留意这一点，Actions 的 `schedule` 也可能晚点或跳过。
+- **GitHub 只遮盖完整的 Secret。** 连接串里的主机名和用户名是片段，`pg_dump` 报错时会打印出来，进入公开日志。`deploy/cloud-backup.sh` 在 Actions 里用 `::add-mask::` 单独登记。
 
 ## 部署
 
@@ -93,6 +104,12 @@
 - **不完整的备份可能是合法的 SQL。** 先删库再导入时，截断的备份不报错，提交后是一个空数据库。清空之前先检查结尾的 `dump complete` 标记，`deploy/restore.sh` 就是这样做的。
 - **同时有 `image` 和 `build` 的服务，拉取被拒绝时 Compose 会自动改成本机构建。** 没有发布过镜像时“方式 A”其实在构建，还能成功，所以这样测不出镜像的问题。
 - **在本机验证生产配置时，`ports` 会合并而不是覆盖。** 覆盖文件要写 `ports: !override [...]`，否则还是会占用 80 和 443。`COMPOSE_PROJECT_NAME` 优先于文件里的 `name:`，不改 `backup.sh` 也能指向测试环境。
+- **Supabase 的 Data API 默认能读 `public` 里的表，而 anon key 是公开的。** 没有 RLS 的话，知道项目地址就能读密码哈希和存储密钥。部署时要关掉 Data API，迁移里也开了 RLS 并收回权限，两道都要。
+- **Supabase 免费版的 Direct connection 只有 IPv6。** GitHub Actions 连不上。迁移和 `pg_dump` 走 Session pooler（5432），函数走 Transaction pooler（6543）。
+- **事务模式连接池不能跑 `pg_dump`，也不能用命名预处理语句。** 后者报 `prepared statement "xxx" does not exist`，只在语句落到另一条服务端连接时才出现，是偶发的。
+- **`pg_dump` 不能比服务器旧，导出的文件也不能恢复到比它旧的 Postgres。** 用 18 导出的备份恢复到 16 报 `unrecognized configuration parameter "transaction_timeout"`。脚本用 `BACKUP_PG_IMAGE` 指定版本，Supabase 升级大版本时要跟着改。
+- **`pg_dump --schema=public` 的结果里有 `CREATE SCHEMA public`。** 恢复前只能 `DROP`，不能再 `CREATE`，否则报已存在。
+- **`age` 的口令模式只能交互输入，不能从环境变量读。** 无人值守的备份用 `openssl enc -pbkdf2 -pass env:`。`openssl enc` 不支持 GCM，没有认证，损坏靠 gzip 校验和和 dump 结尾的标记发现。
 
 ## 测试方法
 
@@ -101,6 +118,7 @@
 - **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
+- **测事务模式连接池要加反向对照。** 本地用 PgBouncer（`pool_mode=transaction`、`max_prepared_statements=0`）跑全部测试，再打开 `DB_PREPARE` 跑一次，要看到 `prepared statement does not exist`，才说明这个环境真的能发现问题。
 
 ## 并行开发
 

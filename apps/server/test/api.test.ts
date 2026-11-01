@@ -116,7 +116,7 @@ beforeAll(async () => {
   await admin.unsafe(`CREATE DATABASE ${testDatabase}`);
   const url = new URL(config.databaseUrl);
   url.pathname = `/${testDatabase}`;
-  sql = connect(url.toString());
+  sql = connect(url.toString(), config.db);
   await migrate(sql);
   await ensureBucket(config);
 });

@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import {
   AcceptInviteRequest,
   type ApiError,
@@ -72,12 +71,23 @@ const UPLOAD_URL_TTL = 3600;
 const MEMORY_URL_TTL = 3600;
 /** AGENTS.md 硬性要求：证件链接不超过 10 分钟。 */
 const DOCUMENT_URL_TTL = 600;
-const LONG_POLL_MS = 25_000;
+const LOGIN_WINDOW_MS = 15 * 60_000;
+const INVITE_WINDOW_MS = 15 * 60_000;
+/** 每次检查只是一条很轻的查询，但每台前台手机都在轮询，不能再密了。 */
+const DEFAULT_LONG_POLL = { intervalMs: 2_000, timeoutMs: 25_000 };
 
 interface AppContext {
   sql: Sql;
   config: Config;
   notifier?: Notifier;
+  /** 路径前缀。Edge Function 收到的路径带函数名，比如 /api/v1/me。 */
+  basePath?: string;
+  longPoll?: { intervalMs: number; timeoutMs: number };
+  /**
+   * 托管响应之后还要继续的工作。Edge Function 返回响应后可能被回收，要交给 EdgeRuntime.waitUntil。
+   * 传进来的任务已经处理过错误，不会拒绝。
+   */
+  background?: (task: Promise<void>) => void;
 }
 
 interface AuthedUser {
@@ -136,26 +146,35 @@ function mergePrefs(stored: unknown): Prefs {
   return { ...defaultPrefs, ...(parsed.success ? parsed.data : {}) };
 }
 
-/** 简单的内存限流，防止暴力猜密码。单实例部署足够。 */
-class RateLimiter {
-  private hits = new Map<string, { count: number; resetAt: number }>();
-  constructor(
-    private limit: number,
-    private windowMs: number,
-  ) {}
-  check(key: string): boolean {
-    const now = Date.now();
-    if (this.hits.size > 10_000) {
-      for (const [k, v] of this.hits) if (v.resetAt < now) this.hits.delete(k);
+/** 等到时间到或客户端断开，两者都只是结束等待，不算错误。 */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
     }
-    const entry = this.hits.get(key);
-    if (!entry || entry.resetAt < now) {
-      this.hits.set(key, { count: 1, resetAt: now + this.windowMs });
-      return true;
-    }
-    entry.count += 1;
-    return entry.count <= this.limit;
-  }
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener('abort', done);
+  });
+}
+
+/**
+ * 限流计数放数据库：Edge Function 的 isolate 随时被回收，又可能同时有多个，存在内存里等于没有限流。
+ * 键里有邮箱，只存哈希。
+ */
+async function allowAttempt(sql: Sql, key: string, limit: number, windowMs: number) {
+  await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
+  const [row] = await sql<{ count: number }[]>`
+    INSERT INTO rate_limits (key_hash, count, reset_at)
+    VALUES (${sha256(key)}, 1, now() + interval '1 millisecond' * ${windowMs})
+    ON CONFLICT (key_hash) DO UPDATE SET count = rate_limits.count + 1
+    RETURNING count`;
+  return (row?.count ?? 0) <= limit;
 }
 
 interface RecordRow {
@@ -178,12 +197,15 @@ const toServerRecord = (r: RecordRow): ServerRecord => ({
   createdBy: r.created_by,
 });
 
-export function createApp({ sql, config, notifier = noopNotifier }: AppContext) {
-  const app = new Hono<Env>();
-  const changes = new EventEmitter();
-  changes.setMaxListeners(0);
-  const loginLimiter = new RateLimiter(10, 15 * 60_000);
-  const inviteLimiter = new RateLimiter(20, 15 * 60_000);
+export function createApp({
+  sql,
+  config,
+  notifier = noopNotifier,
+  basePath = '/',
+  longPoll = DEFAULT_LONG_POLL,
+  background = () => {},
+}: AppContext) {
+  const app = new Hono<Env>().basePath(basePath);
 
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
@@ -256,9 +278,12 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
   app.post('/v1/auth/login', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
     const body = await parseBody(c, LoginRequest);
     const email = normalizeEmail(body.email);
-    if (!loginLimiter.check(`${clientKey(c)}:${email}`)) {
-      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
-    }
+    // 第二条不看来源：代理后面 X-Forwarded-For 的第一段可能是客户端自己填的，换着填就能绕过第一条。
+    // 代价是有人能让某个邮箱 15 分钟内登录不了，已登录的设备不受影响。
+    const allowed =
+      (await allowAttempt(sql, `login:${clientKey(c)}:${email}`, 10, LOGIN_WINDOW_MS)) &&
+      (await allowAttempt(sql, `login:${email}`, 50, LOGIN_WINDOW_MS));
+    if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
     const [user] = await sql<
       { id: string; password_hash: string; display_name: string }[]
     >`SELECT id, password_hash, display_name FROM users WHERE email = ${email}`;
@@ -429,7 +454,7 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
     const user = c.get('user');
     if (c.get('membership')) fail(409, 'already_in_family', '你已经在一个家庭里了');
     const body = await parseBody(c, AcceptInviteRequest);
-    if (!inviteLimiter.check(`${clientKey(c)}:${user.id}`)) {
+    if (!(await allowAttempt(sql, `invite:${user.id}`, 20, INVITE_WINDOW_MS))) {
       fail(429, 'too_many_attempts', '尝试次数太多了，请稍后再试');
     }
     const hash = sha256(normalizeCode(body.code));
@@ -541,13 +566,12 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
           if (row && !existing && !change.deleted) created.push(toServerRecord(row));
         }
       });
-      if (created.length > 0 || body.changes.length > rejected.length + conflicted.length) {
-        changes.emit(m.familyId);
-      }
       if (created.length > 0) {
-        void notifyFamily(m, user.id, created).catch((error: unknown) => {
-          console.error('推送失败', error instanceof Error ? error.message : 'unknown');
-        });
+        background(
+          notifyFamily(m, user.id, created).catch((error: unknown) => {
+            console.error('推送失败', error instanceof Error ? error.message : 'unknown');
+          }),
+        );
       }
     }
 
@@ -586,30 +610,31 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
     return c.json<SyncResponse>({ cursor, hasMore, records, rejected, role: m.role });
   });
 
-  /** 长轮询：比 WebSocket 简单，反向代理不用特殊配置。App 在前台时循环调用。 */
+  /**
+   * 长轮询：比 WebSocket 简单，反向代理不用特殊配置。App 在前台时循环调用。
+   * 写入可能发生在别的进程或 isolate，所以查数据库而不是等进程内事件。
+   * 两次检查之间不占连接：连接池可能只有 1 个连接，占住了别的请求就都卡住了。
+   */
   v1.get('/sync/wait', async (c) => {
     const m = requireFamily(c);
     const cursor = Number(c.req.query('cursor') ?? 0);
+    const signal = c.req.raw.signal;
     const latest = async () => {
       const [row] = await sql<{ seq: string }[]>`SELECT seq FROM families WHERE id = ${m.familyId}`;
       return Number(row?.seq ?? 0);
     };
-    const current = await latest();
-    if (current > cursor) return c.json({ changed: true });
-    const changed = await new Promise<boolean>((resolve) => {
-      const done = (value: boolean) => {
-        clearTimeout(timer);
-        changes.off(m.familyId, onChange);
-        c.req.raw.signal.removeEventListener('abort', onAbort);
-        resolve(value);
-      };
-      const onChange = () => done(true);
-      const onAbort = () => done(false);
-      const timer = setTimeout(() => done(false), LONG_POLL_MS);
-      changes.on(m.familyId, onChange);
-      c.req.raw.signal.addEventListener('abort', onAbort);
-    });
-    return c.json({ changed });
+    const initial = await latest();
+    if (initial > cursor) return c.json({ changed: true });
+    const deadline = Date.now() + longPoll.timeoutMs;
+    while (!signal.aborted) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(longPoll.intervalMs, remaining), signal);
+      if (signal.aborted) break;
+      // 和开始等待时比，不和游标比：从旧备份恢复后游标比 seq 大，新写入也要能唤醒。
+      if ((await latest()) !== initial) return c.json({ changed: true });
+    }
+    return c.json({ changed: false });
   });
 
   async function notifyFamily(m: Membership, authorId: string, created: ServerRecord[]) {
