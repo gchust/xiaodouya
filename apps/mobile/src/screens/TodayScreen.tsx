@@ -41,7 +41,9 @@ export function TodayScreen() {
   const { events, baby, pendingCount } = useRecords();
   const sheet = useSheet();
   const { toast } = useFeedback();
-  const now = useNow(15_000);
+  // 只用来定时刷新。过滤记录要用渲染时的时间：否则刚保存的记录比 now 新，最多 15 秒不显示，家长可能重复记录。
+  useNow(15_000);
+  const now = Date.now();
   const [refreshing, setRefreshing] = useState(false);
 
   if (!baby) return <SyncingPlaceholder />;
