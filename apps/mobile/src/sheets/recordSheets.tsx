@@ -5,7 +5,11 @@ import {
   describeEvent,
   type EventData,
   estimateNextFeed,
+  type FeedMilk,
+  feedMilkFields,
   formatTemperatureRange,
+  formulaSnapshot,
+  lastFeedDefaults,
   medicineSuggestions,
   metricToSave,
   newCustomVaccineId,
@@ -28,6 +32,7 @@ import { colors, fonts, spacing } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput } from '../ui/primitives';
+import { AddFormulaFlow, MilkChooser } from './formulaSheets';
 
 const OFFSETS = [
   { minutes: 0, label: '刚刚' },
@@ -127,7 +132,8 @@ export function FeedSheet({
   initial?: Extract<EventData, { type: 'feed' }>;
   id?: string;
 }) {
-  const { events } = useRecords();
+  const { events, formulas } = useRecords();
+  const app = useApp();
   const save = useSaveEvent();
   const last = estimateNextFeed(
     events.map((e) => e.data),
@@ -139,6 +145,31 @@ export function FeedSheet({
   const [amount, setAmount] = useState(() => toDisplay('volume', original ?? 90, volume));
   const [note, setNote] = useState(initial?.note ?? '');
   const [offset, setOffset] = useState(0);
+  // 修改旧记录时保留它当时的奶粉快照，只有换了奶粉才用现在的数值。
+  const [milk, setMilk] = useState<FeedMilk>(() =>
+    initial
+      ? { milkType: initial.milkType, formulaId: initial.formulaId, formula: initial.formula }
+      : lastFeedDefaults(
+          events.map((e) => e.data),
+          formulas,
+          Date.now(),
+        ),
+  );
+  const [addingFormula, setAddingFormula] = useState(false);
+  if (addingFormula) {
+    return (
+      <AddFormulaFlow
+        onCancel={() => setAddingFormula(false)}
+        onDone={(formulaId) => {
+          setAddingFormula(false);
+          const added = app.store.getSnapshot().formulas.find((f) => f.id === formulaId);
+          if (added) {
+            setMilk({ milkType: 'formula', formulaId, formula: formulaSnapshot(added.data) });
+          }
+        }}
+      />
+    );
+  }
   return (
     <>
       {id ? null : <TimeOffsets value={offset} onChange={setOffset} />}
@@ -177,17 +208,24 @@ export function FeedSheet({
         placeholder="备注（可选）：吐奶、打嗝、喝得慢…"
         maxLength={200}
       />
+      <MilkChooser value={milk} onChange={setMilk} onAddFormula={() => setAddingFormula(true)} />
       <Button
         testID="feed-save"
         label={id ? '保存' : '记录'}
         onPress={() =>
           void save(
             {
+              // 留着这个版本不认识的字段。新版本加的内容不能因为这里改了一下备注就丢掉。
+              ...initial,
               type: 'feed',
               at: initial?.at ?? Date.now() - offset * 60_000,
               ml: metricToSave('volume', original, amount, volume),
               note: note.trim() || undefined,
               byName: initial?.byName,
+              milkType: undefined,
+              formulaId: undefined,
+              formula: undefined,
+              ...feedMilkFields(milk),
             },
             id,
           )

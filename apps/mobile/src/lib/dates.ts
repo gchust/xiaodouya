@@ -19,6 +19,15 @@ export function doseTimestamp(picked: Date, now: number): number {
   return Math.min(noon, now);
 }
 
+/** 手机时区里这一天的范围。过夏令时的那天不是 24 小时，不能用加减毫秒算。 */
+export function localDayBounds(ms: number, offsetDays = 0): { start: number; end: number } {
+  const day = new Date(ms);
+  const y = day.getFullYear();
+  const m = day.getMonth();
+  const d = day.getDate() + offsetDays;
+  return { start: new Date(y, m, d).getTime(), end: new Date(y, m, d + 1).getTime() };
+}
+
 /** 成员状态：刚刚活跃算在线，否则显示大致时间。 */
 export function formatLastSeen(
   lastSeenAt: number | null,

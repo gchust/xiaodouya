@@ -1,6 +1,8 @@
 import {
   activeSleep,
+  ageParts,
   ageText,
+  assessDayNutrition,
   dayNumber,
   describeEvent,
   dueVaccine,
@@ -12,6 +14,7 @@ import {
   formatDuration,
   formatHoursMinutes,
   formatVolume,
+  nutritionEntryText,
   summarize24h,
   summaryText,
   todayInsight,
@@ -20,6 +23,7 @@ import {
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -38,6 +42,7 @@ import {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
+import { localDayBounds } from '../lib/dates';
 import { pickFromLibrary, queueForUpload } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -57,6 +62,7 @@ import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('today');
+  const router = useRouter();
   const app = useApp();
   const { events, baby, pendingCount } = useRecords();
   const region = useRegion();
@@ -79,6 +85,17 @@ export function TodayScreen() {
   const insight = todayInsight(data, birthAt, now);
   const recent = events.filter((e) => e.data.type !== 'growth' && e.data.at <= now).slice(0, 8);
   const vaccine = dueVaccine(vaccineStatuses(region, birthAt, data, now));
+  const today = localDayBounds(now);
+  const nutritionText = nutritionEntryText(
+    assessDayNutrition({
+      events: data,
+      dayStart: today.start,
+      dayEnd: today.end,
+      now,
+      ageMonths: ageParts(birthAt, now).months,
+      reference: region.nutrition,
+    }),
+  );
 
   const feedHint = !estimate.last
     ? ''
@@ -280,6 +297,21 @@ export function TodayScreen() {
         )}
       </View>
 
+      {nutritionText ? (
+        <Pressable
+          testID="nutrition-entry"
+          accessibilityRole="button"
+          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
+          onPress={() => router.push('/nutrition')}
+          style={s.nutritionEntry}
+        >
+          <Text style={s.nutritionLabel}>奶粉营养</Text>
+          <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
+            {nutritionText} ›
+          </Muted>
+        </Pressable>
+      ) : null}
+
       {vaccine ? (
         <Pressable
           testID="vaccine-reminder"
@@ -453,6 +485,17 @@ const s = StyleSheet.create({
   },
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
+  nutritionEntry: {
+    marginTop: 4,
+    marginHorizontal: spacing.page,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+  },
+  nutritionLabel: { fontSize: 13, color: colors.ink },
+  nutritionText: { flexShrink: 1, textAlign: 'right' },
   vaccineWrap: { marginHorizontal: spacing.page, marginTop: 16 },
   vaccineCard: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 4 },
   vaccineLabel: { fontSize: 11, color: colors.green, letterSpacing: 0.7 },
