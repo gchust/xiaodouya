@@ -1,5 +1,6 @@
 import { formatMonthDay, type MediaRef } from '@xiaodouya/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -7,6 +8,7 @@ import {
   FlatList,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -130,6 +132,8 @@ export function ViewerScreen() {
       ) : (
         pages
       )}
+      {/* 全局是深色状态栏，在黑底上时间和信号都看不见。离开这一页后自动恢复。 */}
+      {Platform.OS === 'ios' ? <StatusBar style="light" /> : null}
       <View style={[s.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
         <Pressable
           testID="viewer-close"
