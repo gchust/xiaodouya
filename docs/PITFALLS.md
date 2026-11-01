@@ -45,6 +45,10 @@
 - **退出登录的警告要同时算记录和上传队列。** 记录都同步了不代表视频也传了。
 - **SeaweedFS 写入时会自动建 Bucket，R2 和 S3 不会。** “Bucket 不存在”在本地测不出来，要测错误翻译函数。
 - **内网地址判断不能用字符串。** `::ffff:7f00:1` 就是 127.0.0.1，用 `net.BlockList`。
+- **Expo 会自动应用一批“老插件”，不写也生效。** 只是装上 `expo-media-library`，prebuild 就会声明 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`READ_MEDIA_AUDIO`，上架 Google Play 要单独申报。必须在 `plugins` 里显式写 `granularPermissions: []`，库清单自带的 `READ_MEDIA_VISUAL_USER_SELECTED` 还要用 `blockedPermissions` 去掉。加原生依赖后要 prebuild 看一眼清单。
+- **`saveToLibraryAsync` 靠文件名判断类型和扩展名。** 没有扩展名直接报错，所以上传队列里的 `<id>-original` 不能直接交给它。文件名有中文或 `+`、`,` 时，Android 的 `getFileExtensionFromUrl` 取不到扩展名，视频会被当成类型未知的图片，要先编码（见 `galleryUri`）。
+- **expo-file-system 不能往 `createFile` 建好的 SAF 文档里 `copy`。** 不带 `overwrite` 报已存在，带了会先删掉文档再写，写不进去。只能 `copy` 到文件夹，用源文件的名字，重名时报 `Destination already exists`，要自己换名字再试。
+- **`expo-intent-launcher` 拿不到 `ACTION_CREATE_DOCUMENT` 返回的地址。** 它返回的 `data` 是 `Intent.toString()`，不是 URI，所以“另存为”对话框走不通，只能用文件夹选择器。Android 11 起这个选择器不让选“下载”根目录和存储根目录，要在里面新建文件夹或选别的目录。
 - **开发 SeaweedFS 的卷位用满后，写入新 Bucket 返回 500。** 它给每个 Bucket 单独分卷，`-volume.max=20` 用完就报 `No writable volume`，已有的 Bucket 不受影响。看起来像预签名出错，先看 S3 容器的日志。
 
 ## 健康内容
