@@ -1,0 +1,62 @@
+# 用量页（托管存储时所有人看到的那一页）：一起记录的家人走进存储，只看到用量，没有 S3 表单。
+# E2E 的服务端开着自定义存储（流程 07 要用），管理员看到的是表单，所以这里用一起记录的家人覆盖这一页。
+# 要在流程 20 之后跑：它从只看回忆的外公退出，App 里最后登录的是阿姨。
+# 用量页里只有文件大小，不受地区和单位影响。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- runScript:
+    file: ../helpers/caregiver-joins.js
+    env:
+      EMAIL: admin-${RUN_ID}@example.test
+      RUN_ID: ${RUN_ID}
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: sign-out }
+- tapOn: { id: sign-out }
+- tapOn: { id: signout-confirm }
+- extendedWaitUntil:
+    visible: { id: welcome-screen }
+    timeout: 20000
+- tapOn: { id: welcome-login }
+- tapOn: { id: field-email }
+- inputText: caregiver-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-4
+- hideKeyboard
+- tapOn: { id: auth-submit }
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-storage }
+- tapOn: { id: open-storage }
+- extendedWaitUntil:
+    visible: { id: storage-screen }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: { id: storage-usage-total }
+    timeout: 15000
+- assertVisible:
+    text: 已用 .*
+- assertNotVisible: { id: field-bucket }
+- assertNotVisible: { id: field-key }
+- takeScreenshot: .artifacts/e2e-21-usage-page
+- scrollUntilVisible:
+    element: { id: pref-wifi }
+- assertVisible: { id: pref-wifi }
+# 表单的保存按钮在页面最下面，要滚到底才算真的没有。
+- assertNotVisible: { id: storage-save }
+- assertNotVisible: { id: field-secret }
+- scrollUntilVisible:
+    element: { id: storage-back }
+    direction: UP
+- tapOn: { id: storage-back }
+- extendedWaitUntil:
+    visible: { id: family-screen }
+    timeout: 10000
