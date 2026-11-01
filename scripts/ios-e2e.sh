@@ -17,7 +17,7 @@ APP="$ROOT/.artifacts/xiaodouya-e2e.app"
 BUNDLE_ID=com.gchust.xiaodouya
 DEVICE_TYPE="${IOS_DEVICE_TYPE:-iPhone 17}"
 [ -d "$APP" ] || {
-  echo "找不到 $APP，先运行 scripts/ios-build.sh" >&2
+  echo "找不到 ${APP}，先运行 scripts/ios-build.sh" >&2
   exit 1
 }
 mkdir -p .artifacts/maestro
@@ -53,7 +53,7 @@ defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 RUNTIME="$(xcrun simctl list runtimes available -j |
   node -e 'const r=JSON.parse(require("fs").readFileSync(0)).runtimes.filter((x)=>x.name.startsWith("iOS "));console.log(r.at(-1).identifier)')"
 UDID="$(xcrun simctl create xiaodouya-e2e "$DEVICE_TYPE" "$RUNTIME")"
-echo "模拟器：$DEVICE_TYPE，$RUNTIME，$UDID"
+echo "模拟器：${DEVICE_TYPE}，${RUNTIME}，${UDID}"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
 open -a Simulator --args -CurrentDeviceUDID "$UDID"
@@ -104,7 +104,7 @@ VERIFY=0
 node e2e/verify-uploads.mjs "$RUN_ID" || VERIFY=1
 
 {
-  echo "## iOS 流程结果（$DEVICE_TYPE，$RUNTIME）"
+  echo "## iOS 流程结果（${DEVICE_TYPE}，${RUNTIME}）"
   echo
   echo "通过 ${#PASSED[@]} 条：${PASSED[*]:-无}"
   echo

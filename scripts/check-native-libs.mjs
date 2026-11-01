@@ -87,7 +87,9 @@ export function checkArchive(zip, { isBundle }) {
       problems.push(`${entry.name}：LOAD 段按 ${alignment} 字节对齐，要求至少 ${PAGE_16K}`);
     }
     if (!isBundle && stored && entry.dataOffset % PAGE_16K !== 0) {
-      problems.push(`${entry.name}：未压缩，但在 zip 里的位置 ${entry.dataOffset} 没有按 16 KB 对齐`);
+      problems.push(
+        `${entry.name}：未压缩，但在 zip 里的位置 ${entry.dataOffset} 没有按 16 KB 对齐`,
+      );
     }
   }
   const pairs = [
