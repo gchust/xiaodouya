@@ -17,6 +17,8 @@
 - [部署文档](docs/DEPLOYMENT.md)：服务端、App 构建和分发、全部参数
 - [架构](docs/ARCHITECTURE.md)：同步、上传、权限的设计，以及已知限制
 - [设计规范](docs/design/SPEC.md)
+- [功能进展](docs/PROGRESS.md)：每个功能的状态、验证方式和是否放行
+- [踩坑记录](docs/PITFALLS.md)
 - [端到端测试](e2e/README.md)
 
 ## 本地开发

@@ -40,6 +40,8 @@ function testEnv(): NodeJS.ProcessEnv {
 }
 
 let sql: Sql;
+let admin: Sql;
+let testDatabase: string;
 let config: Config;
 let app: ReturnType<typeof createApp>;
 let pushes: PushMessage[];
@@ -108,10 +110,15 @@ const sync = (token: string, cursor: number, changes: unknown[] = []) =>
 
 beforeAll(async () => {
   config = loadConfig(testEnv());
-  sql = connect(config.databaseUrl);
+  // 每次运行用独立的数据库：多个 Agent 可能同时跑这组测试，共用一个库会互相删数据。
+  admin = connect(config.databaseUrl);
+  testDatabase = `xiaodouya_test_${process.pid}_${Date.now()}`;
+  await admin.unsafe(`CREATE DATABASE ${testDatabase}`);
+  const url = new URL(config.databaseUrl);
+  url.pathname = `/${testDatabase}`;
+  sql = connect(url.toString());
   await migrate(sql);
   await ensureBucket(config);
-  await sql`TRUNCATE users, families CASCADE`;
 });
 
 beforeEach(() => {
@@ -121,6 +128,8 @@ beforeEach(() => {
 
 afterAll(async () => {
   await sql.end();
+  await admin.unsafe(`DROP DATABASE IF EXISTS ${testDatabase} WITH (FORCE)`);
+  await admin.end();
 });
 
 describe('账号', () => {

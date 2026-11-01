@@ -6,6 +6,10 @@ set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$ROOT"
 
+# 模拟器只有一台，多个 Agent 同时跑时排队。
+exec 9>"${TMPDIR:-/tmp}/xiaodouya-emulator.lock"
+flock 9
+
 APK="$ROOT/.artifacts/xiaodouya-e2e.apk"
 [ -f "$APK" ] || { echo "找不到 $APK，先运行 pnpm android:build e2e" >&2; exit 1; }
 
@@ -13,7 +17,9 @@ SERVER_PID=""
 cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true; }
 trap cleanup EXIT
 
-if ! curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
+if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
+  echo "警告：8787 端口已有服务端在运行，将直接使用它。它可能是别的分支的代码。" >&2
+else
   (cd apps/server && npx tsx --env-file-if-exists=.env src/index.ts > "$ROOT/.artifacts/server.log" 2>&1) &
   SERVER_PID=$!
   for _ in $(seq 1 60); do

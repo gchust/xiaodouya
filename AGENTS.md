@@ -22,7 +22,7 @@ apps/server/       Hono + Postgres 服务端（TypeScript，Node）
 packages/shared/   前后端共用：zod 契约、领域逻辑（喂奶估算、疫苗表、月龄计算）
 e2e/               Maestro 端到端流程和测试辅助脚本
 deploy/            生产 Docker Compose、Caddy、备份脚本
-docs/              DEPLOYMENT.md（部署文档）、design/SPEC.md（设计规范）、ARCHITECTURE.md
+docs/              DEPLOYMENT.md、ARCHITECTURE.md、PROGRESS.md（功能进展）、PITFALLS.md（踩坑记录）、design/SPEC.md
 .github/workflows/ CI
 ```
 
@@ -58,6 +58,8 @@ docs/              DEPLOYMENT.md（部署文档）、design/SPEC.md（设计规�
 3. 改了 UI 或用户流程：在模拟器上实际跑过，**看过截图**，并和设计规范对照。
 4. 新的用户流程或修过的流程级 Bug：补一条 Maestro 或集成测试。
 5. 汇报时如实说明：跑了什么、结果如何、什么没测（例如只有真机才能验证的后台行为）。
+6. 新的测试要先在修复前的代码上看到失败。
+7. 更新了 `docs/PROGRESS.md`；踩了坑就更新 `docs/PITFALLS.md`（见第 11 节）。
 
 测试失败就是失败。不要跳过、删除或放宽测试来变绿；确实是测试错了，要说明理由。
 
@@ -103,12 +105,22 @@ App 不是医疗器械，健康内容错了会伤人。
 - 提交信息用 Conventional Commits（`feat:`、`fix:`、`docs:`、`test:`、`ci:`、`chore:`），一个提交只做一件事。
 - 提交前确认 `git status` 里没有 `.env`、`.artifacts/`、APK 或真实数据。
 
-## 10. 踩坑记录
+## 10. 并行开发
 
-修掉一个不显而易见的坑后，把结论追加到这里，避免下一个 Agent 重复踩。
+可能有多个 Agent 同时工作。
 
-- **R2 预签名链接不能用于自定义域名**，只能走 `<account>.r2.cloudflarestorage.com`。私有文件不要拼 CDN 域名。
-- **SigV4 签名包含 Host**：给手机用的预签名链接必须用手机能访问到的地址生成（`S3_PUBLIC_ENDPOINT`），不能用容器内部地址。
-- **`minio/minio` 镜像已无法公开拉取**：本地和 CI 的 S3 用 `chrislusf/seaweedfs`。
-- **pnpm 11 有发布冷却期**：拒绝发布不足 24 小时的包。不要关闭它，把版本固定到更早的发布；改版本后若还报错，删掉 `node_modules` 再装（旧锁文件缓存在里面）。
-- **模拟器内存紧张时**，不要让 Gradle 和模拟器同时高负载；本机 Gradle 内存已在 `gradle.properties` 限制。
+- 每个 Agent 用自己的分支和 git worktree，每个 worktree 单独 `pnpm install`。
+- 开工前先看 [PROGRESS.md](docs/PROGRESS.md) 的“负责”列，别人在做的不要重复做，并在同一个 PR 里写上自己的分支。
+- 用 `git fetch` 和 rebase 跟上 `main`，合并前必须基于最新的 `main` 重新跑检查。
+- **数据库迁移只能追加到 `migrations` 数组末尾。** 两个 PR 都加了迁移时，后合并的要 rebase 并放到后面，不能调换已发布的顺序。
+- 改 `packages/shared` 的数据结构前，先看有没有别的进行中的改动，它影响所有 Agent。
+- 共享资源：开发用的 Postgres 和 S3 可以共用，测试已经隔离；模拟器只有一台，E2E 会排队；本地服务端端口用 `PORT` 区分。
+
+## 11. 必须更新的文档
+
+这两条属于“完成的定义”，不更新就不算完成：
+
+- **踩坑后必须更新 [docs/PITFALLS.md](docs/PITFALLS.md)。** 踩坑记录都在那里，动手前先扫一眼相关分类。
+- **完成功能或改变行为后必须更新 [docs/PROGRESS.md](docs/PROGRESS.md)。** 写明状态、验证方式和是否放行，只写已经发生的事实。
+
+和代码放在同一个 PR 里。
