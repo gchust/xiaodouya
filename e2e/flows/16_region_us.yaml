@@ -1,0 +1,117 @@
+# 换到美国：疫苗本换成 AAP 的表，之前打的留在“其他接种记录”，没改过单位的人看到 oz 和 °F。最后换回新加坡。
+# 后面的流程按公制断言，所以结束时必须是新加坡，且没有改过单位偏好。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: region-row }
+- assertVisible: 新加坡
+- tapOn: { id: region-row }
+- assertVisible: { id: region-confirm }
+- tapOn: { id: region-US }
+# 先看到说明再确认，记录不会丢这句话很重要
+- assertVisible:
+    text: .*其他接种记录.*
+- takeScreenshot: .artifacts/e2e-16-region-confirm
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+- assertVisible: 美国
+# 体重柱状图换成磅：流程 09 记的 3.7kg 是 8.2lb
+- scrollUntilVisible:
+    element: { id: growth-chart }
+- assertVisible: 体重（lb）
+- assertVisible: "8.2"
+# 美国的表
+- scrollUntilVisible:
+    element: { id: vaccine-row-hepb-1 }
+- assertVisible: { id: vaccine-row-hepb-1 }
+- takeScreenshot: .artifacts/e2e-16-us-book
+- scrollUntilVisible:
+    element: { id: vaccine-other-section }
+    timeout: 60000
+# 流程 10 在新加坡的表上记的卡介苗
+- assertVisible: 卡介苗 BCG
+- scrollUntilVisible:
+    element: { id: vaccine-disclaimer }
+- assertVisible:
+    text: .*CDC.*
+- takeScreenshot: .artifacts/e2e-16-us-other-records
+# 喂奶按盎司
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- tapOn: { id: action-feed }
+- assertVisible: oz
+- tapOn: { id: oz-chip-4 }
+- assertVisible: "4.0"
+- tapOn: { id: ml-inc }
+- assertVisible: "4.5"
+- tapOn: { id: ml-dec }
+- assertVisible: "4.0"
+- takeScreenshot: .artifacts/e2e-16-feed-oz
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- assertVisible: 喂奶 4oz
+# 体温按华氏度：默认 98.2°F，加 11 次 0.2 到 100.4°F，就是 38℃
+- tapOn: { id: action-more }
+- tapOn: { id: more-temp }
+- assertVisible: °F
+- assertVisible: "98.2"
+- repeat:
+    times: 11
+    commands:
+      - tapOn: { id: temp-inc }
+- assertVisible: "100.4"
+- assertVisible:
+    id: temp-hint
+    text: .*(100\.4°F|发烧).*
+- takeScreenshot: .artifacts/e2e-16-temp-f
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: temp-save }
+    timeout: 10000
+# 家人页显示的单位
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-units }
+- assertVisible: oz · °F · lb · in
+# 换回新加坡
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: region-row }
+    direction: UP
+    timeout: 60000
+- tapOn: { id: region-row }
+- tapOn: { id: region-SG }
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+- assertVisible: 新加坡
+- scrollUntilVisible:
+    element: { id: vaccine-row-bcg }
+    timeout: 30000
+# 卡介苗又回到表里，还是已接种
+- assertVisible:
+    text: 已接种 .*
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+# 同一条记录，存的是 118ml，只是显示变了
+- assertVisible: 喂奶 118ml

@@ -39,7 +39,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: { id: tab-today }
 - assertNotVisible: { id: tab-info }
 - assertNotVisible: { id: recall-fab }
-- takeScreenshot: .artifacts/e2e-17-viewer-recall
+- takeScreenshot: .artifacts/e2e-20-viewer-recall
 # 能看大图
 - tapOn:
     id: moment-cover-.*
@@ -48,7 +48,7 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - waitForAnimationToEnd:
     timeout: 5000
-- takeScreenshot: .artifacts/e2e-17-viewer-photo
+- takeScreenshot: .artifacts/e2e-20-viewer-photo
 - tapOn: { id: viewer-close }
 - extendedWaitUntil:
     notVisible: { id: viewer-screen }
@@ -57,7 +57,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: recall-tab-letters }
 - assertVisible: Hello little one
 - assertNotVisible: { id: recall-fab }
-- takeScreenshot: .artifacts/e2e-17-viewer-letters
+- takeScreenshot: .artifacts/e2e-20-viewer-letters
 # 家人页没有管理入口
 - tapOn: { id: tab-family }
 - extendedWaitUntil:
@@ -65,7 +65,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - assertNotVisible: { id: invite-open }
 - assertNotVisible: { id: pref-feed }
-- takeScreenshot: .artifacts/e2e-17-viewer-family
+- takeScreenshot: .artifacts/e2e-20-viewer-family
 - scrollUntilVisible:
     element: { id: sign-out }
 - assertVisible: { id: export-book }
