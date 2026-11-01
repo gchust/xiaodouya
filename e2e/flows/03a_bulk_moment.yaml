@@ -1,0 +1,53 @@
+# 一次选很多张：超过上限要提示，保存后记录立刻出现，文件在后台全部传完。
+# 系统相册点不了，E2E 构建里长按选图按钮给 60 张样例（e2eBulkMoment）。之后的导入、入队、缩略图、直传都是真实代码。
+# 没覆盖：系统选择器本身、真实大图的内存、App 被杀后的提示。这些只在模拟器上手动走查过，见 PROGRESS F-116。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- tapOn: { id: recall-fab }
+- longPressOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 30000
+# 第二批放不下：60 + 60 超过 100，多的要告诉用户，不能悄悄丢掉。
+- longPressOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: 一条回忆最多放 100 个文件，这次有 20 个没放进来，可以再记一条。
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-03a-over-limit
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Bulk ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+# 记录不等处理完就出现，这是这条流程最要紧的断言。
+- extendedWaitUntil:
+    visible: Bulk ${RUN_ID}
+    timeout: 10000
+- assertVisible: 共 100 项
+- takeScreenshot: .artifacts/e2e-03a-saved
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 240000
+- takeScreenshot: .artifacts/e2e-03a-uploaded
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+# 删掉，不留给后面的流程：它们默认时间线最上面是流程 03 的回忆。
+- tapOn:
+    id: moment-more-.*
+    index: 0
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Bulk ${RUN_ID}
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
