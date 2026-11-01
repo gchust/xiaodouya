@@ -50,12 +50,9 @@ curl -fs http://localhost:8787/healthz >/dev/null || {
 # 默认接着 Mac 的硬件键盘，软键盘不会弹出来，弹层遇到键盘的布局就测不到了。要在开机前设置。
 defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
 
-# Maestro 的 hideKeyboard 收不起 iOS 软键盘，流程都会失败。复制一份流程，把它换成点 E2E 构建里专门的按钮
-# （见 overlays.tsx）。流程文件本身不用区分平台，新加的流程也自动适用。
+# 实际跑的是改写过的副本，改了什么见 scripts/ios-flows.mjs。
 FLOW_ROOT=.artifacts/ios-e2e-flows
-rm -rf "$FLOW_ROOT"
-cp -R e2e "$FLOW_ROOT"
-find "$FLOW_ROOT" -name '*.yaml' -print0 | xargs -0 sed -i '' 's/^- hideKeyboard$/- tapOn: { id: e2e-hide-keyboard }/'
+node scripts/ios-flows.mjs e2e "$FLOW_ROOT"
 
 RUNTIME="$(xcrun simctl list runtimes available -j |
   node -e 'const r=JSON.parse(require("fs").readFileSync(0)).runtimes.filter((x)=>x.name.startsWith("iOS "));console.log(r.at(-1).identifier)')"
@@ -122,7 +119,11 @@ for flow in "${FLOWS[@]}"; do
   fi
   # 要用管理员身份，紧接着建好账号后面跑，流程 17 之后 App 里就不是管理员了。
   case "$flow" in
-    */01_*) run_flow e2e/ios/sheet-keyboard.yaml ;;
+    */01_*)
+      run_flow e2e/ios/sheet-keyboard.yaml
+      run_flow e2e/ios/birth-picker.yaml
+      ;;
+    */04_*) run_flow e2e/ios/pdf-preview.yaml ;;
   esac
 done
 

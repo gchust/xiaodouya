@@ -131,6 +131,9 @@
 - **iOS 模拟器没有飞行模式，和宿主机共用网络。** 流程要断网就用 `e2e/subflows/net-off.yaml`，它在 iOS 上断开 `net-proxy.mjs`，App 只是连不上服务端，NetInfo 仍然报告在线。
 - **`expo-audio` 默认声明 `audio` 后台模式，Android 上还有媒体播放前台服务。** 只有在 `app.config.ts` 里显式处理才去得掉，prebuild 后看一眼 `Info.plist` 就能发现，不用等 CI。
 
+- **Maestro 的 `hideKeyboard` 收不起 iOS 软键盘。** 报 `Couldn't hide the keyboard`。把模拟器设成硬件键盘也没用，XCTest 打字时软键盘还是出来。`ios-e2e.sh` 跑流程的副本，把它换成点 E2E 构建里专门的按钮。
+- **iOS 的“存储密码”对话框 Maestro 看不到。** 无障碍树里没有它，截图上却盖在最上面，之后的点击全部落空，表现成下一步的元素找不到。E2E 构建里不把输入框当成密码框。流程莫名失败时一定先看失败截图。
+
 ## 依赖和环境
 
 - **`minio/minio` 镜像已无法公开拉取。** 本地和 CI 的 S3 用 `chrislusf/seaweedfs`。

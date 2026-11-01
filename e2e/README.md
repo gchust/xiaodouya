@@ -60,7 +60,11 @@ bash scripts/ios-e2e.sh         # 或 bash scripts/ios-e2e.sh e2e/flows/01_onboa
 和 Android 的不同：
 
 - 一条流程失败后继续跑完其余流程，最后列出结果，失败现场和无障碍树（`hierarchy-<流程>.json`）在 `.artifacts/`。
-- Maestro 的 `hideKeyboard` 收不起 iOS 软键盘。`ios-e2e.sh` 跑的是流程的副本，把 `- hideKeyboard` 换成点 E2E 构建里的 `e2e-hide-keyboard`。写流程时照常用 `hideKeyboard`，要顶格写在一行里才会被替换，写在 `commands:` 里面的不会。
+- `ios-e2e.sh` 跑的是流程的副本，由 `scripts/ios-flows.mjs` 改写，写流程时不用管：
+  - `- hideKeyboard` 换成点 E2E 构建里的 `e2e-hide-keyboard`，因为 Maestro 收不起 iOS 软键盘。要顶格写在一行里才会被替换，`commands:` 里面的不会。
+  - 文字匹配从整段改成“包含”。iOS 上按钮是一个无障碍元素，里面的字并进了它的标签，所以**按钮里显示的内容也要写进 `accessibilityLabel`**，否则流程看不到，读屏的用户也听不到。否定断言不改写，按钮里的字在 iOS 上它查不到，比 Android 弱。
+  - 等待时间放长一倍。
+- 流程 01 失败就不再继续，其他流程都依赖它。流程 01 之后多跑一条 `ios/sheet-keyboard.yaml`，看弹层在软键盘打开时的样子。
 - 模拟器没有飞行模式。`subflows/net-off.yaml` 在 iOS 上改为断开 `net-proxy.mjs` 这个转发，App 连不上服务端，但系统仍然报告在线。所以 iOS 上**没有验证过**“离线中”的提示和 NetInfo 的联动，流程 06 看的是“正在同步”。
 - 服务端监听 18787，转发监听 8787。`S3_PUBLIC_ENDPOINT` 是 `localhost:59000`，App 连 `localhost:8787`，模拟器和宿主机共用网络，不需要 `10.0.2.2`。
 

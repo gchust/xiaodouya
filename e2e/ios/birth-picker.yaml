@@ -1,0 +1,19 @@
+# iOS 的日期选择是页面里的滚轮，不是 Android 那样选完就关的对话框。依赖流程 01。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- tapOn: { id: birth-at }
+- tapOn: { id: birth-date }
+- extendedWaitUntil:
+    visible: { id: birth-picker-done }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-ios-birth-picker
+- tapOn: { id: birth-picker-done }
+- extendedWaitUntil:
+    notVisible: { id: birth-picker-done }
+    timeout: 10000
+- tapOn: { id: sheet-cancel }

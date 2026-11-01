@@ -1,0 +1,25 @@
+# iOS 用 Quick Look 打开证件 PDF：要从 S3 下载回来，文件名要带 .pdf，系统才认得。依赖流程 04。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- scrollUntilVisible:
+    element: { id: doc-card-护照 }
+- tapOn: { id: doc-card-护照 }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- tapOn: { id: doc-file-sample-certificate.pdf }
+# Quick Look 的导航栏是系统界面，模拟器语言是英文。
+- extendedWaitUntil:
+    visible: Done
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-ios-pdf-preview
+- tapOn: Done
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- tapOn: { id: doc-back }
