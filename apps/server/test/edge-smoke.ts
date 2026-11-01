@@ -165,6 +165,8 @@ const functionEnv: Record<string, string> = {
   S3_ACCESS_KEY_ID: example.S3_ACCESS_KEY_ID ?? '',
   S3_SECRET_ACCESS_KEY: example.S3_SECRET_ACCESS_KEY ?? '',
   S3_FORCE_PATH_STYLE: 'true',
+  // 配了 S3 默认就是托管模式。这里要测存储测试接口和 SSRF 拒绝，所以显式打开。
+  ALLOW_CUSTOM_STORAGE: 'true',
 };
 
 async function request<T>(
@@ -349,6 +351,72 @@ async function customStorage(base: string, token: string) {
   check(tested.json.ok === true, `连接测试通过：${tested.json.message}`);
 }
 
+/** 线上没有设置邮件 Secret 时的行为，和响应之后在后台删文件。 */
+async function accountLifecycle(base: string) {
+  console.log('账号：没有邮件时跳过验证、导出、删除后存储里的文件也没了');
+  const config = await request<{ passwordReset: boolean }>(base, 'GET', '/v1/config');
+  check(config.status === 200 && config.json.passwordReset === false, '/v1/config 说没开邮件');
+  const email = `edge-del-${randomUUID().slice(0, 8)}@example.test`;
+  const forgot = await request(base, 'POST', '/v1/auth/password/forgot', { body: { email } });
+  check(forgot.status === 503, '没有邮件时不能申请验证码');
+  const { json: auth } = await request<{ token: string }>(base, 'POST', '/v1/auth/register', {
+    body: { email, password: 'correct horse', displayName: '虚构用户' },
+  });
+  const token = auth.token;
+  const me = await request<{ emailVerified: boolean }>(base, 'GET', '/v1/me', { token });
+  check(me.json.emailVerified === true, '没有邮件时算作已验证，App 跳过这一步');
+  await request(base, 'POST', '/v1/families', {
+    token,
+    body: { name: '虚构一家', label: '爸爸' },
+  });
+  const bytes = Buffer.from('fictional object');
+  const id = randomUUID();
+  const upload = await request<{ url: string; headers: Record<string, string> }>(
+    base,
+    'POST',
+    '/v1/media/upload-url',
+    {
+      token,
+      body: {
+        id,
+        scope: 'memory',
+        variant: 'original',
+        mime: 'image/jpeg',
+        size: bytes.length,
+      },
+    },
+  );
+  await fetch(upload.json.url, { method: 'PUT', headers: upload.json.headers, body: bytes });
+  await request(base, 'POST', `/v1/media/${id}/complete`, {
+    token,
+    body: { variant: 'original' },
+  });
+  const urls = await request<{ urls: { url: string }[] }>(base, 'POST', '/v1/media/urls', {
+    token,
+    body: { items: [{ id, variant: 'original' }] },
+  });
+  const download = urls.json.urls[0]?.url ?? '';
+  check((await fetch(download)).status === 200, '文件存在');
+  const exported = await request<{ media: unknown[] }>(base, 'GET', '/v1/family/export', { token });
+  check(exported.status === 200 && exported.json.media.length === 1, '导出家庭数据');
+  const wrong = await request(base, 'POST', '/v1/me/delete', {
+    token,
+    body: { password: 'wrong password' },
+  });
+  check(wrong.status === 403, '密码错误不删除');
+  const deleted = await request(base, 'POST', '/v1/me/delete', {
+    token,
+    body: { password: 'correct horse' },
+  });
+  check(deleted.status === 200, `删除账号（${deleted.ms} ms）`);
+  let status = 0;
+  for (let i = 0; i < 50 && status !== 404; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    status = (await fetch(download)).status;
+  }
+  check(status === 404, '响应之后文件从存储里删掉了');
+}
+
 async function ssrf(base: string, token: string) {
   console.log('SSRF 检查：node:net 和 node:dns 在函数里生效');
   for (const endpoint of [
@@ -386,6 +454,7 @@ try {
   try {
     owner = await mainFlow(permissive);
     await customStorage(permissive.base, owner);
+    await accountLifecycle(permissive.base);
   } catch (error) {
     console.error(permissive.output());
     throw error;

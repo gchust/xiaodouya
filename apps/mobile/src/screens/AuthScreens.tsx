@@ -1,13 +1,15 @@
 import {
   birthMeasuresFromInput,
   convertMeasureText,
+  EMAIL_CODE_COOLDOWN_SECONDS,
   effectiveUnits,
   guessRegionId,
   scaleFor,
 } from '@xiaodouya/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -16,13 +18,17 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { consentSegments } from '../lib/accountLogic';
+import { accountText } from '../lib/accountText';
 import { Api } from '../lib/api';
 import { useApp } from '../lib/app';
+import { PRIVACY_URL, TERMS_URL } from '../lib/config';
 import { deviceRegionCode } from '../lib/device';
 import { colors, fonts, spacing } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { Button, Chip, Field, Muted, Serif } from '../ui/primitives';
 import { RegionPicker } from '../ui/RegionPicker';
+import { FormError, ResendButton, useCooldown, VerifyEmailForm } from './AccountPanels';
 
 function Page({ children, testID }: { children: React.ReactNode; testID: string }) {
   const insets = useSafeAreaInsets();
@@ -80,7 +86,206 @@ function ServerField({ value, onChange }: { value: string; onChange: (v: string)
   );
 }
 
-type Mode = 'welcome' | 'login' | 'register' | 'join';
+function ConsentLine() {
+  const segments = consentSegments(TERMS_URL, PRIVACY_URL);
+  if (!segments) return null;
+  return (
+    <Muted style={s.note}>
+      {segments.map(({ text, url, testID }) =>
+        url ? (
+          <Text
+            key={text}
+            testID={testID}
+            accessibilityRole="link"
+            accessibilityLabel={text}
+            style={s.consentLink}
+            onPress={() => void Linking.openURL(url).catch(() => {})}
+          >
+            {text}
+          </Text>
+        ) : (
+          text
+        ),
+      )}
+    </Muted>
+  );
+}
+
+/** 两步：填邮箱申请验证码，再填验证码和新密码。第一步的结果不说邮箱是否存在，服务端也不说。 */
+function ForgotPassword({
+  server,
+  initialEmail,
+  onBack,
+  onDone,
+}: {
+  server: string;
+  initialEmail: string;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const [step, setStep] = useState<'request' | 'reset'>('request');
+  const [email, setEmail] = useState(initialEmail);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [left, setLeft] = useCooldown();
+  const client = () => {
+    const api = new Api();
+    api.baseUrl = server.trim();
+    return api;
+  };
+
+  const request = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client().forgotPassword(email.trim());
+      setLeft(EMAIL_CODE_COOLDOWN_SECONDS);
+      setStep('reset');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reset = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client().resetPassword({
+        email: email.trim(),
+        code: code.trim(),
+        newPassword: password,
+      });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setBusy(false);
+    }
+  };
+
+  const back = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="返回"
+      hitSlop={12}
+      onPress={step === 'reset' ? () => setStep('request') : onBack}
+      testID="auth-back"
+    >
+      <Text style={s.back}>‹ 返回</Text>
+    </Pressable>
+  );
+
+  if (step === 'request') {
+    return (
+      <Page testID="forgot-screen">
+        {back}
+        <View style={{ gap: 6 }}>
+          <Text accessibilityRole="header" style={s.title}>
+            {accountText.forgotTitle}
+          </Text>
+          <Muted style={{ fontSize: 13 }}>{accountText.forgotHint}</Muted>
+        </View>
+        <View style={{ gap: 12 }}>
+          <Field
+            testID="field-email"
+            label="邮箱"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            autoComplete="email"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <FormError message={error} />
+        </View>
+        <Button
+          testID="forgot-submit"
+          label={accountText.forgotSubmit}
+          disabled={!email.trim()}
+          busy={busy}
+          onPress={() => void request()}
+        />
+      </Page>
+    );
+  }
+
+  return (
+    <Page testID="reset-screen">
+      {back}
+      <View style={{ gap: 6 }}>
+        <Text accessibilityRole="header" style={s.title}>
+          {accountText.resetTitle}
+        </Text>
+        <Muted style={{ fontSize: 13, lineHeight: 21 }}>
+          {accountText.resetHint(email.trim())}
+        </Muted>
+      </View>
+      <View style={{ gap: 12 }}>
+        <Field
+          testID="field-reset-code"
+          label={accountText.resetCode}
+          mono
+          keyboardType="number-pad"
+          autoComplete="one-time-code"
+          maxLength={6}
+          value={code}
+          onChangeText={setCode}
+        />
+        <Field
+          testID="field-new-password"
+          label={accountText.resetNewPassword}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          value={password}
+          onChangeText={setPassword}
+        />
+        <FormError message={error} />
+      </View>
+      <Button
+        testID="reset-submit"
+        label={accountText.resetSubmit}
+        disabled={code.trim().length !== 6 || password.length < 8}
+        busy={busy}
+        onPress={() => void reset()}
+      />
+      <ResendButton testID="reset-resend" left={left} onPress={() => void request()} />
+    </Page>
+  );
+}
+
+/** 注册之后、建家庭之前。可以跳过：邮件服务出问题或邮箱填错时不能把人关在外面。 */
+export function VerifyEmailStep() {
+  const app = useApp();
+  return (
+    <Page testID="verify-email-screen">
+      <Text accessibilityRole="header" style={s.title}>
+        {accountText.verifyTitle}
+      </Text>
+      <VerifyEmailForm onVerified={(me) => void app.finishEmailStep(me)} />
+      <View style={{ gap: 4 }}>
+        <Button
+          testID="email-skip"
+          tone="ghost"
+          label={accountText.verifySkip}
+          onPress={() => void app.finishEmailStep()}
+        />
+        <Muted style={s.note}>{accountText.verifySkipHint}</Muted>
+      </View>
+      <Button
+        testID="verify-signout"
+        tone="ghost"
+        label="退出登录"
+        onPress={() => void app.signOut()}
+      />
+    </Page>
+  );
+}
+
+type Mode = 'welcome' | 'login' | 'register' | 'join' | 'forgot';
 
 export function AuthFlow() {
   const app = useApp();
@@ -92,11 +297,31 @@ export function AuthFlow() {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [canReset, setCanReset] = useState(false);
 
   const go = (next: Mode) => {
     setError(null);
+    setNotice(null);
     setMode(next);
   };
+
+  // 服务器地址是用户可以改的，开没开邮件要问当前填的这一台。
+  useEffect(() => {
+    if (mode !== 'login') return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      const client = new Api();
+      client.baseUrl = server.trim();
+      void client.passwordResetEnabled().then((enabled) => {
+        if (!cancelled) setCanReset(enabled);
+      });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [mode, server]);
 
   const submit = async () => {
     setBusy(true);
@@ -116,7 +341,12 @@ export function AuthFlow() {
           inviteCode,
         });
         client.token = result.token;
-        if (inviteCode) await client.acceptInvite(inviteCode);
+        if (inviteCode) {
+          // 要先走验证这一步的话，邀请码留到这一步结束后再用。
+          const profile = await client.me();
+          if (profile.emailVerified) await client.acceptInvite(inviteCode);
+          else await app.deferInvite(inviteCode);
+        }
         await app.signIn(result.token, server.trim());
       }
     } catch (e) {
@@ -152,7 +382,22 @@ export function AuthFlow() {
     );
   }
 
-  const titles: Record<Exclude<Mode, 'welcome'>, string> = {
+  if (mode === 'forgot') {
+    return (
+      <ForgotPassword
+        server={server}
+        initialEmail={email}
+        onBack={() => go('login')}
+        onDone={() => {
+          go('login');
+          setPassword('');
+          setNotice(accountText.resetDone);
+        }}
+      />
+    );
+  }
+
+  const titles: Record<Exclude<Mode, 'welcome' | 'forgot'>, string> = {
     login: '欢迎回来',
     register: '创建账号',
     join: '加入家庭',
@@ -219,6 +464,11 @@ export function AuthFlow() {
           onChangeText={setPassword}
         />
         <ServerField value={server} onChange={setServer} />
+        {notice ? (
+          <Text testID="auth-notice" style={s.notice}>
+            {notice}
+          </Text>
+        ) : null}
         <ErrorText message={error} />
       </View>
       <Button
@@ -228,11 +478,18 @@ export function AuthFlow() {
         busy={busy}
         onPress={() => void submit()}
       />
-      {mode === 'login' ? (
-        <Muted style={s.note}>
-          忘记密码？这个 App 由你们家自己部署，请部署它的人在服务器上重置。
-        </Muted>
+      {mode === 'login' && canReset ? (
+        <Button
+          testID="forgot-password"
+          tone="ghost"
+          label={accountText.forgotLink}
+          onPress={() => go('forgot')}
+        />
       ) : null}
+      {mode === 'login' && !canReset ? (
+        <Muted style={s.note}>{accountText.forgotDeployerNote}</Muted>
+      ) : null}
+      {mode !== 'login' ? <ConsentLine /> : null}
     </Page>
   );
 }
@@ -470,6 +727,8 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   error: { fontSize: 13, lineHeight: 20, color: colors.danger },
   note: { fontSize: 11, lineHeight: 18, textAlign: 'center' },
+  notice: { fontSize: 13, lineHeight: 20, color: colors.green },
+  consentLink: { color: colors.accent },
   chips: { flexDirection: 'row', gap: 8 },
   bigChip: { flex: 1, paddingVertical: 14, backgroundColor: colors.card },
   dateRow: { flexDirection: 'row', gap: 8 },

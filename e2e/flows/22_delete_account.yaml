@@ -1,0 +1,89 @@
+# 删除账号：密码错了不删；最后一位成员删除后家庭一起没了，回到欢迎页，再也登录不了。
+# 不依赖前面的流程：清掉 App 数据，注册一个只给这条流程用的账号，只删它自己。
+# 管理员的账号不能动，所有流程跑完后 verify-uploads.mjs 还要查那个家庭的文件。
+# 排在最后：跑完 App 停在登录页，之后的流程都登录不上。
+appId: com.gchust.xiaodouya
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: { id: welcome-create }
+    timeout: 60000
+- tapOn: { id: welcome-create }
+- tapOn: { id: field-name }
+- inputText: E2E
+- hideKeyboard
+- tapOn: { id: field-email }
+- inputText: delete-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-5
+- hideKeyboard
+- tapOn: { id: auth-submit }
+# CI 没有配置邮件，不会出现验证邮箱这一步。
+- extendedWaitUntil:
+    visible: { id: self-爸爸 }
+    timeout: 20000
+- tapOn: { id: self-爸爸 }
+- tapOn: { id: family-create }
+- extendedWaitUntil:
+    visible: { id: field-baby-name }
+    timeout: 20000
+- tapOn: { id: field-baby-name }
+- inputText: Sprout
+- hideKeyboard
+# 默认地区按系统猜测，CI 模拟器是 en-US，会猜成美国。明确选一个，不依赖猜测。
+- scrollUntilVisible:
+    element: { id: region-SG }
+- tapOn: { id: region-SG }
+- scrollUntilVisible:
+    element: { id: baby-submit }
+- tapOn: { id: baby-submit }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 20000
+- tapOn: { id: tab-family }
+# scrollUntilVisible 一看到目标就停，要断言哪一行就滚到哪一行。
+- scrollUntilVisible:
+    element: { id: export-data }
+- assertVisible: { id: export-data }
+- scrollUntilVisible:
+    element: { id: delete-account }
+- tapOn: { id: delete-account }
+- extendedWaitUntil:
+    visible: { id: delete-explanation }
+    timeout: 10000
+- assertVisible:
+    text: .*最后一位成员.*
+- takeScreenshot: .artifacts/e2e-22-delete-sheet
+# 密码错了不删，还留在这里
+- tapOn: { id: delete-password }
+- inputText: wrong-password
+- hideKeyboard
+- tapOn: { id: delete-confirm }
+- extendedWaitUntil:
+    visible: { id: form-error }
+    timeout: 15000
+- assertVisible: 密码不正确
+- takeScreenshot: .artifacts/e2e-22-wrong-password
+- tapOn: { id: delete-password }
+- eraseText: 40
+- inputText: correct-horse-5
+- hideKeyboard
+- tapOn: { id: delete-confirm }
+- extendedWaitUntil:
+    visible: { id: welcome-screen }
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-22-deleted
+# 账号真的没了
+- tapOn: { id: welcome-login }
+- tapOn: { id: field-email }
+- inputText: delete-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-5
+- hideKeyboard
+- tapOn: { id: auth-submit }
+- extendedWaitUntil:
+    visible: 邮箱或密码不正确
+    timeout: 15000

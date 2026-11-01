@@ -29,6 +29,16 @@ appId: com.gchust.xiaodouya
       text: 妈妈 记录了.*
     timeout: 40000
 - takeScreenshot: .artifacts/e2e-05-banner
+# 一次同步带回好几条时汇总成一句
+- runScript:
+    file: ../helpers/mom-logs-two.js
+    env:
+      RUN_ID: ${RUN_ID}
+- extendedWaitUntil:
+    visible:
+      text: 妈妈 记了 2 条，最近是.*
+    timeout: 40000
+- takeScreenshot: .artifacts/e2e-05-banner-summary
 - assertVisible: 喂奶 75ml
 - assertVisible:
     text: .*妈妈记录.*

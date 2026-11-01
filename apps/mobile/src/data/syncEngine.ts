@@ -16,7 +16,10 @@ export interface SyncTransport {
 export type SyncStatus = 'idle' | 'syncing' | 'offline';
 
 export interface SyncEvents {
-  /** 同步到了其他家人的新记录（不含自己刚上传的）。 */
+  /**
+   * 这一轮同步拿到了其他家人的新记录（不含自己刚上传的）。分几页拉取也只调用一次。
+   * 第一次拉取和权限升级后重新拉取的历史不算。
+   */
   onRemote?(records: ServerRecord[]): void;
   onStatus?(status: SyncStatus): void;
   /** 有记录被服务端拒绝（比如权限变了）。 */
@@ -27,10 +30,25 @@ export interface SyncEvents {
 
 const ROLE_KEY = 'role';
 const OUTBOX_BATCH = 200;
+/**
+ * 服务端的请求体上限是 5 MB。超了会一直 413，退避重试也没用，后面的记录全被堵住。
+ * 用字符数乘 3 估算：一个汉字在 UTF-8 里 3 字节。估高了只是多发一次请求。
+ */
+const OUTBOX_MAX_BYTES = 4 * 1024 * 1024;
 const LIVE_BACKOFF_MS = 5_000;
 const MAX_ROUNDS = 50;
 const MIN_RETRY_MS = 2_000;
 const MAX_RETRY_MS = 60_000;
+
+/** 取开头不超过大小上限的一段。至少一条：单条太大也要发出去，让服务端决定，不能卡在队列里。 */
+export function batchWithinBytes<T extends { data: unknown }>(records: T[], maxBytes: number): T[] {
+  let bytes = 0;
+  for (const [index, record] of records.entries()) {
+    bytes += (JSON.stringify(record.data)?.length ?? 0) * 3 + 200;
+    if (bytes > maxBytes && index > 0) return records.slice(0, index);
+  }
+  return records;
+}
 
 /**
  * 双向同步。约定：
@@ -45,6 +63,10 @@ export class SyncEngine {
   private online = true;
   private live: AbortController | null = null;
   private stopped = true;
+  /** 每次 stop 加一。请求发出后才退出登录的话，响应属于上一个会话，不能写进本地。 */
+  private session = 0;
+  /** 这次启动后是否同步成功过。游标为 0 也可能只是家庭还是空的，不一定是在拉历史。 */
+  private hasSynced = false;
   private cursor = 0;
   private lastSentIds = new Set<string>();
   private lastRole: Role | null = null;
@@ -70,6 +92,8 @@ export class SyncEngine {
 
   stop(): void {
     this.stopped = true;
+    this.session += 1;
+    this.hasSynced = false;
     this.live?.abort();
     this.live = null;
     if (this.retryTimer) this.scheduler.clearTimeout(this.retryTimer);
@@ -105,10 +129,16 @@ export class SyncEngine {
 
   private async runOnce(): Promise<void> {
     if (!this.online) return;
+    const session = this.session;
     this.events.onStatus?.('syncing');
+    let pullingHistory = this.cursor === 0 && !this.hasSynced;
+    const arrived: ServerRecord[] = [];
+    const announce = () => {
+      if (arrived.length > 0 && session === this.session) this.events.onRemote?.(arrived);
+    };
     try {
       for (let round = 0; round < MAX_ROUNDS; round++) {
-        const sent = this.store.dirtyRecords(OUTBOX_BATCH);
+        const sent = batchWithinBytes(this.store.dirtyRecords(OUTBOX_BATCH), OUTBOX_MAX_BYTES);
         for (const record of sent) this.lastSentIds.add(record.id);
         const response = await this.transport.sync({
           cursor: this.cursor,
@@ -120,6 +150,7 @@ export class SyncEngine {
             updatedAt: r.updatedAt,
           })),
         });
+        if (session !== this.session) return;
         const rejected = new Set(response.rejected.map((r) => r.id));
         const applied = await this.store.applySyncResult(
           sent,
@@ -129,17 +160,22 @@ export class SyncEngine {
         );
         this.cursor = response.cursor;
         const fromOthers = applied.filter((r) => !this.lastSentIds.has(r.id));
-        if (fromOthers.length > 0) this.events.onRemote?.(fromOthers);
+        if (!pullingHistory) arrived.push(...fromOthers);
         for (const record of sent) this.lastSentIds.delete(record.id);
         if (response.rejected.length > 0) this.events.onRejected?.(response.rejected.length);
         const resync = await this.applyRole(response.role);
+        if (resync) pullingHistory = true;
         const moreToSend = this.store.dirtyRecords(1).length > 0;
         if (!response.hasMore && !moreToSend && !resync) break;
       }
+      announce();
+      this.hasSynced = true;
       this.retryMs = MIN_RETRY_MS;
       this.events.onStatus?.('idle');
       this.events.onSynced?.();
     } catch {
+      // 前面几页已经写进本地，游标也过去了，这时不说就再也不会说了。
+      announce();
       this.events.onStatus?.('offline');
       this.scheduleRetry();
     }

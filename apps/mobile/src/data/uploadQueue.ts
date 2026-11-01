@@ -161,6 +161,16 @@ export class UploadQueue {
     this.retryTimer = null;
   }
 
+  /** 手机上的数据被清空时调用。在路上的任务结束后不会再写回数据库，下次 load 才恢复工作。 */
+  reset(): void {
+    this.stop();
+    this.jobs = new Map();
+    this.batchBytes = 0;
+    this.batchDone = 0;
+    this.batchSent = 0;
+    this.publish();
+  }
+
   private nextJob(skip: ReadonlySet<string>): UploadJob | null {
     if (this.network === 'none') return null;
     for (const job of this.jobs.values()) {
@@ -246,6 +256,8 @@ export class UploadQueue {
         await this.finish(job);
         return true;
       }
+      // 队列已经被清空：写回去的话，下一个登录的人会看到别人的失败任务。
+      if (this.jobs.get(job.key) !== job) return false;
       job.attempts += 1;
       if (error instanceof UploadHttpError) {
         if (isPermanent(error)) job.failed = error.message;

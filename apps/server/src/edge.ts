@@ -5,6 +5,7 @@
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { connect } from './db';
+import { createMailer } from './mailer';
 import { expoNotifier, noopNotifier } from './notifier';
 
 /** 函数名就是路径前缀：/functions/v1/api/v1/me 到函数里是 /api/v1/me。改函数名要一起改。 */
@@ -19,7 +20,8 @@ export function createEdgeHandler(
   env: Record<string, string | undefined>,
   background: (task: Promise<void>) => void,
 ): (request: Request) => Response | Promise<Response> {
-  const config = loadConfig({ ...EDGE_DB_DEFAULTS, ...env });
+  // Supabase 不设置 NODE_ENV。函数总是线上环境，日志又在云端，写死才能保证 MAIL_PROVIDER=log 启动不了。
+  const config = loadConfig({ ...EDGE_DB_DEFAULTS, ...env, NODE_ENV: 'production' });
   const sql = connect(config.databaseUrl, { ...config.db, idleTimeout: IDLE_TIMEOUT_SECONDS });
   const app = createApp({
     sql,
@@ -27,6 +29,7 @@ export function createEdgeHandler(
     basePath: FUNCTION_PATH,
     background,
     notifier: config.pushEnabled ? expoNotifier(config.expoAccessToken) : noopNotifier,
+    mailer: createMailer(config.mail),
   });
   return (request) => app.fetch(request);
 }

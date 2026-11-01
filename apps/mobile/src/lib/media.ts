@@ -14,6 +14,7 @@ import {
   type UploadQueue,
   type UploadTransport,
 } from '../data/uploadQueue';
+import { isPersonalCacheDirectory } from './accountLogic';
 import { type Api, ApiFailure } from './api';
 import { IS_E2E } from './config';
 import { e2ePickFiles } from './e2eFixtures';
@@ -339,5 +340,21 @@ export async function clearLocalMedia(): Promise<void> {
     await Image.clearMemoryCache();
   } catch {
     // 清缓存失败不影响退出。
+  }
+  clearPersonalCache();
+}
+
+/** 成长册、打开过的证件、导出文件和系统选择器的副本都留在缓存目录，不清就一直在手机上。 */
+function clearPersonalCache(): void {
+  try {
+    for (const entry of new Directory(Paths.cache).list()) {
+      try {
+        if (entry instanceof File || isPersonalCacheDirectory(entry.name)) entry.delete();
+      } catch {
+        // 一个删不掉不影响其他的。
+      }
+    }
+  } catch {
+    // 同上：清缓存失败不影响退出。
   }
 }
