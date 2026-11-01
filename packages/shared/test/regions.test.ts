@@ -187,10 +187,10 @@ describe('美国：AAP 2026 儿童和青少年免疫表', () => {
     expect(US.source?.version).toContain('2026');
     expect(US.source?.url).toContain('aap.org');
   });
-  it('免责声明说明和 CDC 不同（包括乙肝出生剂），并建议问儿科医生', () => {
-    expect(US.disclaimer).toContain('CDC');
-    expect(US.disclaimer).toContain('乙肝');
+  it('免责声明写明来源是 AAP 并建议问儿科医生，不评价没读到原文的 CDC', () => {
+    expect(US.disclaimer).toContain('AAP');
     expect(US.disclaimer).toContain('儿科医生');
+    expect(US.disclaimer).not.toContain('CDC');
   });
   it('乙肝 HepB：出生，1–2 个月，6–18 个月，都是常规剂', () => {
     expect(months(s, 'hepb')).toEqual([0, 1, 6]);
