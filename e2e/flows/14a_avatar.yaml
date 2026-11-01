@@ -1,0 +1,111 @@
+# 宝宝头像：没有头像时点一下直接选图；有头像时点一下放大，能换一张、旋转、裁剪。
+# 选图用内置样例（320×160）。verify-uploads.mjs 会从存储读回文件，确认旋转和裁剪真的写进去了。
+# 小文件传得很快，“头像换好了”马上就被“文件都上传好了”盖掉，所以每一步都等后者出现再等它消失：
+# 这样既确认传完了，也不会把上一次的提示当成这一次的。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-today }
+    timeout: 30000
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+# 还没有头像：不打开空的查看器，直接选图
+- tapOn: { id: baby-avatar }
+- extendedWaitUntil:
+    visible: 查看宝宝的头像
+    timeout: 15000
+- assertNotVisible: { id: viewer-screen }
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-14a-first-avatar
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
+# 有头像了：点开是大图和编辑按钮
+- tapOn: { id: baby-avatar }
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: .*的头像
+- assertVisible: { id: avatar-replace }
+- assertVisible: { id: avatar-rotate }
+- assertVisible: { id: avatar-crop }
+- assertNotVisible: { id: avatar-save }
+# 下载只在回忆里提供，头像这里不显示
+- assertNotVisible: { id: viewer-download }
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-14a-viewer
+# 换一张
+- tapOn: { id: avatar-replace }
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-14a-replaced
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
+# 旋转后先预览，点保存才上传。320×160 变成 160×320
+- tapOn: { id: avatar-rotate }
+- extendedWaitUntil:
+    visible: { id: avatar-save }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-14a-rotated
+- tapOn: { id: avatar-save }
+- extendedWaitUntil:
+    notVisible: { id: avatar-save }
+    timeout: 15000
+# 等它传完：下面裁剪时本地副本已经删了，走的是从存储下载原图的路径
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
+# 裁剪：拖动一下再裁，160×320 变成 160×160
+- tapOn: { id: avatar-crop }
+- extendedWaitUntil:
+    visible: { id: avatar-crop-stage }
+    timeout: 15000
+- assertVisible: 拖动调整位置，双击放大
+- takeScreenshot: .artifacts/e2e-14a-crop
+- swipe:
+    start: 50%, 45%
+    end: 50%, 55%
+    duration: 800
+- tapOn: { id: avatar-crop-confirm }
+- extendedWaitUntil:
+    visible: { id: avatar-save }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-14a-cropped
+- tapOn: { id: avatar-save }
+- extendedWaitUntil:
+    notVisible: { id: avatar-save }
+    timeout: 15000
+- extendedWaitUntil:
+    visible: 文件都上传好了
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-14a-saved
+- extendedWaitUntil:
+    notVisible: 文件都上传好了
+    timeout: 20000
+# 改了又取消：回到原来的样子，不生成新文件。verify-uploads.mjs 按裁好的那张检查
+- tapOn: { id: avatar-rotate }
+- extendedWaitUntil:
+    visible: { id: avatar-cancel }
+    timeout: 15000
+- tapOn: { id: avatar-cancel }
+- extendedWaitUntil:
+    visible: { id: avatar-replace }
+    timeout: 10000
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible: { id: today-screen }
+- takeScreenshot: .artifacts/e2e-14a-today

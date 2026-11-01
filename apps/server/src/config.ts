@@ -52,6 +52,10 @@ const EnvSchema = DbEnvSchema.extend({
   ALLOW_PRIVATE_STORAGE_ENDPOINTS: bool(false),
   PUSH_ENABLED: bool(false),
   EXPO_ACCESS_TOKEN: optionalText,
+  MAIL_PROVIDER: z.enum(['', 'none', 'resend', 'log']).optional(),
+  RESEND_API_KEY: optionalText,
+  MAIL_FROM: optionalText,
+  NODE_ENV: optionalText,
 });
 
 export interface ServerStorageEnv {
@@ -109,6 +113,30 @@ export interface Config {
   allowPrivateEndpoints: boolean;
   pushEnabled: boolean;
   expoAccessToken: string | undefined;
+  /** null 表示不发邮件：跳过邮箱验证，找回密码由部署者处理。 */
+  mail: { provider: 'resend'; apiKey: string; from: string } | { provider: 'log' } | null;
+}
+
+/** 配错时拒绝启动：悄悄退回“不发邮件”的话，部署者要到有人找回不了密码才发现。 */
+function toMailConfig(e: z.infer<typeof EnvSchema>): Config['mail'] {
+  if (e.MAIL_PROVIDER === 'log') {
+    if (e.NODE_ENV === 'production') {
+      throw new Error(
+        '环境变量配置有误：\n  MAIL_PROVIDER: log 会把验证码打进日志，不能用于生产环境',
+      );
+    }
+    return { provider: 'log' };
+  }
+  if (e.MAIL_PROVIDER === 'resend') {
+    if (!e.RESEND_API_KEY) {
+      throw new Error('环境变量配置有误：\n  RESEND_API_KEY: MAIL_PROVIDER=resend 时必填');
+    }
+    if (!e.MAIL_FROM) {
+      throw new Error('环境变量配置有误：\n  MAIL_FROM: MAIL_PROVIDER=resend 时必填');
+    }
+    return { provider: 'resend', apiKey: e.RESEND_API_KEY, from: e.MAIL_FROM };
+  }
+  return null;
 }
 
 function parseEnv<T extends z.ZodType>(schema: T, env: Env): z.infer<T> {
@@ -180,5 +208,6 @@ export function loadConfig(env: Env = process.env): Config {
     allowPrivateEndpoints: e.ALLOW_PRIVATE_STORAGE_ENDPOINTS,
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,
+    mail: toMailConfig(e),
   };
 }

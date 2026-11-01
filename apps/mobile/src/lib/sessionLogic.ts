@@ -1,4 +1,5 @@
 /** 本地数据属于“哪个人在哪个家庭”。不依赖 React Native，便于测试。 */
+// 删除账号走和主动退出相同的清除路径，见 app.tsx 的 clearSession。
 export function sessionOwner(userId: string, familyId: string | null): string {
   return `${userId}/${familyId ?? ''}`;
 }

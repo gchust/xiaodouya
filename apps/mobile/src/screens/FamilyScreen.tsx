@@ -16,9 +16,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { accountText } from '../lib/accountText';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
+import { exportFamilyData } from '../lib/familyExport';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -35,6 +37,7 @@ import {
   SoftInput,
   Toggle,
 } from '../ui/primitives';
+import { DeleteAccountSheet, VerifyEmailSheet } from './AccountPanels';
 
 export function FamilyScreen() {
   const insets = useSafeAreaInsets();
@@ -50,6 +53,7 @@ export function FamilyScreen() {
   const now = useNow(60_000);
   const [storageSummary, setStorageSummary] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const { me, role, prefs } = app;
   const isAdmin = role === 'admin';
   const canRecord = role !== 'viewer';
@@ -76,9 +80,6 @@ export function FamilyScreen() {
       void app.refreshMe();
     }, [loadStorage, app.refreshMe]),
   );
-
-  const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
-  const otherName = others.length === 1 ? (others[0]?.label ?? '家人') : '家人';
 
   const signOut = () => {
     const unsynced = pendingCount > 0 || pendingFiles > 0;
@@ -181,10 +182,10 @@ export function FamilyScreen() {
         ) : null}
       </ListCard>
 
-      <View style={s.section}>
-        <SectionTitle>同步与提醒</SectionTitle>
-        <ListCard>
-          {canRecord ? (
+      {canRecord ? (
+        <View style={s.section}>
+          <SectionTitle>提醒</SectionTitle>
+          <ListCard>
             <Toggle
               testID="pref-feed"
               label="喂奶提醒"
@@ -194,25 +195,11 @@ export function FamilyScreen() {
                 void app.updatePrefs({ feedReminder: v });
                 if (v) void ensureNotificationPermission();
               }}
+              last
             />
-          ) : null}
-          <Toggle
-            testID="pref-family"
-            label={`${otherName}记录时通知我`}
-            sub="不用再问「刚刚喂了没」"
-            value={prefs.familyNotify}
-            onChange={(v) => void app.updatePrefs({ familyNotify: v })}
-          />
-          <Toggle
-            testID="pref-night"
-            label="夜间安静"
-            sub="23:00–07:00 只提醒喂奶"
-            value={prefs.quietNight}
-            onChange={(v) => void app.updatePrefs({ quietNight: v })}
-            last
-          />
-        </ListCard>
-      </View>
+          </ListCard>
+        </View>
+      ) : null}
 
       <View style={s.section}>
         <SectionTitle>设置</SectionTitle>
@@ -253,10 +240,39 @@ export function FamilyScreen() {
             }}
           />
           <NavRow
+            testID="export-data"
+            label={exportingData ? accountText.exportRowBusy : accountText.exportRow}
+            sub={accountText.exportRowSub}
+            onPress={() => {
+              if (exportingData) return;
+              setExportingData(true);
+              exportFamilyData(app.api)
+                .catch((e: Error) => toast(e.message || accountText.exportFailed))
+                .finally(() => setExportingData(false));
+            }}
+          />
+          {me?.emailVerified === false ? (
+            <NavRow
+              testID="verify-email"
+              label={accountText.verifyRow}
+              sub={accountText.verifyRowSub}
+              onPress={() => sheet.open(accountText.verifyTitle, () => <VerifyEmailSheet />)}
+            />
+          ) : null}
+          <NavRow
             testID="sign-out"
             label="退出登录"
             sub={me?.user.email ?? ''}
             onPress={signOut}
+            last
+          />
+        </ListCard>
+        <ListCard>
+          <NavRow
+            testID="delete-account"
+            label={accountText.deleteRow}
+            sub={accountText.deleteRowSub}
+            onPress={() => sheet.open(accountText.deleteTitle, () => <DeleteAccountSheet />)}
             last
           />
         </ListCard>

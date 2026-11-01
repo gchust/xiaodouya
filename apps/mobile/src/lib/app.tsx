@@ -3,15 +3,12 @@ import {
   type Collection,
   type CollectionData,
   defaultPrefs,
-  describeEvent,
-  type EventData,
   effectiveUnits,
   type MeResponse,
   type Prefs,
   type RegionDefinition,
   type Role,
   regionFor,
-  type ServerRecord,
   type Units,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
@@ -33,12 +30,15 @@ import { RecordStore, type Snapshot } from '../data/store';
 import { SyncEngine, type SyncStatus } from '../data/syncEngine';
 import { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
+import { shouldOfferVerifyStep } from './accountLogic';
+import { accountText } from './accountText';
 import { Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
 import { clearLocalMedia, createUploadTransport } from './media';
-import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 
 const TOKEN_KEY = 'session.token';
@@ -46,8 +46,18 @@ const SERVER_KEY = 'session.server';
 const ME_KEY = 'session.me';
 const OWNER_KEY = 'session.owner';
 const SYNCED_KEY = 'synced';
+/** 跳过邮箱验证的账号 id。 */
+const VERIFY_SKIPPED_KEY = 'session.verifySkipped';
+/** 注册时填的邀请码，等验证这一步结束再加入。App 被杀也不用重填。 */
+const DEFERRED_INVITE_KEY = 'session.deferredInvite';
 
-export type SessionState = 'signedOut' | 'noFamily' | 'syncing' | 'noBaby' | 'ready';
+export type SessionState =
+  | 'signedOut'
+  | 'verifyEmail'
+  | 'noFamily'
+  | 'syncing'
+  | 'noBaby'
+  | 'ready';
 
 export interface AppApi {
   api: Api;
@@ -63,6 +73,12 @@ export interface AppApi {
   syncStatus: SyncStatus;
   signIn(token: string, serverUrl: string): Promise<void>;
   signOut(): Promise<void>;
+  /** 删除账号并清除手机上的全部数据。密码错误、被拦下时抛错，什么都不动。 */
+  deleteAccount(password: string): Promise<'deleted' | 'sessionGone'>;
+  /** 注册时填了邀请码但要先验证邮箱：记下来，这一步结束后自动加入。 */
+  deferInvite(code: string): Promise<void>;
+  /** 邮箱验证这一步结束（验证成功时传新的身份，跳过时不传）。 */
+  finishEmailStep(verified?: MeResponse): Promise<void>;
   setMe(me: MeResponse): Promise<void>;
   refreshMe(): Promise<void>;
   updatePrefs(patch: Partial<Prefs>): Promise<void>;
@@ -133,6 +149,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
   const [booted, setBooted] = useState(false);
   const [hasSynced, setHasSynced] = useState(false);
+  const [verifySkippedBy, setVerifySkippedBy] = useState<string | null>(null);
   const feedback = useFeedback();
   const feedbackRef = useRef(feedback);
   feedbackRef.current = feedback;
@@ -153,13 +170,18 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         { sync: (r) => api.sync(r), wait: (c, s) => api.syncWait(c, s) },
         {
           onStatus: setSyncStatus,
-          onRemote: (records) =>
-            announceRemote(
-              records,
-              meRef.current,
-              effectiveUnits(meRef.current?.prefs.units, store.getSnapshot().baby?.data.region),
-              feedbackRef.current.banner,
-            ),
+          onRemote: (records) => {
+            const summary = summarizeRemote(records, {
+              selfId: meRef.current?.user.id,
+              members: meRef.current?.members ?? [],
+              units: effectiveUnits(
+                meRef.current?.prefs.units,
+                store.getSnapshot().baby?.data.region,
+              ),
+              now: Date.now(),
+            });
+            if (summary) feedbackRef.current.banner(summary.initial, summary.message);
+          },
           onRejected: (count) =>
             feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
           onSynced: () => {
@@ -168,10 +190,11 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
           },
         },
       );
-      const [token, savedServer, savedMe] = await Promise.all([
+      const [token, savedServer, savedMe, skippedBy] = await Promise.all([
         SecureStore.getItemAsync(TOKEN_KEY),
         SecureStore.getItemAsync(SERVER_KEY),
         SecureStore.getItemAsync(ME_KEY),
+        SecureStore.getItemAsync(VERIFY_SKIPPED_KEY),
       ]);
       api.baseUrl = savedServer ?? DEFAULT_API_URL;
       api.token = token;
@@ -180,6 +203,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       if (cancelled) return;
       clearDownloads();
       setHasSynced(synced === '1');
+      setVerifySkippedBy(skippedBy);
       setServices({ db, store, uploads, api, engine });
       if (token && savedMe) {
         // 先用缓存的身份立刻进入 App：没网时也不能挡住半夜的记录。
@@ -207,18 +231,24 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
 
   const wipeLocalData = useCallback(async () => {
     if (!services) return;
+    services.uploads.reset();
     await services.store.clear();
     clearDownloads();
     await clearLocalMedia();
+    // 已经排好的本机提醒不随数据消失，账号没了之后还会响。
+    await scheduleFeedReminder([], false);
     setHasSynced(false);
   }, [services]);
 
-  // 主动退出：清除一切。
+  // 主动退出和删除账号：清除一切。
   const clearSession = useCallback(async () => {
     stopServices();
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(ME_KEY);
     await SecureStore.deleteItemAsync(OWNER_KEY);
+    await SecureStore.deleteItemAsync(VERIFY_SKIPPED_KEY);
+    await SecureStore.deleteItemAsync(DEFERRED_INVITE_KEY);
+    setVerifySkippedBy(null);
     await wipeLocalData();
     setMeState(null);
   }, [stopServices, wipeLocalData]);
@@ -273,12 +303,6 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   useEffect(() => {
     if (booted) void refreshMe();
   }, [booted, refreshMe]);
-
-  useEffect(() => {
-    if (services && hasFamily && me?.role !== 'viewer') {
-      void registerPushToken(services.api);
-    }
-  }, [services, hasFamily, me?.role]);
 
   const prefs = me?.prefs ?? defaultPrefs;
 
@@ -343,6 +367,41 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         await api.logout().catch(() => {});
         await clearSession();
       },
+      async deleteAccount(password) {
+        let result: 'deleted' | 'sessionGone' = 'deleted';
+        try {
+          await api.deleteAccount(password);
+        } catch (error) {
+          // 上一次请求可能已经删掉了账号，只是响应没回来。这时再也登录不了，
+          // 不清的话别人家孩子的数据会一直留在这台手机上。用户本来也要清除，所以照常清。
+          if (!(error instanceof ApiFailure) || error.code !== 'unauthenticated') throw error;
+          result = 'sessionGone';
+        }
+        await clearSession();
+        return result;
+      },
+      async deferInvite(code) {
+        await SecureStore.setItemAsync(DEFERRED_INVITE_KEY, code);
+      },
+      async finishEmailStep(verified) {
+        if (verified) {
+          await persistMe(verified);
+        } else if (me) {
+          await SecureStore.setItemAsync(VERIFY_SKIPPED_KEY, me.user.id);
+          setVerifySkippedBy(me.user.id);
+        }
+        const invite = await SecureStore.getItemAsync(DEFERRED_INVITE_KEY);
+        if (!invite) return;
+        await SecureStore.deleteItemAsync(DEFERRED_INVITE_KEY);
+        try {
+          await persistMe(await api.acceptInvite(invite));
+        } catch (error) {
+          // 比如邀请码过期了。接下来是建家庭的页面，那里可以重新填。
+          feedbackRef.current.toast(
+            error instanceof Error ? error.message : accountText.joinFailed,
+          );
+        }
+      },
       setMe: persistMe,
       refreshMe,
       async updatePrefs(patch) {
@@ -397,34 +456,12 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const hasBaby = Boolean(services?.store.getSnapshot().baby);
   let sessionState: SessionState = 'signedOut';
   if (value.api.token && me) {
-    if (!me.family) sessionState = 'noFamily';
+    if (shouldOfferVerifyStep(me, verifySkippedBy)) sessionState = 'verifyEmail';
+    else if (!me.family) sessionState = 'noFamily';
     else if (hasBaby || me.role !== 'admin') sessionState = 'ready';
     // 换了新手机的管理员，同步完成前不知道有没有宝宝资料。这时让人填，
     // 会覆盖全家的出生时间。所以必须等第一次同步成功。
     else sessionState = hasSynced ? 'noBaby' : 'syncing';
   }
   return <AppContext.Provider value={{ ...value, sessionState }}>{children}</AppContext.Provider>;
-}
-
-function announceRemote(
-  records: ServerRecord[],
-  me: MeResponse | null,
-  units: Units,
-  banner: (initial: string, message: string) => void,
-) {
-  const now = Date.now();
-  const fresh = records
-    .filter((r) => !r.deleted && (r.collection === 'event' || r.collection === 'moment'))
-    .filter((r) => now - ((r.data as { at?: number }).at ?? 0) < 3_600_000);
-  const latest = fresh[fresh.length - 1];
-  if (!latest) return;
-  const author =
-    me?.members.find((m) => m.userId === latest.createdBy)?.label ??
-    (latest.data as { byName?: string }).byName ??
-    '家人';
-  const text =
-    latest.collection === 'event'
-      ? describeEvent(latest.data as EventData, now, units)
-      : (latest.data as { title?: string }).title || '新的一刻';
-  banner(author.slice(0, 1), `${author} 记录了 ${text}`);
 }
