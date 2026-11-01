@@ -16,6 +16,7 @@ import {
   effectiveUnits,
   type FamilyMember,
   isAllowedMime,
+  isFormulaData,
   LoginRequest,
   MediaUrlsRequest,
   type MediaUrlsResponse,
@@ -675,6 +676,8 @@ export function createApp({
     const recent = created.filter((r) => {
       if (r.collection === 'moment') return true;
       if (r.collection !== 'event') return false;
+      // 配置奶粉不是一条记录，不通知。
+      if (isFormulaData(r.data)) return false;
       // 补记很久以前的记录不打扰家人。
       return now - (r.data as EventData).at < 3_600_000;
     });

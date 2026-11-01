@@ -270,6 +270,68 @@ describe('离线优先的记录和同步', () => {
     a.engine.stop();
   });
 
+  it('奶粉配置不进时间线，能同步给家人，新版记录的快照原样保留', async () => {
+    const a = device(server);
+    const b = device(server);
+    await a.engine.start();
+    await b.engine.start();
+    const formulaId = randomUUID();
+    await a.store.write('event', formulaId, {
+      type: 'formula',
+      name: '虚构奶粉',
+      basis: 'per100ml',
+      values: { proteinG: 1.4 },
+    });
+    await a.store.write('event', randomUUID(), {
+      ...feed(),
+      milkType: 'formula',
+      formulaId,
+      formula: { name: '虚构奶粉', per100ml: { proteinG: 1.4 } },
+    });
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    const snapshot = b.store.getSnapshot();
+    expect(snapshot.formulas.map((f) => f.id)).toEqual([formulaId]);
+    expect(snapshot.events).toHaveLength(1);
+    const data = snapshot.events[0]?.data;
+    expect(data?.type === 'feed' && data.formula?.per100ml.proteinG).toBe(1.4);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('删掉奶粉后列表里没有了，记录还在', async () => {
+    const a = device(server);
+    await a.engine.start();
+    const formulaId = randomUUID();
+    await a.store.write('event', formulaId, {
+      type: 'formula',
+      name: '虚构奶粉',
+      basis: 'per100ml',
+      values: {},
+    });
+    await a.store.remove(formulaId);
+    expect(a.store.getSnapshot().formulas).toEqual([]);
+    expect(a.db.records.get(formulaId)?.deleted).toBe(true);
+    a.engine.stop();
+  });
+
+  it('降级成 viewer 时奶粉配置和喂奶一起清掉', async () => {
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('event', randomUUID(), {
+      type: 'formula',
+      name: '虚构奶粉',
+      basis: 'per100ml',
+      values: {},
+    });
+    await a.engine.syncNow();
+    server.role = 'viewer';
+    server.hideEvents = true;
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().formulas).toEqual([]);
+    a.engine.stop();
+  });
+
   it('退出登录时清空本地数据', async () => {
     const a = device(server);
     await a.store.write('event', randomUUID(), feed());

@@ -4,6 +4,8 @@ import {
   type CollectionData,
   type DocumentData,
   type EventData,
+  type FormulaData,
+  isFormulaData,
   isNewerVersion,
   type LetterData,
   type MomentData,
@@ -34,17 +36,21 @@ export interface StoredRecord {
   dirty: boolean;
 }
 
-export interface Entry<C extends Collection> {
+export interface RecordEntry<T> {
   id: string;
-  data: CollectionData[C];
+  data: T;
   updatedAt: number;
   dirty: boolean;
 }
 
+export type Entry<C extends Collection> = RecordEntry<CollectionData[C]>;
+
 export interface Snapshot {
   baby: Entry<'baby'> | null;
   /** 按发生时间倒序。 */
-  events: Entry<'event'>[];
+  events: RecordEntry<EventData>[];
+  /** 家庭配置的奶粉。存在 event 集合里，但不是一条记录，所以不进时间线。 */
+  formulas: RecordEntry<FormulaData>[];
   moments: Entry<'moment'>[];
   letters: Entry<'letter'>[];
   documents: Entry<'document'>[];
@@ -54,6 +60,7 @@ export interface Snapshot {
 const emptySnapshot: Snapshot = {
   baby: null,
   events: [],
+  formulas: [],
   moments: [],
   letters: [],
   documents: [],
@@ -95,6 +102,7 @@ export class RecordStore {
     const next: Snapshot = {
       baby: null,
       events: [],
+      formulas: [],
       moments: [],
       letters: [],
       documents: [],
@@ -113,7 +121,8 @@ export class RecordStore {
           }
           break;
         case 'event':
-          next.events.push({ ...base, data: data as EventData });
+          if (isFormulaData(data)) next.formulas.push({ ...base, data });
+          else next.events.push({ ...base, data: data as EventData });
           break;
         case 'moment':
           next.moments.push({ ...base, data: data as MomentData });
@@ -131,6 +140,7 @@ export class RecordStore {
     next.moments.sort(byAtDesc);
     next.letters.sort(byAtDesc);
     next.documents.sort((a, b) => a.updatedAt - b.updatedAt);
+    next.formulas.sort((a, b) => a.data.name.localeCompare(b.data.name));
     this.snapshot = next;
     for (const listener of this.listeners) listener();
   }
