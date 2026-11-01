@@ -698,7 +698,7 @@ export function createApp({
         '你是这个家庭唯一的管理员。请先把另一位家人设为管理员，或者把其他家人都移出家庭，再删除账号。',
       );
     }
-    // 也会顺带处理之前失败的。没做完的留在队列里，由 cli purge-objects 兜底。
+    // 也会顺带处理之前失败的。没做完的留在队列里，由每天的 cli maintenance 兜底。
     background(
       processPendingDeletions(sql, config)
         .then(() => {})
