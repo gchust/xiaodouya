@@ -92,7 +92,7 @@
 
 ## CI
 
-- **CI 不要用 `google_apis` 镜像。** Pixel Launcher 和 Google 服务在 CI 上太重，开机后会弹“isn't responding”挡住 App，现象是流程 01 失败、截图里 App 其实已经渲染。`hide_error_dialogs` 压不住这个弹窗。CI 改用 `target: default`。
+- **CI 模拟器的系统桌面可能卡住，弹“isn't responding”挡住 App。** 现象是流程 01 失败、截图里 App 其实已经渲染。Pixel Launcher 和 AOSP 的 Quickstep 都发生过，换镜像解决不了。`scripts/dismiss-anr.sh` 全程在后台清掉系统组件的 ANR；卡住的是我们自己的 App 时不处理，让测试失败。验证方法：`adb root` 后 `kill -STOP` 桌面进程，再点屏幕。
 - **`upload-artifact` 默认跳过隐藏目录。** 上传 `.artifacts` 要加 `include-hidden-files: true`，否则失败时什么现场都没有。
 - **`setup-android` 默认安装已不存在的 `tools` 包。** 要写 `packages: platform-tools`。
 - **公开仓库的定时任务 60 天没有活动会被自动停用。** 备份流程放在定时任务上要留意这一点，Actions 的 `schedule` 也可能晚点或跳过。

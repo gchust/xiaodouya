@@ -14,7 +14,11 @@ APK="$ROOT/.artifacts/xiaodouya-e2e.apk"
 [ -f "$APK" ] || { echo "找不到 $APK，先运行 pnpm android:build e2e" >&2; exit 1; }
 
 SERVER_PID=""
-cleanup() { [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true; }
+ANR_PID=""
+cleanup() {
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  [ -n "$ANR_PID" ] && kill "$ANR_PID" 2>/dev/null || true
+}
 trap cleanup EXIT
 
 if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
@@ -28,6 +32,10 @@ else
   done
   curl -fs http://localhost:8787/healthz >/dev/null || { echo "服务端没有启动" >&2; exit 1; }
 fi
+
+# 系统桌面偶尔会卡住并弹窗挡住 App，全程在后台清掉。
+bash scripts/dismiss-anr.sh &
+ANR_PID=$!
 
 # 刚开机的模拟器很忙，等它稳定一下再开始。
 sleep "${E2E_SETTLE_SECONDS:-30}"
