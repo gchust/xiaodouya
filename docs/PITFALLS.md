@@ -142,6 +142,7 @@
 - **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 - **测事务模式连接池要加反向对照。** 本地用 PgBouncer（`pool_mode=transaction`、`max_prepared_statements=0`）跑全部测试，再打开 `DB_PREPARE` 跑一次，要看到 `prepared statement does not exist`，才说明这个环境真的能发现问题。
+- **底部标签页切走后不卸载，`useEffect` 只跑一次。** 家人页的用量因此一直是打开时的值，存储满了还写着“已用 0”。要在回到页面时刷新的数据用 `useFocusEffect`。
 - **`scrollUntilVisible` 一看到目标就停。** 滚到区块标题后再断言下面的内容，长列表时内容还在屏幕外。要断言哪一行就滚到哪一行。
 - **本地连续构建后先释放内存。** Gradle 和 Kotlin 守护进程留在后台占几 G，模拟器会因此反复弹 System UI 无响应。先 `./gradlew --stop` 再启动模拟器；这时强杀 systemui 只会让它循环卡住。
 - **E2E 的语言和地区不要依赖默认猜测。** CI 模拟器是 en-US，建档默认会猜成美国，后面所有 `喂奶 130ml` 都会变成盎司。流程 01 要明确选新加坡，改地区的流程结束时要换回来。

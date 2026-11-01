@@ -12,8 +12,8 @@ import {
   volumeUnits,
   weightUnits,
 } from '@xiaodouya/shared';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
@@ -69,10 +69,13 @@ export function FamilyScreen() {
     }
   }, [app.api, isAdmin, showStorage]);
 
-  useEffect(() => {
-    void loadStorage();
-    void app.refreshMe();
-  }, [loadStorage, app.refreshMe]);
+  // 底部标签切走后页面不会卸载，只读一次的话，传完文件回来用量还是旧的。
+  useFocusEffect(
+    useCallback(() => {
+      void loadStorage();
+      void app.refreshMe();
+    }, [loadStorage, app.refreshMe]),
+  );
 
   const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
   const otherName = others.length === 1 ? (others[0]?.label ?? '家人') : '家人';
