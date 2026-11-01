@@ -17,6 +17,7 @@ import {
   kjToKcal,
   lastFeedDefaults,
   type NutrientKey,
+  nutrientAmountText,
   nutrientKeys,
   nutritionEntryText,
   parseCollectionData,
@@ -302,9 +303,36 @@ describe('数据不足：不安慰', () => {
     expect(row(day, 'calciumMg').status).toBe('met');
     const iron = row(day, 'ironMg');
     expect(iron.status).toBe('insufficient');
-    expect(iron.amount).toBe(0);
+    // 不知道就是不知道：显示 0 等于说宝宝没吃到。
+    expect(iron.amount).toBeNull();
+    expect(iron.percent).toBeNull();
+    expect(nutrientAmountText(iron)).toBe('— / 参考 0.27 mg');
     expect(iron.text).toBe('数据不足');
     expect(iron.note).toContain('8 次');
+  });
+
+  it('一次都没算进去时没有数量，不显示 0', () => {
+    const day = assess(fullDay(200, { milkType: 'breast', formula: undefined }));
+    const protein = row(day, 'proteinG');
+    expect(protein.amount).toBeNull();
+    expect(nutrientAmountText(protein)).toBe('— / 参考 9.1 g');
+    expect(nutrientAmountText(row(day, 'energyKcal'))).toBe('—');
+  });
+
+  it('只算进去一部分时写明是已算的量，不当成当天的总量', () => {
+    const day = assess([
+      feed(dayStart + 8 * HOUR, 100),
+      feed(dayStart + 9 * HOUR, 100, { milkType: 'breast', formula: undefined }),
+    ]);
+    expect(nutrientAmountText(row(day, 'proteinG'))).toBe('已算 1.4 g / 参考 9.1 g');
+  });
+
+  it('标签写 0 就显示 0，和没填不一样', () => {
+    const day = assess(fullDay(100, { formula: { name: '虚构', per100ml: { ironMg: 0 } } }));
+    const iron = row(day, 'ironMg');
+    expect(iron.amount).toBe(0);
+    expect(iron.status).toBe('below');
+    expect(nutrientAmountText(iron)).toBe('0.00 mg / 参考 0.27 mg');
   });
 
   it('当天记得太少，可能有漏记，不下结论', () => {

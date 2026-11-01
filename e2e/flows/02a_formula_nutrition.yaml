@@ -168,6 +168,7 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     id: nutrient-ironMg-status
     text: 数据不足
+- assertVisible: — / 参考 0.27 mg
 - assertNotVisible: 达到参考量
 - assertNotVisible: 低于参考量
 - takeScreenshot: .artifacts/e2e-02a-progress

@@ -3,11 +3,11 @@ import {
   assessDayNutrition,
   type EventData,
   formatFullDate,
-  formatNutrientAmount,
   formatVolume,
   formulaDataGaps,
   type NutrientResult,
   type NutrientStatus,
+  nutrientAmountText,
   nutrientMeta,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
@@ -207,7 +207,7 @@ export function NutritionScreen() {
 }
 
 function NutrientRow({ nutrient, last }: { nutrient: NutrientResult; last: boolean }) {
-  const { key, amount, target, percent, status, text, note } = nutrient;
+  const { key, target, percent, status, text, note } = nutrient;
   const fill = percent === null ? 0 : Math.min(percent, 100);
   return (
     <View style={[s.row, last ? null : s.divider]} testID={`nutrient-${key}`}>
@@ -220,10 +220,7 @@ function NutrientRow({ nutrient, last }: { nutrient: NutrientResult; last: boole
           {text}
         </Text>
       </View>
-      <Mono style={s.rowAmount}>
-        {formatNutrientAmount(key, amount)}
-        {target ? ` / 参考 ${formatNutrientAmount(key, target.amount)}` : ''}
-      </Mono>
+      <Mono style={s.rowAmount}>{nutrientAmountText(nutrient)}</Mono>
       {target ? (
         <View style={s.track}>
           <View

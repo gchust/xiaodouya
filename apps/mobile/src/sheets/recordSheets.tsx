@@ -159,6 +159,7 @@ export function FeedSheet({
   if (addingFormula) {
     return (
       <AddFormulaFlow
+        heading="添加奶粉"
         onCancel={() => setAddingFormula(false)}
         onDone={(formulaId) => {
           setAddingFormula(false);

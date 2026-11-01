@@ -222,8 +222,11 @@ export type NutrientStatus = 'progress' | 'met' | 'below' | 'insufficient' | 'no
 
 export interface NutrientResult {
   key: NutrientKey;
-  /** 算进去的部分。不是当天的全部摄入，界面要和状态一起看。 */
-  amount: number;
+  /**
+   * 算进去的部分，不是当天的全部摄入。没有任何一次能算这一项时是 null，
+   * 不能写成 0：0 的意思是“没吃到”，这里的意思是“不知道”。
+   */
+  amount: number | null;
   target: NutrientTarget | null;
   /** 向下取整，差一点的不会显示成 100%。 */
   percent: number | null;
@@ -313,21 +316,22 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
   let solidsNoted = false;
   let medNoted = false;
   const nutrients = nutrientKeys.map((key): NutrientResult => {
-    let amount = 0;
+    let total = 0;
     let missing = 0;
     for (const feed of counted) {
       const value = feed.per100ml[key];
       if (value === undefined) missing += 1;
-      else amount += (value * feed.ml) / 100;
+      else total += (value * feed.ml) / 100;
     }
+    const amount = missing < counted.length ? total : null;
     const target = band?.amounts[key] ?? null;
-    const percent = target ? Math.floor((amount / target.amount) * 100) : null;
+    const percent = target && amount !== null ? Math.floor((amount / target.amount) * 100) : null;
     const note = missing > 0 ? `有 ${missing} 次用的奶粉没填这一项` : null;
     const result = { key, amount, target, percent, note };
     if (blocked || missing > 0) return { ...result, status: 'insufficient', text: '数据不足' };
     if (!target) return { ...result, status: 'no-reference', text: '不作比较' };
     if (!ended) return { ...result, status: 'progress', text: `目前已摄入 ${percent}%` };
-    if (amount >= target.amount) return { ...result, status: 'met', text: '达到参考量' };
+    if (total >= target.amount) return { ...result, status: 'met', text: '达到参考量' };
     // 奶以外的来源没记或没法估算：“够”可以说，“不够”不能说。
     const medMatters = hasMed && SUPPLEMENT_NUTRIENTS.includes(key);
     if (solidsMatter || medMatters) {
@@ -363,4 +367,12 @@ export function nutritionEntryText(day: DayNutrition): string | null {
 export function formatNutrientAmount(key: NutrientKey, amount: number): string {
   const { unit, decimals } = nutrientMeta[key];
   return `${amount.toFixed(decimals)} ${unit}`;
+}
+
+/** 列表里的一行数量。数据不足时写“已算”，不让人把算进去的部分当成当天的总量。 */
+export function nutrientAmountText(nutrient: NutrientResult): string {
+  const { key, amount, target, status } = nutrient;
+  const prefix = status === 'insufficient' ? '已算 ' : '';
+  const head = amount === null ? '—' : `${prefix}${formatNutrientAmount(key, amount)}`;
+  return target ? `${head} / 参考 ${formatNutrientAmount(key, target.amount)}` : head;
 }

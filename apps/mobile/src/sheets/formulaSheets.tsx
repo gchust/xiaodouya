@@ -19,7 +19,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
 import { colors } from '../theme';
 import { useFeedback } from '../ui/overlays';
-import { Button, Chip, Field, Muted } from '../ui/primitives';
+import { Button, Chip, Field, Muted, SectionTitle } from '../ui/primitives';
 
 const MILK_LABELS: Record<MilkType, string> = { formula: '奶粉', breast: '母乳', mixed: '混合' };
 
@@ -119,23 +119,30 @@ export function MilkChooser({
 export function AddFormulaFlow({
   onDone,
   onCancel,
+  heading,
 }: {
   onDone: (id: string) => void;
   onCancel?: () => void;
+  /** 在别的弹层里打开时，那个弹层的标题说明不了现在在做什么。 */
+  heading?: string;
 }) {
   const region = useRegion();
   const [picked, setPicked] = useState<{ preset: FormulaPreset | null } | null>(null);
   if (picked) {
     return (
-      <FormulaEditor
-        preset={picked.preset}
-        initialForm={picked.preset ? presetToForm(picked.preset) : emptyFormulaForm()}
-        onDone={onDone}
-      />
+      <>
+        {heading ? <SectionTitle>{heading}</SectionTitle> : null}
+        <FormulaEditor
+          preset={picked.preset}
+          initialForm={picked.preset ? presetToForm(picked.preset) : emptyFormulaForm()}
+          onDone={onDone}
+        />
+      </>
     );
   }
   return (
     <>
+      {heading ? <SectionTitle>{heading}</SectionTitle> : null}
       <Button
         testID="formula-manual"
         tone="outline"
