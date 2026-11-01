@@ -5,12 +5,15 @@ RUN corepack enable
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/server/package.json apps/server/
 COPY packages/shared/package.json packages/shared/
-# Expo 的依赖服务端用不到；过滤安装可以省下几分钟和几个 GB。
+# 锁文件校验需要 apps/mobile/package.json，但 Expo 的依赖服务端用不到。
+# 仓库默认的 nodeLinker: hoisted 会让 --filter 失效，把 React Native 全部下载一遍，这里必须换掉。
 COPY apps/mobile/package.json apps/mobile/
-RUN pnpm install --frozen-lockfile --filter @xiaodouya/server...
+RUN pnpm install --frozen-lockfile --filter @xiaodouya/server... --node-linker=isolated
 COPY apps/server apps/server
 COPY packages/shared packages/shared
-RUN pnpm --filter @xiaodouya/server build
+# 运行脚本前的依赖检查认的是 hoisted，会发现不一致并重新安装全部依赖，然后报 Broken lockfile。
+# 上面的 --frozen-lockfile 已经校验过了。
+RUN pnpm --config.verify-deps-before-run=false --filter @xiaodouya/server build
 
 FROM node:24-slim
 ENV NODE_ENV=production

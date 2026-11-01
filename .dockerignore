@@ -1,0 +1,16 @@
+# 没有这个文件，开发机上的构建上下文会带上 node_modules、原生工程和 .env。
+.git
+.artifacts
+**/node_modules
+**/dist
+**/.expo
+apps/mobile/android
+apps/mobile/ios
+deploy/backups
+**/.env
+**/.env.*
+**/*.keystore
+**/*.jks
+**/*.apk
+**/*.aab
+**/google-services.json
