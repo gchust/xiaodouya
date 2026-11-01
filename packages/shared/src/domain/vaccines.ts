@@ -96,7 +96,10 @@ export function vaccinesToOffer(
   limit = 4,
 ): VaccineStatus[] {
   const pending = statuses.filter((v) => v.state !== 'done');
-  const offered = pending.slice(0, Math.max(limit, pending.filter((v) => v.state === 'due').length));
+  const offered = pending.slice(
+    0,
+    Math.max(limit, pending.filter((v) => v.state === 'due').length),
+  );
   const chosen = pending.find((v) => v.id === preselect);
   return chosen && !offered.includes(chosen) ? [...offered, chosen] : offered;
 }

@@ -41,7 +41,9 @@ export async function e2ePickFiles(
       },
     ];
   }
-  const file = await fixture(`e2e-${purpose}.png`, (f) => f.write(PNG_BASE64, { encoding: 'base64' }));
+  const file = await fixture(`e2e-${purpose}.png`, (f) =>
+    f.write(PNG_BASE64, { encoding: 'base64' }),
+  );
   return [
     {
       uri: file.uri,

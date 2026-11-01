@@ -71,7 +71,11 @@ export function UploadCard() {
         )}
       </View>
       {progress.failedReason ? (
-        <Text testID="upload-reason" style={{ fontSize: 11, color: colors.danger }} numberOfLines={2}>
+        <Text
+          testID="upload-reason"
+          style={{ fontSize: 11, color: colors.danger }}
+          numberOfLines={2}
+        >
           {progress.failedReason}
         </Text>
       ) : null}

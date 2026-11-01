@@ -188,7 +188,8 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
       // 只记路径、状态和错误原因，不记请求体，原因文字里也不含用户填写的值。
-      if (error.status !== 401) console.warn(`[${c.req.method} ${c.req.path}] ${error.status} ${error.message}`);
+      if (error.status !== 401)
+        console.warn(`[${c.req.method} ${c.req.path}] ${error.status} ${error.message}`);
       return error.getResponse();
     }
     // 只记录错误名和信息：请求体里可能有证件号，不能进日志。

@@ -22,3 +22,6 @@ apps/mobile/ios/
 *.aab
 google-services.json
 GoogleService-Info.plist
+
+# Agent 的 worktree
+.claude/worktrees/

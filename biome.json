@@ -10,7 +10,8 @@
       "!**/ios",
       "!.artifacts",
       "!**/assets/fonts",
-      "!**/assets/src"
+      "!**/assets/src",
+      "!.claude"
     ]
   },
   "formatter": {
@@ -36,7 +37,9 @@
       "style": {
         "noNonNullAssertion": "off"
       },
-      "nursery": { "noFloatingPromises": "error" },
+      "nursery": {
+        "noFloatingPromises": "error"
+      },
       "correctness": {
         "noReactNativeRawText": "off"
       }

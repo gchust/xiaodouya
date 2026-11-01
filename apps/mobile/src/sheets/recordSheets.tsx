@@ -7,8 +7,8 @@ import {
   feedAmountChips,
   medicineSuggestions,
   nextVaccine,
-  vaccinesToOffer,
   vaccineStatuses,
+  vaccinesToOffer,
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
