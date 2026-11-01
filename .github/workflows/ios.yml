@@ -36,13 +36,13 @@ jobs:
       # 只改 E2E 脚本或流程时不用重新编译。键里包含所有会进 App 的文件，内容相同才会命中。
       - name: 恢复已编译的 App
         id: app-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .artifacts/xiaodouya-e2e.app
           key: ios-e2e-app-${{ hashFiles('apps/mobile/app/**', 'apps/mobile/src/**', 'apps/mobile/assets/**', 'apps/mobile/*.ts', 'apps/mobile/*.js', 'apps/mobile/package.json', 'packages/shared/src/**', 'pnpm-lock.yaml', 'scripts/ios-build.sh') }}
       - name: 恢复 CocoaPods 缓存
         if: steps.app-cache.outputs.cache-hit != 'true'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/Library/Caches/CocoaPods
           key: ios-pods-${{ hashFiles('pnpm-lock.yaml') }}
@@ -50,6 +50,13 @@ jobs:
       - name: 编译（模拟器，不签名）
         if: steps.app-cache.outputs.cache-hit != 'true'
         run: bash scripts/ios-build.sh
+      # 编译完马上存，不等整个任务成功：后面的端到端测试失败时，修流程不用再编译一遍。
+      - name: 保存已编译的 App
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .artifacts/xiaodouya-e2e.app
+          key: ${{ steps.app-cache.outputs.cache-primary-key }}
       - name: 启动 Postgres 和 S3
         run: bash scripts/ios-infra.sh
       - run: bash scripts/install-maestro.sh

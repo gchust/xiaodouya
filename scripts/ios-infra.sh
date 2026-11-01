@@ -17,7 +17,7 @@ echo "$WEED_SHA256  $DATA/weed.tar.gz" | shasum -a 256 -c -
 tar -xzf "$DATA/weed.tar.gz" -C "$DATA"
 mkdir -p "$DATA/weed-data"
 nohup "$DATA/weed" server -dir="$DATA/weed-data" -ip=127.0.0.1 -ip.bind=127.0.0.1 -volume.max=20 \
-  -s3 -s3.port=59000 -s3.config=deploy/dev/s3.json >"$LOGS/seaweedfs.log" 2>&1 &
+  -s3 -s3.port=59000 -s3.port.grpc=19000 -s3.config=deploy/dev/s3.json >"$LOGS/seaweedfs.log" 2>&1 &
 
 HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install postgresql@16
 PG_BIN="$(brew --prefix postgresql@16)/bin"
