@@ -7,7 +7,7 @@ appId: com.gchust.xiaodouya
     visible: { id: today-screen }
     timeout: 30000
 # 断网记一条，这时退出会丢数据
-- setAirplaneMode: enabled
+- runFlow: ../subflows/net-off.yaml
 - tapOn: { id: action-feed }
 - tapOn: { id: ml-chip-80 }
 - tapOn: { id: ml-dec }
@@ -36,7 +36,7 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: today-screen }
     timeout: 10000
-- setAirplaneMode: disabled
+- runFlow: ../subflows/net-on.yaml
 - extendedWaitUntil:
     notVisible: { id: sync-status }
     timeout: 90000

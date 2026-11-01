@@ -5,22 +5,35 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: today-screen }
     timeout: 30000
-- setAirplaneMode: enabled
+- runFlow: ../subflows/net-off.yaml
 - tapOn: { id: action-feed }
 - tapOn: { id: ml-chip-60 }
 - tapOn: { id: feed-save }
 - assertVisible: 喂奶 60ml
-- extendedWaitUntil:
-    visible:
-      text: 离线中.*
-    timeout: 30000
+# iOS 上只是连不到服务端，系统仍然报告在线，所以看到的是“正在同步”而不是“离线中”。
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: 离线中.*
+          timeout: 30000
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: 正在同步.*
+          timeout: 30000
 - takeScreenshot: .artifacts/e2e-06-offline
 - killApp
 - launchApp
 - extendedWaitUntil:
     visible: 喂奶 60ml
     timeout: 30000
-- setAirplaneMode: disabled
+- runFlow: ../subflows/net-on.yaml
 - extendedWaitUntil:
     notVisible: { id: sync-status }
     timeout: 90000

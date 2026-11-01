@@ -1,0 +1,16 @@
+# 恢复网络，见 net-off.yaml。
+appId: com.gchust.xiaodouya
+---
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - setAirplaneMode: disabled
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runScript:
+          file: ../helpers/ios-net.js
+          env:
+            STATE: "on"

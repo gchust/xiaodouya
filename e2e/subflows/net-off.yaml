@@ -1,0 +1,16 @@
+# 断网。Android 用系统飞行模式；iOS 模拟器没有，改成断开到服务端的连接，见 e2e/net-proxy.mjs。
+appId: com.gchust.xiaodouya
+---
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - setAirplaneMode: enabled
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - runScript:
+          file: ../helpers/ios-net.js
+          env:
+            STATE: "off"

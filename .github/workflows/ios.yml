@@ -1,0 +1,70 @@
+name: iOS
+
+on:
+  push:
+    branches: [feat/ios-build]
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24.21.0"
+
+jobs:
+  ios-e2e:
+    name: iOS 构建和端到端测试
+    # 上传 App Store 必须用 Xcode 26 和 iOS 26 SDK，这里和正式版用同一代工具。
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          # Maestro 要用。和 Android 的流程保持同一个版本。
+          java-version: "17"
+      - run: pnpm install --frozen-lockfile
+      # 只改 E2E 脚本或流程时不用重新编译。键里包含所有会进 App 的文件，内容相同才会命中。
+      - name: 恢复已编译的 App
+        id: app-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .artifacts/xiaodouya-e2e.app
+          key: ios-e2e-app-${{ hashFiles('apps/mobile/app/**', 'apps/mobile/src/**', 'apps/mobile/assets/**', 'apps/mobile/*.ts', 'apps/mobile/*.js', 'apps/mobile/package.json', 'packages/shared/src/**', 'pnpm-lock.yaml', 'scripts/ios-build.sh') }}
+      - name: 恢复 CocoaPods 缓存
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: ios-pods-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ios-pods-
+      - name: 编译（模拟器，不签名）
+        if: steps.app-cache.outputs.cache-hit != 'true'
+        run: bash scripts/ios-build.sh
+      - name: 启动 Postgres 和 S3
+        run: bash scripts/ios-infra.sh
+      - run: bash scripts/install-maestro.sh
+      - name: 启动 App 并运行端到端测试
+        run: bash scripts/ios-e2e.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: ios-e2e
+          path: |
+            .artifacts/*.png
+            .artifacts/*.json
+            .artifacts/*.log
+            .artifacts/maestro
+          retention-days: 14
+          if-no-files-found: warn
+          # .artifacts 是隐藏目录，默认会被跳过。
+          include-hidden-files: true

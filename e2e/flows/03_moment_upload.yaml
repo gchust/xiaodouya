@@ -20,6 +20,8 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: { id: moment-title }
 - inputText: First smile ${RUN_ID}
+# 弹层要整个抬到键盘上方，overlays.tsx 的 keyboardLift 全靠看这张图确认。
+- takeScreenshot: .artifacts/e2e-03-sheet-keyboard
 - hideKeyboard
 - tapOn: { id: moment-text }
 - inputText: Looked at me and smiled
