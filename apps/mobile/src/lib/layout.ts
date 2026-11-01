@@ -9,6 +9,30 @@ export function gridItemWidth(containerWidth: number, columns: number, gap: numb
   return Math.max(0, Math.floor(width * 100) / 100);
 }
 
+/** 图片按 contain 放进容器后的实际显示尺寸。不知道原图尺寸时按占满容器算。 */
+export function containedSize(
+  containerWidth: number,
+  containerHeight: number,
+  mediaWidth?: number,
+  mediaHeight?: number,
+): { width: number; height: number } {
+  if (!mediaWidth || !mediaHeight) return { width: containerWidth, height: containerHeight };
+  const fit = Math.min(containerWidth / mediaWidth, containerHeight / mediaHeight);
+  return { width: mediaWidth * fit, height: mediaHeight * fit };
+}
+
+/** 放大后的平移量限制在图片边缘刚好贴到容器边缘，既能看到四个角，也不会拖出一片黑。 */
+export function clampPan(
+  offset: number,
+  scale: number,
+  containerSize: number,
+  contentSize: number,
+): number {
+  'worklet';
+  const limit = Math.max(0, (contentSize * scale - containerSize) / 2);
+  return Math.min(limit, Math.max(-limit, offset));
+}
+
 /**
  * 弹层还要再往上抬多少才不被键盘挡住。
  * softwareKeyboardLayoutMode 是 resize，但 edge-to-edge 时系统不一定缩小 App 的窗口。

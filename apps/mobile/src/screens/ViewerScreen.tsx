@@ -1,7 +1,7 @@
 import { formatMonthDay, type MediaRef } from '@xiaodouya/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -14,9 +14,15 @@ import {
   View,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecords } from '../lib/app';
+import { clampPan, containedSize } from '../lib/layout';
 import { MediaImage, useMediaSource } from '../lib/mediaViews';
 import { colors } from '../theme';
 
@@ -50,6 +56,7 @@ export function ViewerScreen() {
 
   const initial = Math.min(Number(params.index ?? 0), Math.max(0, items.length - 1));
   const [index, setIndex] = useState(initial);
+  const [zoomed, setZoomed] = useState(false);
   const list = useRef<FlatList<MediaRef>>(null);
 
   const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -63,6 +70,8 @@ export function ViewerScreen() {
         data={items}
         horizontal
         pagingEnabled
+        // 放大时手指是用来拖动图片的，不能翻页。
+        scrollEnabled={!zoomed}
         initialScrollIndex={initial}
         getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
         keyExtractor={(item) => item.id}
@@ -83,7 +92,7 @@ export function ViewerScreen() {
                 />
               )
             ) : (
-              <ZoomableImage media={item} />
+              <ZoomableImage media={item} onZoomChange={setZoomed} />
             )}
           </View>
         )}
@@ -107,15 +116,63 @@ export function ViewerScreen() {
   );
 }
 
-function ZoomableImage({ media }: { media: MediaRef }) {
+/** 比 1 大一点点就算放大，否则手指一动就锁住翻页。 */
+const ZOOMED_ABOVE = 1.01;
+
+function ZoomableImage({
+  media,
+  onZoomChange,
+}: {
+  media: MediaRef;
+  onZoomChange: (zoomed: boolean) => void;
+}) {
+  const window = useWindowDimensions();
+  const [box, setBox] = useState({ width: window.width, height: window.height });
+  const [zoomed, setZoomed] = useState(false);
+  const content = containedSize(box.width, box.height, media.width, media.height);
   const scale = useSharedValue(1);
   const saved = useSharedValue(1);
+  const x = useSharedValue(0);
+  const y = useSharedValue(0);
+  const savedX = useSharedValue(0);
+  const savedY = useSharedValue(0);
+  const isZoomed = useSharedValue(false);
+
+  useEffect(() => () => onZoomChange(false), [onZoomChange]);
+
+  const reportZoom = (next: boolean) => {
+    setZoomed(next);
+    onZoomChange(next);
+  };
+
   const pinch = Gesture.Pinch()
     .onUpdate((e) => {
-      scale.value = Math.min(5, Math.max(1, saved.value * e.scale));
+      const next = Math.min(5, Math.max(1, saved.value * e.scale));
+      scale.value = next;
+      // 缩小时图片边缘会往里收，平移量要跟着收，否则露出一片黑。
+      x.value = clampPan(x.value, next, box.width, content.width);
+      y.value = clampPan(y.value, next, box.height, content.height);
+      const nowZoomed = next > ZOOMED_ABOVE;
+      if (nowZoomed !== isZoomed.value) {
+        isZoomed.value = nowZoomed;
+        runOnJS(reportZoom)(nowZoomed);
+      }
     })
     .onEnd(() => {
       saved.value = scale.value;
+    });
+  // 没放大时直接禁用，手势完全不参与，左右翻页由 FlatList 处理。
+  const pan = Gesture.Pan()
+    .enabled(zoomed)
+    .maxPointers(1)
+    .minDistance(4)
+    .onStart(() => {
+      savedX.value = x.value;
+      savedY.value = y.value;
+    })
+    .onUpdate((e) => {
+      x.value = clampPan(savedX.value + e.translationX, scale.value, box.width, content.width);
+      y.value = clampPan(savedY.value + e.translationY, scale.value, box.height, content.height);
     });
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
@@ -123,11 +180,25 @@ function ZoomableImage({ media }: { media: MediaRef }) {
       const next = scale.value > 1 ? 1 : 2.5;
       scale.value = withTiming(next);
       saved.value = next;
+      if (next === 1) {
+        x.value = withTiming(0);
+        y.value = withTiming(0);
+      }
+      isZoomed.value = next > ZOOMED_ABOVE;
+      runOnJS(reportZoom)(isZoomed.value);
     });
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.value }, { translateY: y.value }, { scale: scale.value }],
+  }));
   return (
-    <GestureDetector gesture={Gesture.Simultaneous(pinch, doubleTap)}>
-      <Animated.View style={[StyleSheet.absoluteFill, style]}>
+    <GestureDetector gesture={Gesture.Simultaneous(pinch, pan, doubleTap)}>
+      <Animated.View
+        style={[StyleSheet.absoluteFill, style]}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setBox({ width, height });
+        }}
+      >
         <MediaImage
           media={media}
           variant="original"
