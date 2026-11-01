@@ -1,0 +1,61 @@
+# “更多”里的记录：吃药、洗澡，新生宝宝不能记辅食。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+# 吃药：维生素D 是默认值，点一下就记好
+- tapOn: { id: action-more }
+- tapOn: { id: more-med }
+- takeScreenshot: .artifacts/e2e-08-med-sheet
+- tapOn: { id: med-save }
+- extendedWaitUntil:
+    notVisible: { id: med-save }
+    timeout: 10000
+# 时间线要等“今天”页的时钟走到记录之后才显示，最多 15 秒，所以都用长等待。
+- extendedWaitUntil:
+    visible: 吃药 · 维生素D 1 滴
+    timeout: 30000
+# 吃药：自己填药名和剂量
+- tapOn: { id: action-more }
+- tapOn: { id: more-med }
+- tapOn: { id: med-name }
+- eraseText: 10
+- inputText: Paracetamol
+- hideKeyboard
+- tapOn: { id: med-dose }
+- eraseText: 10
+- inputText: 2.5 ml
+- hideKeyboard
+- tapOn: { id: med-save }
+- extendedWaitUntil:
+    notVisible: { id: med-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 吃药 · Paracetamol 2.5 ml
+    timeout: 30000
+# 洗澡
+- tapOn: { id: action-more }
+- tapOn: { id: more-bath }
+- takeScreenshot: .artifacts/e2e-08-bath-sheet
+- tapOn: { id: bath-save }
+- extendedWaitUntil:
+    notVisible: { id: bath-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 洗澡
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-08-after-records
+# 辅食：宝宝不满 6 个月，点了也不会打开记录页
+- tapOn: { id: action-more }
+- assertVisible: { id: more-solids }
+- assertVisible: 6 个月后开放
+- takeScreenshot: .artifacts/e2e-08-solids-disabled
+- tapOn: { id: more-solids }
+- assertNotVisible: { id: solids-note }
+- assertVisible: { id: more-temp }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: more-temp }
+    timeout: 10000

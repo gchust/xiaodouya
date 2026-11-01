@@ -1,0 +1,76 @@
+import type { ConfigContext, ExpoConfig } from 'expo/config';
+
+const version = process.env.APP_VERSION ?? '0.1.0';
+const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
+
+export default ({ config }: ConfigContext): ExpoConfig => ({
+  ...config,
+  name: '小豆芽',
+  slug: 'xiaodouya',
+  scheme: 'xiaodouya',
+  version,
+  orientation: 'portrait',
+  icon: './assets/icon.png',
+  userInterfaceStyle: 'light',
+  backgroundColor: '#f6f1ea',
+  android: {
+    package: process.env.ANDROID_PACKAGE ?? 'com.gchust.xiaodouya',
+    versionCode,
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon.png',
+      backgroundColor: '#c0714f',
+    },
+    softwareKeyboardLayoutMode: 'resize',
+    // 配置了才启用远程推送；没有也能正常构建，见 docs/DEPLOYMENT.md。
+    googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
+    permissions: [
+      'android.permission.RECORD_AUDIO',
+      'android.permission.CAMERA',
+      'android.permission.USE_BIOMETRIC',
+    ],
+  },
+  ios: {
+    bundleIdentifier: process.env.IOS_BUNDLE_ID ?? 'com.gchust.xiaodouya',
+    supportsTablet: false,
+  },
+  extra: {
+    eas: process.env.EAS_PROJECT_ID ? { projectId: process.env.EAS_PROJECT_ID } : undefined,
+  },
+  experiments: { typedRoutes: false },
+  plugins: [
+    'expo-router',
+    'expo-sqlite',
+    'expo-secure-store',
+    'expo-font',
+    'expo-video',
+    'expo-sharing',
+    [
+      'expo-splash-screen',
+      {
+        image: './assets/splash.png',
+        imageWidth: 200,
+        backgroundColor: '#f6f1ea',
+      },
+    ],
+    [
+      'expo-image-picker',
+      {
+        photosPermission: '选择照片和视频，保存到宝宝的回忆里。',
+        cameraPermission: '拍摄证件和资料。',
+      },
+    ],
+    ['expo-audio', { microphonePermission: '录下宝宝的声音，保存到回忆里。' }],
+    ['expo-local-authentication', { faceIDPermission: '验证身份后查看证件夹。' }],
+    ['expo-notifications', { color: '#c0714f', icon: './assets/notification-icon.png' }],
+    [
+      'expo-build-properties',
+      {
+        android: {
+          // 自建服务器和开发环境可能是 http；生产环境请用 https（见部署文档）。
+          usesCleartextTraffic: process.env.ANDROID_ALLOW_HTTP !== '0',
+          buildArchs: (process.env.ANDROID_ARCHS ?? 'arm64-v8a,x86_64').split(','),
+        },
+      },
+    ],
+  ],
+});

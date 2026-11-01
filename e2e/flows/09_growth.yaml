@@ -1,0 +1,46 @@
+# 身高体重：今天页不进时间线，要在资料页的柱状图里看到。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: growth-add }
+# 流程 01 没填出生体重，这时还画不出来
+- assertVisible: 记录一次体重，这里就会画出来。
+- assertNotVisible: { id: growth-chart }
+- tapOn: { id: tab-today }
+- tapOn: { id: action-more }
+- tapOn: { id: more-growth }
+- tapOn: { id: weight-inc }
+- tapOn: { id: weight-inc }
+- tapOn: { id: length-inc }
+- assertVisible: 3.6 kg
+- assertVisible: 50.5 cm
+- takeScreenshot: .artifacts/e2e-09-growth-sheet
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- tapOn: { id: tab-info }
+- scrollUntilVisible:
+    element: { id: growth-chart }
+- assertVisible: "3.6"
+# 第二次从资料页记，默认值接着上一次
+- tapOn: { id: growth-add }
+- assertVisible: 3.6 kg
+- tapOn: { id: weight-inc }
+- assertVisible: 3.7 kg
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- assertVisible: { id: growth-chart }
+- assertVisible: "3.6"
+- assertVisible: "3.7"
+- takeScreenshot: .artifacts/e2e-09-growth-chart

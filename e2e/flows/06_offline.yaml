@@ -1,0 +1,27 @@
+# 半夜没网也能记：断网写入立即可见，恢复后自动同步。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- setAirplaneMode: enabled
+- tapOn: { id: action-feed }
+- tapOn: { id: ml-chip-60 }
+- tapOn: { id: feed-save }
+- assertVisible: 喂奶 60ml
+- extendedWaitUntil:
+    visible:
+      text: 离线中.*
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-06-offline
+- killApp
+- launchApp
+- extendedWaitUntil:
+    visible: 喂奶 60ml
+    timeout: 30000
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    notVisible: { id: sync-status }
+    timeout: 90000
+- takeScreenshot: .artifacts/e2e-06-back-online

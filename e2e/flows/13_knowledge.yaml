@@ -1,0 +1,21 @@
+# 常识卡：资料页按月龄显示，并注明仅供参考。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: knowledge-card }
+- assertVisible: 这个月该知道的
+# 宝宝是今天出生的，应该是 3 个月以下的那一组
+- assertVisible: 吃多少算够
+- takeScreenshot: .artifacts/e2e-13-knowledge
+- scrollUntilVisible:
+    element:
+      text: 仅供参考.*
+- takeScreenshot: .artifacts/e2e-13-knowledge-end

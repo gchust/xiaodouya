@@ -1,0 +1,36 @@
+# 本地开发和集成测试用，不要用于生产（生产见 docker-compose.prod.yml）。
+# S3 用 SeaweedFS：MinIO 官方已不再提供公开的 Docker 镜像。
+name: xiaodouya-dev
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: xiaodouya
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: xiaodouya
+    ports: ["55432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xiaodouya"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: server -dir=/data -ip.bind=0.0.0.0 -volume.max=20 -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+    ports: ["59000:9000"]
+    volumes:
+      - s3data:/data
+      - ./dev/s3.json:/etc/seaweedfs/s3.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O /dev/null http://127.0.0.1:9000/status || wget -q -O /dev/null http://127.0.0.1:9333/cluster/status",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+volumes:
+  pgdata:
+  s3data:

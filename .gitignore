@@ -8,6 +8,8 @@ coverage/
 !.env.example
 .artifacts/
 .expo/
+# 数据库备份里是家庭的真实数据，这是公开仓库
+deploy/backups/
 .claude/settings.local.json
 .DS_Store
 
@@ -22,3 +24,6 @@ apps/mobile/ios/
 *.aab
 google-services.json
 GoogleService-Info.plist
+
+# Agent 的 worktree
+.claude/worktrees/

@@ -1,0 +1,95 @@
+name: Release
+
+# 打 v* 标签时发布：服务端镜像推到 GHCR，签名 APK 放到 GitHub Release。
+# 需要配置的 Secrets 和变量见 docs/DEPLOYMENT.md。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  server-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/server.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-server:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}-server:latest
+
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: 检查必需配置
+        env:
+          API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          [ -n "$API_URL" ] || { echo "::error::请在仓库变量里设置 EXPO_PUBLIC_API_URL"; exit 1; }
+          # 这里先查齐，否则要等 Gradle 跑到签名那一步才失败。
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            [ -n "${!name}" ] || { echo "::error::请在仓库 Secrets 里设置 $name"; exit 1; }
+          done
+      - name: 释放磁盘空间
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.21.0"
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - name: 还原签名和推送配置
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          GOOGLE_SERVICES: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          if [ -n "$GOOGLE_SERVICES" ]; then
+            echo "$GOOGLE_SERVICES" | base64 -d > "$RUNNER_TEMP/google-services.json"
+            echo "GOOGLE_SERVICES_JSON=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+          fi
+      - name: 构建签名 APK
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+          GRADLE_WORKERS: "4"
+          GRADLE_HEAP: 6g
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          export APP_VERSION="$TAG"
+          export APP_VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          bash scripts/android-build.sh release --clean
+          mv .artifacts/xiaodouya-release.apk "xiaodouya-$TAG.apk"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: xiaodouya-*.apk
+          generate_release_notes: true
