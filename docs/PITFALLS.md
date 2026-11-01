@@ -48,6 +48,7 @@
 - **自定义 Tab 栏的类型从 `expo-router/js-tabs` 导入。** expo-router 58 自带 react-navigation，props 是 `emitter` 和 `navigateToTab`，不是 `navigation`。
 - **不要在记录后直接请求系统权限。** 系统弹窗会盖住 Toast 和撤销，用户拒绝后下一次又会弹。用页面上的提示卡，由用户自己点开。
 - **字体子集只有 GB2312 常用字。** 宝宝名字常用集外的字（玥、喆），要依赖系统字体回退，改字体时要在 E2E 里看 `e2e-05-rare-name` 截图。
+- **expo-file-system 的 `copy`、`move`、`write` 是异步的，必须 await。** 同名的 `delete`、`create` 却是同步的，TypeScript 也不报错。漏写之后读到的大小是 0，所有上传都被服务端拒绝。只有在模拟器上真正跑才发现。
 - **Biome 的 `noReactNativeRawText` 认不出包了 Text 的组件。** 已关闭，不要重新打开。
 
 ## Android 构建和模拟器
@@ -75,6 +76,7 @@
 ## 测试方法
 
 - **回归测试要先在修复前的代码上看它失败。** 没失败过的测试不能证明它抓得到问题。这个项目里压测没能复现游标竞态，看到失败才发现测试本身不够。
+- **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 15 秒。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 
 ## 并行开发

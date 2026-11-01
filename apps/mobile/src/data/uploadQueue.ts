@@ -62,6 +62,8 @@ export interface UploadProgress {
   /** 全部等 Wi-Fi 时为 true，界面据此提示而不是假装在传。 */
   waitingForWifi: boolean;
   failedCount: number;
+  /** 第一个失败文件的原因，界面要告诉用户为什么失败。 */
+  failedReason: string | null;
   doneInBatch: number;
 }
 
@@ -84,6 +86,7 @@ export class UploadQueue {
     active: false,
     waitingForWifi: false,
     failedCount: 0,
+    failedReason: null,
     doneInBatch: 0,
   };
   private batchBytes = 0;
@@ -279,6 +282,7 @@ export class UploadQueue {
       active: active && live.length > 0,
       waitingForWifi: live.length > 0 && sendable.length === 0 && this.network !== 'none',
       failedCount: jobs.length - live.length,
+      failedReason: jobs.find((j) => j.failed)?.failed ?? null,
       doneInBatch: this.batchDone,
     };
     if (live.length === 0) {

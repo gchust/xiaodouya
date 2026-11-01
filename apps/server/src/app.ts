@@ -101,6 +101,7 @@ function fail(
   message: string,
 ): never {
   throw new HTTPException(status, {
+    message: `${code}: ${message}`,
     res: new Response(JSON.stringify({ error: { code, message } } satisfies ApiError), {
       status,
       headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -185,7 +186,11 @@ export function createApp({ sql, config, notifier = noopNotifier }: AppContext) 
   const inviteLimiter = new RateLimiter(20, 15 * 60_000);
 
   app.onError((error, c) => {
-    if (error instanceof HTTPException) return error.getResponse();
+    if (error instanceof HTTPException) {
+      // 只记路径、状态和错误原因，不记请求体，原因文字里也不含用户填写的值。
+      if (error.status !== 401) console.warn(`[${c.req.method} ${c.req.path}] ${error.status} ${error.message}`);
+      return error.getResponse();
+    }
     // 只记录错误名和信息：请求体里可能有证件号，不能进日志。
     console.error(
       `[${c.req.method} ${c.req.path}]`,

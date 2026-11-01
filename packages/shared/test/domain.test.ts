@@ -21,6 +21,7 @@ import {
   todayInsight,
   vaccineSchedule,
   vaccineStatuses,
+  vaccinesToOffer,
 } from '../src';
 
 const HOUR = 3_600_000;
@@ -265,6 +266,30 @@ describe('疫苗表', () => {
   it('到期前两周开始提示', () => {
     const statuses = vaccineStatuses(birth, [], at(2026, 2, 20));
     expect(statuses.find((v) => v.id === '6in1-1')?.state).toBe('due');
+  });
+});
+
+describe('接种弹层', () => {
+  const birth = at(2026, 1, 1);
+  it('只列前几剂，不把按钮挤出屏幕', () => {
+    expect(vaccinesToOffer(vaccineStatuses(birth, [], birth))).toHaveLength(4);
+  });
+  it('到期的都要列出来，即使超过上限', () => {
+    const offered = vaccinesToOffer(vaccineStatuses(birth, [], at(2026, 9, 1)));
+    expect(offered.filter((v) => v.state === 'due').length).toBe(offered.length);
+    expect(offered.length).toBeGreaterThan(4);
+  });
+  it('从疫苗本点开的后面某一剂也要在列表里', () => {
+    const ids = vaccinesToOffer(vaccineStatuses(birth, [], birth), '5in1-4').map((v) => v.id);
+    expect(ids).toContain('5in1-4');
+  });
+  it('已接种的不再列出', () => {
+    const statuses = vaccineStatuses(
+      birth,
+      [{ type: 'vaccine', at: birth, vaccineId: 'bcg', name: 'BCG' }],
+      birth,
+    );
+    expect(vaccinesToOffer(statuses).map((v) => v.id)).not.toContain('bcg');
   });
 });
 

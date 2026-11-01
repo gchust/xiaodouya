@@ -88,3 +88,15 @@ export function vaccineStatuses(
 export function nextVaccine(statuses: readonly VaccineStatus[]): VaccineStatus | null {
   return statuses.find((v) => v.state !== 'done') ?? null;
 }
+
+/** 接种弹层只列当前相关的几剂，否则“已接种”按钮会被 13 个选项挤出屏幕。 */
+export function vaccinesToOffer(
+  statuses: readonly VaccineStatus[],
+  preselect?: string,
+  limit = 4,
+): VaccineStatus[] {
+  const pending = statuses.filter((v) => v.state !== 'done');
+  const offered = pending.slice(0, Math.max(limit, pending.filter((v) => v.state === 'due').length));
+  const chosen = pending.find((v) => v.id === preselect);
+  return chosen && !offered.includes(chosen) ? [...offered, chosen] : offered;
+}

@@ -643,6 +643,7 @@ describe('审查发现的客户端问题（回归）', () => {
     await new Promise((r) => setTimeout(r, 30));
     await queue.idle();
     expect(queue.getProgress().failedCount).toBe(1);
+    expect(queue.getProgress().failedReason).toBe('本地文件不见了');
     expect(calls.some((c) => c.startsWith('done:') && c.includes(good.id))).toBe(true);
     queue.stop();
   });

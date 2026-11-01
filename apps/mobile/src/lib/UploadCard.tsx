@@ -70,6 +70,11 @@ export function UploadCard() {
           <Mono style={{ fontSize: 12, color: colors.muted }}>{percent}%</Mono>
         )}
       </View>
+      {progress.failedReason ? (
+        <Text testID="upload-reason" style={{ fontSize: 11, color: colors.danger }} numberOfLines={2}>
+          {progress.failedReason}
+        </Text>
+      ) : null}
       <View style={s.track}>
         <View style={[s.fill, { width: `${percent}%` }]} />
       </View>

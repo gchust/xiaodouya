@@ -18,11 +18,11 @@ trailer<</Root 1 0 R>>
 %%EOF
 `;
 
-function fixture(name: string, write: (file: File) => void): File {
+async function fixture(name: string, write: (file: File) => unknown): Promise<File> {
   const file = new File(Paths.cache, name);
   if (file.exists) file.delete();
   file.create();
-  write(file);
+  await write(file);
   return file;
 }
 
@@ -30,7 +30,7 @@ export async function e2ePickFiles(
   purpose: 'moment' | 'document-photo' | 'document-pdf',
 ): Promise<PickedFile[]> {
   if (purpose === 'document-pdf') {
-    const file = fixture('e2e-sample.pdf', (f) => f.write(PDF_TEXT));
+    const file = await fixture('e2e-sample.pdf', (f) => f.write(PDF_TEXT));
     return [
       {
         uri: file.uri,
@@ -41,7 +41,7 @@ export async function e2ePickFiles(
       },
     ];
   }
-  const file = fixture(`e2e-${purpose}.png`, (f) => f.write(PNG_BASE64, { encoding: 'base64' }));
+  const file = await fixture(`e2e-${purpose}.png`, (f) => f.write(PNG_BASE64, { encoding: 'base64' }));
   return [
     {
       uri: file.uri,

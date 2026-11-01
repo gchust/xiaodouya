@@ -36,6 +36,7 @@
       "style": {
         "noNonNullAssertion": "off"
       },
+      "nursery": { "noFloatingPromises": "error" },
       "correctness": {
         "noReactNativeRawText": "off"
       }

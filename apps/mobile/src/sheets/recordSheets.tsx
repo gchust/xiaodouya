@@ -7,6 +7,7 @@ import {
   feedAmountChips,
   medicineSuggestions,
   nextVaccine,
+  vaccinesToOffer,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
@@ -517,7 +518,7 @@ export function VaccineSheet({ birthAt, preselect }: { birthAt: number; preselec
     events.map((e) => e.data),
     Date.now(),
   );
-  const pending = statuses.filter((v) => v.state !== 'done');
+  const pending = vaccinesToOffer(statuses, preselect);
   const [selected, setSelected] = useState(preselect ?? nextVaccine(statuses)?.id ?? '');
   const dose = pending.find((v) => v.id === selected);
   return (

@@ -26,7 +26,11 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { IS_E2E } from '../lib/config';
 import { colors, fonts, motion, spacing } from '../theme';
+
+/** CI 的模拟器取一次界面就要好几秒，E2E 构建放长一些，避免点撤销时已经消失、点到下面的内容。 */
+const TOAST_MS = IS_E2E ? 15_000 : 3600;
 
 // ─── 底部弹层 ────────────────────────────────────────────
 
@@ -271,7 +275,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       toast(message, options) {
         if (toastTimer.current) clearTimeout(toastTimer.current);
         setToast({ message, undo: options?.undo });
-        toastTimer.current = setTimeout(() => setToast(null), options?.durationMs ?? 3600);
+        toastTimer.current = setTimeout(() => setToast(null), options?.durationMs ?? TOAST_MS);
       },
       banner(initial, message) {
         if (bannerTimer.current) clearTimeout(bannerTimer.current);

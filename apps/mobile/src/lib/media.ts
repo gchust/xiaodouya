@@ -141,7 +141,7 @@ async function makeThumbnail(
     const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
     const target = localFile(id, 'thumb');
     if (target.exists) target.delete();
-    new File(saved.uri).move(target);
+    await new File(saved.uri).move(target);
     return { uri: target.uri, size: target.size ?? 0 };
   } catch {
     // 缩略图失败不阻止上传：界面会退回显示原图或占位。
@@ -161,8 +161,12 @@ export async function queueForUpload(
   const { id, scope } = options;
   const target = localFile(id, 'original');
   if (target.exists) target.delete();
-  new File(file.uri).copy(target);
+  await new File(file.uri).copy(target);
   const size = target.size ?? file.size;
+  if (!size) {
+    target.delete();
+    throw new Error(`${file.name ?? '这个文件'}是空的，没有添加`);
+  }
   const thumb = await makeThumbnail(file, id);
   const wifiOnly = file.kind === 'video' && options.videoWifiOnly;
   const jobs: Omit<UploadJob, 'key' | 'attempts'>[] = [];
