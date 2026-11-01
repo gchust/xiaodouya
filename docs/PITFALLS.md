@@ -81,6 +81,7 @@
 
 ## CI
 
+- **CI 模拟器刚开机时，系统桌面可能弹“isn't responding”，挡住 App。** 现象是流程 01 就失败，但截图里 App 已正常渲染。`scripts/e2e.sh` 已关闭错误弹窗并等待稳定。
 - **`upload-artifact` 默认跳过隐藏目录。** 上传 `.artifacts` 要加 `include-hidden-files: true`，否则失败时什么现场都没有。
 - **`setup-android` 默认安装已不存在的 `tools` 包。** 要写 `packages: platform-tools`。
 
