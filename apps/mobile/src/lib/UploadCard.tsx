@@ -1,3 +1,4 @@
+import { quotaStatus } from '@xiaodouya/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -13,7 +14,7 @@ import { uploadCardStatus } from './uploadStatus';
  * 它盖在页面标题和返回链接上面，所以可以关掉，而且除了自己的按钮，点击都要穿透给下面的页面。
  */
 export function UploadCard() {
-  const { uploads, sessionState } = useApp();
+  const { uploads, sessionState, api } = useApp();
   const progress = useUploadProgress();
   const insets = useSafeAreaInsets();
   const { toast } = useFeedback();
@@ -47,8 +48,16 @@ export function UploadCard() {
     if (wasActive.current && progress.total === 0 && progress.failedCount === 0) {
       wasActive.current = false;
       toast('文件都上传好了');
+      // 这时候提醒快满了最有用：用户刚传完，知道是什么占了空间。读不到就算了，下次再说。
+      void api
+        .storageUsage()
+        .then((usage) => {
+          const { warning } = quotaStatus(usage);
+          if (warning) toast(warning);
+        })
+        .catch(() => {});
     }
-  }, [progress.total, progress.failedCount, toast]);
+  }, [progress.total, progress.failedCount, toast, api]);
 
   const style = useAnimatedStyle(() => ({
     opacity: visible.value,

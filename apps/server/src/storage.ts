@@ -127,17 +127,62 @@ function client(s: ResolvedStorage, endpoint: string | undefined): S3Client {
   });
 }
 
+/**
+ * 把声明的大小签进链接。否则拿到链接的人可以传任意大小，还能在 complete 校验之后用同一个链接覆盖成大文件，
+ * 配额和大小限制都形同虚设。complete 时的 HEAD 校验仍然保留，它才是最终依据。
+ */
 export async function presignUpload(
   s: ResolvedStorage,
   key: string,
   mime: string,
+  size: number,
   expiresIn: number,
+  bindSize = true,
 ): Promise<string> {
+  if (!bindSize) {
+    return getSignedUrl(
+      client(s, s.publicEndpoint),
+      new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime }),
+      { expiresIn },
+    );
+  }
   return getSignedUrl(
     client(s, s.publicEndpoint),
-    new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime }),
-    { expiresIn },
+    new PutObjectCommand({ Bucket: s.bucket, Key: key, ContentType: mime, ContentLength: size }),
+    { expiresIn, signableHeaders: new Set(['content-length']) },
   );
+}
+
+/**
+ * 确认这个存储真的按签名校验大小：错的大小被拒绝，对的大小能传上去。
+ * 上线前对真实存储跑一次（`cli check-upload-size`）。开发用的 SeaweedFS 通过不代表 R2 也通过，
+ * 而这一步要是不支持，所有上传都会失败。
+ */
+export async function checkUploadSizeBinding(
+  s: ResolvedStorage,
+): Promise<{ ok: boolean; message: string }> {
+  const key = `.xiaodouya-size-check-${crypto.randomUUID()}`;
+  const mime = 'application/octet-stream';
+  const url = await presignUpload(s, key, mime, 16, 300);
+  const put = async (size: number) =>
+    (
+      await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': mime },
+        body: new Uint8Array(size),
+      })
+    ).status;
+  try {
+    const wrong = await put(17);
+    const right = await put(16);
+    const ok = wrong >= 400 && wrong < 500 && right >= 200 && right < 300;
+    return {
+      ok,
+      message: `声明 16 字节：传 17 字节返回 ${wrong}，传 16 字节返回 ${right}`,
+    };
+  } finally {
+    await deleteObject(s, key);
+  }
 }
 
 export async function presignDownload(

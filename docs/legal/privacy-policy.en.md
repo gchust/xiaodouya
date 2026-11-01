@@ -111,14 +111,14 @@ So wherever you live, your information may be transferred to Singapore, the Unit
 
 ## 8. How long we keep it
 
-We currently have no rule that deletes data automatically after a set time. Your content is kept until you delete the account or family.
+Except for the files described below, we currently have no rule that deletes data automatically after a set time. Your content is kept until you delete the account or family.
 
 | Information | How long |
 |---|---|
 | Account | Until the account is deleted `〔In development〕` |
 | Family content | Until the family is deleted `〔In development〕` |
 | **A single record you delete** | Disappears from the app immediately, but **its content stays on the server** until the account or family is deleted. This lets deletions and undo sync to every family phone |
-| **Files in a moment or document you delete** | **The files stay in storage** until the account or family is deleted `〔In development〕` |
+| **Files in a moment or document you delete** | On our storage: **kept for 30 days so undo still works, then permanently deleted**, unless another record still uses them. On storage your family set up itself: the files stay there until you remove them |
 | Sign-in records | 365 days, extended automatically with use. They stop working as soon as you sign out. Expired records are not currently cleaned up |
 | Invitation codes | Expire after 7 days. The invitation record is kept |
 | Push tokens | Deleted when you sign out |

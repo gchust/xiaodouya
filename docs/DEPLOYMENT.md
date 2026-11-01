@@ -29,7 +29,7 @@
 | **免费版没有自动备份** | 数据库出事就全没了 | 必须配置第 8 步的备份，并且演练一次恢复 |
 | **一周没有足够的数据库活动，项目会被暂停** | 暂停后 App 连不上服务器，手机上的记录还在，恢复后接着同步 | 全家天天用一般不会触发，每天的备份也是真实的数据库活动，但 Supabase 没有承诺这样一定不会暂停。暂停后到控制台点 Restore。不要为了防暂停写假请求 |
 
-其他额度（以 [Supabase 定价页](https://supabase.com/pricing)为准）：数据库 500 MB、流量 5 GB、Edge Function 调用每月 50 万次。App 在前台时每台手机每 25 秒调用一次长轮询，也就是每小时 144 次。
+其他额度（以 [Supabase 定价页](https://supabase.com/pricing)为准）：数据库 500 MB、流量 5 GB、Edge Function 调用每月 50 万次。App 在前台时每台手机每 25 秒调用一次长轮询，也就是每小时 144 次。能放多少家庭、什么时候要升级，算法见 [CAPACITY.md](CAPACITY.md)：免费版最先到的是调用次数，约 100 家。
 
 新记录最多晚 2 秒通知到家人：跨实例只能查数据库，每 2 秒查一次。
 
@@ -233,6 +233,48 @@ DATABASE_URL='<Session pooler 连接串>' DB_SSL=require \
   pnpm --filter @xiaodouya/server cli reset-password someone@example.com
 ```
 
+**定时清理（必须配）：** 清理放弃的上传、删除满 30 天的文件和过期的限流计数。不配的话，已删除的文件一直占着 R2。在仓库添加 Variable `MAINTENANCE_ENABLED`，值是 `true`，`.github/workflows/maintenance.yml` 每天跑一次，用备份已有的那些 Secret，不需要 `APP_SECRET`。到 Actions 页面手动运行一次，日志最后一行是计数：
+
+```json
+{"pendingRemoved":0,"trashPurged":0,"unattachedPurged":0,"rescued":0,"failed":0,"rateLimitsRemoved":3}
+```
+
+`rescued` 不是 0 说明同步时的标记有 Bug（文件没被删，已经救回来了），要查。`failed` 不是 0 时命令退出码是 1，下次会重试。
+
+**给单个家庭调配额**（默认值见下面的参数表）：
+
+```sql
+UPDATE families SET quota_mb = 20480 WHERE id = '<家庭 id>';  -- 20 GB；0 表示不限；NULL 恢复默认
+```
+
+**升级到带配额的版本（已上线的项目，只需要做一次）：** v0.1.0 的 APK 不用更新也能继续用：空间满时它显示服务端的那句话，有重试按钮。S3 表单还在它的界面上，保存时显示“这台服务器不允许自定义存储”。
+
+```bash
+# 1. 先确认 R2 接受把大小签进链接。不通过的话所有上传都会失败，要先 supabase secrets set S3_BIND_UPLOAD_SIZE=false
+S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_FORCE_PATH_STYLE=true \
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli check-upload-size
+# 2. 迁移。旧函数在新表结构上能继续跑，出问题可以只回滚函数
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli migrate
+# 3. 部署函数，见上面
+```
+
+已有家庭的文件从第一天起就算配额，超额的只是传不了新文件。迁移时，已删除记录里的文件进入待清理，从迁移当天算 30 天。
+
+**打开 `MAINTENANCE_ENABLED` 之前先看一眼会清掉什么。** 上传超过 30 天、从没有未删除的记录提到的文件，第一次运行就会被彻底删除，不再等宽限期。这些文件在 App 里本来就看不到，但它们是升级前就有的数据，不能恢复：
+
+```sql
+SELECT count(*), sum(size) FROM media
+WHERE status = 'ready' AND storage_config_id IS NULL AND NOT attached AND unreferenced_at IS NULL
+  AND created_at < now() - interval '30 days';
+```
+
+部署后**确认取到的是客户端地址**。依据只是一条没有官方回复的[社区讨论](https://github.com/orgs/supabase/discussions/34647)，它说 `x-forwarded-for` 是“伪造的,真实的”，而且讨论的是数据库接口，不是函数：
+
+1. 用一个**已注册**的邮箱，连续注册 21 次，每次在 `X-Forwarded-For` 里换一个假地址。前 20 次应该是 409，第 21 次是 429。如果一直是 409，说明地址能被伪造。
+2. 马上换一个网络（比如手机热点）再试一次，应该是 409。如果是 429，说明大家被算成了同一个来源，**全站每小时只能注册 20 个人**。
+
+任何一步不对，就改成 `CLIENT_IP_HEADER=cf-connecting-ip`（同一条讨论里提到它带真实地址，也没有官方确认）再试。都不行就设 `RATE_REGISTER_PER_IP_HOUR=0`，只留全站上限。
+
 日志在控制台的 **Edge Functions → api → Logs**。
 
 本地调试函数（需要 `pnpm dev:infra` 和 Deno）：`pnpm test:edge`。
@@ -364,6 +406,12 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec ser
   node dist/cli.mjs reset-password someone@example.com
 ```
 
+用了默认存储（`S3_*`）的话，每天清理一次放弃的上传和删除满 30 天的文件。用 App 里配置的存储时不需要，这个命令不碰用户自己的 Bucket：
+
+```cron
+37 4 * * * cd /path/to/xiaodouya && docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T server node dist/cli.mjs maintenance
+```
+
 ---
 
 ## 二、App 构建和分发
@@ -476,9 +524,20 @@ pnpm android:build release --clean
 | `POSTGRES_PASSWORD`               | 是   | —                                        | 数据库密码。用 `openssl rand -hex 24` 生成，只含十六进制字符才不会破坏连接串                              |
 | `APP_SECRET`                      | 是   | —                                        | 至少 32 字节的 base64，用 `openssl rand -base64 32` 生成。加密存储密钥。不要更换，要单独备份              |
 | `ALLOW_SIGNUP`                    | 否   | `true`                                   | `false` 时只有持邀请码才能注册                                                                            |
-| `MAX_UPLOAD_MB`                   | 否   | `4096`                                   | 单个文件的大小上限。R2 和 S3 单次上传上限都是 5 GB，不要超过                                              |
+| `MAX_UPLOAD_MB`                   | 否   | `4096`                                   | 单个文件的总上限。R2 和 S3 单次上传上限都是 5 GB，不要超过                                                |
+| `MAX_IMAGE_MB`、`MAX_AUDIO_MB`、`MAX_DOCUMENT_MB` | 否 | `50`、`200`、`50`                   | 各类文件的上限，同时受 `MAX_UPLOAD_MB` 限制。证件不管是照片还是 PDF 都算证件                              |
+| `MAX_VIDEO_MB`                    | 否   | `1024`（Compose 是 `4096`）              | 视频的上限                                                                                                |
+| `FAMILY_QUOTA_MB`                 | 否   | `5120`（Compose 是 `0`）                 | 每个家庭在默认存储上的配额，`0` 不限。依据见 [CAPACITY.md](CAPACITY.md)。单个家庭可以单独设置，见上文     |
+| `FAMILY_RECORDS_MB`               | 否   | `100`                                    | 每个家庭的记录总量，`0` 不限。正常家庭每年约 0.7 MB，防的是有人把数据库写满                               |
+| `MEDIA_TRASH_DAYS`                | 否   | `30`                                     | 记录删除后文件保留多少天。**函数和定时任务要设成一样**                                                    |
+| `CLIENT_IP_HEADER`                | 否   | `x-forwarded-for`                        | 从哪个请求头取客户端地址。Caddy 覆盖了这个头，是可信的；Supabase 要按上文确认                             |
+| `CLIENT_IP_POSITION`              | 否   | `last`                                   | 取这个头的第一段还是最后一段（`first`、`last`）。代理通常是追加，客户端能伪造前面的。取到内网地址算取不到 |
+| `RATE_REGISTER_PER_IP_HOUR`       | 否   | `20`                                     | 每个来源每小时能注册几次，`0` 不限。取不到来源时不按来源限制                                              |
+| `RATE_REGISTER_GLOBAL_HOUR`       | 否   | `1000`                                   | 全站每小时能注册几次，`0` 不限。换地址绕不过。爆发式增长时要调高                                          |
+| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次                                        |
+| `RATE_SYNC_PER_10MIN`             | 否   | `600`                                    | 每人每 10 分钟同步的次数，`0` 不限。被限流时 App 退避后自动重试，不丢数据                                 |
 | `SERVER_IMAGE`                    | 否   | `ghcr.io/gchust/xiaodouya-server:latest` | 服务端镜像，可以固定到某个版本，比如 `:v0.1.0`                                                            |
-| `ALLOW_CUSTOM_STORAGE`            | 否   | `true`                                   | `false` 时只用下面的默认存储，App 里不能改                                                                |
+| `ALLOW_CUSTOM_STORAGE`            | 否   | 配了 `S3_*` 时 `false`，否则 `true`（Compose 是 `true`） | `false` 时只用下面的默认存储，App 显示用量页，没有 S3 表单。已经在用自己存储的家庭不受影响，还能改配置 |
 | `ALLOW_PRIVATE_STORAGE_ENDPOINTS` | 否   | `false`                                  | 是否允许内网或 http 的存储地址。自建内网 MinIO 才需要打开。默认关闭是为了防止管理员探测服务器内网（SSRF） |
 | `PUSH_ENABLED`                    | 否   | `false`                                  | 启用家人记录的远程推送                                                                                    |
 | `EXPO_ACCESS_TOKEN`               | 否   | —                                        | Expo 开启推送安全时需要                                                                                   |
@@ -499,6 +558,7 @@ pnpm android:build release --clean
 | `S3_ACCESS_KEY_ID`     | 访问密钥 ID                                                                                      |
 | `S3_SECRET_ACCESS_KEY` | 访问密钥 Secret                                                                                  |
 | `S3_FORCE_PATH_STYLE`  | R2 和大多数兼容存储用 `true`，AWS S3 用 `false`                                                  |
+| `S3_BIND_UPLOAD_SIZE`  | 默认 `true`，把声明的大小签进上传链接。`cli check-upload-size` 不通过时才关掉，文件大小仍会在上传完成时校验 |
 
 各服务商怎么填：
 
@@ -509,7 +569,7 @@ pnpm android:build release --clean
 | 阿里云 OSS（新加坡） | `https://oss-ap-southeast-1.aliyuncs.com`       | `ap-southeast-1` | `false`               |
 | MinIO                | `https://minio.example.com`                     | `us-east-1`      | `true`                |
 
-### App 内的存储设置（「家人 → 存储」，仅管理员）
+### App 内的存储设置（「家人 → 存储」，仅管理员，且服务器允许自定义存储）
 
 | 字段                          | 说明                                             |
 | ----------------------------- | ------------------------------------------------ |
