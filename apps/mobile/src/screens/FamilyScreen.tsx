@@ -81,9 +81,6 @@ export function FamilyScreen() {
     }, [loadStorage, app.refreshMe]),
   );
 
-  const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
-  const otherName = others.length === 1 ? (others[0]?.label ?? '家人') : '家人';
-
   const signOut = () => {
     const unsynced = pendingCount > 0 || pendingFiles > 0;
     sheet.open('退出登录', () => (
@@ -185,10 +182,10 @@ export function FamilyScreen() {
         ) : null}
       </ListCard>
 
-      <View style={s.section}>
-        <SectionTitle>同步与提醒</SectionTitle>
-        <ListCard>
-          {canRecord ? (
+      {canRecord ? (
+        <View style={s.section}>
+          <SectionTitle>提醒</SectionTitle>
+          <ListCard>
             <Toggle
               testID="pref-feed"
               label="喂奶提醒"
@@ -198,25 +195,11 @@ export function FamilyScreen() {
                 void app.updatePrefs({ feedReminder: v });
                 if (v) void ensureNotificationPermission();
               }}
+              last
             />
-          ) : null}
-          <Toggle
-            testID="pref-family"
-            label={`${otherName}记录时通知我`}
-            sub="不用再问「刚刚喂了没」"
-            value={prefs.familyNotify}
-            onChange={(v) => void app.updatePrefs({ familyNotify: v })}
-          />
-          <Toggle
-            testID="pref-night"
-            label="夜间安静"
-            sub="23:00–07:00 只提醒喂奶"
-            value={prefs.quietNight}
-            onChange={(v) => void app.updatePrefs({ quietNight: v })}
-            last
-          />
-        </ListCard>
-      </View>
+          </ListCard>
+        </View>
+      ) : null}
 
       <View style={s.section}>
         <SectionTitle>设置</SectionTitle>
