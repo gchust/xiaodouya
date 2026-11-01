@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { DownloadButton } from '../lib/DownloadButton';
+import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import {
   openDocumentFile,
@@ -150,6 +152,8 @@ export function DocumentScreen({ id }: { id: string }) {
     }
   };
 
+  // 文件名只用文件自己的名字或证件名称，证件号码不能出现在手机的文件列表里。
+  const fileNames = downloadFileNames(data.files, { title: data.name });
   const number = data.number
     ? showNumber
       ? data.number
@@ -242,7 +246,7 @@ export function DocumentScreen({ id }: { id: string }) {
                     testID={`doc-file-${file.name ?? file.id}`}
                     accessibilityRole="button"
                     accessibilityLabel={file.name ?? '文件'}
-                    style={s.file}
+                    style={s.fileOpen}
                     onPress={() => openFile(file)}
                   >
                     <View style={s.preview}>
@@ -260,17 +264,26 @@ export function DocumentScreen({ id }: { id: string }) {
                       {file.name ?? '文件'}
                     </Text>
                   </Pressable>
-                  <View style={s.fileFoot}>
+                  <View style={s.fileMeta}>
                     <Muted style={{ fontSize: 10 }}>{formatBytes(file.size)}</Muted>
-                    <Pressable
-                      testID={`doc-file-remove-${file.name ?? file.id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`移除${file.name ?? '文件'}`}
-                      hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-                      onPress={() => void removeFile(file)}
-                    >
-                      <Text style={{ fontSize: 11, color: colors.muted }}>移除</Text>
-                    </Pressable>
+                    <View style={s.fileActions}>
+                      <DownloadButton
+                        media={file}
+                        fileName={fileNames.get(file.id) ?? data.name}
+                        sensitive
+                        testID={`doc-file-download-${file.name ?? file.id}`}
+                      />
+                      <Pressable
+                        testID={`doc-file-remove-${file.name ?? file.id}`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`移除${file.name ?? '文件'}`}
+                        // 左边紧挨着下载按钮（它的热区是 12），这边不能再往左扩，否则会点错。
+                        hitSlop={{ top: 14, bottom: 14, left: 4, right: 14 }}
+                        onPress={() => void removeFile(file)}
+                      >
+                        <Text style={{ fontSize: 11, color: colors.muted }}>移除</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
               ))}
@@ -412,8 +425,10 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   fileHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   files: { flexDirection: 'row', flexWrap: 'wrap', gap: FILE_GAP },
-  file: { gap: 6 },
-  fileFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  file: { gap: 2 },
+  fileOpen: { gap: 6 },
+  fileMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  fileActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   preview: {
     aspectRatio: 3 / 4,
     borderRadius: 10,
