@@ -53,6 +53,7 @@ import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+import { useWidgetLink } from '../widgets/useWidgetLink';
 
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
@@ -68,6 +69,17 @@ export function TodayScreen() {
   const now = Date.now();
   const [refreshing, setRefreshing] = useState(false);
   const [changingAvatar, setChangingAvatar] = useState(false);
+  useWidgetLink({
+    ready: Boolean(baby) && app.role !== 'viewer',
+    openEvent: (id) => {
+      const entry = events.find((e) => e.id === id);
+      if (!entry) return;
+      sheet.open(describeEvent(entry.data, Date.now(), units), () => (
+        <EventActionsSheet id={entry.id} event={entry.data} />
+      ));
+    },
+    openFeed: () => sheet.open('喂奶', () => <FeedSheet />),
+  });
 
   if (!baby) return <SyncingPlaceholder />;
   const birthAt = baby.data.birthAt;

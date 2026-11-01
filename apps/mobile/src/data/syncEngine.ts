@@ -25,7 +25,9 @@ export interface SyncEvents {
   onSynced?(): void;
 }
 
-const ROLE_KEY = 'role';
+export const ROLE_KEY = 'role';
+/** 最后一次同步成功的时间，小工具要如实显示数据新到什么时候。 */
+export const LAST_SYNC_KEY = 'lastSyncAt';
 const OUTBOX_BATCH = 200;
 /**
  * 服务端的请求体上限是 5 MB。超了会一直 413，退避重试也没用，后面的记录全被堵住。
@@ -114,6 +116,24 @@ export class SyncEngine {
     return this.running;
   }
 
+  /**
+   * 只同步一轮，不开长轮询，也不安排重试。给没有界面在跑的后台任务（桌面小工具）用：
+   * 失败了记录还在发件箱里，下一次同步会接着传。
+   */
+  syncOnce(): Promise<void> {
+    if (!this.stopped) return this.syncNow();
+    if (this.running) return this.running;
+    this.running = (async () => {
+      this.online = true;
+      this.cursor = await this.db.getCursor();
+      this.lastRole = (await this.db.getMeta(ROLE_KEY)) as Role | null;
+      await this.loop();
+    })().finally(() => {
+      this.running = null;
+    });
+    return this.running;
+  }
+
   private async loop(): Promise<void> {
     do {
       this.again = false;
@@ -157,6 +177,7 @@ export class SyncEngine {
         if (!response.hasMore && !moreToSend && !resync) break;
       }
       this.retryMs = MIN_RETRY_MS;
+      await this.db.setMeta(LAST_SYNC_KEY, String(Date.now()));
       this.events.onStatus?.('idle');
       this.events.onSynced?.();
     } catch {

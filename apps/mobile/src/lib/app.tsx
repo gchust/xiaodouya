@@ -28,25 +28,24 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { AppState } from 'react-native';
-import { SqliteDb } from '../data/sqlite';
-import { RecordStore, type Snapshot } from '../data/store';
-import { SyncEngine, type SyncStatus } from '../data/syncEngine';
+import { getCoreServices } from '../data/services';
+import type { SqliteDb } from '../data/sqlite';
+import type { RecordStore, Snapshot } from '../data/store';
+import type { SyncEngine, SyncEvents, SyncStatus } from '../data/syncEngine';
 import { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
+import { scheduleWidgetRefresh } from '../widgets/controller';
 import { shouldOfferVerifyStep } from './accountLogic';
 import { accountText } from './accountText';
-import { Api, ApiFailure } from './api';
+import { type Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
 import { clearLocalMedia, createUploadTransport } from './media';
 import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
+import { ME_KEY, OWNER_KEY, SERVER_KEY, TOKEN_KEY } from './storedSession';
 
-const TOKEN_KEY = 'session.token';
-const SERVER_KEY = 'session.server';
-const ME_KEY = 'session.me';
-const OWNER_KEY = 'session.owner';
 const SYNCED_KEY = 'synced';
 /** 跳过邮箱验证的账号 id。 */
 const VERIFY_SKIPPED_KEY = 'session.verifySkipped';
@@ -161,32 +160,26 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const db = await SqliteDb.open();
-      const api = new Api();
-      const store = new RecordStore(db);
-      await store.load();
+      // 小工具的后台任务和界面在同一个 JS 运行环境，必须共用这一份，否则界面看不到小工具的写入。
+      const { db, api, store, engine, syncEvents } = await getCoreServices();
       const uploads = new UploadQueue(db, createUploadTransport(api));
-      const engine = new SyncEngine(
-        store,
-        db,
-        { sync: (r) => api.sync(r), wait: (c, s) => api.syncWait(c, s) },
-        {
-          onStatus: setSyncStatus,
-          onRemote: (records) =>
-            announceRemote(
-              records,
-              meRef.current,
-              effectiveUnits(meRef.current?.prefs.units, store.getSnapshot().baby?.data.region),
-              feedbackRef.current.banner,
-            ),
-          onRejected: (count) =>
-            feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
-          onSynced: () => {
-            setHasSynced(true);
-            void db.setMeta(SYNCED_KEY, '1');
-          },
+      Object.assign(syncEvents, {
+        onStatus: setSyncStatus,
+        onRemote: (records: ServerRecord[]) =>
+          announceRemote(
+            records,
+            meRef.current,
+            effectiveUnits(meRef.current?.prefs.units, store.getSnapshot().baby?.data.region),
+            feedbackRef.current.banner,
+          ),
+        onRejected: (count: number) =>
+          feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
+        onSynced: () => {
+          setHasSynced(true);
+          void db.setMeta(SYNCED_KEY, '1');
+          scheduleWidgetRefresh();
         },
-      );
+      } satisfies SyncEvents);
       const [token, savedServer, savedMe, skippedBy] = await Promise.all([
         SecureStore.getItemAsync(TOKEN_KEY),
         SecureStore.getItemAsync(SERVER_KEY),
@@ -263,6 +256,19 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   }, [services, stopServices]);
 
   const hasFamily = Boolean(me?.family);
+
+  // 记录、登录状态、角色或单位变了，桌面小工具都要跟着变。退出登录后这里也会把它清空。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: me 变化正是要触发刷新的原因。
+  useEffect(() => {
+    if (!services) return;
+    scheduleWidgetRefresh();
+    const unsubscribe = services.store.subscribe(scheduleWidgetRefresh);
+    const appSub = AppState.addEventListener('change', scheduleWidgetRefresh);
+    return () => {
+      unsubscribe();
+      appSub.remove();
+    };
+  }, [services, me]);
 
   // 启动同步、上传和网络监听。
   useEffect(() => {
