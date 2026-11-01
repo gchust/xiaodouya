@@ -1,5 +1,6 @@
 import type { EventData } from '../schemas';
 import { formatDuration } from './age';
+import { FORGOTTEN_SLEEP_MS } from './feeding';
 import {
   formatLength,
   formatTemperature,
@@ -68,6 +69,36 @@ export function summarize24h(events: readonly EventData[], now: number): DaySumm
       continue;
     }
     if (e.at <= start || e.at > now) continue;
+    if (e.type === 'feed') {
+      summary.feeds += 1;
+      summary.ml += e.ml;
+    } else if (e.type === 'diaper') {
+      summary.diapers += 1;
+      if (e.kind !== 'poo') summary.wetDiapers += 1;
+    }
+  }
+  return summary;
+}
+
+/**
+ * 统计从 `dayStart` 到 `now`，给“今日汇总”用，不同于滚动的 24 小时。
+ * 跨午夜的睡眠只算今天的部分；忘记结束的睡眠不算，否则会多出一段没有发生过的睡眠。
+ */
+export function summarizeDay(
+  events: readonly EventData[],
+  dayStart: number,
+  now: number,
+): DaySummary {
+  const summary: DaySummary = { feeds: 0, ml: 0, diapers: 0, wetDiapers: 0, sleepMs: 0 };
+  for (const e of events) {
+    if (e.type === 'sleep') {
+      if (!e.endAt && now - e.at > FORGOTTEN_SLEEP_MS) continue;
+      const end = Math.min(e.endAt ?? now, now);
+      const begin = Math.max(e.at, dayStart);
+      if (end > begin) summary.sleepMs += end - begin;
+      continue;
+    }
+    if (e.at < dayStart || e.at > now) continue;
     if (e.type === 'feed') {
       summary.feeds += 1;
       summary.ml += e.ml;

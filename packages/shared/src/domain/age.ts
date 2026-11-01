@@ -6,6 +6,11 @@ function startOfDay(ms: number): Date {
   return d;
 }
 
+/** 手机所在时区的当天 0 点。夏令时切换的那天也准，不能用 86400000 取整。 */
+export function startOfLocalDay(ms: number): number {
+  return startOfDay(ms).getTime();
+}
+
 /** 按日历日算第几天，出生当天是第 1 天。用四舍五入抵消夏令时造成的 23/25 小时。 */
 export function dayNumber(birthAt: number, at: number): number {
   return Math.round((startOfDay(at).getTime() - startOfDay(birthAt).getTime()) / DAY_MS) + 1;

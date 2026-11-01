@@ -32,9 +32,9 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - assertVisible: 共 100 项
 - takeScreenshot: .artifacts/e2e-03a-saved
+# 等卡片消失，不等“文件都上传好了”：那是 Toast，可能被别的 Toast 换掉。传失败时卡片还在，一样能发现。
 - extendedWaitUntil:
-    visible:
-      text: 文件都上传好了
+    notVisible: { id: upload-card }
     timeout: 240000
 - takeScreenshot: .artifacts/e2e-03a-uploaded
 - extendedWaitUntil:

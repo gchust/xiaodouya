@@ -1,6 +1,6 @@
 import { ageParts, formatDuration } from '../domain/age';
 import { summarize24h } from '../domain/events';
-import { activeSleep, estimateNextFeed } from '../domain/feeding';
+import { estimateNextFeed, sleepState } from '../domain/feeding';
 import {
   formatTemperatureRange,
   formatTemperatureThreshold,
@@ -104,8 +104,6 @@ const MIN_COVERAGE_MS = 20 * 3_600_000;
  * 要看大约一天前有没有在记日常；疫苗和身高体重本来就不是每天记的，常常是补的，不算。
  */
 const COVERAGE_LOOKBACK_MS = 48 * 3_600_000;
-/** 一次睡超过这么久多半是忘了点“醒了”，不能当真。 */
-const FORGOTTEN_SLEEP_MS = 12 * 3_600_000;
 
 export function todayInsight(
   events: readonly EventData[],
@@ -114,8 +112,9 @@ export function todayInsight(
 ): Insight | null {
   const logged = events.filter((e) => e.at <= now);
   if (logged.length === 0) return null;
-  const sleeping = activeSleep(logged);
-  const forgotten = sleeping && now - sleeping.at > FORGOTTEN_SLEEP_MS ? sleeping : null;
+  const sleepNow = sleepState(logged, now);
+  const sleeping = sleepNow.status === 'asleep' ? sleepNow.sleep : null;
+  const forgotten = sleepNow.status === 'forgotten' ? sleepNow.sleep : null;
 
   const summary = summarize24h(logged, now);
   const estimate = estimateNextFeed(logged, now);
@@ -132,10 +131,9 @@ export function todayInsight(
   if (estimate.isLearned) facts.push(`平均间隔 ${formatDuration(estimate.intervalMs)}`);
   const lead = `${facts.join('，')}。`;
 
-  const sleepingText =
-    sleeping && !forgotten
-      ? `宝宝已经睡了 ${formatDuration(now - sleeping.at)}。醒来后一般会饿，可以先把奶准备好。`
-      : null;
+  const sleepingText = sleeping
+    ? `宝宝已经睡了 ${formatDuration(now - sleeping.at)}。醒来后一般会饿，可以先把奶准备好。`
+    : null;
   const forgottenText = forgotten ? '睡眠计时还开着，是不是忘了点“醒了”？' : null;
 
   if (!hasFullDay) {

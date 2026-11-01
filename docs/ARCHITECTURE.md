@@ -90,6 +90,21 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 
 **下载：**`POST /v1/media/urls` 批量取签名链接，客户端按“文件 id + 变体”作为 expo-image 的缓存键，因为签名链接每次都会变。
 
+## 桌面小工具（Android）
+
+用 `react-native-android-widget`（配置在 `app.config.ts`，代码在 `apps/mobile/src/widgets/`）。没有自己写原生代码。
+
+```
+点击 → 系统广播 → WorkManager（持久化，App 被杀后还会跑）→ Headless JS（只执行 index.ts）
+     → runWidgetAction → RecordStore.write（先写本地，进发件箱）→ 重画 → 尽力同步一轮
+```
+
+- **只有一个写入者。** 后台任务和界面在同一个进程的同一个 JS 运行环境里，共用 `getCoreServices()` 的那一份 `RecordStore`。不用原生代码直接写 SQLite：那样要有第二个数据库连接（系统 SQLite 和 expo-sqlite 自带的是两份库，同进程混用有损坏数据库的风险），校验和记录格式要在 Kotlin 里再写一遍，App 开着时内存里的数据也会过期。
+- **幂等靠渲染时生成的 id。** 按钮的点击数据里带着新记录的 UUID，连点、任务重试都落在同一条记录上。撤销过的也算存在，不会复活。
+- **判断逻辑都在 `packages/shared/src/domain/widget.ts`：** 能不能写、写什么、显示什么。未登录、没有家庭、只看回忆、没有宝宝时不写也不显示记录。
+- **数据新到什么时候要如实显示。** 没有远程推送，家人的记录只在 App 同步时才到：App 在前台时、点击小工具之后、系统定时刷新时（约 30 分钟，厂商可能更久）。小工具上显示最后一次同步的时间。
+- **显示的是位图，不能走字。** 只写绝对时间（`22:10 睡着`），不写“已睡 1 小时”。
+
 ## 权限
 
 权限在服务端判断，规则在 `packages/shared/src/schemas.ts`：

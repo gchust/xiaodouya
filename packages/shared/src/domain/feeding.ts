@@ -42,6 +42,22 @@ export function estimateNextFeed(events: readonly EventData[], now: number): Fee
   return { last, sinceMs, intervalMs, isLearned, remainingMs: intervalMs - sinceMs };
 }
 
+/** 一次睡超过这么久多半是忘了点“醒了”，不能当真。 */
+export const FORGOTTEN_SLEEP_MS = 12 * HOUR;
+
+type SleepEvent = Extract<EventData, { type: 'sleep' }>;
+
+export type SleepState =
+  | { status: 'awake' }
+  | { status: 'asleep'; sleep: SleepEvent }
+  | { status: 'forgotten'; sleep: SleepEvent };
+
+export function sleepState(events: readonly EventData[], now: number): SleepState {
+  const sleep = activeSleep(events.filter((e) => e.at <= now));
+  if (!sleep) return { status: 'awake' };
+  return { status: now - sleep.at > FORGOTTEN_SLEEP_MS ? 'forgotten' : 'asleep', sleep };
+}
+
 /** 记录上和奶类型有关的字段。 */
 export interface FeedMilk {
   milkType: MilkType | undefined;
