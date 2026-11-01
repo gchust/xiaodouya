@@ -30,6 +30,7 @@ import {
   VaccineSheet,
 } from '../sheets/recordSheets';
 import { colors, fonts, spacing } from '../theme';
+import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
@@ -203,6 +204,8 @@ export function TodayScreen() {
           <Text style={s.insightText}>{insight.text}</Text>
         </View>
       ) : null}
+
+      {events.length > 0 ? <NotificationPrompt /> : null}
 
       <View style={s.listHeader}>
         <Text style={s.listTitle}>过去 24 小时</Text>

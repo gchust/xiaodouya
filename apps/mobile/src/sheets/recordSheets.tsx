@@ -13,7 +13,6 @@ import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp, useRecords } from '../lib/app';
-import { ensureNotificationPermission } from '../lib/notifications';
 import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput } from '../ui/primitives';
@@ -58,8 +57,6 @@ export function useSaveEvent() {
       toast(`已记录 · ${describeEvent(data, Date.now())}${suffix}`, {
         undo: id ? undefined : () => void app.remove(recordId),
       });
-      // 第一次记录之后才请求通知权限：此时用户已经明白这个 App 是做什么的。
-      void ensureNotificationPermission().catch(() => {});
     },
     [app, sheet, toast, me, label],
   );
