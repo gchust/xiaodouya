@@ -1,5 +1,5 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
-import { withInfoPlist } from 'expo/config-plugins';
+import { withEntitlementsPlist, withInfoPlist } from 'expo/config-plugins';
 
 const version = process.env.APP_VERSION ?? '0.1.0';
 const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
@@ -7,19 +7,28 @@ const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
 const WIDGET_CATEGORY = 'home_screen|not_keyguard';
 
 /**
- * expo-audio 默认加上 audio 后台模式，但 App 不在后台放声音，审核会问为什么要声明。
- * 只去掉 iOS 的声明，Android 的配置不动。mod 按添加的相反顺序执行，plugins 里的比这里添加得晚，
- * 所以这一步在 expo-audio 之后运行。
+ * 去掉插件默认声明、App 用不到的 iOS 能力。Android 的配置不动。
+ * - expo-audio 加的 audio 后台模式：App 不在后台放声音，审核会问为什么要声明。
+ * - expo-notifications 加的推送权限：不做远程推送，喂奶提醒是本机通知，用不到它。
+ *   留着的话，Bundle ID 必须开通 Push Notifications 才能签名。
+ * mod 按添加的相反顺序执行，plugins 里的比这里添加得晚，所以这一步在那些插件之后运行。
  */
-const withoutBackgroundAudio = (expo: ExpoConfig): ExpoConfig =>
-  withInfoPlist(expo, (plist) => {
-    const modes = plist.modResults.UIBackgroundModes?.filter((mode) => mode !== 'audio');
-    if (modes?.length) plist.modResults.UIBackgroundModes = modes;
-    else delete plist.modResults.UIBackgroundModes;
-    return plist;
-  });
+const withoutUnusedIosCapabilities = (expo: ExpoConfig): ExpoConfig =>
+  withEntitlementsPlist(
+    withInfoPlist(expo, (plist) => {
+      const modes = plist.modResults.UIBackgroundModes?.filter((mode) => mode !== 'audio');
+      if (modes?.length) plist.modResults.UIBackgroundModes = modes;
+      else delete plist.modResults.UIBackgroundModes;
+      return plist;
+    }),
+    (entitlements) => {
+      delete entitlements.modResults['aps-environment'];
+      return entitlements;
+    },
+  );
 
-export default (context: ConfigContext): ExpoConfig => withoutBackgroundAudio(appConfig(context));
+export default (context: ConfigContext): ExpoConfig =>
+  withoutUnusedIosCapabilities(appConfig(context));
 
 const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -73,7 +82,7 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
           NSPrivacyAccessedAPITypeReasons: ['C617.1', '3B52.1'],
         },
         {
-          // 开机时长。35F9.1：计算 App 内事件之间的间隔（RN 的计时、expo-device）。
+          // 开机时长。35F9.1：计算 App 内事件之间的间隔（RN 的计时）。
           NSPrivacyAccessedAPIType: 'NSPrivacyAccessedAPICategorySystemBootTime',
           NSPrivacyAccessedAPITypeReasons: ['35F9.1'],
         },
