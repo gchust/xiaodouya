@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
+import { DownloadButton } from '../lib/DownloadButton';
+import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import {
   openDocumentFile,
@@ -135,6 +137,8 @@ export function DocumentScreen({ id }: { id: string }) {
     }
   };
 
+  // 文件名只用文件自己的名字或证件名称，证件号码不能出现在手机的文件列表里。
+  const fileNames = downloadFileNames(data.files, { title: data.name });
   const number = data.number
     ? showNumber
       ? data.number
@@ -222,30 +226,39 @@ export function DocumentScreen({ id }: { id: string }) {
           ) : (
             <View style={s.files}>
               {data.files.map((file) => (
-                <Pressable
-                  key={file.id}
-                  testID={`doc-file-${file.name ?? file.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={file.name ?? '文件'}
-                  style={[s.file, { width: fileWidth }]}
-                  onPress={() => openFile(file)}
-                >
-                  <View style={s.preview}>
-                    {file.kind === 'image' ? (
-                      <MediaImage media={file} variant="thumb" style={StyleSheet.absoluteFill} />
-                    ) : (
-                      <Stripes style={[StyleSheet.absoluteFill, s.pdfBadge]}>
-                        <Mono weight="medium" style={{ fontSize: 14, color: colors.muted }}>
-                          PDF
-                        </Mono>
-                      </Stripes>
-                    )}
+                <View key={file.id} style={[s.file, { width: fileWidth }]}>
+                  <Pressable
+                    testID={`doc-file-${file.name ?? file.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={file.name ?? '文件'}
+                    style={s.fileOpen}
+                    onPress={() => openFile(file)}
+                  >
+                    <View style={s.preview}>
+                      {file.kind === 'image' ? (
+                        <MediaImage media={file} variant="thumb" style={StyleSheet.absoluteFill} />
+                      ) : (
+                        <Stripes style={[StyleSheet.absoluteFill, s.pdfBadge]}>
+                          <Mono weight="medium" style={{ fontSize: 14, color: colors.muted }}>
+                            PDF
+                          </Mono>
+                        </Stripes>
+                      )}
+                    </View>
+                    <Text numberOfLines={1} style={{ fontSize: 11, color: colors.ink }}>
+                      {file.name ?? '文件'}
+                    </Text>
+                  </Pressable>
+                  <View style={s.fileMeta}>
+                    <Muted style={{ fontSize: 10 }}>{formatBytes(file.size)}</Muted>
+                    <DownloadButton
+                      media={file}
+                      fileName={fileNames.get(file.id) ?? data.name}
+                      sensitive
+                      testID={`doc-file-download-${file.name ?? file.id}`}
+                    />
                   </View>
-                  <Text numberOfLines={1} style={{ fontSize: 11, color: colors.ink }}>
-                    {file.name ?? '文件'}
-                  </Text>
-                  <Muted style={{ fontSize: 10 }}>{formatBytes(file.size)}</Muted>
-                </Pressable>
+                </View>
               ))}
             </View>
           )}
@@ -375,7 +388,9 @@ const s = StyleSheet.create({
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
   fileHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   files: { flexDirection: 'row', flexWrap: 'wrap', gap: FILE_GAP },
-  file: { gap: 6 },
+  file: { gap: 2 },
+  fileOpen: { gap: 6 },
+  fileMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   preview: {
     aspectRatio: 3 / 4,
     borderRadius: 10,

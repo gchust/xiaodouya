@@ -28,6 +28,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.CAMERA',
       'android.permission.USE_BIOMETRIC',
     ],
+    // expo-media-library 的清单自带这条。只往相册里写，用不到读取权限。
+    blockedPermissions: ['android.permission.READ_MEDIA_VISUAL_USER_SELECTED'],
   },
   ios: {
     bundleIdentifier: process.env.IOS_BUNDLE_ID ?? 'com.gchust.xiaodouya',
@@ -57,6 +59,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         photosPermission: '选择照片和视频，保存到宝宝的回忆里。',
         cameraPermission: '拍摄证件和资料。',
+      },
+    ],
+    [
+      // 必须写在这里：不写的话 Expo 也会按默认值应用这个插件，
+      // 声明 READ_MEDIA_IMAGES 等读取权限，上架 Google Play 要单独申报。
+      'expo-media-library',
+      {
+        granularPermissions: [],
+        // 这条和上面的 photosPermission 是 iOS 的同一个键，要写成一样，否则会被默认的英文覆盖。
+        photosPermission: '选择照片和视频，保存到宝宝的回忆里。',
+        savePhotosPermission: '把宝宝的照片和视频保存到手机相册。',
       },
     ],
     ['expo-audio', { microphonePermission: '录下宝宝的声音，保存到回忆里。' }],

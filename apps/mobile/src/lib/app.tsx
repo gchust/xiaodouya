@@ -36,6 +36,7 @@ import { useFeedback } from '../ui/overlays';
 import { Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
+import { clearDownloads } from './downloads';
 import { clearLocalMedia, createUploadTransport } from './media';
 import { registerPushToken, scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
@@ -177,6 +178,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       if (savedServer) setServerUrl(savedServer);
       const synced = await db.getMeta(SYNCED_KEY);
       if (cancelled) return;
+      clearDownloads();
       setHasSynced(synced === '1');
       setServices({ db, store, uploads, api, engine });
       if (token && savedMe) {
@@ -206,6 +208,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   const wipeLocalData = useCallback(async () => {
     if (!services) return;
     await services.store.clear();
+    clearDownloads();
     await clearLocalMedia();
     setHasSynced(false);
   }, [services]);
