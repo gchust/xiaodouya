@@ -37,17 +37,18 @@ appId: com.gchust.xiaodouya
     visible: { id: feed-save }
     timeout: 10000
 - takeScreenshot: .artifacts/e2e-18a-feed-sheet-en
-- tapOn: { id: ml-chip-120 }
+# 奶量要和今天已有的记录都不同（流程 02a 记过 120ml）：撤销后要断言这一行不见了。
+- tapOn: { id: ml-chip-100 }
 - tapOn: { id: feed-save }
 - extendedWaitUntil:
-    visible: Feed 120ml
+    visible: Feed 100ml
     timeout: 10000
 - assertVisible:
     text: .*Logged.*
 - takeScreenshot: .artifacts/e2e-18a-after-feed-en
 # 撤销，不留给后面的流程
 - tapOn: { id: toast-undo }
-- assertNotVisible: Feed 120ml
+- assertNotVisible: Feed 100ml
 # Toast 可能盖住底部标签
 - extendedWaitUntil:
     notVisible: { id: toast-undo }

@@ -1,0 +1,90 @@
+{
+  "groups": {
+    "family": {
+      "setup": ["onboard", "record-bcg"],
+      "flows": [
+        "03_moment_upload",
+        "04_documents",
+        "11_edit_event",
+        "12_birth_profile",
+        "14_media_viewer",
+        "14a_avatar",
+        "14b_media_download",
+        "14d_photo_preview",
+        "19_sign_out",
+        "20_viewer_role",
+        "21_caregiver_usage"
+      ]
+    },
+    "vaccine": {
+      "setup": ["onboard"],
+      "flows": [
+        "09_growth",
+        "10_vaccine",
+        "10a_vaccine_config",
+        "11a2_backfill_sleep_growth",
+        "11a5_edit_vaccine",
+        "16_region_us",
+        "17_custom_dose",
+        "18_other_region"
+      ]
+    },
+    "daily": {
+      "setup": [],
+      "flows": [
+        "01_onboarding",
+        "02_records",
+        "02a_formula_nutrition",
+        "06_offline",
+        "08_more_records",
+        "11a1_edit_feed",
+        "11a3_edit_daily_records",
+        "11b_share_day",
+        "13_knowledge",
+        "14c_widget_links",
+        "18a_language"
+      ]
+    },
+    "files": {
+      "setup": ["onboard"],
+      "flows": [
+        "03a_bulk_moment",
+        "03b_upload_control",
+        "05_family_sync",
+        "07_storage",
+        "11a4_edit_moment_letter",
+        "11a6_edit_document",
+        "15_member_roles",
+        "22_delete_account"
+      ]
+    }
+  },
+  "requires": {
+    "11a1_edit_feed": ["02_records"],
+    "11a2_backfill_sleep_growth": ["09_growth"],
+    "11a5_edit_vaccine": ["10_vaccine|record-bcg"],
+    "11b_share_day": ["02_records"],
+    "14_media_viewer": ["03_moment_upload"],
+    "14b_media_download": ["03_moment_upload", "04_documents"],
+    "15_member_roles": ["05_family_sync"],
+    "16_region_us": ["09_growth", "10_vaccine|record-bcg"],
+    "18_other_region": ["10_vaccine|record-bcg", "17_custom_dose"],
+    "19_sign_out": [
+      "03_moment_upload",
+      "04_documents",
+      "10_vaccine|record-bcg",
+      "11_edit_event",
+      "12_birth_profile"
+    ],
+    "20_viewer_role": ["03_moment_upload", "14a_avatar"],
+    "21_caregiver_usage": ["20_viewer_role"]
+  },
+  "endOfGroup": ["20_viewer_role", "21_caregiver_usage", "22_delete_account"],
+  "uploadChecks": {
+    "memory": ["03_moment_upload"],
+    "multipart": ["03a_bulk_moment", "03b_upload_control"],
+    "preview": ["03a_bulk_moment"],
+    "document": ["04_documents"],
+    "avatar": ["14a_avatar"]
+  }
+}

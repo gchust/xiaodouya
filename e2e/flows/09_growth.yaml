@@ -12,6 +12,9 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: growth-add }
 # 流程 01 没填出生体重，这时还画不出来
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: 记录一次体重，这里就会画出来。
 - assertVisible: 记录一次体重，这里就会画出来。
 - assertNotVisible: { id: growth-chart }
 - tapOn: { id: tab-today }
@@ -30,6 +33,9 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-info }
 - scrollUntilVisible:
     element: { id: growth-chart }
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: "3.6"
 - assertVisible: "3.6"
 # 第二次从资料页记，默认值接着上一次
 - tapOn: { id: growth-add }

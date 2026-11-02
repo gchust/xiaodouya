@@ -1,0 +1,43 @@
+# 注册管理员、建家庭、填宝宝资料，停在“今天”。流程 01 和每个分组的前置共用。
+# 这里只放走到“今天”必需的步骤，断言留在流程 01，重复跑的只是前置。
+appId: com.gchust.xiaodouya
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: { id: welcome-create }
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-01-welcome
+- tapOn: { id: welcome-create }
+- tapOn: { id: field-name }
+- inputText: E2E
+- hideKeyboard
+- tapOn: { id: field-email }
+- inputText: admin-${RUN_ID}@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-1
+- hideKeyboard
+- tapOn: { id: auth-submit }
+- extendedWaitUntil:
+    visible: { id: self-爸爸 }
+    timeout: 20000
+- tapOn: { id: self-爸爸 }
+- tapOn: { id: family-create }
+- extendedWaitUntil:
+    visible: { id: field-baby-name }
+    timeout: 20000
+- tapOn: { id: field-baby-name }
+- inputText: Sprout
+- hideKeyboard
+# 默认地区按系统猜测，CI 模拟器是 en-US，会猜成美国。后面的流程都按新加坡和公制断言。
+- scrollUntilVisible:
+    element: { id: region-SG }
+- tapOn: { id: region-SG }
+- takeScreenshot: .artifacts/e2e-01-baby-setup
+- scrollUntilVisible:
+    element: { id: baby-submit }
+- tapOn: { id: baby-submit }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 20000

@@ -1,8 +1,11 @@
 // E2E 收尾：确认 App 上传的文件真的进了 S3，并且内容能下载回来。
 // 不信任界面提示，直接查数据库和存储。
 
+// 用法：node e2e/verify-uploads.mjs <RUN_ID> [跑过的流程文件...]。不写流程就检查全部。
+
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { FICTIONAL_DESCRIPTION, jpegMetadata } from './helpers/jpeg-exif.mjs';
 
 const require = createRequire(resolve(import.meta.dirname, '../apps/server/package.json'));
@@ -10,6 +13,15 @@ const postgres = require('postgres');
 const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
 
 const runId = process.argv[2];
+// 每个分组有自己的数据库，只查这组的流程该留下的文件。哪条校验归哪些流程写在 groups.json，
+// e2e-groups.mjs 保证这些流程都在某个分组里，所以合起来一条也不会少。
+const ranFlows = process.argv.slice(3).map((file) => basename(file, '.yaml'));
+const { uploadChecks } = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, 'groups.json'), 'utf8'),
+);
+const expected = (check) =>
+  ranFlows.length === 0 || uploadChecks[check].some((flow) => ranFlows.includes(flow));
+const skipped = Object.keys(uploadChecks).filter((check) => !expected(check));
 const sql = postgres(
   process.env.DATABASE_URL ?? 'postgres://xiaodouya:devpassword@localhost:55432/xiaodouya',
 );
@@ -49,50 +61,59 @@ function jpegSize(bytes) {
   }
   return null;
 }
-need(
-  rows.some((r) => r.scope === 'memory' && r.variant === 'original'),
-  '没有回忆原图',
-);
-need(
-  rows.some((r) => r.scope === 'memory' && r.variant === 'thumb'),
-  '没有回忆缩略图',
-);
+if (expected('memory')) {
+  need(
+    rows.some((r) => r.scope === 'memory' && r.variant === 'original'),
+    '没有回忆原图',
+  );
+  need(
+    rows.some((r) => r.scope === 'memory' && r.variant === 'thumb'),
+    '没有回忆缩略图',
+  );
+}
 // 流程 03a、03b 的样例里有超过分片阈值（16 MB）的图。服务端的完成接口核对过每一片，这里再下载核对大小。
-need(
-  rows.some((r) => r.scope === 'memory' && Number(r.size) > 16 * 1024 * 1024),
-  '没有超过分片阈值的文件，分片上传没有被走到',
-);
-need(
-  rows.some((r) => r.scope === 'memory' && r.variant === 'preview'),
-  '没有回忆预览',
-);
-// 证件和头像不做预览，视频也不做。
+if (expected('multipart')) {
+  need(
+    rows.some((r) => r.scope === 'memory' && Number(r.size) > 16 * 1024 * 1024),
+    '没有超过分片阈值的文件，分片上传没有被走到',
+  );
+}
+if (expected('preview')) {
+  need(
+    rows.some((r) => r.scope === 'memory' && r.variant === 'preview'),
+    '没有回忆预览',
+  );
+}
+// 这组有多少预览就查多少：证件和头像不做预览，视频也不做。
 for (const row of rows.filter((r) => r.variant === 'preview')) {
   need(row.scope === 'memory', `${row.object_key} 不该有预览`);
   need(row.mime === 'image/jpeg', `${row.object_key} 预览不是 JPEG`);
   const original = rows.find((r) => r.id === row.id && r.variant === 'original');
   need(original?.mime.startsWith('image/'), `${row.object_key} 不是照片的预览`);
 }
-need(
-  rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
-  '没有证件 PDF',
-);
-
-need(
-  rows.some((r) => r.scope === 'avatar' && r.variant === 'original'),
-  '没有头像原图',
-);
-need(
-  rows.some((r) => r.scope === 'avatar' && r.variant === 'thumb'),
-  '没有头像缩略图',
-);
+if (expected('document')) {
+  need(
+    rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
+    '没有证件 PDF',
+  );
+}
+if (expected('avatar')) {
+  need(
+    rows.some((r) => r.scope === 'avatar' && r.variant === 'original'),
+    '没有头像原图',
+  );
+  need(
+    rows.some((r) => r.scope === 'avatar' && r.variant === 'thumb'),
+    '没有头像缩略图',
+  );
+}
 const [babyRow] = await sql`
   SELECT r.data FROM records r
   JOIN memberships ms ON ms.family_id = r.family_id
   JOIN users u ON u.id = ms.user_id
   WHERE u.email = ${`admin-${runId}@example.test`} AND r.collection = 'baby' AND r.deleted = false`;
 const avatar = babyRow?.data?.avatar;
-need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
+if (expected('avatar')) need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
 const avatarSizes = new Map();
 const metadata = new Map();
 
@@ -129,38 +150,45 @@ for (const row of rows) {
 await sql.end();
 
 // 流程 14a：320×160 旋转后是 160×320，再裁成 160×160。
-const edited = [...avatarSizes.values()];
-need(
-  edited.some((size) => size?.width === 160 && size?.height === 320),
-  `没有旋转后的头像：${JSON.stringify(edited)}`,
-);
-const current = avatarSizes.get(avatar?.id);
-need(
-  current?.width === 160 && current?.height === 160,
-  `当前头像不是裁好的正方形：${JSON.stringify(current)}`,
-);
-need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
-// 流程 03a 的样例：原图带 GPS，所以上面“预览和缩略图没有元数据”才算数，查的方法也是灵的。
-const gpsOriginals = rows.filter(
-  (r) => r.variant === 'original' && metadata.get(`${r.id}/original`)?.gps,
-);
-need(gpsOriginals.length > 0, '没有带 GPS 的原图，预览里没有 EXIF 这件事没有被验证到');
-for (const { id } of gpsOriginals) {
-  const original = metadata.get(`${id}/original`);
-  need(original.orientation === 6 && original.fictional, '原图被改过：应该原样保存');
-  const preview = metadata.get(`${id}/preview`);
-  need(preview, `带 GPS 的照片 ${id} 没有预览`);
-  need(preview && !preview.fictional, `预览 ${id} 带着原图的 EXIF 内容`);
-  // 64×48 加 Orientation=6：EXIF 去掉之后，方向只能靠像素本身。也不能放大。
+if (expected('avatar')) {
+  const edited = [...avatarSizes.values()];
   need(
-    preview?.width === 48 && preview?.height === 64,
-    `预览 ${id} 的尺寸不对：${preview?.width}×${preview?.height}`,
+    edited.some((size) => size?.width === 160 && size?.height === 320),
+    `没有旋转后的头像：${JSON.stringify(edited)}`,
   );
-  const thumb = metadata.get(`${id}/thumb`);
-  need(thumb && !thumb.fictional, `缩略图 ${id} 带着原图的 EXIF 内容`);
-  need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
+  const current = avatarSizes.get(avatar?.id);
+  need(
+    current?.width === 160 && current?.height === 160,
+    `当前头像不是裁好的正方形：${JSON.stringify(current)}`,
+  );
+  need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
 }
-console.log(`校验了 ${rows.length} 个对象`);
+// 流程 03a 的样例：原图带 GPS，所以“预览和缩略图没有元数据”才算数，查的方法也是灵的。
+if (expected('preview')) {
+  const gpsOriginals = rows.filter(
+    (r) => r.variant === 'original' && metadata.get(`${r.id}/original`)?.gps,
+  );
+  need(gpsOriginals.length > 0, '没有带 GPS 的原图，预览里没有 EXIF 这件事没有被验证到');
+  for (const { id } of gpsOriginals) {
+    const original = metadata.get(`${id}/original`);
+    need(original.orientation === 6 && original.fictional, '原图被改过：应该原样保存');
+    const preview = metadata.get(`${id}/preview`);
+    need(preview, `带 GPS 的照片 ${id} 没有预览`);
+    need(preview && !preview.fictional, `预览 ${id} 带着原图的 EXIF 内容`);
+    // 64×48 加 Orientation=6：EXIF 去掉之后，方向只能靠像素本身。也不能放大。
+    need(
+      preview?.width === 48 && preview?.height === 64,
+      `预览 ${id} 的尺寸不对：${preview?.width}×${preview?.height}`,
+    );
+    const thumb = metadata.get(`${id}/thumb`);
+    need(thumb && !thumb.fictional, `缩略图 ${id} 带着原图的 EXIF 内容`);
+    need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
+  }
+}
+const previews = rows.filter((r) => r.variant === 'preview').length;
+console.log(
+  `校验了 ${rows.length} 个对象，其中预览 ${previews} 个${skipped.length > 0 ? `（这组不涉及：${skipped.join('、')}）` : ''}`,
+);
 if (failures.length > 0) {
   console.error(failures.join('\n'));
   process.exit(1);
