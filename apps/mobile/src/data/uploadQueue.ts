@@ -10,6 +10,7 @@ import type {
 } from '@xiaodouya/shared';
 import {
   confirmedPartBytes,
+  MULTIPART_PARALLEL,
   MULTIPART_URL_BATCH,
   missingParts,
   multipartPartBytes,
@@ -63,6 +64,8 @@ export interface UploadPartTarget {
   url: string;
   offset: number;
   size: number;
+  /** 第几路并行（从 0 开始）。临时文件按它命名，所以数量有上限，被杀后留下的也好清。 */
+  slot: number;
 }
 
 export interface MultipartTransport {
@@ -73,7 +76,7 @@ export interface MultipartTransport {
     uploadId: string,
     partNumbers: number[],
   ): Promise<MultipartPartUrlsResponse>;
-  /** onProgress 报这一片已发出的字节，不然大文件的进度和速度只能按整片跳。 */
+  /** onProgress 报这一片已发出的字节，不然大文件的进度和速度只能按整片跳。可能同时调用几次。 */
   putPart(
     job: UploadJob,
     part: UploadPartTarget,
@@ -213,8 +216,9 @@ export class UploadQueue {
   private batchBytes = 0;
   private batchDone = 0;
   private finishedInBatch = 0;
-  /** 正在传的这个文件（或这一片）已发出的字节，还没确认。 */
+  /** 正在传的这个文件（或同时在传的几片）已发出的字节，还没确认。 */
   private inflight = 0;
+  private partSent = new Map<number, number>();
   private current: { job: UploadJob; controller: AbortController } | null = null;
   private transferred = 0;
   private samples: SpeedSample[] = [];
@@ -358,7 +362,7 @@ export class UploadQueue {
     this.batchBytes = 0;
     this.batchDone = 0;
     this.finishedInBatch = 0;
-    this.inflight = 0;
+    this.clearAllSent();
     this.samples = [];
     this.publish();
   }
@@ -377,13 +381,19 @@ export class UploadQueue {
 
   private nextJob(skip: ReadonlySet<string>): UploadJob | null {
     if (this.network === 'none') return null;
+    const sendable = (job: UploadJob) =>
+      !job.failed && !skip.has(job.key) && !(job.wifiOnly && this.network !== 'wifi');
     for (const job of this.jobs.values()) {
-      if (job.failed || skip.has(job.key)) continue;
-      if (job.wifiOnly && this.network !== 'wifi') continue;
-      // 原图传完本地副本就删了，还没做的缩略图要排在它前面。重启后读出来的顺序不一定是入队顺序。
-      const thumb = this.jobs.get(`${job.id}/thumb`);
-      if (thumb?.thumbSource && !skip.has(thumb.key)) return thumb;
-      return job;
+      if (!sendable(job)) continue;
+      // 同一个文件的变体按固定顺序传。重启后读出来的顺序不一定是入队顺序，
+      // 而原图传完本地副本就删了，要靠它生成的变体必须排在它前面。
+      let best = job;
+      for (const other of this.jobs.values()) {
+        if (other.id === job.id && sendable(other) && variantRank(other) < variantRank(best)) {
+          best = other;
+        }
+      }
+      return best;
     }
     return null;
   }
@@ -490,7 +500,7 @@ export class UploadQueue {
   private async runJob(job: UploadJob): Promise<boolean> {
     const controller = new AbortController();
     this.current = { job, controller };
-    this.inflight = 0;
+    this.clearAllSent();
     this.publish(true);
     try {
       if (job.thumbSource && !(await this.prepareThumb(job))) return true;
@@ -544,12 +554,12 @@ export class UploadQueue {
       }
       await this.db.saveJob(job);
       this.samples = [];
-      this.inflight = 0;
+      this.clearAllSent();
       this.publish();
       return Boolean(job.failed);
     } finally {
       if (this.current?.job === job) this.current = null;
-      this.inflight = 0;
+      this.clearAllSent();
     }
   }
 
@@ -583,7 +593,7 @@ export class UploadQueue {
           job.partSize = undefined;
           job.confirmedBytes = 0;
           if (this.isLive(job)) await this.db.saveJob(job);
-          this.inflight = 0;
+          this.clearAllSent();
           this.publish(true);
           continue;
         }
@@ -645,40 +655,57 @@ export class UploadQueue {
     this.publish(true);
 
     const missing = missingParts(listed.parts, size, partSize);
+    const canContinue = () => this.isLive(job) && !this.stopped && !this.blockedByNetwork(job);
     for (let i = 0; i < missing.length; i += MULTIPART_URL_BATCH) {
-      if (!this.isLive(job) || this.stopped || this.blockedByNetwork(job)) return 'paused';
+      if (!canContinue()) return 'paused';
       const batch = missing.slice(i, i + MULTIPART_URL_BATCH);
       const { urls } = await multipart.partUrls(job, uploadId, batch);
-      for (const entry of urls) {
-        if (!this.isLive(job) || this.stopped || this.blockedByNetwork(job)) return 'paused';
-        await assertUnchanged();
-        const { status } = await multipart.putPart(
-          job,
-          {
-            partNumber: entry.partNumber,
-            url: entry.url,
-            offset: (entry.partNumber - 1) * partSize,
-            size: multipartPartBytes(entry.partNumber, size, partSize),
-          },
-          (sent) => this.noteSent(job, sent),
-          signal,
-        );
-        if (!this.isLive(job)) return 'paused';
-        // 存储明说不支持这个操作，单个 PUT 还有机会。
-        if (status === 501 || status === 405) {
-          throw new UploadHttpError(501, 'multipart_unsupported', t().ui.uploadFailed);
+      const waiting = [...urls];
+      // 一片失败时不打断同时在传的另外两片：它们传完就不用重传了，下一轮只补缺的。
+      let failure: { error: unknown } | null = null;
+      const worker = async (slot: number) => {
+        while (!failure && canContinue()) {
+          const entry = waiting.shift();
+          if (!entry) return;
+          try {
+            await assertUnchanged();
+            const { status } = await multipart.putPart(
+              job,
+              {
+                partNumber: entry.partNumber,
+                url: entry.url,
+                offset: (entry.partNumber - 1) * partSize,
+                size: multipartPartBytes(entry.partNumber, size, partSize),
+                slot,
+              },
+              (sent) => this.noteSent(job, sent, entry.partNumber),
+              signal,
+            );
+            if (!this.isLive(job)) return;
+            // 存储明说不支持这个操作，单个 PUT 还有机会。
+            if (status === 501 || status === 405) {
+              throw new UploadHttpError(501, 'multipart_unsupported', t().ui.uploadFailed);
+            }
+            if (status < 200 || status >= 300) {
+              throw new UploadHttpError(status, 'put_failed', t().ui.uploadFailed);
+            }
+            confirmed += multipartPartBytes(entry.partNumber, size, partSize);
+            job.confirmedBytes = confirmed;
+            // 一片传成功就说明存储是好的，不能让 100 片里零星的失败攒到次数上限。
+            job.attempts = 0;
+            this.clearSent(entry.partNumber);
+            await this.db.saveJob(job);
+            this.publish(true);
+          } catch (error) {
+            this.clearSent(entry.partNumber);
+            failure ??= { error };
+          }
         }
-        if (status < 200 || status >= 300) {
-          throw new UploadHttpError(status, 'put_failed', t().ui.uploadFailed);
-        }
-        confirmed += multipartPartBytes(entry.partNumber, size, partSize);
-        job.confirmedBytes = confirmed;
-        // 一片传成功就说明存储是好的，不能让 100 片里零星的失败攒到次数上限。
-        job.attempts = 0;
-        this.inflight = 0;
-        await this.db.saveJob(job);
-        this.publish(true);
-      }
+      };
+      await Promise.all(Array.from({ length: MULTIPART_PARALLEL }, (_, slot) => worker(slot)));
+      if (failure) throw (failure as { error: unknown }).error;
+      // 中途断了 Wi-Fi 或者被取消：还有片没传，不能往下走到合并。
+      if (waiting.length > 0) return 'paused';
     }
     if (!this.isLive(job) || this.stopped) return 'paused';
     await multipart.complete(job, uploadId);
@@ -686,15 +713,26 @@ export class UploadQueue {
   }
 
   /** 进度和速度的唯一入口。sent 回退（重传）时不算进速度，下一次增长才算。 */
-  private noteSent(job: UploadJob, sent: number): void {
+  private noteSent(job: UploadJob, sent: number, part = 0): void {
     if (!this.isLive(job)) return;
-    const delta = sent - this.inflight;
-    this.inflight = sent;
+    const delta = sent - (this.partSent.get(part) ?? 0);
+    this.partSent.set(part, sent);
+    this.inflight += delta;
     if (delta > 0) {
       this.transferred += delta;
       this.samples = addSpeedSample(this.samples, { at: this.now(), bytes: this.transferred });
     }
     this.publish(true);
+  }
+
+  private clearSent(part: number): void {
+    this.inflight -= this.partSent.get(part) ?? 0;
+    this.partSent.delete(part);
+  }
+
+  private clearAllSent(): void {
+    this.inflight = 0;
+    this.partSent.clear();
   }
 
   /** 返回 false 表示这个任务不用再传了。缩略图只是省流量，任何失败都不能挡住原图。 */
@@ -724,7 +762,7 @@ export class UploadQueue {
     this.jobs.delete(job.key);
     await this.db.deleteJob(job.key);
     this.batchDone += job.size;
-    this.inflight = 0;
+    this.clearAllSent();
     await this.transport.removeLocal(job.localUri).catch(() => {});
     if (job.variant === 'original') {
       this.finishedInBatch += 1;
@@ -812,10 +850,16 @@ export class UploadQueue {
       // 这批传完了，下次进度条从 0 开始。
       this.batchBytes = jobs.reduce((sum, j) => sum + j.size, 0);
       this.batchDone = 0;
-      this.inflight = 0;
+      this.clearAllSent();
     }
     for (const listener of this.listeners) listener();
   }
+}
+
+/** 小的先传，家人能先看到。没列出来的变体排在缩略图和原图之间，原图永远最后。 */
+function variantRank(job: UploadJob): number {
+  if (job.variant === 'thumb') return 0;
+  return job.variant === 'original' ? 2 : 1;
 }
 
 /** 4xx 表示请求本身有问题，但鉴权过期和限流可以恢复。 */

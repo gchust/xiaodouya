@@ -77,6 +77,7 @@ POST /v1/media/:id/multipart/complete        服务端 ListParts 取 ETag，核�
 POST /v1/media/:id/cancel                    取消：删 pending 记录，存储的清理（含中止分片）进待删除队列
 ```
 
+- **一个文件同时传 3 片（`MULTIPART_PARALLEL`）**，整个队列还是一次一个文件。一片失败时同时在传的继续传完，不开始新的，下一轮只补缺的。每路有自己的临时文件（`<本地副本>-part-<路>`）。
 - **手机不碰 ETag，也不记哪些片传了。** `job.uploadId`、`partSize` 持久化在上传队列里，断网、失败重试、App 被杀后都走同一条路：先问服务端缺哪些片，只传缺的。`confirmedBytes` 只用来显示进度，重启后还没联网也不从 0 开始。
 - **片的大小记在 `media.upload_part_size`：** 常量以后可能变，没传完的文件还要按当初的算。R2 要求除最后一片外每片一样大。
 - **`upload_gone`（404）：** uploadId 在存储里没了（被清理、过期）。服务端清掉它，手机从头开始，不算失败。ListParts 报 NoSuchUpload 时先 HEAD 一次：可能上次已经合并成功，只是没收到响应，这种情况返回 `complete: true`。

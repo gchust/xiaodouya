@@ -1,5 +1,5 @@
 import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
-import { t } from '@xiaodouya/shared';
+import { MULTIPART_PARALLEL, t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
@@ -397,9 +397,9 @@ function toUploadError(error: unknown): unknown {
   return error;
 }
 
-/** 一片的临时文件。一个任务同时只传一片，所以名字固定，上次被杀留下的下次会被覆盖。 */
-function partFile(job: UploadJob): File {
-  return new File(`${job.localUri}-part`);
+/** 一片的临时文件。按并行的路数命名，所以最多这么几个，上次被杀留下的下次会被覆盖。 */
+function partFile(localUri: string, slot: number): File {
+  return new File(`${localUri}-part-${slot}`);
 }
 
 /** 一次读多少。分片本身只有 8 MB，但手机内存紧张时也不值得把一整片读进 JS。 */
@@ -473,9 +473,11 @@ export function createUploadTransport(api: Api): UploadTransport {
     async removeLocal(uri) {
       const file = new File(uri);
       if (file.exists) file.delete();
-      // 传到一半被取消或被杀时，这一片的临时文件还在。
-      const part = new File(`${uri}-part`);
-      if (part.exists) part.delete();
+      // 传到一半被取消或被杀时，临时文件还在。
+      for (let slot = 0; slot < MULTIPART_PARALLEL; slot++) {
+        const part = partFile(uri, slot);
+        if (part.exists) part.delete();
+      }
     },
     async makeThumb(job) {
       if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
@@ -498,7 +500,7 @@ export function createUploadTransport(api: Api): UploadTransport {
       async putPart(job, part, onProgress, signal) {
         const source = new File(job.localUri);
         if (!source.exists) throw new UploadHttpError(410, 'local_missing', t().ui.localFileGone);
-        const temp = partFile(job);
+        const temp = partFile(job.localUri, part.slot);
         try {
           await writePartFile(source, temp, part, signal);
           const result = await temp.upload(part.url, {
