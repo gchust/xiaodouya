@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
+import { locales } from './i18n/locale';
 
 /** 所有时间都是毫秒时间戳（UTC）。 */
 const timestamp = z.number().int().nonnegative();
@@ -380,6 +381,8 @@ export const Prefs = z.object({
   documentLock: z.boolean(),
   videoWifiOnly: z.boolean(),
   units: UnitPrefs.optional().catch(undefined),
+  /** 没有时跟随手机。不认识的值同样只丢掉这一项，新版本加了语言也不影响旧版本的其他偏好。 */
+  locale: z.enum(locales).optional().catch(undefined),
 });
 export type Prefs = z.infer<typeof Prefs>;
 

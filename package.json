@@ -10,7 +10,7 @@
     "lint": "biome check .",
     "format": "biome check --write .",
     "typecheck": "pnpm -r --parallel typecheck",
-    "test": "pnpm --filter @xiaodouya/shared test && pnpm --filter @xiaodouya/mobile test && node --test scripts/android-signing.test.mjs",
+    "test": "pnpm --filter @xiaodouya/shared test && pnpm --filter @xiaodouya/mobile test && node --test scripts/android-signing.test.mjs && node scripts/check-i18n.mjs",
     "test:server": "pnpm --filter @xiaodouya/server test",
     "build:edge": "node scripts/build-edge.mjs",
     "test:edge": "pnpm build:edge && pnpm --filter @xiaodouya/server test:edge",
@@ -20,7 +20,8 @@
     "android:build": "bash scripts/android-build.sh",
     "emulator": "bash scripts/emulator.sh",
     "screenshot": "bash scripts/screenshot.sh",
-    "e2e": "bash scripts/e2e.sh"
+    "e2e": "bash scripts/e2e.sh",
+    "i18n:check": "node scripts/check-i18n.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.2.0",
