@@ -176,6 +176,7 @@
 - **APK 的缓存键不能写 `restore-keys`，环境变量也不能手抄。** 相近的键就是旧代码，测到旧代码还显示全绿，比慢更糟。`apk-key.mjs` 执行一遍 `e2e-build-env.sh` 取实际生效的值，`apk-key.test.mjs` 扫描 App 读的 `process.env`，不在键里就失败。
 - **Actions 缓存按分支隔离。** PR 能读 `main` 和自己的缓存，读不到别的 PR 的。所以只有 `main` 存过的 APK 才能被其他 PR 复用，同一个 PR 第一次都要构建。仓库总量到 10 GB 后最早用过的先被清掉（2026-11-02 就在 10.7 GB），APK 缓存被清只是多构建一次。
 - **汇总 job 要 `if: always()`，并且区分“跳过是对的”和“前面失败导致跳过”。** `CI 结果` 按 `changes` 的判断核对：要跑却是 `skipped` 算失败，否则 APK 没构建出来时 E2E 被跳过，结果还是绿的。
+- **流程之间 adb 可能短暂离线。** 模拟器好好的（4 秒后 `emu kill` 还能回应），Maestro 启动时报 `device offline`，流程一步都没跑（run 41468786346 的 `family` 组，出现过 1 次，原因没有查到）。`e2e.sh` 每条流程前先 `adb wait-for-device`，不重试流程；流程跑到一半离线还是会失败。
 - **系统镜像的下载偶尔拿到坏包。** 现象是 `Error on ZipFile unknown archive`，模拟器没起来 job 就失败了，什么现场也没有，1 分钟多一点结束（run 41465842346 的 `vaccine` 组）。四组各下载一次，碰上的机会多了，所以 `ci.yml` 先单独下载并只重试这一步。测试失败不重试。
 
 ## 部署

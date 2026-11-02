@@ -52,6 +52,9 @@ run_flows() {
   mkdir -p .artifacts/maestro
   for flow in "${flows[@]}"; do
     echo "▶ $flow"
+    # 流程之间 adb 偶尔短暂离线，这时 Maestro 第一条命令就报 device offline，流程一步都没跑。
+    # 等连接回来再开始。流程本身失败不重试。
+    timeout 120 adb wait-for-device
     maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
   done
   node e2e/verify-uploads.mjs "$run_id" "${flows[@]}"
