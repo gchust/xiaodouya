@@ -101,7 +101,7 @@ export class UploadServiceController {
       offlineSince: this.offlineSince,
       lastProgressAt: this.lastProgressAt,
     });
-    if (!want || this.timedOut) {
+    if (!want) {
       this.stopService();
       return;
     }

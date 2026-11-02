@@ -64,7 +64,8 @@ describe('前台服务该不该跑', () => {
 class MemoryDb implements UploadQueueDb {
   rows = new Map<string, UploadJob>();
   async loadJobs() {
-    return [...this.rows.values()];
+    // 和 SQLite 一样每次都是新对象。
+    return [...this.rows.values()].map((j) => structuredClone(j));
   }
   async saveJob(job: UploadJob) {
     this.rows.set(job.key, job);
@@ -370,6 +371,7 @@ describe('队列重复加载', () => {
         },
       }),
     );
+    await queue.load();
     await queue.enqueue([job()]);
     await flush();
     await queue.load();
@@ -377,7 +379,9 @@ describe('队列重复加载', () => {
     expect(puts).toBe(1);
     expect(queue.getProgress().items[0]?.status).toBe('uploading');
     gate.resolve({ status: 200 });
+    await flush();
     await queue.idle();
+    expect(puts).toBe(1);
     expect(db.rows.size).toBe(0);
   });
 
