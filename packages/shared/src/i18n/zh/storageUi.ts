@@ -19,7 +19,7 @@ export const storageUi = {
   videos: (size: Text) => `视频 ${size}`,
   audio: (size: Text) => `录音 ${size}`,
   docs: (size: Text) => `证件 ${size}`,
-  total: (size: Text, limit: Text) => `共 ${size}${limit}· 文件从手机直传，不经过服务器`,
+  total: (size: Text, limit: Text) => `共 ${size}${limit} · 文件从手机直传，不经过服务器`,
   limit: (size: Text) => `（上限 ${size}）`,
   provider: '服务商',
   otherS3: '其他 S3 兼容',

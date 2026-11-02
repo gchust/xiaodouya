@@ -11,7 +11,7 @@ export const today = {
   offlinePending: (count: Text) => `离线中 · ${count} 条待同步，已安全保存在手机上`,
   offline: '离线中 · 记录照常保存',
   syncing: (count: Text) => `正在同步 ${count} 条记录`,
-  title: (name: Text, day: Text) => `${name}的第 ${day}天`,
+  title: (name: Text, day: Text) => `${name}的第 ${day} 天`,
   viewAvatar: '查看宝宝的头像',
   addAvatar: '添加宝宝的头像',
   sinceLastFeedA11y: '距上次喂奶，点击记录喂奶',

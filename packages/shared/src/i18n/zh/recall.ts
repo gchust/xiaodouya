@@ -20,7 +20,7 @@ export const recall = {
   moreActions: (title: Text) => `${title}的更多操作`,
   playVideo: '播放视频',
   viewPhoto: '查看照片',
-  itemsTotal: (n: Text) => `共 ${n}项`,
+  itemsTotal: (n: Text) => `共 ${n} 项`,
   by: (name: Text) => `${name}写`,
   noPhotos: '还没有照片',
   noPhotosSub: '点右下角「记下这一刻」，从相册选几张吧。',
@@ -53,7 +53,7 @@ export const recall = {
   stopRecording: '停止录音',
   startRecording: '开始录音',
   recordingNow: '● 录音中',
-  tapToStop: (time: Text) => `${time}· 点击停止`,
+  tapToStop: (time: Text) => `${time} · 点击停止`,
   recordHint: '哭声、咿呀、你说的话',
   letterTitlePlaceholder: '信的标题，比如：百天快乐',
   momentTitlePlaceholder: '这一刻叫什么？比如：第一次笑出声',
@@ -61,4 +61,5 @@ export const recall = {
   momentPlaceholder: '写下当时的样子，以后宝宝会想看的。',
   markMilestone: '标为里程碑',
   needContent: '写点什么，或者选一张照片。',
+  itemsCount: (n: Text) => `${n} 项`,
 };

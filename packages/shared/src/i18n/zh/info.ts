@@ -30,9 +30,9 @@ export const info = {
   otherVaccineLink: '＋ 其他疫苗',
   hiddenA11y: (n: Text) => `已隐藏 ${n} 剂，点开可以恢复`,
   hiddenTitle: '已隐藏的剂次',
-  hiddenLink: (n: Text) => `已隐藏 ${n}剂 ›`,
+  hiddenLink: (n: Text) => `已隐藏 ${n} 剂 ›`,
   inertPlans: (n: Text) =>
-    `别的地区的表上还有 ${n}项隐藏或改过时间的设置，这里不生效，换回那个地区就恢复。`,
+    `别的地区的表上还有 ${n} 项隐藏或改过时间的设置，这里不生效，换回那个地区就恢复。`,
   otherRecords: '其他接种记录',
   givenOn: (date: Text) => `已接种 ${date}`,
   otherRecordsNote:
@@ -78,7 +78,7 @@ export const info = {
   expiry: '有效期至',
   editDocLink: '编辑名称、号码和日期',
   files: '文件',
-  filesCount: (n: Text) => `${n}个`,
+  filesCount: (n: Text) => `${n} 个`,
   noFiles: '还没有文件。拍一张或上传 PDF。',
   removeFileNamed: (name: Text) => `移除${name}`,
   takePhoto: '拍照 / 扫描',

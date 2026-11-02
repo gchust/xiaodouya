@@ -141,6 +141,17 @@ describe('健康提示：两种语言完全一致', () => {
   });
 });
 
+describe('中文的文案和原来一样', () => {
+  it('数字和文字之间的空格还在', () => {
+    const text = messagesFor('zh');
+    expect(text.today.title('小豆芽', 3)).toBe('小豆芽的第 3 天');
+    expect(text.recall.itemsTotal(100)).toBe('共 100 项');
+    expect(text.recall.itemsCount(100)).toBe('100 项');
+    expect(text.info.hiddenLink(2)).toBe('已隐藏 2 剂 ›');
+    expect(text.auth.serverLine('a')).toBe('服务器：a · 修改');
+  });
+});
+
 describe('英文目录', () => {
   /** 把函数也跑一遍：用假参数调用，看生成的文字里有没有混进中文。 */
   function leaves(node: unknown, path: string, out: [string, string][]): void {

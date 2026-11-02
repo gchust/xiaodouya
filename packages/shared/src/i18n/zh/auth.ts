@@ -3,7 +3,7 @@ type Text = string | number;
 export const auth = {
   serverAddress: '服务器地址',
   changeServer: '修改服务器地址',
-  serverLine: (value: Text) => `服务器：${value}· 修改`,
+  serverLine: (value: Text) => `服务器：${value} · 修改`,
   backLink: '‹ 返回',
   email: '邮箱',
   signOut: '退出登录',

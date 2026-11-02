@@ -61,4 +61,5 @@ export const recall: Catalog['recall'] = {
   momentPlaceholder: 'Write down how it was. Your baby will want to see it one day.',
   markMilestone: 'Mark as milestone',
   needContent: 'Write something, or choose a photo.',
+  itemsCount: (n) => `${n} ${n === 1 ? 'item' : 'items'}`,
 };

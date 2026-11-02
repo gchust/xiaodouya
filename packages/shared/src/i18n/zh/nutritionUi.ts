@@ -6,7 +6,7 @@ export const nutritionUi = {
   insufficient: '数据不足',
   note: '说明',
   estimate: (count: Text, volume: Text) =>
-    `按记下的奶量和奶粉标签估算，算进去 ${count}次、${volume}，不知道宝宝有没有喝完，也不含辅食和补充剂。`,
+    `按记下的奶量和奶粉标签估算，算进去 ${count} 次、${volume}，不知道宝宝有没有喝完，也不含辅食和补充剂。`,
   refNote: '参考量不是每个宝宝的目标。连续几天都低于参考量，或者有担心，可以问问医生。',
   disclaimer: '估算，不能替代医生建议。早产或有特殊情况的宝宝，请听医生的。',
   reference: (name: Text, note: Text) => `参考量：${name}。${note}`,

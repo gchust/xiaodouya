@@ -269,7 +269,7 @@ function Photos() {
             <Text style={s.groupTitle} numberOfLines={1}>
               {moment.data.title || t().ui.thisMoment} · {formatMonthDay(moment.data.at)}
             </Text>
-            <Muted>{t().recall.itemsTotal(cells.length)}</Muted>
+            <Muted>{t().recall.itemsCount(cells.length)}</Muted>
           </View>
           <View style={s.grid}>
             {cells.map((cell: MediaRef, index) => (
