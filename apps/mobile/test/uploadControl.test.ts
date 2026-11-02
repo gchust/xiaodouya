@@ -1124,6 +1124,25 @@ describe('按媒体显示', () => {
     expect(queue.getProgress().failedReason).toBe('太大了');
   });
 
+  it('刚传完还没写完数据库时刷新：任务没了的同时传完数也要算上，否则界面以为全取消了', async () => {
+    const gate = deferred<void>();
+    const db = new MemoryDb();
+    const realDelete = db.deleteJob.bind(db);
+    db.deleteJob = async (key) => {
+      await gate.promise;
+      return realDelete(key);
+    };
+    const queue = new UploadQueue(db, fakeTransport().transport);
+    await queue.enqueue([small()]);
+    await flush();
+    queue.setNetwork('cellular');
+    const progress = queue.getProgress();
+    expect(progress.total).toBe(0);
+    expect(progress.finishedInBatch).toBe(1);
+    gate.resolve();
+    await queue.idle();
+  });
+
   it('下一批开始时“传完了多少”重新算', async () => {
     const queue = new UploadQueue(new MemoryDb(), fakeTransport().transport);
     await queue.enqueue([small()]);
