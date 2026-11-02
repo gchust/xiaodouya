@@ -211,12 +211,18 @@ export function UploadsScreen() {
   // 通知上的“全部取消”先打开这里确认，不能在通知栏一点就删。
   const { cancelAll } = useLocalSearchParams<{ cancelAll?: string }>();
   const hasItems = items.length > 0;
+  const askedFromLink = useRef(false);
   useEffect(() => {
-    if (cancelAll !== '1' || !hasItems) return;
-    // 弹层容器可能刚挂载，见 PITFALLS“弹层刚挂载时马上打开会被清掉”。
-    const timer = setTimeout(() => confirmAll.current(), 400);
+    if (cancelAll !== '1') {
+      askedFromLink.current = false;
+      return;
+    }
+    if (!hasItems || askedFromLink.current) return;
+    askedFromLink.current = true;
+    // 清参数会让这个 effect 重跑，所以定时器不能放在清理函数里取消。
+    // 等一下再打开：弹层容器可能刚挂载，见 PITFALLS“弹层刚挂载时马上打开会被清掉”。
+    setTimeout(() => confirmAll.current(), 400);
     router.setParams({ cancelAll: undefined });
-    return () => clearTimeout(timer);
   }, [cancelAll, hasItems, router]);
 
   return (
