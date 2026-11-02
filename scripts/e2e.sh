@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # 端到端测试：真实服务端 + 真实 S3 协议 + 真实 App。
 # 前置：pnpm dev:infra、模拟器已启动、.artifacts/xiaodouya-e2e.apk 已构建。
-# 用法：scripts/e2e.sh [流程文件...]，默认跑 e2e/flows 下全部。
+# 用法：
+#   scripts/e2e.sh                  串行跑全部分组，每组重装 App、用新账号（约 1 小时）
+#   scripts/e2e.sh --group 组名     只跑一组（CI 每台模拟器跑一组），分组见 e2e/groups.json
+#   scripts/e2e.sh 流程文件...      只跑这几条，依赖的流程要自己带上
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$ROOT"
@@ -40,21 +43,41 @@ ANR_PID=$!
 # 刚开机的模拟器很忙，等它稳定一下再开始。
 sleep "${E2E_SETTLE_SECONDS:-30}"
 
-adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
-adb install -r "$APK"
+# 重装 App，再按顺序跑完这些流程并核对文件。每次调用都是一个新账号，互不影响。
+run_flows() {
+  local flows=("$@") flow run_id
+  adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
+  adb install -r "$APK"
+  run_id="$(date +%s)"
+  mkdir -p .artifacts/maestro
+  for flow in "${flows[@]}"; do
+    echo "▶ $flow"
+    maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
+  done
+  node e2e/verify-uploads.mjs "$run_id" "${flows[@]}"
+  # 流程 14b 存到相册的照片：不信界面提示，直接查系统媒体库。
+  if printf '%s\n' "${flows[@]}" | grep -q '14b_'; then
+    adb shell content query --uri content://media/external/images/media --projection _display_name \
+      | grep -q '小豆芽 笑脸.*\.png' || { echo "相册里没有流程 14b 保存的照片" >&2; exit 1; }
+  fi
+}
 
-FLOWS=("$@")
-[ ${#FLOWS[@]} -eq 0 ] && mapfile -t FLOWS < <(ls e2e/flows/*.yaml)
-RUN_ID="$(date +%s)"
-mkdir -p .artifacts/maestro
-for flow in "${FLOWS[@]}"; do
-  echo "▶ $flow"
-  maestro test --env "RUN_ID=$RUN_ID" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
-done
-node e2e/verify-uploads.mjs "$RUN_ID"
-# 流程 14b 存到相册的照片：不信界面提示，直接查系统媒体库。
-if printf '%s\n' "${FLOWS[@]}" | grep -q '14b_'; then
-  adb shell content query --uri content://media/external/images/media --projection _display_name \
-    | grep -q '小豆芽 笑脸.*\.png' || { echo "相册里没有流程 14b 保存的照片" >&2; exit 1; }
+run_group() {
+  local flows
+  mapfile -t flows < <(node scripts/e2e-groups.mjs plan "$1")
+  [ ${#flows[@]} -gt 0 ] || { echo "分组 $1 是空的" >&2; exit 1; }
+  echo "── 分组 $1 ──"
+  run_flows "${flows[@]}"
+}
+
+node scripts/e2e-groups.mjs check
+if [ "${1:-}" = "--group" ]; then
+  run_group "${2:?--group 后面要写分组名}"
+elif [ $# -gt 0 ]; then
+  run_flows "$@"
+else
+  while IFS= read -r group; do
+    run_group "$group"
+  done < <(node scripts/e2e-groups.mjs names)
 fi
 echo "E2E 全部通过"
