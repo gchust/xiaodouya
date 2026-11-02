@@ -2,6 +2,7 @@ import {
   BabyData,
   EventData,
   hasShareContent,
+  type MediaVariant,
   MomentData,
   type PublicMedia,
   type PublicMoment,
@@ -58,7 +59,7 @@ export async function findActiveShare(sql: Sql, token: string): Promise<ShareRow
 
 interface MediaRow {
   id: string;
-  variant: 'original' | 'thumb';
+  variant: MediaVariant;
   mime: string;
   object_key: string;
   storage_config_id: string | null;
@@ -69,6 +70,18 @@ function publicKind(mime: string): PublicMedia['kind'] | null {
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
   return null;
+}
+
+/**
+ * 公开页面用哪几个变体。照片有预览就绝不发原图：原图可能带 EXIF 位置，陌生人也不用下几十 MB。
+ * 视频的预览行不算数（正常客户端不会传，服务端也拒绝非图片），它只能放原文件。
+ */
+function publicRows(rows: readonly MediaRow[]): { main?: MediaRow; thumb?: MediaRow } {
+  const original = rows.find((row) => row.variant === 'original');
+  const preview = rows.find((row) => row.variant === 'preview');
+  const thumb = rows.find((row) => row.variant === 'thumb');
+  const useOriginal = !preview || (original && !original.mime.startsWith('image/'));
+  return { main: useOriginal ? original : preview, thumb };
 }
 
 /**
@@ -99,7 +112,10 @@ async function signMedia(
   const signed = new Map<string, string>();
   const byStorage = new Map<string | null, MediaRow[]>();
   for (const id of allowed) {
-    for (const row of byId.get(id) ?? []) {
+    const { main, thumb } = publicRows(byId.get(id) ?? []);
+    // 只签要发出去的：每个签名都花 Edge Function 的 CPU，签了不发的原图也没有用。
+    for (const row of [main, thumb]) {
+      if (!row) continue;
       byStorage.set(row.storage_config_id, [...(byStorage.get(row.storage_config_id) ?? []), row]);
     }
   }
@@ -134,12 +150,11 @@ function publicMediaOf(
   for (const file of moment.media) {
     const found = rows.get(file.id);
     if (!found) continue;
-    const original = found.find((row) => row.variant === 'original');
-    const thumb = found.find((row) => row.variant === 'thumb');
-    const url = signed.get(`${file.id}/original`) ?? null;
+    const { main, thumb } = publicRows(found);
+    const url = (main && signed.get(`${file.id}/${main.variant}`)) ?? null;
     const thumbUrl = signed.get(`${file.id}/thumb`) ?? null;
     if (!url && !thumbUrl) continue;
-    const kind = publicKind((original ?? thumb)?.mime ?? '');
+    const kind = publicKind((main ?? thumb)?.mime ?? '');
     if (!kind) continue;
     out.push({
       id: file.id,

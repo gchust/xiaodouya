@@ -103,7 +103,7 @@ export const PublicMedia = z.object({
   /** 链接过期后重新取数据时，靠它对上页面里的元素。 */
   id: z.string(),
   kind: z.enum(publicMediaKinds),
-  /** 原文件还没传完时是 null，这时只有缩略图。 */
+  /** 照片是预览图，没有预览的旧照片才是原图；视频和录音是原文件。都没传完时是 null，这时只有缩略图。 */
   url: z.string().nullable(),
   thumbUrl: z.string().nullable(),
   width: z.number().optional(),

@@ -55,16 +55,16 @@ export function openLightbox(
     if (!item) return;
     counter.textContent = items.length > 1 ? `${index + 1} / ${items.length}` : '';
     const thumb = safeMediaUrl(item.thumbUrl, allowLocalHttp);
-    const original = safeMediaUrl(item.url, allowLocalHttp);
-    const first = thumb ?? original;
+    const full = safeMediaUrl(item.url, allowLocalHttp);
+    const first = thumb ?? full;
     if (first) img.setAttribute('src', first);
-    if (original && thumb) {
+    if (full && thumb) {
       const shownFor = index;
       const loader = new Image();
       loader.addEventListener('load', () => {
-        if (shownFor === index) img.setAttribute('src', original);
+        if (shownFor === index) img.setAttribute('src', full);
       });
-      loader.src = original;
+      loader.src = full;
     }
   };
 
