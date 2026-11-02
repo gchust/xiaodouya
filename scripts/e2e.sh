@@ -47,15 +47,15 @@ ANR_PID=$!
 sleep "${E2E_SETTLE_SECONDS:-30}"
 
 # 重装 App，再按顺序跑完这些流程并核对文件。每次调用都是一个新账号，互不影响。
-# CI 的模拟器偶尔整个断开（device offline），和 App 无关，有时一步都没执行就失败。
-# 只有 Maestro 的日志里确实写了断开才重跑一次，断言失败绝不重跑，不能掩盖 App 的问题。
+# CI 的模拟器偶尔整个断开（device offline）或设备上的 Maestro 服务死掉，和断言无关。
+# 只有 Maestro 的日志里确实写了这两种情况才重跑一次，断言失败绝不重跑，不能掩盖 App 的问题。
 run_flow() {
   local flow="$1" run_id="$2" marker=".artifacts/maestro/.started"
   timeout 120 adb wait-for-device
   touch "$marker"
   maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow" && return 0
   local status=$?
-  find .artifacts/maestro -name maestro.log -newer "$marker" -exec grep -l 'device offline' {} + >/dev/null 2>&1 \
+  find .artifacts/maestro -name maestro.log -newer "$marker" -exec grep -lE 'device offline|DeviceServerDiedException' {} + >/dev/null 2>&1 \
     || return "$status"
   echo "模拟器断开了，等连接恢复后重跑 $flow（不是断言失败）"
   sleep 15
