@@ -113,6 +113,9 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: 自己加的
     timeout: 30000
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: Flu Plan
 - assertVisible: Flu Plan
 - takeScreenshot: .artifacts/e2e-10a-plan-added
 # 自己加的打过之后还在疫苗本上，不跑到“其他接种记录”
@@ -133,6 +136,8 @@ appId: com.gchust.xiaodouya
     timeout: 30000
 - assertNotVisible: { id: vaccine-other-section }
 # 删掉这条接种，再把计划移除
+- scrollUntilVisible:
+    element: Flu Plan
 - tapOn: Flu Plan
 - tapOn: { id: event-delete }
 - extendedWaitUntil:
@@ -144,6 +149,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: 自己加的
     timeout: 30000
+- scrollUntilVisible:
+    element: Flu Plan
 - tapOn: Flu Plan
 - tapOn: { id: vaccine-plan-hide }
 - extendedWaitUntil:

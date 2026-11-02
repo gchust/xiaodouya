@@ -29,6 +29,9 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: growth-chart }
 - assertVisible: 体重（lb）
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: "8.2"
 - assertVisible: "8.2"
 # 美国的表
 - scrollUntilVisible:
