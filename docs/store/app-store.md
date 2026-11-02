@@ -28,10 +28,10 @@
 |---|---|---|---|
 | 8 | **iCloud 备份里的健康数据** | Apple 5.1.3(ii) 规定 App “may not store personal health information in iCloud”。SQLite 和 `uploads/` 放在 App 的文档目录，这个目录通常会进入设备的 iCloud 备份。这是不是 Apple 所说的“存在 iCloud”，页面没有细说 | 在真机上确认。把数据库和文件目录标记为不备份最稳妥，但换手机时本地未同步的内容会丢，要和“不丢数据”的产品底线一起考虑。Android 的自动备份规则只包含 SharedPreferences（`expo-secure-store` 带的规则，只读了规则文件，没有在设备上验证），不涉及这些文件 |
 | 9 | **后台模式** | `expo-audio`、`expo-video` 的配置插件可能加 `UIBackgroundModes`。App 没有打开后台播放的设置 | 打包后看 `Info.plist`，去掉用不到的 |
-| 10 | **权限说明文字只有中文** | `app.config.ts` 里的相机、相册、麦克风、Face ID 说明是写死的中文 | 随 F-91 做 `InfoPlist.strings` 本地化。相册走系统选择器，确认是否需要 `NSPhotoLibraryUsageDescription` |
+| 10 | **权限说明的本地化没验证** | F-91 在 `app.config.ts` 的 `locales` 里写了中英文，iOS 还没有构建和看过 | 真机上确认 `InfoPlist.strings` 生效。相册走系统选择器，确认是否需要 `NSPhotoLibraryUsageDescription` |
 | 11 | **录音指示** | 2.5.14 要求录制时有明确的视觉或声音提示 | 真机确认录音界面的状态足够清楚 |
 | 12 | **健康内容** | 1.4.1 对可能提供不准确信息的医疗 App 审查更严，也要提醒用户问医生 | 不声称准确度。提示都指向医生。医护复核（F-100）。不要说 App 能测量任何东西 |
-| 13 | **界面语言和地区** | 只有中文（F-91）；疫苗表只有新加坡、中国大陆、美国，且没有医护复核（F-90、F-100） | 同 Google Play。不要把英文资料放在中文界面上 |
+| 13 | **界面语言和地区** | 中文和英文（F-91，待验证）；疫苗表只有新加坡、中国大陆、美国，且没有医护复核（F-90、F-100） | 同 Google Play |
 | 14 | **出口合规** | App 用 HTTPS 和 `expo-crypto`、`expo-secure-store` | App Store Connect 上传时要回答加密问题，设 `ITSAppUsesNonExemptEncryption`。这一条没有打开官方页核对 |
 | 15 | **公开用户内容** | 内容只在家庭内部，没有公开或陌生人分享 | 1.2 的 UGC 要求（过滤、举报、拉黑）应该不适用。在审核说明里写明。对外公布联系方式 |
 

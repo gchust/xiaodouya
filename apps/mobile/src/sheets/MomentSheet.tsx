@@ -123,7 +123,8 @@ export function MomentSheet({
         return;
       }
       if (isLetter) {
-        const fields = { title: title.trim() || t().ui.untitled, text: text.trim(), at };
+        // 不填标题就留空，显示时才写“无题”：记录里不能存翻译后的文字，v0.1.0 也是这样显示空标题的。
+        const fields = { title: title.trim(), text: text.trim(), at };
         if (editLetter) {
           const { id, data } = editLetter;
           // 弹层可能开了一会儿，只改用户动过的字段，不要盖掉家人刚改的内容。

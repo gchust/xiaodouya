@@ -51,7 +51,10 @@ const zhStrings = {
   },
 };
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+export default (context: ConfigContext): ExpoConfig =>
+  withEnglishAndroidDefaults(appConfig(context));
+
+const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: '小豆芽',
   // iOS 只有 lproj 里有这个语言时才用，其他语言退回 en。`zh-Hans` 这样的系统语言不一定匹配 `zh`，都写上。
@@ -105,7 +108,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   experiments: { typedRoutes: false },
   plugins: [
-    withEnglishAndroidDefaults,
     'expo-router',
     'expo-sqlite',
     'expo-secure-store',

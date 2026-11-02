@@ -27,7 +27,7 @@
 | 8 | **Foreground service 权限** | 生成的清单有 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`，来自依赖的默认配置。App 代码里没有打开后台播放的设置 | 不需要的话用 `android.blockedPermissions` 去掉，并回归测试。留下就要在 App content 里[声明并提供视频](https://support.google.com/googleplay/android-developer/answer/13392821) |
 | 9 | **多余的权限** | 清单有 `SYSTEM_ALERT_WINDOW`（模板带的）、`READ/WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=32`，其中 `WRITE` 现在要留着：Android 12 及以下把照片和视频保存到相册时 expo-media-library 要检查它，见 F-114）、`BIND_GET_INSTALL_REFERRER_SERVICE`（来自 `expo-application`，App 代码没有调用） | 逐个确认用不到后屏蔽。审核员会问为什么要悬浮窗权限 |
 | 10 | **明文流量** | 看到的 `AndroidManifest` 是 E2E 构建的，`usesCleartextTraffic="true"`。`android-build.sh release` 会设 `ANDROID_ALLOW_HTTP=0` | 打出正式包后确认实际是 false。数据安全表里“传输加密”的答案取决于它 |
-| 11 | **只有中文界面** | F-91 未开始。通知文字也写死中文 | 英文资料要等英文界面完成，否则只上传中文资料，或在描述里写明界面是中文 |
+| 11 | **英文界面还没放行** | F-91 代码已完成（见 PROGRESS），待验证 | 英文走查和医护复核（F-100）通过后才能用英文资料 |
 | 12 | **地区内容** | 疫苗表只有新加坡、中国大陆、美国（F-90），健康内容没有医护复核（F-11、F-37、F-100） | 上线地区的内容到位。不能说适用于各国 |
 | 13 | **登录页的服务器地址** | 用户可以改服务器。App 内也能配置自己的 S3 | 决定商店版是否保留（COMPLIANCE D6） |
 
