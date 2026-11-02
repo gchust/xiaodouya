@@ -81,6 +81,8 @@
 - **`hasThumb: true` 不代表缩略图已经有了。** 缩略图是后来生成的，也可能做不出来。取缩略图的地方都要能退回原图，成长册以前就是直接跳过，照片会从册子里消失。
 - **R2 的预签名文档只列了 GET、HEAD、PUT、DELETE，没提 UploadPart。** S3 兼容表把 UploadPart 列为支持，两页合起来没有说预签名的 UploadPart 一定能用。所以真实存储要跑 `cli check-multipart`，不通过就 `S3_MULTIPART_ENABLED=false`，App 退回单个 PUT。
 - **完成分片之前要核对每片的大小，不能只看片数。** `S3_BIND_UPLOAD_SIZE=false` 时一片可以传任意大小，HEAD 只看合并后的总大小，错的片加上错的片可能正好相等。大小不对的片算没传，重传同一个片号会覆盖。
+- **expo-file-system 上传的超时写死 60 秒，进度数的是写进 socket 的字节。** 模拟器的网络栈能缓存好几 MB，进度先冲到 8 MB，然后 OkHttp 等响应，慢网下 60 秒内发不完就超时重传。不能配置。这也是分片不能太大的原因之一。真实手机的缓存通常小得多，没有在真机上量过。
+- **模拟器的 `network speed` 对到宿主机 S3 的流量不起作用。** 想慢下来要在宿主机上放一个限速的 TCP 转发，`S3_PUBLIC_ENDPOINT` 指向它（SigV4 看 Host 头，转发不改它）。
 - **取消上传时的响应可能晚于取消。** `finish` 和 catch 都要先确认任务还在队列里，否则取消后完成的响应会通知“传好了”，失败的响应会把任务写回数据库，重试时复活。
 
 ## 健康内容
@@ -183,6 +185,7 @@
 - **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 8 秒。
 - **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
+- **上传中 `uiautomator dump` 要等很久。** 进度条一直在动，实测 32 秒，界面已经变了。手动走查时用截图加坐标点击。
 - **`uiautomator dump` 在界面一直有动画时会卡住。** 输入框光标闪烁、录音计时都会让它等不到空闲，`adb-ui.py` 看起来像挂了。这时用坐标点击和 `screencap`，或者先让输入框失去焦点。
 - **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
