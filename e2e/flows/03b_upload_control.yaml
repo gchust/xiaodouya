@@ -1,6 +1,6 @@
 # 上传详情和取消：选多个文件，点开卡片看到每个文件，取消一个，其余传完，确认取消的那个不在回忆里。
 # 样例里有一张超过分片阈值的图，所以这条流程也走真实的分片上传（verify-uploads.mjs 会确认它传上去了）。
-# 用 60 张样例是为了时序稳定：队列按顺序一个一个传，排在后面的来得及点开和取消。
+# 先断网：CI 上 60 个小文件十几秒就传完了，Maestro 点一下要等十几秒，来不及点开卡片。断网时卡片一直在，也顺便覆盖离线取消。
 # 没覆盖：断点续传要断网或杀 App，这里做不到，靠 uploadControl.test.ts 和手动验证，见 PROGRESS F-106。
 appId: com.gchust.xiaodouya
 ---
@@ -17,6 +17,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: moment-title }
 - inputText: Control ${RUN_ID}
 - hideKeyboard
+- setAirplaneMode: enabled
 - tapOn: { id: moment-save }
 - extendedWaitUntil:
     visible: Control ${RUN_ID}
@@ -33,8 +34,8 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: uploads-summary }
 - assertVisible: { id: "upload-item-.*" }
 - assertVisible: Control ${RUN_ID}
+- assertVisible: 等网络
 - takeScreenshot: .artifacts/e2e-03b-details
-# 排在后面的那个还没开始传。
 - tapOn:
     id: "upload-cancel-.*"
     index: 3
@@ -47,6 +48,8 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: upload-cancel-confirm }
     timeout: 5000
+- assertVisible: 59 张照片等网络恢复后上传
+- setAirplaneMode: disabled
 # 其余的继续传完，页面要说清楚传完了，不能一片空白。
 - extendedWaitUntil:
     visible: { id: uploads-empty }
