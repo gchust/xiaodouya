@@ -12,7 +12,13 @@ const DISMISSED_KEY = 'notification-prompt-dismissed';
  * 由用户自己决定要不要开通知。不能在记录后直接弹系统权限框：它会盖住“已记录”和“撤销”，
  * 用户拒绝一次之后，下一条记录又会再弹。
  */
-export function NotificationPrompt() {
+export function NotificationPrompt({
+  text = t().ui.notifPrompt,
+  dismissKey = DISMISSED_KEY,
+}: {
+  text?: string;
+  dismissKey?: string;
+} = {}) {
   const { db } = useApp();
   const [visible, setVisible] = useState(false);
 
@@ -21,23 +27,23 @@ export function NotificationPrompt() {
     void (async () => {
       const [permission, dismissed] = await Promise.all([
         Notifications.getPermissionsAsync(),
-        db.getMeta(DISMISSED_KEY),
+        db.getMeta(dismissKey),
       ]);
       if (alive) setVisible(!permission.granted && permission.canAskAgain && !dismissed);
     })().catch(() => {});
     return () => {
       alive = false;
     };
-  }, [db]);
+  }, [db, dismissKey]);
 
   if (!visible) return null;
   const dismiss = () => {
     setVisible(false);
-    void db.setMeta(DISMISSED_KEY, '1');
+    void db.setMeta(dismissKey, '1');
   };
   return (
     <View style={s.card} testID="notification-prompt">
-      <Text style={s.text}>{t().ui.notifPrompt}</Text>
+      <Text style={s.text}>{text}</Text>
       <View style={s.actions}>
         <Pressable
           testID="notification-dismiss"

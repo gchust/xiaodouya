@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- 放在模块的清单里：iOS 和 app.config.ts 都不用改。权限用途见 docs/store/google-play.md。 -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <application>
+    <!-- stopWithTask=false：用户从最近任务划掉后服务和进程都还在，上传接着跑。 -->
+    <service
+      android:name="expo.modules.uploadservice.UploadService"
+      android:exported="false"
+      android:foregroundServiceType="dataSync"
+      android:stopWithTask="false" />
+  </application>
+</manifest>
