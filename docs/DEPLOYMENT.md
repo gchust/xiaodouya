@@ -659,7 +659,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `RATE_REGISTER_GLOBAL_HOUR`       | 否   | `1000`                                   | 全站每小时能注册几次，`0` 不限。换地址绕不过。爆发式增长时要调高                                          |
 | `RATE_PUBLIC_SHARE_PER_IP_15MIN`  | 否   | `120`                                    | 分享页的公开接口，每个来源 15 分钟几次，`0` 不限。取不到来源时不按来源限制 |
 | `RATE_PUBLIC_SHARE_PER_TOKEN_HOUR` | 否  | `600`                                    | 分享页的公开接口，每个链接每小时几次，`0` 不限。换地址绕不过 |
-| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次，1 GB 的视频是 17 次                   |
+| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 300 次，1 GB 的视频是 17 次                   |
 | `RATE_SYNC_PER_10MIN`             | 否   | `600`                                    | 每人每 10 分钟同步的次数，`0` 不限。被限流时 App 退避后自动重试，不丢数据                                 |
 | `SERVER_IMAGE`                    | 否   | `ghcr.io/gchust/xiaodouya-server:latest` | 服务端镜像，可以固定到某个版本，比如 `:v0.1.0`                                                            |
 | `ALLOW_CUSTOM_STORAGE`            | 否   | 配了 `S3_*` 时 `false`，否则 `true`（Compose 是 `true`） | `false` 时只用下面的默认存储，App 显示用量页，没有 S3 表单。已经在用自己存储的家庭不受影响，还能改配置 |

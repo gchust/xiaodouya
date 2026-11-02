@@ -198,7 +198,7 @@ Xiaodouya is not a medical device and does not diagnose, treat, cure, or prevent
 
 | 分类 | 理由 |
 |---|---|
-| Location | 没有定位权限和代码。**但原文件里可能有 EXIF 位置**（COMPLIANCE 第 2 节注 3）。建议上传时去除，这样答案才干净；如果不去除，问律师是否要申报 |
+| Location | 没有定位权限和代码。**但原图和视频里可能有 EXIF 位置**（COMPLIANCE 第 2 节注 3，模拟器上看到原图的 GPS 还在）。原图不改动，分享页的新照片发不带 EXIF 的预览。要问律师是否要申报 |
 | Financial info | 没有支付。用户可能自己上传保险单和收据，已经算在 Files and docs 里 |
 | Messages | 没有聊天功能 |
 | Contacts、Calendar | 没有权限和代码 |

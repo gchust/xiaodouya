@@ -217,7 +217,7 @@ Account deletion: [App 内路径]
 
 | 类型 | 理由 |
 |---|---|
-| Location | 没有定位权限和代码。**但原文件可能带 EXIF**，见 COMPLIANCE 第 2 节注 3。建议上传时去除 |
+| Location | 没有定位权限和代码。**但原图和视频可能带 EXIF**，模拟器上看到原图的 GPS 还在，见 COMPLIANCE 第 2 节注 3。原图不改动，分享页的新照片发不带 EXIF 的预览 |
 | Contacts、Browsing History、Search History | 没有 |
 | Financial Info、Purchases | 没有支付。用户可能上传保险单和收据，这算自由上传的内容，已计入 Other User Content |
 | Diagnostics | 没有崩溃和分析 SDK。提交前检查归档的隐私报告 |

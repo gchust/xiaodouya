@@ -39,13 +39,13 @@ Xiaodouya is for adults. Children are not our users. Most of what you enter is a
 | **Baby profile** | Name, date and time of birth. Optional: birth weight, birth length, hospital of birth, blood type, avatar | Name and birth time required | Creating the profile, working out age, showing relevant hints |
 | **Daily and health records** | Feed amounts, diapers, sleep, temperature, medicine name and dose, baths, solid food, height and weight, vaccinations, notes, and the label of whoever recorded it | Optional | Records, timeline, next-feed estimate, health hints |
 | Moments and letters | Title, text, time, milestone flag, label of whoever recorded it | Optional | Memories, growth book |
-| **Photos, videos, recordings** | Files you choose or record, thumbnails, original file name, type, size, duration, recording waveform | Optional | Storing and displaying them |
+| **Photos, videos, recordings** | Files you choose or record, thumbnails, photo previews, original file name, type, size, duration, recording waveform | Optional | Storing and displaying them |
 | **Documents** | Document name, subtitle, document number, issue and expiry dates, document photos or PDFs | Optional | Keeping records. You may store birth certificates, passports, child health booklets, medical reports, insurance policies, medical receipts and so on |
 | Technical information | Request method, path, status code and error message; counters to stop password guessing (only a hash containing IP address and email, in a 15-minute window). Our hosting providers also keep their own access logs, including IP addresses | Automatic | Running the service, debugging, security |
 
 **What we treat as sensitive:** your child's health records, birth information, documents and document files. We use them only to provide the app's features to your family. We do not use them for advertising or to train models, and we do not sell them.
 
-**Hidden information in photos:** photos and files can contain embedded details such as the time, place and device. The app does not read or use these to locate you, but it also does not currently remove them from the original file, so they may be stored with it. If this concerns you, please remove them before uploading.
+**Hidden information in photos:** photos and files can contain embedded details such as the time, place and device. The app does not read or use these to locate you, but it also does not currently remove them from the original file, so they may be stored with it. The thumbnails and previews the app creates are re-encoded and don't contain these details. If this concerns you, please remove them before uploading.
 
 ### What we don't do
 
@@ -101,7 +101,7 @@ Otherwise we provide your information only when required by law or a binding gov
 
 Admins and caregivers can create a link to one day and send it to someone. **Anyone who has the link can open it, without signing in and without being family.** We can't control who it gets forwarded to.
 
-- **What they can see:** the baby's name, the day number and age, the date, and what you chose: moments with photos and videos and daily records (included by default), health records (temperature, medicine, growth, vaccines; off by default, you turn them on), and the name of whoever recorded each item. Files are the originals and can contain the hidden details mentioned above, such as where a photo was taken.
+- **What they can see:** the baby's name, the day number and age, the date, and what you chose: moments with photos and videos and daily records (included by default), health records (temperature, medicine, growth, vaccines; off by default, you turn them on), and the name of whoever recorded each item. Photos are shared as compressed previews, which don't contain the hidden details mentioned above, and the other person can't get the original. Older photos without a preview, videos and recordings are shared as the original files and can contain those details, such as where a photo was taken.
 - **What they can't see:** documents, letters to the baby, the time of birth, email addresses and other account details.
 - **What comes along technically:** file links contain the storage address and the file path, and the path contains a random family identifier. It can't be used to sign in or read anything else.
 - **How long:** links expire after the 1, 7 or 30 days you choose. You (or an admin) can revoke one at any time. They also stop working when their creator is removed from the family, changed to view-only, or deletes their account. After revoking, opening the link shows nothing, but a page that is already open can still show photos and videos for up to 1 hour, and we can't take back anything they saved themselves.
