@@ -65,6 +65,11 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
         ? 'Storage is not set up yet. Ask an admin to set it up in Family > Storage.'
         : 'Storage is not available.',
     not_uploaded: () => "The file hasn't finished uploading.",
+    multipart_unsupported: () => "This storage doesn't support uploading in parts.",
+    upload_gone: () => 'This upload has expired and needs to start again.',
+    parts_incomplete: () => "Some parts of this file haven't been uploaded yet.",
+    bad_part: () => 'That part of the file is out of range.',
+    storage_unavailable: () => "Storage isn't responding right now. Please try again later.",
     size_mismatch: () => "The file size doesn't match. Please upload it again.",
     custom_storage_disabled: () => "This server doesn't allow custom storage.",
     bad_endpoint: () => "This storage address can't be used.",

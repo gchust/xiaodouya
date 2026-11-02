@@ -2,7 +2,7 @@ import type { Config } from './config';
 import type { Sql } from './db';
 import { processPendingDeletions } from './objectDeletions';
 import { liveReferences } from './quota';
-import { deleteObject, type ResolvedStorage, storageById } from './storage';
+import { abortMultipart, deleteObject, type ResolvedStorage, storageById } from './storage';
 
 /** 比预留期（6 小时）和链接有效期（1 小时）长得多，不会删到还在传的文件。 */
 const ABANDONED_HOURS = 24;
@@ -96,8 +96,8 @@ async function purgeObjects(
 
   // ─── 放弃的上传 ─────────────────────────────────────────
   for (;;) {
-    const rows = await sql<MediaRow[]>`
-      SELECT id, variant, family_id, object_key FROM media
+    const rows = await sql<(MediaRow & { upload_id: string | null })[]>`
+      SELECT id, variant, family_id, object_key, upload_id FROM media
       WHERE status = 'pending' AND storage_config_id IS NULL
         AND reserved_at < now() - interval '1 hour' * ${ABANDONED_HOURS}
       ORDER BY reserved_at LIMIT ${BATCH + failed.size}`;
@@ -113,6 +113,14 @@ async function purgeObjects(
               AND reserved_at < now() - interval '1 hour' * ${ABANDONED_HOURS}
             FOR UPDATE SKIP LOCKED`;
           if (!locked) return;
+          if (row.upload_id) {
+            // 中止失败不能挡住这条记录的清理：转进待删除队列慢慢重试，那边有退避。
+            await abortMultipart(storage, row.object_key, row.upload_id).catch(async () => {
+              await tx`
+                INSERT INTO pending_object_deletions (id, object_key, upload_id, next_attempt_at)
+                VALUES (gen_random_uuid(), ${row.object_key}, ${row.upload_id}, now() + interval '1 hour')`;
+            });
+          }
           await deleteObject(storage, row.object_key);
           await tx`DELETE FROM media WHERE id = ${row.id} AND variant = ${row.variant}`;
           report.pendingRemoved += 1;

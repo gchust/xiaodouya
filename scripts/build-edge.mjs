@@ -26,6 +26,21 @@ const nodePrefix = {
   },
 };
 
+/**
+ * AWS SDK 的 browser 映射把 XML 解析换成 DOMParser，Deno 没有它。S3 的 PUT、HEAD 不解析响应体，
+ * 所以一直没事；分片上传的开始、列分片、完成都要解析，一调用就抛错。node 版的解析器是纯 JS，直接用它。
+ */
+const xmlParser = {
+  name: 'xml-parser',
+  setup(b) {
+    b.onResolve({ filter: /^\.\/xml-parser/ }, (args) =>
+      args.importer.includes('@aws-sdk/xml-builder')
+        ? { path: resolve(dirname(args.importer), 'xml-parser.js') }
+        : null,
+    );
+  },
+};
+
 // 较早的 Deno 不给用户代码提供这些全局变量，只给 npm 包。打包之后依赖也算用户代码。
 const banner = `import { Buffer as __Buffer } from 'node:buffer';
 import __process from 'node:process';
@@ -53,7 +68,7 @@ await build({
   minify: true,
   legalComments: 'none',
   banner: { js: banner },
-  plugins: [nodePrefix],
+  plugins: [nodePrefix, xmlParser],
   logLevel: 'warning',
 });
 
@@ -65,6 +80,11 @@ for (const forbidden of ['pg_advisory_xact_lock', 'CREATE TABLE users']) {
     console.error(`Edge 产物里不应该有“${forbidden}”：不要在 Edge Function 里执行迁移`);
     process.exit(1);
   }
+}
+
+if (bundle.includes('new DOMParser')) {
+  console.error('Edge 产物里不应该有 DOMParser：Deno 没有它，解析 S3 的响应时会抛错');
+  process.exit(1);
 }
 
 const { size } = statSync(outfile);

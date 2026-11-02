@@ -16,6 +16,9 @@
  *
  * 上线前对真实存储确认一次，它支持把大小签进上传链接（不支持时所有上传都会失败）：
  *   pnpm --filter @xiaodouya/server cli check-upload-size
+ *
+ * 再确认一次它支持分片上传（不通过时设置 S3_MULTIPART_ENABLED=false，App 退回单个 PUT）：
+ *   pnpm --filter @xiaodouya/server cli check-multipart
  */
 
 import { Buffer } from 'node:buffer';
@@ -47,10 +50,11 @@ if (
   command !== 'maintenance' &&
   command !== 'purge-objects' &&
   command !== 'check-upload-size' &&
+  command !== 'check-multipart' &&
   !(command === 'reset-password' && email)
 ) {
   console.error(
-    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli reset-password <邮箱>',
+    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli reset-password <邮箱>',
   );
   process.exit(1);
 }
@@ -109,6 +113,14 @@ try {
     console.log(
       `${result.ok ? '通过' : '不通过，请设置 S3_BIND_UPLOAD_SIZE=false'}：${result.message}`,
     );
+    ok = result.ok;
+  } else if (command === 'check-multipart') {
+    const { checkMultipartUpload, storageById } = await import('./storage');
+    const config = storageConfig();
+    const storage = await storageById(sql, config, '', null);
+    if (!storage) throw new Error('没有配置 S3_*');
+    const result = await checkMultipartUpload(storage, config.bindUploadSize);
+    console.log(result.ok ? result.message : `不通过，请设置 S3_MULTIPART_ENABLED=false：${result.message}`);
     ok = result.ok;
   } else {
     ok = await resetPassword(sql, email!);

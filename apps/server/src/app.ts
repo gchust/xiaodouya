@@ -28,6 +28,17 @@ import {
   type Locale,
   LoginRequest,
   localeFromAcceptLanguage,
+  MultipartPartUrlsRequest,
+  type MultipartPartUrlsResponse,
+  type MultipartPartsResponse,
+  MultipartRef,
+  MultipartStartRequest,
+  type MultipartStartResponse,
+  missingParts,
+  multipartPartBytes,
+  multipartPartCount,
+  multipartPartSize,
+  validParts,
   MediaUrlsRequest,
   type MediaUrlsResponse,
   type MeResponse,
@@ -53,10 +64,10 @@ import {
   type UploadUrlResponse,
   VerifyEmailRequest,
 } from '@xiaodouya/shared';
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { HTTPException } from 'hono/http-exception';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { clientIpFrom } from './client-ip';
 import type { Config } from './config';
 import {
@@ -79,15 +90,33 @@ import {
 import type { Mailer } from './mailer';
 import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
 import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './notifier';
-import { enqueueFamilyObjects, processPendingDeletions } from './objectDeletions';
-import { countedBytes, familyQuotaBytes, liveReferences, platformUsage, uuidsIn } from './quota';
 import {
+  enqueueCancelledUpload,
+  enqueueFamilyObjects,
+  processPendingDeletions,
+} from './objectDeletions';
+import {
+  countedBytes,
+  familyQuotaBytes,
+  liveReferences,
+  platformUsage,
+  RESERVATION_HOURS,
+  uuidsIn,
+} from './quota';
+import {
+  abortMultipart,
   activeStorage,
   assertEndpointAllowed,
+  completeMultipart,
+  createMultipart,
   deleteObject,
   endpointForProvider,
   headObject,
+  isNoSuchUpload,
+  listMultipartParts,
+  multipartUnsupported,
   presignDownload,
+  presignPart,
   presignUpload,
   type ResolvedStorage,
   resolvedFromInput,
@@ -153,7 +182,7 @@ interface Membership {
 type Env = { Variables: { user: AuthedUser; membership: Membership | null } };
 
 function fail(
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 503,
+  status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 501 | 503,
   code: string,
   message: string,
   params?: Record<string, string | number>,
@@ -1146,9 +1175,13 @@ export function createApp({
       { quota },
     );
 
-  v1.post('/media/upload-url', async (c) => {
+  const requireUploader = (c: Context<Env>) => {
     const m = requireFamily(c);
     if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    return m;
+  };
+
+  const limitUploadUrls = async (c: Context<Env>) => {
     const { uploadUrlPerWindow } = config.limits;
     if (
       uploadUrlPerWindow > 0 &&
@@ -1161,7 +1194,10 @@ export function createApp({
     ) {
       fail(429, 'rate_limited', '上传太频繁了，稍后会自动重试');
     }
-    const body = await parseBody(c, UploadUrlRequest);
+  };
+
+  /** 单个 PUT 和分片上传共用的准入检查。 */
+  const admitUpload = async (m: { familyId: string }, body: UploadUrlRequest) => {
     if (!isAllowedMime(body.mime, body.scope)) fail(400, 'bad_type', '不支持这种文件类型');
     const maxBytes = Math.min(
       config.maxUploadBytes,
@@ -1171,8 +1207,8 @@ export function createApp({
       fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(maxBytes)}`, { maxBytes });
     }
     const [existing] = await sql<
-      { family_id: string; status: string; object_key: string; storage_config_id: string | null }[]
-    >`SELECT family_id, status, object_key, storage_config_id FROM media WHERE id = ${body.id} AND variant = ${body.variant}`;
+      { family_id: string; status: string }[]
+    >`SELECT family_id, status FROM media WHERE id = ${body.id} AND variant = ${body.variant}`;
     if (existing && existing.family_id !== m.familyId) fail(403, 'forbidden', '没有权限');
     if (existing?.status === 'ready') fail(409, 'already_uploaded', '文件已经上传过了');
 
@@ -1181,9 +1217,23 @@ export function createApp({
       fail(503, 'no_storage', '还没有配置存储，请管理员先在「家人 → 存储」里设置', {
         reason: 'notConfigured',
       });
-    const key = objectKey(m.familyId, body.scope, body.id, body.variant);
-    await sql.begin(async (tx) => {
-      // 自己的存储不花平台的钱，不用配额。查询和预留要在同一把锁里，否则并行上传会一起通过检查。
+    return { storage, key: objectKey(m.familyId, body.scope, body.id, body.variant) };
+  };
+
+  /**
+   * 查询和预留要在同一把锁里，否则并行上传会一起通过检查。自己的存储不花平台的钱，不用配额。
+   * 文件大小和存储都没变时才接着用原来的 uploadId，其余情况旧的分片作废，由调用方在事务外中止：
+   * 连接池可能只有 1 个连接，等对象存储时不能占着它。
+   */
+  const reserveUpload = (
+    m: { familyId: string },
+    userId: string,
+    body: UploadUrlRequest,
+    storage: ResolvedStorage,
+    key: string,
+    { keepMultipart }: { keepMultipart: boolean },
+  ) =>
+    sql.begin(async (tx) => {
       if (!storage.configId) {
         const [family] = await tx<{ quota_mb: string | null }[]>`
           SELECT quota_mb FROM families WHERE id = ${m.familyId} FOR UPDATE`;
@@ -1193,14 +1243,83 @@ export function createApp({
           if (countedBytes(usage, quota) + body.size > quota) failOverQuota(quota);
         }
       }
+      const [previous] = await tx<
+        {
+          size: string;
+          object_key: string;
+          storage_config_id: string | null;
+          upload_id: string | null;
+          upload_part_size: number | null;
+        }[]
+      >`SELECT size, object_key, storage_config_id, upload_id, upload_part_size FROM media
+        WHERE id = ${body.id} AND variant = ${body.variant} FOR UPDATE`;
+      const reusable =
+        keepMultipart &&
+        previous?.upload_id &&
+        Number(previous.size) === body.size &&
+        previous.storage_config_id === storage.configId;
+      const uploadId = reusable ? previous.upload_id : null;
+      const partSize = reusable ? previous.upload_part_size : null;
       await tx`
-        INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by)
-        VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${c.get('user').id})
+        INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by, upload_id, upload_part_size)
+        VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${userId}, ${uploadId}, ${partSize})
         ON CONFLICT (id, variant) DO UPDATE SET
           mime = EXCLUDED.mime, size = EXCLUDED.size, filename = EXCLUDED.filename,
           object_key = EXCLUDED.object_key, storage_config_id = EXCLUDED.storage_config_id,
+          upload_id = EXCLUDED.upload_id, upload_part_size = EXCLUDED.upload_part_size,
           reserved_at = now()`;
+      const stale =
+        previous?.upload_id && !reusable
+          ? {
+              uploadId: previous.upload_id,
+              key: previous.object_key,
+              storageConfigId: previous.storage_config_id,
+            }
+          : null;
+      return { uploadId, partSize, stale };
     });
+
+  /** 地址可能在保存之后改为解析到内网，服务端连接前再查一次。 */
+  const assertReachable = async (storage: ResolvedStorage) => {
+    if (!storage.configId || !storage.endpoint) return;
+    try {
+      await assertEndpointAllowed(storage.endpoint, config);
+    } catch {
+      fail(503, 'no_storage', '存储地址不可用');
+    }
+  };
+
+  const reachableStorage = async (familyId: string, configId: string | null) => {
+    const storage = await storageById(sql, config, familyId, configId);
+    if (!storage) fail(503, 'no_storage', '存储配置不可用');
+    await assertReachable(storage);
+    return storage;
+  };
+
+  /** 作废的分片尽力中止。失败不影响这次请求，存储的生命周期规则兜底，见 DEPLOYMENT。 */
+  const abortStaleUpload = async (
+    familyId: string,
+    stale: { uploadId: string; key: string; storageConfigId: string | null } | null,
+  ) => {
+    if (!stale) return;
+    try {
+      const storage = await reachableStorage(familyId, stale.storageConfigId);
+      await abortMultipart(storage, stale.key, stale.uploadId);
+    } catch (error) {
+      console.warn('中止作废的分片失败', error instanceof Error ? error.name : 'unknown');
+    }
+  };
+
+  v1.post('/media/upload-url', async (c) => {
+    const m = requireUploader(c);
+    await limitUploadUrls(c);
+    const body = await parseBody(c, UploadUrlRequest);
+    const { storage, key } = await admitUpload(m, body);
+    const { stale } = await reserveUpload(m, c.get('user').id, body, storage, key, {
+      keepMultipart: false,
+    });
+    // App 从分片退回单个 PUT 时走到这里，已传的分片用不上了。
+    await abortStaleUpload(m.familyId, stale);
     const url = await presignUpload(
       storage,
       key,
@@ -1216,32 +1335,15 @@ export function createApp({
     });
   });
 
-  v1.post('/media/:id/complete', async (c) => {
-    const m = requireFamily(c);
-    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
-    const { variant } = await parseBody(c, CompleteUploadRequest);
-    const id = c.req.param('id');
-    const [row] = await sql<
-      {
-        family_id: string;
-        size: string;
-        object_key: string;
-        storage_config_id: string | null;
-        status: string;
-      }[]
-    >`SELECT family_id, size, object_key, storage_config_id, status FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
-    if (!row || row.family_id !== m.familyId) fail(404, 'not_found', '找不到这个文件');
-    if (row.status === 'ready') return c.json({ ok: true });
-    const storage = await storageById(sql, config, m.familyId, row.storage_config_id);
-    if (!storage) fail(503, 'no_storage', '存储配置不可用');
-    if (storage.configId && storage.endpoint) {
-      // 地址可能在保存之后改为解析到内网，连接前再查一次。
-      try {
-        await assertEndpointAllowed(storage.endpoint, config);
-      } catch {
-        fail(503, 'no_storage', '存储地址不可用');
-      }
-    }
+  /** HEAD 校验大小、复查配额、标记 ready。单个 PUT 和分片上传的最后一步相同。 */
+  const finalizeUpload = async (
+    c: Context<Env>,
+    m: { familyId: string },
+    id: string,
+    variant: string,
+    row: { size: string; object_key: string; storage_config_id: string | null },
+    storage: ResolvedStorage,
+  ) => {
     const head = await headObject(storage, row.object_key);
     if (!head) fail(409, 'not_uploaded', '文件还没有上传完成');
     // 预签名链接不限制大小，这里补上校验，防止绕过上传大小限制。
@@ -1264,11 +1366,257 @@ export function createApp({
           }
         }
       }
-      await tx`UPDATE media SET status = 'ready' WHERE id = ${id}::uuid AND variant = ${variant}`;
+      await tx`UPDATE media SET status = 'ready', upload_id = NULL, upload_part_size = NULL
+               WHERE id = ${id}::uuid AND variant = ${variant}`;
       return null;
     });
     // 在事务外抛错：事务里抛错会把上面的删除回滚。
     if (overQuota !== null) failOverQuota(overQuota);
+    return c.json({ ok: true });
+  };
+
+  v1.post('/media/:id/complete', async (c) => {
+    const m = requireUploader(c);
+    const { variant } = await parseBody(c, CompleteUploadRequest);
+    const id = c.req.param('id');
+    const [row] = await sql<
+      {
+        family_id: string;
+        size: string;
+        object_key: string;
+        storage_config_id: string | null;
+        status: string;
+      }[]
+    >`SELECT family_id, size, object_key, storage_config_id, status FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
+    if (!row || row.family_id !== m.familyId) fail(404, 'not_found', '找不到这个文件');
+    if (row.status === 'ready') return c.json({ ok: true });
+    const storage = await reachableStorage(m.familyId, row.storage_config_id);
+    return finalizeUpload(c, m, id, variant, row, storage);
+  });
+
+  // ─── 分片上传 ─────────────────────────────────────────
+  // 服务端不记账：哪些片传了、ETag 是多少，都当场问存储。手机只管传，不碰 ETag。
+
+  const uploadGone = (): never => fail(404, 'upload_gone', '这次上传已经失效，需要重新开始');
+
+  const mediaIdParam = (c: Context<Env>): string => {
+    const parsed = z.uuid().safeParse(c.req.param('id'));
+    if (!parsed.success) fail(404, 'not_found', '找不到这个文件');
+    return parsed.data;
+  };
+
+  /** 新版接口对别的家庭返回 403，和 upload-url 一致。没有这一行时返回 null。 */
+  const multipartRow = async (m: { familyId: string }, id: string, variant: string) => {
+    const [row] = await sql<
+      {
+        family_id: string;
+        size: string;
+        object_key: string;
+        storage_config_id: string | null;
+        status: string;
+        upload_id: string | null;
+        upload_part_size: number | null;
+        reservation_expired: boolean;
+      }[]
+    >`SELECT family_id, size, object_key, storage_config_id, status, upload_id, upload_part_size,
+        reserved_at < now() - interval '1 hour' * ${RESERVATION_HOURS} AS reservation_expired
+      FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
+    if (row && row.family_id !== m.familyId) fail(403, 'forbidden', '没有权限');
+    return row ?? null;
+  };
+
+  const forgetUpload = (id: string, variant: string, uploadId: string) =>
+    sql`UPDATE media SET upload_id = NULL, upload_part_size = NULL
+        WHERE id = ${id}::uuid AND variant = ${variant} AND upload_id = ${uploadId}`;
+
+  v1.post('/media/multipart', async (c) => {
+    const m = requireUploader(c);
+    await limitUploadUrls(c);
+    const body = await parseBody(c, MultipartStartRequest);
+    const { storage, key } = await admitUpload(m, body);
+    if (!config.multipartEnabled) fail(501, 'multipart_unsupported', '这个存储不支持分片上传');
+    const reserved = await reserveUpload(m, c.get('user').id, body, storage, key, {
+      keepMultipart: true,
+    });
+    await abortStaleUpload(m.familyId, reserved.stale);
+    if (reserved.uploadId && reserved.partSize) {
+      return c.json<MultipartStartResponse>({
+        uploadId: reserved.uploadId,
+        partSize: reserved.partSize,
+      });
+    }
+    await assertReachable(storage);
+    const partSize = multipartPartSize(body.size);
+    let uploadId: string;
+    try {
+      uploadId = await createMultipart(storage, key, body.mime);
+    } catch (error) {
+      if (multipartUnsupported(error)) {
+        fail(501, 'multipart_unsupported', '这个存储不支持分片上传');
+      }
+      fail(503, 'storage_unavailable', '存储暂时没有响应，稍后会自动重试');
+    }
+    // 两个请求同时走到这里时只留先写入的，另一个中止。
+    const [claimed] = await sql<{ upload_id: string }[]>`
+      UPDATE media SET upload_id = ${uploadId}, upload_part_size = ${partSize}
+      WHERE id = ${body.id} AND variant = ${body.variant} AND status = 'pending' AND upload_id IS NULL
+      RETURNING upload_id`;
+    if (claimed) return c.json<MultipartStartResponse>({ uploadId, partSize });
+    await abortMultipart(storage, key, uploadId).catch(() => {});
+    const winner = await multipartRow(m, body.id, body.variant);
+    if (!winner?.upload_id || !winner.upload_part_size) return uploadGone();
+    return c.json<MultipartStartResponse>({
+      uploadId: winner.upload_id,
+      partSize: winner.upload_part_size,
+    });
+  });
+
+  v1.post('/media/:id/multipart/parts', async (c) => {
+    const m = requireUploader(c);
+    const id = mediaIdParam(c);
+    const { variant, uploadId } = await parseBody(c, MultipartRef);
+    const row = await multipartRow(m, id, variant);
+    if (!row) return uploadGone();
+    if (row.status === 'ready') return c.json<MultipartPartsResponse>({ parts: [], complete: true });
+    if (row.upload_id !== uploadId) return uploadGone();
+    const storage = await reachableStorage(m.familyId, row.storage_config_id);
+    try {
+      const parts = await listMultipartParts(storage, row.object_key, uploadId);
+      return c.json<MultipartPartsResponse>({
+        parts: parts.map(({ partNumber, size }) => ({ partNumber, size })),
+        complete: false,
+      });
+    } catch (error) {
+      if (!isNoSuchUpload(error)) {
+        fail(503, 'storage_unavailable', '存储暂时没有响应，稍后会自动重试');
+      }
+    }
+    // 分片没了：可能已经合并好了（上次没收到响应），也可能真的过期了。
+    const head = await headObject(storage, row.object_key);
+    if (head?.size === Number(row.size)) {
+      return c.json<MultipartPartsResponse>({ parts: [], complete: true });
+    }
+    await forgetUpload(id, variant, uploadId);
+    return uploadGone();
+  });
+
+  v1.post('/media/:id/multipart/part-urls', async (c) => {
+    const m = requireUploader(c);
+    const id = mediaIdParam(c);
+    const { variant, uploadId, partNumbers } = await parseBody(c, MultipartPartUrlsRequest);
+    const row = await multipartRow(m, id, variant);
+    if (!row) return uploadGone();
+    if (row.status === 'ready') fail(409, 'already_uploaded', '文件已经上传过了');
+    if (row.upload_id !== uploadId || !row.upload_part_size) return uploadGone();
+    const size = Number(row.size);
+    const partSize = row.upload_part_size;
+    if (partNumbers.some((n) => n > multipartPartCount(size, partSize))) {
+      fail(400, 'bad_part', '分片序号超出范围');
+    }
+    await limitUploadUrls(c);
+    await sql.begin(async (tx) => {
+      // 预留过期后可能已经被别的文件占了。没过期的不用排队，这里每传几片就走一次。
+      if (row.reservation_expired && !row.storage_config_id) {
+        const [family] = await tx<{ quota_mb: string | null }[]>`
+          SELECT quota_mb FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+        const quota = familyQuotaBytes(config, family?.quota_mb ?? null);
+        if (quota !== null) {
+          const usage = await platformUsage(tx, m.familyId, { id, variant });
+          if (countedBytes(usage, quota) + size > quota) failOverQuota(quota);
+        }
+      }
+      // 慢网传大视频可以传很久，每取一批链接就续一次，不算放弃。
+      await tx`UPDATE media SET reserved_at = now() WHERE id = ${id}::uuid AND variant = ${variant}`;
+    });
+    const storage = await storageById(sql, config, m.familyId, row.storage_config_id);
+    if (!storage) fail(503, 'no_storage', '存储配置不可用');
+    const urls = await Promise.all(
+      partNumbers.map(async (partNumber) => {
+        const bytes = multipartPartBytes(partNumber, size, partSize);
+        return {
+          partNumber,
+          size: bytes,
+          url: await presignPart(
+            storage,
+            row.object_key,
+            uploadId,
+            partNumber,
+            bytes,
+            UPLOAD_URL_TTL,
+            config.bindUploadSize,
+          ),
+        };
+      }),
+    );
+    return c.json<MultipartPartUrlsResponse>({ urls, expiresIn: UPLOAD_URL_TTL });
+  });
+
+  v1.post('/media/:id/multipart/complete', async (c) => {
+    const m = requireUploader(c);
+    const id = mediaIdParam(c);
+    const { variant, uploadId } = await parseBody(c, MultipartRef);
+    const row = await multipartRow(m, id, variant);
+    if (!row) return uploadGone();
+    if (row.status === 'ready') return c.json({ ok: true });
+    if (row.upload_id !== uploadId || !row.upload_part_size) return uploadGone();
+    const storage = await reachableStorage(m.familyId, row.storage_config_id);
+    const size = Number(row.size);
+    const partSize = row.upload_part_size;
+    try {
+      const stored = await listMultipartParts(storage, row.object_key, uploadId);
+      if (missingParts(stored, size, partSize).length > 0) {
+        fail(409, 'parts_incomplete', '文件还有部分没有传完');
+      }
+      const valid = new Set(validParts(stored, size, partSize).map((p) => p.partNumber));
+      await completeMultipart(
+        storage,
+        row.object_key,
+        uploadId,
+        stored.filter((p) => valid.has(p.partNumber)),
+      );
+    } catch (error) {
+      if (error instanceof HTTPException) throw error;
+      if (!isNoSuchUpload(error)) {
+        // 合并被存储拒绝时重传也许能好，交给客户端的上限；其余是暂时的。
+        if (multipartUnsupported(error)) fail(409, 'parts_incomplete', '文件还有部分没有传完');
+        fail(503, 'storage_unavailable', '存储暂时没有响应，稍后会自动重试');
+      }
+      // 分片没了：上次可能已经合并成功，只是没来得及标记。下面的 HEAD 会核对。
+      const head = await headObject(storage, row.object_key);
+      if (head?.size !== size) {
+        await forgetUpload(id, variant, uploadId);
+        return uploadGone();
+      }
+    }
+    return finalizeUpload(c, m, id, variant, row, storage);
+  });
+
+  /**
+   * 取消上传：只处理还没传完的。已经 ready 的变体不动，记录去掉引用后由 unreferenced_at 那条链路清理，撤销也还能用。
+   * 存储的清理放进待删除队列，这里不等：手机可能离线后才补发这个请求，对象存储也可能很慢。
+   */
+  v1.post('/media/:id/cancel', async (c) => {
+    const m = requireUploader(c);
+    const id = mediaIdParam(c);
+    const rows = await sql<
+      { family_id: string }[]
+    >`SELECT family_id FROM media WHERE id = ${id}::uuid`;
+    if (rows.some((r) => r.family_id !== m.familyId)) fail(403, 'forbidden', '没有权限');
+    const removed = await sql.begin(async (tx) => {
+      await enqueueCancelledUpload(tx, m.familyId, id, UPLOAD_URL_TTL);
+      const deleted = await tx`
+        DELETE FROM media WHERE id = ${id}::uuid AND family_id = ${m.familyId} AND status = 'pending'`;
+      return deleted.count;
+    });
+    if (removed > 0) {
+      background(
+        processPendingDeletions(sql, config)
+          .then(() => {})
+          .catch((error: unknown) => {
+            console.error('清理文件失败', error instanceof Error ? error.message : 'unknown');
+          }),
+      );
+    }
     return c.json({ ok: true });
   });
 

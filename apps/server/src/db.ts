@@ -197,6 +197,13 @@ export const migrations: readonly string[] = [
   CREATE INDEX pending_object_deletions_due ON pending_object_deletions(next_attempt_at);
   ALTER TABLE pending_object_deletions ENABLE ROW LEVEL SECURITY;
   `,
+  // 分片上传。片的大小记下来：常量以后可能变，没传完的文件还要按当初的大小算。
+  // 待删除队列也带上 upload_id：对象还没合并时，只删对象删不掉已传的分片。
+  `
+  ALTER TABLE media ADD COLUMN upload_id TEXT;
+  ALTER TABLE media ADD COLUMN upload_part_size INT;
+  ALTER TABLE pending_object_deletions ADD COLUMN upload_id TEXT;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

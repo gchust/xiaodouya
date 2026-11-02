@@ -70,6 +70,9 @@ jobs:
       # 不通过时所有上传都会失败，要先给函数设置 S3_BIND_UPLOAD_SIZE=false 再部署。
       - name: 确认存储支持把大小签进上传链接
         run: pnpm --filter @xiaodouya/server cli check-upload-size
+      # 不通过时先给函数设置 S3_MULTIPART_ENABLED=false（App 会退回单个 PUT）再部署。
+      - name: 确认存储支持预签名分片上传
+        run: pnpm --filter @xiaodouya/server cli check-multipart
       - name: 迁移数据库
         run: pnpm --filter @xiaodouya/server cli migrate
       - name: 部署函数
