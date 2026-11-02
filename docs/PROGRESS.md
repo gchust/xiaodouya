@@ -124,7 +124,7 @@ E2E 列的 ✅ 指 CI run 41297634363（提交 `4e526f6`）中对应编号的流
 | F-70 | Android APK 构建 | 完成 | ✅ CI run 41264840330 产出 E2E APK | 是 |  |
 | F-71 | CI：静态检查、单元、集成 | 完成 | ✅ CI 通过 | 是 |  |
 | F-72 | CI：Android E2E | 完成 | ✅ 17 个流程全部通过（CI run 41278806145） | 是 |  |
-| F-117 | CI 提速：没动 App 跳过 E2E、APK 按内容缓存、四台模拟器并行（`e2e/groups.json`，`scripts/ci-changes.mjs`、`apk-key.mjs`、`e2e-groups.mjs`），流程 11a 拆成 6 条，断言没有减少 | 待验证 | ✅ 单元（`apk-key.test.mjs`、`ci-changes.test.mjs`、`e2e-groups.test.mjs`，都在弄坏代码时看到过失败）。⬜ CI 全绿和三项证明，见 PR #34 | 否 | ci/faster-e2e |
+| F-117 | CI 提速：没动 App 跳过 E2E、APK 按内容缓存、四台模拟器并行（`e2e/groups.json`，`scripts/ci-changes.mjs`、`apk-key.mjs`、`e2e-groups.mjs`），流程 11a 拆成 6 条，断言没有减少 | 待验证 | ✅ 单元（`apk-key.test.mjs`、`ci-changes.test.mjs`、`e2e-groups.test.mjs`，都在弄坏对应代码时看到过失败）。✅ 只改工作流跳过 E2E（run 41465969206，2.7 分钟，`CI 结果` 绿）。✅ 没改 App 时复用 APK（run 41465842346，APK job 0.3 分钟）。✅ 改一行 App 重新构建并跑四组，`daily` 组在故意改坏的 `Past 24 hours` 上失败（run 41465980805）。⬜ 连续两轮全绿、串行模式，见 PR #34 | 否 | ci/faster-e2e |
 | F-73 | 服务端 Docker 镜像 | 完成 | ✅ CI 构建并冒烟测试 | 是 |  |
 | F-74 | 生产 Docker Compose + Caddy | 待验证 | ⬜ 没有公网部署过。只在本机跑通：DOMAIN=localhost、Caddy 内部证书、临时覆盖的高位端口，无缓存构建后用 curl 走通 healthz、注册、建家庭、同步、开发 SeaweedFS 直传和下载（sha256 一致）、无存储时 503、容器内 reset-password、伪造 X-Forwarded-For 仍被限流、25 秒长轮询。Let's Encrypt、真实域名、R2 和 S3 都没测 | 否 |  |
 | F-75 | 数据库备份和恢复 | 待验证 | ⬜ 只在上述本机环境验证：backup.sh 和新增的 restore.sh 跑通，改坏数据后能恢复，down -v 销毁全部卷后记录和文件都回来了，截断或损坏的备份被拒绝，坏 SQL 会回滚。cron 只用 env -i 模拟过，没有装 crontab。**未解决：** 恢复较旧备份后手机游标超前，看不到家人的新记录（已用 API 复现，协议没改）；文档里“退出再登录”的办法只读过代码，没有真机验证 | 否 |  |
