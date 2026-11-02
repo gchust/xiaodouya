@@ -21,6 +21,8 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
       })[String(p.reason)] ?? `Invalid input: ${p.field ?? 'request'} ${p.detail ?? ''}`.trim(),
     internal: () => 'Something went wrong on the server. Please try again later.',
     not_found: () => 'Not found.',
+    share_limit: (p: ApiErrorParams) =>
+      `This family already has ${p.max} active links. Revoke one you no longer need first.`,
     signup_closed: () =>
       'This server is not open for sign-up. You need an invite code from family.',
     invalid_invite: () => 'The invite code is invalid or has expired.',

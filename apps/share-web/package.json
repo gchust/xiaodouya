@@ -1,0 +1,21 @@
+{
+  "name": "@xiaodouya/share-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xiaodouya/shared": "workspace:*",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "happy-dom": "21.0.4",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.0"
+  }
+}

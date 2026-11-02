@@ -9,6 +9,7 @@ import { info } from './info';
 import { nutritionUi } from './nutritionUi';
 import { recall } from './recall';
 import { records } from './records';
+import { share } from './share';
 import { storageUi } from './storageUi';
 import { today } from './today';
 import { ui } from './ui';
@@ -24,6 +25,7 @@ export const en: Catalog = {
   auth,
   nutritionUi,
   records,
+  share,
   today,
   account,
   ui,

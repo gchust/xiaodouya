@@ -1,0 +1,592 @@
+/* 颜色和字号来自 docs/design/SPEC.md 和 apps/mobile/src/theme.ts。不加载任何外部字体。 */
+:root {
+  --paper: #f6f1ea;
+  --card: #fffdf9;
+  --sand: #efe6d9;
+  --line: #ebe2d6;
+  --rule: #f1eadf;
+  --ink: #2b2622;
+  --ink-soft: #4a423c;
+  --muted: #7a6f66;
+  --accent: #c0714f;
+  --stripe-a: #e5dccf;
+  --stripe-b: #ede5d9;
+  --serif:
+    "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "STSong", Georgia,
+    "Times New Roman", serif;
+  --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+  --sans:
+    system-ui, -apple-system, "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+  --gutter: 22px;
+  --radius: 14px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--paper);
+}
+
+html.no-scroll {
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+p,
+ol {
+  margin: 0;
+  padding: 0;
+}
+
+ol {
+  list-style: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.page {
+  width: 100%;
+  max-width: 600px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: max(28px, env(safe-area-inset-top)) var(--gutter) max(28px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.noscript {
+  padding: 40px var(--gutter);
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ─── 标题 ─────────────────────────────── */
+
+.hero-date {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.hero-title {
+  margin-top: 8px;
+  font-family: var(--serif);
+  font-size: clamp(26px, 7.4vw, 34px);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.01em;
+}
+
+.hero-age {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+/* ─── 小结 ─────────────────────────────── */
+
+.summary {
+  display: flex;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.stat {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat + .stat {
+  border-left: 1px solid var(--rule);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-family: var(--mono);
+  font-size: 19px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  white-space: nowrap;
+  /* 等宽字体的空格很宽，“4 次”看起来是分开的两个词。 */
+  word-spacing: -0.3em;
+}
+
+.stat-sub {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ─── 照片和视频 ───────────────────────── */
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* 大图伸到两边一点，比正文宽，像相册。 */
+  margin-inline: -8px;
+}
+
+.gallery-row {
+  display: flex;
+  gap: 6px;
+}
+
+.frame {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: repeating-linear-gradient(135deg, var(--stripe-a) 0 8px, var(--stripe-b) 8px 16px);
+}
+
+.gallery-row-pair .frame {
+  flex: 1 1 0;
+  aspect-ratio: 3 / 4;
+}
+
+.gallery-row-grid .frame {
+  flex: 0 0 calc((100% - 12px) / 3);
+  aspect-ratio: 1;
+}
+
+.gallery-row-full .frame {
+  flex: 1 1 100%;
+}
+
+.tile {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.tile img,
+.frame video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.frame-video video {
+  object-fit: contain;
+  background: var(--ink);
+}
+
+.duration {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(43, 38, 34, 0.62);
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.is-playing .duration {
+  display: none;
+}
+
+.media-broken {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px;
+  border: 0;
+  background: var(--sand);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.audio .media-broken {
+  position: static;
+  border-radius: 12px;
+}
+
+.media-broken-title {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.media-broken-retry {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.note {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ─── 时间线 ───────────────────────────── */
+
+.section-title {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.entries {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 44px 14px minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 11px 0;
+}
+
+.entry + .entry {
+  border-top: 1px solid var(--rule);
+}
+
+.entry-time {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.entry-rail {
+  display: flex;
+  justify-content: center;
+  padding-top: 7px;
+}
+
+.entry-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.entry-title {
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--ink);
+}
+
+.entry-detail {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+}
+
+.tag {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--accent);
+}
+
+.moment-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.moment-text {
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--ink-soft);
+  white-space: pre-wrap;
+}
+
+.audio {
+  margin-top: 10px;
+}
+
+.audio audio {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+
+/* ─── 页脚 ─────────────────────────────── */
+
+.foot {
+  margin-top: auto;
+  padding-top: 12px;
+  text-align: center;
+}
+
+.foot-note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.foot-brand {
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ─── 加载、失效、出错、空的一天 ─────────── */
+
+.state {
+  margin: auto 0;
+  padding: 24px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.state-soft {
+  margin: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 36px 20px;
+}
+
+.state-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  margin-bottom: 8px;
+  background: repeating-linear-gradient(135deg, var(--stripe-a) 0 6px, var(--stripe-b) 6px 12px);
+}
+
+.state-title {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.state-body {
+  max-width: 28em;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.state-button {
+  margin-top: 10px;
+  min-width: 160px;
+  height: 48px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.state-button:active {
+  transform: scale(0.97);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.skeleton > div {
+  border-radius: 8px;
+  background: var(--sand);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.sk-short {
+  width: 38%;
+  height: 12px;
+}
+
+.sk-title {
+  width: 72%;
+  height: 30px;
+}
+
+.sk-age {
+  width: 26%;
+  height: 14px;
+}
+
+.skeleton .sk-card {
+  height: 84px;
+  margin-top: 14px;
+  border-radius: var(--radius);
+}
+
+.skeleton .sk-photo {
+  height: 280px;
+  margin-top: 14px;
+  border-radius: 12px;
+  background: repeating-linear-gradient(135deg, var(--stripe-a) 0 8px, var(--stripe-b) 8px 16px);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ─── 放大看图 ─────────────────────────── */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  background: rgba(24, 20, 17, 0.97);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: pinch-zoom;
+  animation: fade 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.lightbox-problem {
+  padding: 0 60px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+  text-align: center;
+}
+
+.lightbox-close,
+.lightbox-nav {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-close {
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+}
+
+.lightbox-nav {
+  top: 50%;
+  margin-top: -22px;
+}
+
+.lightbox-prev {
+  left: 12px;
+}
+
+.lightbox-next {
+  right: 12px;
+}
+
+.lightbox-counter {
+  position: absolute;
+  top: max(24px, calc(env(safe-area-inset-top) + 12px));
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton > div,
+  .lightbox {
+    animation: none;
+  }
+  .state-button {
+    transition: none;
+  }
+}
+
+@media (min-width: 640px) {
+  .page {
+    padding-top: 48px;
+    gap: 28px;
+  }
+  .gallery {
+    margin-inline: 0;
+  }
+}

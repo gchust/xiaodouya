@@ -1,0 +1,7 @@
+# 分享页：只有静态文件。没有 main，所以不跑任何 Worker 代码，不代理 API，也碰不到令牌（它在 URL 片段里）。
+# 响应头在构建时生成的 dist/_headers 里。这里不写账号 ID 和域名，都在部署时配置，见 docs/DEPLOYMENT.md。
+name = "xiaodouya-share"
+compatibility_date = "2026-10-01"
+
+[assets]
+directory = "./dist"
