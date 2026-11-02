@@ -1,0 +1,75 @@
+# 证件能改名字、移除文件。测试用的证件最后删掉。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+
+# ─── 证件：改名字，移除文件 ──────────────────────
+- scrollUntilVisible:
+    element: { id: doc-add }
+    direction: UP
+# 列表还带着惯性时，按钮一露出来就点，点下去时它已经滑走了。等停稳后再确认一次。
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: { id: doc-add }
+    direction: UP
+- tapOn: { id: doc-add }
+- extendedWaitUntil:
+    visible: { id: doc-name }
+    timeout: 10000
+- tapOn: { id: doc-name }
+- inputText: Edit doc
+- hideKeyboard
+- tapOn: { id: doc-create }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- tapOn: { id: doc-upload }
+- extendedWaitUntil:
+    visible: sample-certificate.pdf
+    timeout: 15000
+- tapOn: { id: doc-scan }
+- extendedWaitUntil:
+    visible: 2 个
+    timeout: 15000
+- tapOn: { id: doc-edit }
+- tapOn: { id: doc-edit-name }
+- eraseText: 20
+- inputText: Renamed doc
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-11a-doc-edit
+- tapOn: { id: doc-edit-save }
+- extendedWaitUntil:
+    visible: Renamed doc
+    timeout: 10000
+- assertVisible: 2 个
+- takeScreenshot: .artifacts/e2e-11a-doc-files
+- scrollUntilVisible:
+    element: { id: doc-file-remove-sample-certificate.pdf }
+- tapOn: { id: doc-file-remove-sample-certificate.pdf }
+- extendedWaitUntil:
+    visible: 1 个
+    timeout: 10000
+- assertNotVisible: sample-certificate.pdf
+- takeScreenshot: .artifacts/e2e-11a-doc-after-remove
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+# “已移除”的 Toast 正好盖在删除按钮上，要等它收起，否则点到的是 Toast。
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: doc-delete }
+- tapOn: { id: doc-delete }
+- tapOn: { id: doc-delete-confirm }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertNotVisible: Renamed doc

@@ -1,0 +1,20 @@
+# 记一剂卡介苗，给要用“已接种”却和流程 10 不在一组的流程当前置。
+# 流程 10 的断言和截图都不在这里，这里只保证记录写进去了。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- tapOn: { id: action-more }
+- tapOn: { id: more-vaccine }
+- tapOn: { id: vaccine-bcg }
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 接种 卡介苗 BCG
+    timeout: 30000

@@ -1,0 +1,82 @@
+# 补记睡眠和身高体重：今天页不显示，要从全部记录改。身高体重的默认值接着流程 09。
+# 测试用的记录最后都删掉。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- scrollUntilVisible:
+    element: { id: records-open }
+- waitForAnimationToEnd
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+
+# ─── 补记睡眠：有开始和结束，选昨天后时长不变 ────────
+- tapOn: { id: records-filter-all }
+- tapOn: { id: records-backfill }
+- tapOn: { id: more-sleep }
+- assertVisible: 补记睡眠
+- assertVisible: { id: sleep-end-date }
+- tapOn: { id: sleep-start-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-backfill-sleep
+- tapOn: { id: sleep-save }
+- extendedWaitUntil:
+    notVisible: { id: sleep-save }
+    timeout: 10000
+- tapOn: { id: records-filter-sleep }
+- scrollUntilVisible:
+    element: 睡了 1小时
+- tapOn: 睡了 1小时
+- tapOn: { id: event-edit }
+- assertVisible: 修改睡眠
+- assertVisible: { id: sleep-start-date }
+- assertVisible: { id: sleep-end-date }
+- assertNotVisible: { id: sleep-still }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: sleep-save }
+    timeout: 10000
+- tapOn: 睡了 1小时
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 睡了 1小时
+    timeout: 15000
+
+# ─── 补记身高体重：今天页不显示，要从全部记录改 ──────
+- tapOn: { id: records-backfill }
+- tapOn: { id: more-growth }
+- assertVisible: 补记身高体重
+- tapOn: { id: time-day-2 }
+- tapOn: { id: weight-inc }
+- assertVisible: 3.8 kg
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- tapOn: { id: records-filter-growth }
+- scrollUntilVisible:
+    element: 体重 3.8kg · 身长 50.5cm
+- tapOn: 体重 3.8kg · 身长 50.5cm
+- tapOn: { id: event-edit }
+- assertVisible: 修改身高体重
+- assertVisible: 3.8 kg
+- tapOn: { id: weight-inc }
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: 体重 3.9kg · 身长 50.5cm
+- assertNotVisible: 体重 3.8kg · 身长 50.5cm
+- tapOn: 体重 3.9kg · 身长 50.5cm
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 体重 3.9kg · 身长 50.5cm
+    timeout: 15000
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000

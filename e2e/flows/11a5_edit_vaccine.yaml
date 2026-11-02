@@ -1,0 +1,44 @@
+# 已记的疫苗能改日期。依赖卡介苗已接种，最后改回今天，后面的流程按今天看。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+
+# ─── 疫苗：已记的改日期 ─────────────────────────
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-status-bcg }
+    timeout: 30000
+- copyTextFrom: { id: vaccine-status-bcg }
+- evalScript: ${output.doseBefore = maestro.copiedText}
+- tapOn: { id: vaccine-row-bcg }
+- tapOn: { id: event-edit }
+- assertVisible: { id: vaccine-date }
+- tapOn: { id: vaccine-date-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-vaccine-edit
+- scrollUntilVisible:
+    element: { id: vaccine-edit-save }
+- tapOn: { id: vaccine-edit-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-edit-save }
+    timeout: 10000
+- copyTextFrom: { id: vaccine-status-bcg }
+- assertTrue: ${maestro.copiedText != output.doseBefore}
+- takeScreenshot: .artifacts/e2e-11a-vaccine-moved
+# 改回今天，后面的流程按今天看
+- tapOn: { id: vaccine-row-bcg }
+- tapOn: { id: event-edit }
+- tapOn: { id: vaccine-date-day-0 }
+- scrollUntilVisible:
+    element: { id: vaccine-edit-save }
+- tapOn: { id: vaccine-edit-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-edit-save }
+    timeout: 10000
+- copyTextFrom: { id: vaccine-status-bcg }
+- assertTrue: ${maestro.copiedText == output.doseBefore}
