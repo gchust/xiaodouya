@@ -19,7 +19,8 @@ APK="$ROOT/.artifacts/xiaodouya-e2e.apk"
 SERVER_PID=""
 ANR_PID=""
 cleanup() {
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null || true
+  # 负号是杀整个进程组：npx 下面还有 node，只杀 npx 的话服务端会留下来。
+  [ -n "$SERVER_PID" ] && kill -- "-$SERVER_PID" 2>/dev/null || true
   [ -n "$ANR_PID" ] && kill "$ANR_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -27,7 +28,9 @@ trap cleanup EXIT
 if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
   echo "警告：8787 端口已有服务端在运行，将直接使用它。它可能是别的分支的代码。" >&2
 else
-  (cd apps/server && npx tsx --env-file-if-exists=.env src/index.ts > "$ROOT/.artifacts/server.log" 2>&1) &
+  # 后台进程不能带着锁（9>&-）：否则这次跑完锁还在，下一次调用会一直排队。
+  setsid bash -c 'cd apps/server && exec npx tsx --env-file-if-exists=.env src/index.ts' \
+    > "$ROOT/.artifacts/server.log" 2>&1 9>&- &
   SERVER_PID=$!
   for _ in $(seq 1 60); do
     curl -fs http://localhost:8787/healthz >/dev/null 2>&1 && break
@@ -37,13 +40,29 @@ else
 fi
 
 # 系统桌面偶尔会卡住并弹窗挡住 App，全程在后台清掉。
-bash scripts/dismiss-anr.sh &
+bash scripts/dismiss-anr.sh 9>&- &
 ANR_PID=$!
 
 # 刚开机的模拟器很忙，等它稳定一下再开始。
 sleep "${E2E_SETTLE_SECONDS:-30}"
 
 # 重装 App，再按顺序跑完这些流程并核对文件。每次调用都是一个新账号，互不影响。
+# CI 的模拟器偶尔整个断开（device offline），和 App 无关，有时一步都没执行就失败。
+# 只有 Maestro 的日志里确实写了断开才重跑一次，断言失败绝不重跑，不能掩盖 App 的问题。
+run_flow() {
+  local flow="$1" run_id="$2" marker=".artifacts/maestro/.started"
+  timeout 120 adb wait-for-device
+  touch "$marker"
+  maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow" && return 0
+  local status=$?
+  find .artifacts/maestro -name maestro.log -newer "$marker" -exec grep -l 'device offline' {} + >/dev/null 2>&1 \
+    || return "$status"
+  echo "模拟器断开了，等连接恢复后重跑 $flow（不是断言失败）"
+  sleep 15
+  timeout 120 adb wait-for-device
+  maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
+}
+
 run_flows() {
   local flows=("$@") flow run_id
   adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
@@ -52,10 +71,7 @@ run_flows() {
   mkdir -p .artifacts/maestro
   for flow in "${flows[@]}"; do
     echo "▶ $flow"
-    # 流程之间 adb 偶尔短暂离线，这时 Maestro 第一条命令就报 device offline，流程一步都没跑。
-    # 等连接回来再开始。流程本身失败不重试。
-    timeout 120 adb wait-for-device
-    maestro test --env "RUN_ID=$run_id" --debug-output .artifacts/maestro --flatten-debug-output "$flow"
+    run_flow "$flow" "$run_id"
   done
   node e2e/verify-uploads.mjs "$run_id" "${flows[@]}"
   # 流程 14b 存到相册的照片：不信界面提示，直接查系统媒体库。
