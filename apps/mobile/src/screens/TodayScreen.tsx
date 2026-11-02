@@ -307,7 +307,7 @@ export function TodayScreen() {
       ) : null}
 
       <View style={s.listHeader}>
-        <Text style={s.listTitle}>{t().today.past24h}</Text>
+        <Text style={s.listTitle}>{`${t().today.past24h}*`}</Text>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
           {summaryText(summary, units)}
         </Muted>
