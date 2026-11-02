@@ -81,6 +81,9 @@ appId: com.gchust.xiaodouya
 - assertVisible: KK Hospital
 - scrollUntilVisible:
     element: { id: doc-card-护照 }
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: 2 个文件
 - assertVisible: 2 个文件
 - scrollUntilVisible:
     element: { id: vaccine-row-bcg }
