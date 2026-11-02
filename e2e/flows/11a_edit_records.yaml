@@ -499,7 +499,15 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: doc-add }
     direction: UP
+# 列表还带着惯性时，按钮一露出来就点，点下去时它已经滑走了。等停稳后再确认一次。
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: { id: doc-add }
+    direction: UP
 - tapOn: { id: doc-add }
+- extendedWaitUntil:
+    visible: { id: doc-name }
+    timeout: 10000
 - tapOn: { id: doc-name }
 - inputText: Edit doc
 - hideKeyboard
