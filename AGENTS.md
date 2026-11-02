@@ -48,7 +48,7 @@ docs/              DEPLOYMENT.md、ARCHITECTURE.md、CAPACITY.md（容量和成�
 | 编译 Android                                     | `pnpm android:build`（debug APK）              |
 | 启动无窗口模拟器                                 | `pnpm emulator`                                |
 | 端到端测试（串行跑全部分组，约 1 小时）          | `pnpm e2e`                                     |
-| 只跑一组（CI 每台模拟器跑一组，约 15 分钟）      | `pnpm e2e --group <组名>`，分组见 `e2e/groups.json` |
+| 只跑一组（CI 每台模拟器跑一组，实测 14–17 分钟）      | `pnpm e2e --group <组名>`，分组见 `e2e/groups.json` |
 | 模拟器截图                                       | `pnpm screenshot <名字>`（存到 `.artifacts/`） |
 
 本地端口（避开已有服务）：Postgres `55432`、S3 `59000`、服务端 `8787`。
@@ -115,9 +115,9 @@ App 不是医疗器械，健康内容错了会伤人。
 - `main` 保持可发布，功能在分支上开发，通过 PR 合并，CI 全绿才能合并。
 - `pull_request` 的 `paths-ignore`（`ci.yml`）看的是整个 PR 的差异：只有全是 `docs/` 和 Markdown 的 PR 才不跑 CI，含代码的 PR 只推文档也会重跑全量 CI。
 - CI 分几种情况（判断规则在 `scripts/ci-changes.mjs`，名单之外的文件默认都要跑）：
-  - 没动 App（只改别的工作流、部署配置、和 App 无关的脚本）：跳过 Android E2E，约 3 分钟。
-  - 动了服务端或流程、APK 不用变：复用缓存的 APK，四台模拟器并行，约 17 分钟。
-  - 动了 App、`packages/shared`、lockfile 或构建脚本：重新构建 APK（约 13 分钟）再并行，约 30 分钟。
+  - 没动 App（只改别的工作流、部署配置、和 App 无关的脚本）：跳过 Android E2E，实测 2.7 分钟。
+  - 动了服务端或流程、APK 不用变：复用缓存的 APK，四台模拟器并行，实测约 18 分钟（同一个 PR 第二次起；别的 PR 要 `main` 存过才能复用）。
+  - 动了 App、`packages/shared`、lockfile 或构建脚本：重新构建 APK（实测 12–13 分钟）再并行，实测约 30 分钟。
   - `main` 上的 push 始终跑全量，并且重新构建 APK 和缓存比对（`scripts/compare-apk.sh`）。
 - 看合并能不能做，看 `CI 结果` 这一个 job：该跑的没跑也是红的。
 - 不要在 CI 运行中推送同一分支，除非已知这轮会失败：新推送会取消正在跑的 Android 流程。
