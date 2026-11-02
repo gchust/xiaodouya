@@ -1,0 +1,76 @@
+name: 发布分享页
+
+# 把 apps/share-web 打包成静态文件，发布到 Cloudflare Worker 的静态资源。Worker 没有代码，只出文件。
+# 仓库变量 SHARE_PAGE_ENABLED=true 才会发布，没打开时这个流程什么都不做。
+# 要先跑“部署后端”：页面调用的公开接口要已经上线。步骤和需要的配置见 docs/DEPLOYMENT.md。
+# 公开仓库的日志谁都能看：这里不能打开 set -x，账号 ID 和令牌只从 Secret 读。
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/share-web/**
+      - packages/shared/**
+      - .github/workflows/share-page.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: share-page
+
+env:
+  NODE_VERSION: "24.21.0"
+  WRANGLER_VERSION: "4.150.0"
+
+jobs:
+  publish:
+    name: 打包并发布
+    if: vars.SHARE_PAGE_ENABLED == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 确认配置齐全
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID API_URL; do
+            [ -n "${!name}" ] || { echo "::error::没有设置 $name，见 docs/DEPLOYMENT.md"; exit 1; }
+          done
+          case "$API_URL" in
+            https://*) ;;
+            *) echo "::error::EXPO_PUBLIC_API_URL 必须是 https"; exit 1 ;;
+          esac
+      # 这个任务拿着能发布网页的令牌，全部用 commit 固定版本，标签可以被改动。
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @xiaodouya/share-web test
+      - name: 打包
+        env:
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_API_REGION: ${{ vars.EXPO_PUBLIC_API_REGION }}
+        run: pnpm --filter @xiaodouya/share-web build
+      # wrangler 只有这里用，版本写死，不进锁文件：其他流程和服务端镜像都不需要它。
+      # SHARE_PAGE_DOMAIN 可以不设置，域名在 Cloudflare 控制台绑定也一样。
+      - name: 发布
+        working-directory: apps/share-web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SHARE_PAGE_DOMAIN: ${{ vars.SHARE_PAGE_DOMAIN }}
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          if [ -n "$SHARE_PAGE_DOMAIN" ]; then
+            npx --yes "wrangler@$WRANGLER_VERSION" deploy --domain "$SHARE_PAGE_DOMAIN"
+          else
+            npx --yes "wrangler@$WRANGLER_VERSION" deploy
+          fi

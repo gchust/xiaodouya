@@ -7,6 +7,9 @@ const MAX_PARTS = 10_000;
 /** 一次最多取多少片的链接。太多的话慢网传不完就过期了，太少又要多跑请求。 */
 export const MULTIPART_URL_BATCH = 8;
 
+/** 一个文件同时传几片。高延迟线路上每片都要等一次响应，并行能快一些。整个队列还是一次一个文件。 */
+export const MULTIPART_PARALLEL = 3;
+
 export function usesMultipart(size: number): boolean {
   return size > MULTIPART_THRESHOLD_BYTES;
 }

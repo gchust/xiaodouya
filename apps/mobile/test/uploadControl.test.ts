@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   type MediaRef,
+  MULTIPART_PARALLEL,
   MULTIPART_PART_BYTES,
   MULTIPART_THRESHOLD_BYTES,
   mediaRefsIn,
@@ -234,7 +235,8 @@ describe('分片上传', () => {
     first.stop();
     const saved = [...db.rows.values()][0];
     expect(saved?.uploadId).toBe('upload-1');
-    expect(saved?.confirmedBytes).toBe(PART);
+    // 第 2 片失败时，同时在传的第 1、3 片传完了。
+    expect(saved?.confirmedBytes).toBe(PART + 100);
 
     failing = false;
     server.calls.length = 0;
@@ -242,7 +244,7 @@ describe('分片上传', () => {
     await second.load();
     await second.idle();
     expect(server.calls.some((c) => c.startsWith('start'))).toBe(false);
-    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:2', 'put:3']);
+    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:2']);
     expect(db.rows.size).toBe(0);
   });
 
@@ -300,8 +302,9 @@ describe('分片上传', () => {
     const queue = new UploadQueue(new MemoryDb(), fakeTransport(server.multipart).transport);
     await queue.enqueue([big()]);
     await flush();
-    expect(queue.getProgress().items[0]?.sent).toBe(1234);
-    expect(queue.getProgress().sentBytes).toBe(1234);
+    // 3 片同时在传，每片报了 1234。
+    expect(queue.getProgress().items[0]?.sent).toBe(1234 * 3);
+    expect(queue.getProgress().sentBytes).toBe(1234 * 3);
     gate.resolve();
     await queue.idle();
   });
@@ -331,9 +334,13 @@ describe('分片上传', () => {
       return realPut(job, part, onProgress, signal);
     };
     const queue = new UploadQueue(new MemoryDb(), fakeTransport(server.multipart).transport);
-    await queue.enqueue([big()]);
+    await queue.enqueue([big({ size: PART * 6 })]);
     await queue.idle();
-    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:1']);
+    // 同时开始的那几片已经发出去了，但不会再开始新的片，也不会合并。
+    const size = PART * 6;
+    expect(server.calls.filter((c) => c.startsWith('put')).length).toBeLessThan(
+      multipartPartCount(size, PART),
+    );
     expect(server.calls).not.toContain('complete');
     expect(queue.getProgress().failedCount).toBe(1);
     expect(queue.getProgress().items[0]?.status).toBe('failed');
@@ -409,24 +416,33 @@ describe('分片上传', () => {
     const server = fakeServer();
     const realPut = server.multipart.putPart;
     server.multipart.putPart = async (job, part, onProgress, signal) => {
-      if (part.partNumber === 1) await gate.promise;
+      await gate.promise;
       return realPut(job, part, onProgress, signal);
     };
     const queue = new UploadQueue(new MemoryDb(), fakeTransport(server.multipart).transport);
-    await queue.enqueue([big({ wifiOnly: true })]);
+    await queue.enqueue([big({ wifiOnly: true, size: PART * 6 })]);
     await flush();
     queue.setNetwork('cellular');
     gate.resolve();
     await flush();
     await queue.idle();
-    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:1']);
+    // 已经发出的 3 片传完，不再开始新的片。
+    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:1', 'put:2', 'put:3']);
+    expect(server.calls).not.toContain('complete');
     expect(queue.getProgress().items[0]?.status).toBe('waitingWifi');
     expect(queue.getProgress().speed).toBeNull();
 
     queue.setNetwork('wifi');
     await flush();
     await queue.idle();
-    expect(server.calls.filter((c) => c.startsWith('put'))).toEqual(['put:1', 'put:2', 'put:3']);
+    expect(server.calls.filter((c) => c.startsWith('put')).sort()).toEqual([
+      'put:1',
+      'put:2',
+      'put:3',
+      'put:4',
+      'put:5',
+      'put:6',
+    ]);
     expect(server.calls).toContain('complete');
   });
 
@@ -457,6 +473,169 @@ describe('分片上传', () => {
     await queue.idle();
     expect(db.rows.size).toBe(0);
     expect(queue.getProgress().failedCount).toBe(0);
+  });
+});
+
+describe('并行传分片', () => {
+  /** 每片都卡住，由测试决定谁先结束。 */
+  function held() {
+    const gates = new Map<number, ReturnType<typeof deferred<{ status: number }>>>();
+    const running = new Set<number>();
+    const progress = new Map<number, (n: number) => void>();
+    const slots: number[] = [];
+    let peak = 0;
+    const server = fakeServer({
+      async putPart(_job, part, onProgress, signal) {
+        const gate = deferred<{ status: number }>();
+        gates.set(part.partNumber, gate);
+        progress.set(part.partNumber, onProgress);
+        slots.push(part.slot);
+        running.add(part.partNumber);
+        peak = Math.max(peak, running.size);
+        signal.addEventListener('abort', () => gate.reject(new Error('aborted')));
+        try {
+          return await gate.promise;
+        } finally {
+          running.delete(part.partNumber);
+        }
+      },
+    });
+    return { server, gates, running, progress, slots, peak: () => peak };
+  }
+
+  const finish = async (h: ReturnType<typeof held>, part: number) => {
+    h.gates.get(part)?.resolve({ status: 200 });
+    await flush();
+  };
+
+  it('同时最多 3 片，一个文件传完才轮到下一个', async () => {
+    const h = held();
+    const { transport } = fakeTransport(h.server.multipart);
+    const queue = new UploadQueue(new MemoryDb(), transport);
+    const first = big({ size: PART * 5 });
+    const second = big({ size: PART * 3 });
+    await queue.enqueue([first, second]);
+    await flush();
+    expect(h.running.size).toBe(MULTIPART_PARALLEL);
+    expect([...h.running].sort()).toEqual([1, 2, 3]);
+    expect(h.server.calls.filter((c) => c.startsWith('start'))).toEqual([`start:${first.id}`]);
+    // 后面的片先传完也没关系。
+    await finish(h, 3);
+    expect([...h.running].sort()).toEqual([1, 2, 4]);
+    await finish(h, 1);
+    await finish(h, 2);
+    await finish(h, 4);
+    await finish(h, 5);
+    expect(h.peak()).toBe(MULTIPART_PARALLEL);
+    expect(h.server.calls).toContain('complete');
+    expect(h.server.calls.filter((c) => c.startsWith('start'))).toEqual([
+      `start:${first.id}`,
+      `start:${second.id}`,
+    ]);
+    for (const part of [1, 2, 3]) await finish(h, part);
+    await queue.idle();
+    expect(queue.getProgress().total).toBe(0);
+  });
+
+  it('临时文件按路数命名，同时在传的不会撞名', async () => {
+    const h = held();
+    const queue = new UploadQueue(new MemoryDb(), fakeTransport(h.server.multipart).transport);
+    await queue.enqueue([big({ size: PART * 4 })]);
+    await flush();
+    expect([...h.slots].sort()).toEqual([0, 1, 2]);
+    await finish(h, 2);
+    // 第 4 片接的是空出来的第 1 路。
+    expect(h.slots.at(-1)).toBe(1);
+    for (const part of [1, 3, 4]) await finish(h, part);
+    await queue.idle();
+  });
+
+  it('进度是已确认的加上每一片已发出的，有一片确认后不重复算', async () => {
+    const h = held();
+    const queue = new UploadQueue(new MemoryDb(), fakeTransport(h.server.multipart).transport);
+    const job = big({ size: PART * 4 });
+    await queue.enqueue([job]);
+    await flush();
+    h.progress.get(1)?.(1000);
+    h.progress.get(2)?.(2000);
+    h.progress.get(3)?.(3000);
+    expect(queue.getProgress().items[0]?.sent).toBe(6000);
+    h.progress.get(2)?.(PART);
+    await finish(h, 2);
+    expect(queue.getProgress().items[0]?.sent).toBe(PART + 4000);
+    expect(queue.getProgress().sentBytes).toBe(PART + 4000);
+    for (const part of [1, 3, 4]) await finish(h, part);
+    await queue.idle();
+  });
+
+  it('一片失败：同时在传的传完，不开始新的片，重试只补缺的，进度不丢', async () => {
+    const h = held();
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, fakeTransport(h.server.multipart).transport, noRetry);
+    await queue.enqueue([big({ size: PART * 5 })]);
+    await flush();
+    h.progress.get(1)?.(500);
+    h.gates.get(1)?.reject(new Error('断网了'));
+    await flush();
+    expect([...h.running].sort()).toEqual([2, 3]);
+    h.server.stored.get('upload-1')?.set(2, PART);
+    await finish(h, 2);
+    h.server.stored.get('upload-1')?.set(3, PART);
+    await finish(h, 3);
+    await queue.idle();
+    queue.stop();
+    expect(h.gates.has(4)).toBe(false);
+    expect(queue.getProgress().items[0]?.sent).toBe(PART * 2);
+    expect([...db.rows.values()][0]?.confirmedBytes).toBe(PART * 2);
+
+    const again = fakeServer();
+    again.stored.set('upload-1', h.server.stored.get('upload-1') as Map<number, number>);
+    const reopened = new UploadQueue(db, fakeTransport(again.multipart).transport);
+    await reopened.load();
+    await reopened.idle();
+    expect(again.calls.filter((c) => c.startsWith('put')).sort()).toEqual([
+      'put:1',
+      'put:4',
+      'put:5',
+    ]);
+    expect(again.calls).toContain('complete');
+  });
+
+  it('取消：同时在传的几片都中断，不再开始新的片，任务不会复活', async () => {
+    const h = held();
+    const db = new MemoryDb();
+    const { transport, calls } = fakeTransport(h.server.multipart);
+    const queue = new UploadQueue(db, transport, { sleepMs: () => 0 });
+    const job = big({ size: PART * 6 });
+    await queue.enqueue([job]);
+    await flush();
+    expect(h.running.size).toBe(3);
+    await queue.cancel([job.id]);
+    await flush();
+    await queue.idle();
+    expect(h.running.size).toBe(0);
+    expect(h.gates.has(4)).toBe(false);
+    expect(h.server.calls).not.toContain('complete');
+    expect(calls).toContain(`cancel:${job.id}`);
+    expect(db.rows.size).toBe(0);
+    expect(queue.getProgress().items).toEqual([]);
+    expect(queue.getProgress().sentBytes).toBe(0);
+  });
+
+  it('存储不支持时其余的片不影响退回单个 PUT', async () => {
+    const server = fakeServer({
+      async putPart() {
+        return { status: 501 };
+      },
+    });
+    const { transport, calls } = fakeTransport(server.multipart);
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport);
+    const job = big({ size: PART * 6 });
+    await queue.enqueue([job]);
+    await queue.idle();
+    expect(calls).toContain(`put:${job.id}/original`);
+    expect(db.rows.size).toBe(0);
   });
 });
 
@@ -567,11 +746,11 @@ describe('取消', () => {
     const job = big();
     await queue.enqueue([job]);
     await flush();
-    expect(started).toBe(1);
+    expect(started).toBe(3);
 
     await queue.cancel([job.id]);
     await queue.idle();
-    expect(started).toBe(1);
+    expect(started).toBe(3);
     expect(server.calls).not.toContain('complete');
     expect(calls).toContain(`rm:${job.localUri}`);
     expect(calls).toContain(`cancel:${job.id}`);
@@ -861,6 +1040,47 @@ describe('按媒体显示', () => {
     expect(progress.items.every((i) => i.status === 'waitingNetwork')).toBe(true);
   });
 
+  it('不假设只有两种变体：多一种也合成一项，按顺序传，取消时全部取消', async () => {
+    const preview = 'preview' as unknown as UploadJob['variant'];
+    const { transport, calls } = fakeTransport();
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport);
+    queue.setNetwork('none');
+    const id = randomUUID();
+    // 入队顺序故意打乱，重启后读出来的顺序也不一定对。
+    await queue.enqueue([
+      small({ id, localUri: 'file:///o', size: 900 }),
+      small({ id, variant: preview, localUri: 'file:///p', size: 90 }),
+      small({ id, variant: 'thumb', localUri: 'file:///t', size: 9 }),
+    ]);
+    expect(queue.getProgress().total).toBe(1);
+    expect(queue.getProgress().items[0]?.size).toBe(900);
+
+    const cancelledId = randomUUID();
+    await queue.enqueue([
+      small({ id: cancelledId, localUri: 'file:///o2' }),
+      small({ id: cancelledId, variant: preview, localUri: 'file:///p2' }),
+      small({ id: cancelledId, variant: 'thumb', localUri: 'file:///t2' }),
+    ]);
+    await queue.cancel([cancelledId]);
+    expect(queue.getProgress().total).toBe(1);
+    expect(calls.filter((c) => c.startsWith('rm:')).sort()).toEqual([
+      'rm:file:///o2',
+      'rm:file:///p2',
+      'rm:file:///t2',
+    ]);
+
+    queue.setNetwork('wifi');
+    await flush();
+    await queue.idle();
+    expect(calls.filter((c) => c.startsWith('put:'))).toEqual([
+      `put:${id}/thumb`,
+      `put:${id}/preview`,
+      `put:${id}/original`,
+    ]);
+    expect(queue.getProgress().finishedInBatch).toBe(1);
+  });
+
   it('升级前的任务没有 mediaKind，按 mime 算', async () => {
     const db = new MemoryDb();
     const job = small({ mime: 'application/pdf', mediaKind: undefined });
@@ -965,6 +1185,8 @@ describe('速度', () => {
     let failNext = true;
     const server = fakeServer({
       async putPart(_job, part, onProgress) {
+        // 只看第 1 片，另外两片不报字节，算出来的速度才是确定的。
+        if (part.partNumber !== 1) return { status: 200 };
         for (const sent of [1_000_000, 2_000_000, 3_000_000]) {
           clock += 1000;
           onProgress(sent);

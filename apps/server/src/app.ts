@@ -8,6 +8,8 @@ import {
   CompleteUploadRequest,
   CreateFamilyRequest,
   CreateInviteRequest,
+  CreateShareRequest,
+  type CreateShareResponse,
   canReadCollection,
   canReadMediaScope,
   canWriteCollection,
@@ -28,6 +30,7 @@ import {
   type Locale,
   LoginRequest,
   localeFromAcceptLanguage,
+  MAX_ACTIVE_SHARES,
   MediaUrlsRequest,
   type MediaUrlsResponse,
   type MeResponse,
@@ -45,6 +48,8 @@ import {
   type PendingInvite,
   Prefs,
   type PublicConfig,
+  PublicShareRequest,
+  type PublicShareResponse,
   PushTokenRequest,
   parseCollectionData,
   RegisterRequest,
@@ -52,6 +57,7 @@ import {
   type Role,
   type SendEmailCodeResponse,
   type ServerRecord,
+  type ShareListResponse,
   StorageConfigInput,
   type StorageConfigView,
   type StorageUsage,
@@ -66,6 +72,7 @@ import {
 } from '@xiaodouya/shared';
 import { type Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
+import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { clientIpFrom } from './client-ip';
@@ -79,7 +86,7 @@ import {
   sha256,
   verifyPassword,
 } from './crypto';
-import type { Sql } from './db';
+import type { Sql, Tx } from './db';
 import {
   type CodePurpose,
   consumeEmailCode,
@@ -103,6 +110,7 @@ import {
   RESERVATION_HOURS,
   uuidsIn,
 } from './quota';
+import { buildPublicShare, findActiveShare, type ShareRow, shareInclude } from './share';
 import {
   abortMultipart,
   activeStorage,
@@ -125,6 +133,7 @@ import {
   testStorage,
 } from './storage';
 
+const PUBLIC_SHARE_PATH = '/v1/public/share';
 const SESSION_DAYS = 365;
 const INVITE_DAYS = 7;
 const UPLOAD_URL_TTL = 3600;
@@ -144,6 +153,8 @@ const SYNC_BODY_BYTES = 5 * 1024 * 1024;
  */
 const MAX_RECORD_BYTES = 512 * 1024;
 const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const INVALID_CODE_MESSAGE = '验证码不正确或已过期';
 const MAIL_DISABLED_MESSAGE = '这台服务器没有配置邮件，请联系部署它的人';
 /** 每次检查只是一条很轻的查询，但每台前台手机都在轮询，不能再密了。 */
@@ -347,6 +358,63 @@ export function createApp({
       emailVerification: Boolean(mailer),
     }),
   );
+
+  // ─── 分享页的公开接口 ──────────────────────────────────
+
+  /**
+   * 整个服务只有这一个接口开 CORS：分享页是别的域名上的静态页面。`*` 不带凭据，
+   * 令牌在请求体里，App 用的登录接口都不受影响。注册在 v1 之前：v1 的中间件会要求登录，预检也过不去。
+   */
+  app.use(
+    PUBLIC_SHARE_PATH,
+    cors({
+      origin: '*',
+      allowMethods: ['POST', 'OPTIONS'],
+      allowHeaders: ['content-type', 'x-region'],
+      maxAge: 86_400,
+    }),
+    async (c, next) => {
+      await next();
+      c.header('cache-control', 'no-store');
+    },
+  );
+
+  /** 不存在、格式不对、过期、撤销都是它，不透露是哪一种。不走 fail：那会把原因写进日志。 */
+  const shareMiss = (c: Context) =>
+    c.json<ApiError>(
+      { error: { code: 'share_unavailable', message: '这个链接已失效或已撤销' } },
+      404,
+    );
+
+  app.post(PUBLIC_SHARE_PATH, bodyLimit({ maxSize: 1024, onError: shareMiss }), async (c) => {
+    const { sharePublicPerIp, sharePublicPerToken } = config.limits;
+    const tooMany = () =>
+      c.json<ApiError>(
+        { error: { code: 'rate_limited', message: '打开的次数有点多，等一会儿再试' } },
+        429,
+      );
+    const ip = clientIp(c);
+    if (
+      ip &&
+      sharePublicPerIp > 0 &&
+      !(await allowAttempt(sql, `share-ip:${ip}`, sharePublicPerIp, 15 * 60_000))
+    ) {
+      return tooMany();
+    }
+    const parsed = PublicShareRequest.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return shareMiss(c);
+    const { token } = parsed.data;
+    // 查之前就计数：链接不存在时也一样，不能靠 429 判断它存不存在。allowAttempt 只存键的哈希。
+    if (
+      sharePublicPerToken > 0 &&
+      !(await allowAttempt(sql, `share-token:${token}`, sharePublicPerToken, HOUR_MS))
+    ) {
+      return tooMany();
+    }
+    const share = await findActiveShare(sql, token);
+    if (!share) return shareMiss(c);
+    return c.json<PublicShareResponse>(await buildPublicShare(sql, config, share));
+  });
 
   // ─── 账号 ─────────────────────────────────────────────
 
@@ -887,11 +955,15 @@ export function createApp({
     const body = await parseBody(c, UpdateMemberRequest);
     const target = c.req.param('userId');
     if (body.role && body.role !== 'admin') await assertNotLastAdmin(m.familyId, target);
-    await sql`
-      UPDATE memberships SET
-        role = COALESCE(${body.role ?? null}, role),
-        label = COALESCE(${body.label ?? null}, label)
-      WHERE family_id = ${m.familyId} AND user_id = ${target}::uuid`;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE memberships SET
+          role = COALESCE(${body.role ?? null}, role),
+          label = COALESCE(${body.label ?? null}, label)
+        WHERE family_id = ${m.familyId} AND user_id = ${target}::uuid`;
+      // 只看回忆的家人读不到记录，他之前发出去的链接也不该还能读。
+      if (body.role === 'viewer') await revokeSharesBy(tx, m.familyId, target);
+    });
     return c.json({ ok: true });
   });
 
@@ -899,9 +971,88 @@ export function createApp({
     const m = requireAdmin(c);
     const target = c.req.param('userId');
     await assertNotLastAdmin(m.familyId, target);
-    await sql`DELETE FROM memberships WHERE family_id = ${m.familyId} AND user_id = ${target}::uuid`;
-    // 移除后立刻让对方的登录失效，避免继续读取家庭数据的缓存链接。
-    await sql`DELETE FROM sessions WHERE user_id = ${target}::uuid`;
+    await sql.begin(async (tx) => {
+      await revokeSharesBy(tx, m.familyId, target);
+      await tx`DELETE FROM memberships WHERE family_id = ${m.familyId} AND user_id = ${target}::uuid`;
+      // 移除后立刻让对方的登录失效，避免继续读取家庭数据的缓存链接。
+      await tx`DELETE FROM sessions WHERE user_id = ${target}::uuid`;
+    });
+    return c.json({ ok: true });
+  });
+
+  /** 写 revoked_at，不只靠公开接口核对成员：否则这个人再被加回来，旧链接会复活。 */
+  async function revokeSharesBy(tx: Tx, familyId: string, userId: string) {
+    await tx`UPDATE shares SET revoked_at = now()
+             WHERE family_id = ${familyId} AND created_by = ${userId}::uuid AND revoked_at IS NULL`;
+  }
+
+  // ─── 分享一天 ───────────────────────────────────────────
+
+  v1.post('/shares', async (c) => {
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    const body = await parseBody(c, CreateShareRequest);
+    const id = crypto.randomUUID();
+    const token = newToken();
+    const expires = new Date(Date.now() + body.ttlDays * DAY_MS);
+    await sql.begin(async (tx) => {
+      // 数和写要在同一把锁里，否则并行创建会一起通过检查。
+      await tx`SELECT 1 FROM families WHERE id = ${m.familyId} FOR UPDATE`;
+      const [{ count } = { count: '0' }] = await tx<{ count: string }[]>`
+        SELECT count(*) AS count FROM shares
+        WHERE family_id = ${m.familyId} AND revoked_at IS NULL AND expires_at > now()`;
+      if (Number(count) >= MAX_ACTIVE_SHARES) {
+        fail(409, 'share_limit', `这个家庭已经有 ${MAX_ACTIVE_SHARES} 个有效的链接，先撤销不用的`, {
+          max: MAX_ACTIVE_SHARES,
+        });
+      }
+      await tx`
+        INSERT INTO shares (id, family_id, created_by, token_hash, from_at, to_at, timezone,
+                            include_moments, include_daily, include_health, units, expires_at)
+        VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${body.fromAt}, ${body.toAt}, ${body.timezone},
+                ${body.include.moments}, ${body.include.daily}, ${body.include.health}, ${tx.json(body.units)}, ${expires})`;
+    });
+    return c.json<CreateShareResponse>({ id, token, expiresAt: expires.getTime() }, 201);
+  });
+
+  v1.get('/shares', async (c) => {
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    const rows = await sql<(ShareRow & { label: string })[]>`
+      SELECT s.id, s.family_id, s.created_by, s.from_at, s.to_at, s.timezone,
+             s.include_moments, s.include_daily, s.include_health, s.units, s.expires_at, s.created_at,
+             mem.label
+      FROM shares s
+      JOIN memberships mem ON mem.family_id = s.family_id AND mem.user_id = s.created_by
+      WHERE s.family_id = ${m.familyId} AND s.revoked_at IS NULL AND s.expires_at > now()
+      ORDER BY s.from_at DESC, s.created_at DESC`;
+    const userId = c.get('user').id;
+    return c.json<ShareListResponse>({
+      shares: rows.map((row) => ({
+        id: row.id,
+        fromAt: Number(row.from_at),
+        toAt: Number(row.to_at),
+        timezone: row.timezone,
+        include: shareInclude(row),
+        expiresAt: row.expires_at.getTime(),
+        createdAt: row.created_at.getTime(),
+        byLabel: row.label,
+        canRevoke: m.role === 'admin' || row.created_by === userId,
+      })),
+    });
+  });
+
+  v1.delete('/shares/:id', async (c) => {
+    const m = requireFamily(c);
+    const id = c.req.param('id');
+    if (!UUID_PATTERN.test(id)) fail(404, 'not_found', '找不到这个链接');
+    const [row] = await sql<{ created_by: string }[]>`
+      SELECT created_by FROM shares WHERE id = ${id} AND family_id = ${m.familyId}`;
+    if (!row) fail(404, 'not_found', '找不到这个链接');
+    if (m.role !== 'admin' && row.created_by !== c.get('user').id) {
+      fail(403, 'forbidden', '只有创建者或管理员可以撤销');
+    }
+    await sql`UPDATE shares SET revoked_at = now() WHERE id = ${id} AND revoked_at IS NULL`;
     return c.json({ ok: true });
   });
 

@@ -8,5 +8,8 @@ export const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://10.0.2
 export const TERMS_URL = process.env.EXPO_PUBLIC_TERMS_URL || null;
 export const PRIVACY_URL = process.env.EXPO_PUBLIC_PRIVACY_URL || null;
 
+/** 分享页的地址，构建时注入。没有设置时不显示分享入口。换托管只改这个变量，不用改代码。 */
+export const SHARE_BASE_URL = process.env.EXPO_PUBLIC_SHARE_BASE_URL || null;
+
 /** E2E 构建里用内置样例代替系统相册，见 e2e/README.md。 */
 export const IS_E2E = process.env.EXPO_PUBLIC_E2E === '1';

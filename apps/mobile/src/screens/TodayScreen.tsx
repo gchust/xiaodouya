@@ -57,6 +57,7 @@ import {
   MoreSheet,
   VaccineSheet,
 } from '../sheets/recordSheets';
+import { ShareDaySheet, useCanShare } from '../sheets/shareSheets';
 import { colors, fonts, spacing } from '../theme';
 import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -76,6 +77,7 @@ export function TodayScreen() {
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();
+  const showShare = useCanShare();
   const { toast } = useFeedback();
   // 只用来定时刷新。过滤记录要用渲染时的时间：否则刚保存的记录比 now 新，最多 15 秒不显示，家长可能重复记录。
   useNow(15_000);
@@ -343,6 +345,19 @@ export function TodayScreen() {
         >
           <Text style={s.listLink}>{t().today.allRecords}</Text>
         </Pressable>
+        {showShare ? (
+          <Pressable
+            testID="share-today"
+            accessibilityRole="button"
+            accessibilityLabel={t().share.shareTodayLink}
+            hitSlop={LINK_HIT_SLOP}
+            onPress={() =>
+              sheet.open(t().share.sheetTitle, () => <ShareDaySheet at={Date.now()} />)
+            }
+          >
+            <Text style={s.listLink}>{t().share.shareTodayLink}</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           testID="backfill-open"
           accessibilityRole="button"
