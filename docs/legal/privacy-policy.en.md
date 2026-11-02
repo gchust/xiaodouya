@@ -23,7 +23,7 @@ We do not control the data in these cases, and this policy does not cover that d
 
 - **You changed the "server address" on the sign-in screen to another server.** Your data goes to that server, and its operator is responsible for it.
 - **Your family's admin set up their own storage under Family → Storage.** Photos, videos, recordings and document files go to the provider the admin chose. Other records stay in our database.
-- **Content you choose to share yourselves.** For example, a growth book PDF you export and send to someone.
+- **Content you choose to share yourselves.** For example, a growth book PDF you export and send to someone, or a link to one day that you send to someone (see section 6).
 
 ## 2. You provide information on your child's behalf
 
@@ -96,6 +96,16 @@ We use the providers below to run Xiaodouya. `〔To do〕` We put data-processin
 
 
 Otherwise we provide your information only when required by law or a binding government request, when necessary to protect someone's safety, or with your consent. If the operating entity changes, we will tell you in advance.
+
+### Sharing a link to one day
+
+Admins and caregivers can create a link to one day and send it to someone. **Anyone who has the link can open it, without signing in and without being family.** We can't control who it gets forwarded to.
+
+- **What they can see:** the baby's name, the day number and age, the date, and what you chose: moments with photos and videos and daily records (included by default), health records (temperature, medicine, growth, vaccines; off by default, you turn them on), and the name of whoever recorded each item. Files are the originals and can contain the hidden details mentioned above, such as where a photo was taken.
+- **What they can't see:** documents, letters to the baby, the time of birth, email addresses and other account details.
+- **What comes along technically:** file links contain the storage address and the file path, and the path contains a random family identifier. It can't be used to sign in or read anything else.
+- **How long:** links expire after the 1, 7 or 30 days you choose. You (or an admin) can revoke one at any time. They also stop working when their creator is removed from the family, changed to view-only, or deletes their account. After revoking, opening the link shows nothing, but a page that is already open can still show photos and videos for up to 1 hour, and we can't take back anything they saved themselves.
+- **Who it passes through:** the page is hosted on Cloudflare. When it opens, the viewer's IP address and browser details are processed by Cloudflare, Supabase and the storage provider (retention not confirmed). The page loads no third-party analytics, ads or fonts.
 
 ## 7. Where data is stored and international transfers
 

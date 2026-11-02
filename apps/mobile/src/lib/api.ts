@@ -1,5 +1,7 @@
 import type {
   AuthResponse,
+  CreateShareRequest,
+  CreateShareResponse,
   FamilyExport,
   MediaUrlsResponse,
   MediaVariant,
@@ -8,6 +10,7 @@ import type {
   PublicConfig,
   Role,
   SendEmailCodeResponse,
+  ShareListResponse,
   StorageConfigInput,
   StorageConfigView,
   StorageTestResult,
@@ -192,6 +195,15 @@ export class Api {
   }
   storageUsage() {
     return this.request<StorageUsage>('GET', '/v1/storage/usage');
+  }
+  createShare(body: CreateShareRequest) {
+    return this.request<CreateShareResponse>('POST', '/v1/shares', body);
+  }
+  listShares() {
+    return this.request<ShareListResponse>('GET', '/v1/shares');
+  }
+  revokeShare(id: string) {
+    return this.request('DELETE', `/v1/shares/${id}`);
   }
   publicConfig() {
     return this.request<PublicConfig>('GET', '/v1/config');

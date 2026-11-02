@@ -174,6 +174,32 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 
 `GET /v1/family/export` 只含当前角色能读的集合和文件范围。文件只有元数据，没有 `object_key` 和下载地址；成员没有邮箱；已删除的记录和等待清理的文件不导出。一次查全家的数据，每人每小时 10 次，在 Edge Function 上数据量很大时可能碰到 CPU 限制（没有测过）。
 
+## 分享一天
+
+```
+App ──POST /v1/shares──> 服务端（只存令牌的 SHA-256）──> 令牌只返回这一次
+ │ <base>/#<令牌>：片段不会发给托管网页的服务器
+ ▼
+对方的浏览器 ── 静态页面（Cloudflare Worker 静态资源，Worker 没有代码）
+     │ POST /v1/public/share {token}（令牌在请求体里，不进访问日志）
+     ▼
+服务端 ── 现查记录 ── 白名单 JSON + 1 小时的签名链接 ──> 页面直接从存储加载文件
+```
+
+**页面和接口分开：** Supabase Edge Function 在默认域名上会把 `text/html` 改写成 `text/plain`，所以函数只出 JSON。整个服务只有 `/v1/public/share` 开 CORS（`*`，不带凭据）。
+
+**白名单在 `packages/shared/src/share.ts`：** `pickEventForShare`、`pickMomentForShare` 逐字段构造。`looseObject` 会保留未知字段，所以绝不能把 `record.data` 原样发出去。文件以 `media` 表为准：只发 `status='ready'`、`scope='memory'`、这个家庭的。记录是客户端写的，文件 id 可以写成证件的。一律签名，不用存储配置的公开地址：那种地址不会过期。
+
+**响应里的文件链接一定带 object key。** S3 签名链接的路径就是 key，而 key 是 `families/<家庭 id>/memory/<文件 id>/<变体>`，主机名还有存储账号或 Bucket。所以拿到链接的人能看到家庭 id（一个 UUID，任何接口都不靠它授权）和存储地址。链接以外的字段都没有这些，测试是这样查的。要彻底去掉，得改对象路径并迁移旧文件，或者由函数代理文件（Edge Function 放不下大视频），这次都没有做。
+
+**时区：** 打开页面的人可能在别的时区，服务端也不在分享者的时区。`shares.timezone` 存分享者手机的时区，日期和钟点用 `Intl` 按它算（`zonedClock`、`zonedCalendarDate`）。第几天和月龄由服务端算好再发，不下发出生时间。
+
+**什么时候失效：** 过期、撤销（本人或管理员）、创建者被移出、降为只看回忆、删除账号。移出和降级时写 `revoked_at`，再加回来不复活；公开接口还核对创建者现在是能读记录的成员，防止以后新增的路径漏掉。撤销之后，已经发出去的签名链接最多还能用 1 小时，界面上写明了。
+
+**分享页只连构建时的 API。** 登录页换成自己的服务器时，App 不显示入口（`canShare`）。
+
+**限流：** 按来源（`RATE_PUBLIC_SHARE_PER_IP_15MIN`，取不到来源时跳过）和按令牌（`RATE_PUBLIC_SHARE_PER_TOKEN_HOUR`）。在查库之前计数，所以链接存不存在表现一样。
+
 ## 角色变化
 
 同步响应里带当前角色，客户端保存上次的角色。升级后游标归零重新拉历史；降级后删除本地无权查看的集合。

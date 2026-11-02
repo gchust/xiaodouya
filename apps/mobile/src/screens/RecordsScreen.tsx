@@ -1,17 +1,12 @@
-import {
-  describeEvent,
-  type EventData,
-  eventsByDay,
-  formatDateHeader,
-  formatFullDate,
-  t,
-} from '@xiaodouya/shared';
+import { describeEvent, type EventData, eventsByDay, startOfLocalDay, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords, useUnits } from '../lib/app';
+import { shareDayTitle } from '../lib/share';
 import { EventActionsSheet, MoreSheet } from '../sheets/recordSheets';
+import { ShareDaySheet, useCanShare } from '../sheets/shareSheets';
 import { colors, spacing } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Chip, Empty, PageTitle } from '../ui/primitives';
@@ -32,11 +27,6 @@ const filters = (): { key: Filter; label: string }[] => [
   { key: 'vaccine', label: t().today.filterVaccine },
 ];
 
-function dayTitle(dayStart: number, now: number): string {
-  const sameYear = new Date(dayStart).getFullYear() === new Date(now).getFullYear();
-  return sameYear ? formatDateHeader(dayStart) : formatFullDate(dayStart);
-}
-
 /** 今天页只有过去 24 小时的 8 条，更早的、身高体重都要到这里才能点开修改。 */
 export function RecordsScreen() {
   const insets = useSafeAreaInsets();
@@ -45,6 +35,7 @@ export function RecordsScreen() {
   const { events, baby } = useRecords();
   const units = useUnits();
   const sheet = useSheet();
+  const showShare = useCanShare();
   const [filter, setFilter] = useState<Filter>('all');
   const now = Date.now();
   const sections = useMemo(
@@ -112,9 +103,29 @@ export function RecordsScreen() {
           />
         }
         renderSectionHeader={({ section }) => (
-          <Text style={s.dayTitle} testID={`records-day-${section.dayStart}`}>
-            {dayTitle(section.dayStart, now)}
-          </Text>
+          <View style={s.dayRow}>
+            <Text style={s.dayTitle} testID={`records-day-${section.dayStart}`}>
+              {shareDayTitle(section.dayStart, now)}
+            </Text>
+            {showShare ? (
+              <Pressable
+                // testID 不能带时间戳：Maestro 算不出来。今天的固定一个名字。
+                testID={
+                  section.dayStart === startOfLocalDay(now)
+                    ? 'records-share-today'
+                    : `records-share-${section.dayStart}`
+                }
+                accessibilityRole="button"
+                accessibilityLabel={t().share.shareDayA11y(shareDayTitle(section.dayStart, now))}
+                hitSlop={12}
+                onPress={() =>
+                  sheet.open(t().share.sheetTitle, () => <ShareDaySheet at={section.dayStart} />)
+                }
+              >
+                <Text style={s.dayShare}>{t().share.shareLink}</Text>
+              </Pressable>
+            ) : null}
+          </View>
         )}
         renderItem={({ item }) => (
           <View style={s.item}>
@@ -145,13 +156,16 @@ const s = StyleSheet.create({
   link: { fontSize: 13, color: colors.accent, padding: 4 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   filterOff: { backgroundColor: colors.card },
-  dayTitle: {
+  dayRow: {
     marginTop: 18,
     marginBottom: 2,
     marginHorizontal: spacing.page,
-    fontSize: 12,
-    color: colors.muted,
-    letterSpacing: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
   },
+  dayTitle: { flexShrink: 1, fontSize: 12, color: colors.muted, letterSpacing: 1 },
+  dayShare: { fontSize: 12, color: colors.accent },
   item: { marginHorizontal: spacing.page },
 });

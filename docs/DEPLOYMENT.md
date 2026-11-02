@@ -580,6 +580,59 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 
 已经进入加密备份的数据要等备份过期才消失，公开的 CDN 域名也可能缓存文件一段时间。
 
+## 分享页（Cloudflare Worker 静态资源）
+
+对方不用装 App 打开的网页。**没有配置时什么都不影响：** App 没有 `EXPO_PUBLIC_SHARE_BASE_URL` 就不显示入口，发布流程没有 `SHARE_PAGE_ENABLED=true` 就什么都不做。
+
+Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），不跑代码、不代理 API，也收不到令牌：令牌在 URL 片段里，浏览器不会发给托管网页的服务器。响应头（`X-Robots-Tag`、`Referrer-Policy`、CSP 等）在构建时生成的 `dist/_headers` 里，页面的 meta 标签是兜底。**这些都只在 `wrangler dev` 上看过响应头，没有发布到真实的 Cloudflare 账号过。**
+
+### 发布顺序
+
+**不能反：**
+
+1. **部署后端：** GitHub Actions 手动运行“部署后端”（要有新的 `shares` 表和公开接口）。
+2. **发布网页：** 配好下面的 Secret 和变量后，手动运行“发布分享页”。打开 `https://<你的域名>/` 应该显示“这个链接已失效或已撤销”，这说明页面能打开。
+3. **发布 APK：** 设置仓库变量 `EXPO_PUBLIC_SHARE_BASE_URL`，再发版。旧版 APK 没有入口，不受影响。
+
+### 第一次配置
+
+1. **创建 API 令牌：** Cloudflare 控制台 → Account API tokens → Create Token → 模板 **Edit Cloudflare Workers**，范围限制到这一个账号（和这一个域名）。这是 [Cloudflare 文档](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)给 CI 的做法。这个模板的权限比发布静态文件需要的多，只保留账号下的 `Workers Scripts: Edit` 理论上够用（域名在控制台绑定时），**没有实际试过**，收窄后要跑一次发布确认。
+2. **账号 ID：** 控制台的账号首页能找到。只放进 Secret，不要写进仓库。
+3. **在 GitHub 仓库 → Settings → Secrets and variables → Actions 里添加：**
+
+   | 类型     | 名称                         | 值 |
+   | -------- | ---------------------------- | -- |
+   | Secret   | `CLOUDFLARE_API_TOKEN`       | 第 1 步的令牌 |
+   | Secret   | `CLOUDFLARE_ACCOUNT_ID`      | 账号 ID |
+   | Variable | `SHARE_PAGE_ENABLED`         | `true`，不设置时发布流程跳过 |
+   | Variable | `EXPO_PUBLIC_API_URL`        | 已有，页面调用这个地址，必须是 https |
+   | Variable | `EXPO_PUBLIC_API_REGION`     | 已有，页面和 App 一样把请求固定到这个区域 |
+   | Variable | `SHARE_PAGE_DOMAIN`          | 可选，比如 `share.example.com`，发布时绑定这个域名。不设置就在控制台绑定 |
+   | Variable | `EXPO_PUBLIC_SHARE_BASE_URL` | 第 3 步发 APK 时用，比如 `https://share.example.com`。换托管只改这个，不用改代码 |
+
+4. **第一次运行“发布分享页”**，Worker（名字 `xiaodouya-share`）会自动创建。
+5. **绑定域名：** Workers & Pages → `xiaodouya-share` → Settings → Domains & Routes → Add → Custom Domain。域名要已经托管在这个 Cloudflare 账号（[文档](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)写明了不能用别人的域名，也不能用已有 CNAME 记录的主机名），DNS 和证书由 Cloudflare 创建。不想绑域名时用 `https://xiaodouya-share.<账号子域>.workers.dev`。
+6. **`workers.dev` 地址默认一直开着**（配置里没有路由时默认开启，[文档](https://developers.cloudflare.com/workers/wrangler/configuration/)）。两个地址打开的是同一个页面，对方要有令牌才看得到内容，所以留着也没有内容风险。想关掉要在 `wrangler.toml` 写 `workers_dev = false`。`wrangler deploy` 在配置里没写路由时，会不会动控制台绑的域名，**我们没有实际验证**：第一次重复发布后要看一眼域名还在不在，有问题就改用 `SHARE_PAGE_DOMAIN`。
+
+### 价格（2026-11-02 读 Cloudflare 文档）
+
+[静态资源计费](https://developers.cloudflare.com/workers/static-assets/billing-and-limitations/)：对静态文件的请求免费且不限量，存储也不收钱。这个 Worker 没有代码，也没开 `run_worker_first`，所以不会产生 Worker 调用（[Free 计划](https://developers.cloudflare.com/workers/platform/pricing/)的 Worker 请求是每天 10 万次，这里用不到）。[限制](https://developers.cloudflare.com/workers/platform/limits/)：Free 计划每个版本 2 万个文件，单文件 25 MiB，这里只有几个文件，共几百 KB。价格会变，发布前再看一眼。
+
+**费用真正在别处：** 打开页面要调用 Supabase 函数（每次打开至少一次）和数据库，图片视频从 R2 下载。这些没有量过。
+
+### 还没有验证的
+
+- 真实的 Cloudflare 发布、`_headers` 线上是否生效、自定义域名。本地只跑过 `wrangler dev` 和 `wrangler deploy --dry-run`。
+- 真实 Supabase 网关上的 OPTIONS 预检和 `x-region` 头：`pnpm test:edge` 跑的是 Deno，没有经过网关。上线后用浏览器打开一个真实链接，看开发者工具里有没有跨域错误。
+- **中国大陆能否打开没有验证**，`workers.dev`、自定义域名、Supabase、R2 哪一段都可能不通。
+- `x-forwarded-for` 在 Supabase 上是不是客户端地址（F-97）。不是的话按来源的限流不生效，按令牌的还在。
+
+### 取消
+
+删除仓库变量 `SHARE_PAGE_ENABLED` 不会下线已经发布的页面。要下线就在 Cloudflare 控制台删除这个 Worker。已经发出去的链接随之打不开，数据还在。接口要彻底停用可以把 `shares` 表的 `revoked_at` 全部写上。
+
+---
+
 ## 三、参数说明
 
 ### 服务端（`deploy/.env`；Supabase 方案用 `supabase secrets`，不需要 `DOMAIN`、`POSTGRES_PASSWORD`、`SERVER_IMAGE`）
@@ -600,6 +653,8 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 | `CLIENT_IP_POSITION`              | 否   | `last`                                   | 取这个头的第一段还是最后一段（`first`、`last`）。代理通常是追加，客户端能伪造前面的。取到内网地址算取不到 |
 | `RATE_REGISTER_PER_IP_HOUR`       | 否   | `20`                                     | 每个来源每小时能注册几次，`0` 不限。取不到来源时不按来源限制                                              |
 | `RATE_REGISTER_GLOBAL_HOUR`       | 否   | `1000`                                   | 全站每小时能注册几次，`0` 不限。换地址绕不过。爆发式增长时要调高                                          |
+| `RATE_PUBLIC_SHARE_PER_IP_15MIN`  | 否   | `120`                                    | 分享页的公开接口，每个来源 15 分钟几次，`0` 不限。取不到来源时不按来源限制 |
+| `RATE_PUBLIC_SHARE_PER_TOKEN_HOUR` | 否  | `600`                                    | 分享页的公开接口，每个链接每小时几次，`0` 不限。换地址绕不过 |
 | `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次                                        |
 | `RATE_SYNC_PER_10MIN`             | 否   | `600`                                    | 每人每 10 分钟同步的次数，`0` 不限。被限流时 App 退避后自动重试，不丢数据                                 |
 | `SERVER_IMAGE`                    | 否   | `ghcr.io/gchust/xiaodouya-server:latest` | 服务端镜像，可以固定到某个版本，比如 `:v0.1.0`                                                            |
@@ -676,6 +731,7 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 | `EXPO_PUBLIC_API_REGION`           | 否         | Supabase Edge Function 执行区域，比如新加坡 `ap-southeast-1`；只对 Supabase 函数地址附加 `x-region` 请求标头 |
 | `EXPO_PUBLIC_TERMS_URL`            | 否         | 用户协议的网址，注册页的同意说明链接到这里。发布流程从同名的仓库变量读取。没有设置时不提这份文件 |
 | `EXPO_PUBLIC_PRIVACY_URL`          | 否         | 隐私政策的网址，同上。两个都没有设置时不显示同意说明。公开发布前必须设置      |
+| `EXPO_PUBLIC_SHARE_BASE_URL`       | 否         | 分享页的地址，见“分享页”一节。发布流程从同名的仓库变量读取。没有设置时 App 不显示分享入口 |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
 | `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |

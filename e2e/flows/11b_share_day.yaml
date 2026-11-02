@@ -1,0 +1,105 @@
+# 分享一天：今天页和全部记录都能进，弹层里能看到条数和提醒，健康记录默认关，
+# 创建链接后在“已分享的链接”里看得到，撤销后消失。
+# E2E 构建不打开系统分享面板（面板是系统画的，每台机器都不一样），这里只检查链接本身。
+# 对方打开网页那一半由 share-web 的测试和服务端集成测试覆盖。
+# 用前面流程今天记下的内容，这里不写新记录。跑完留下的变化：无，链接撤销了。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 从今天页进入 ────────────────────────────────
+# scrollUntilVisible 一看到就停，还带着惯性，等停稳再点。
+- scrollUntilVisible:
+    element: { id: share-today }
+- waitForAnimationToEnd
+- takeScreenshot: .artifacts/e2e-11b-today-footer
+- assertVisible: { id: share-today }
+- tapOn: { id: share-today }
+- extendedWaitUntil:
+    visible: { id: share-create }
+    timeout: 10000
+- assertVisible: { id: share-day-title }
+- assertVisible: { id: share-counts }
+- assertVisible:
+    text: 这一天有 .*条记录.*
+- assertVisible: 拿到链接的人都能看到，可以随时撤销。
+- takeScreenshot: .artifacts/e2e-11b-share-sheet
+# 健康记录默认关，打开才提示。
+- assertNotVisible: { id: share-health-warning }
+- tapOn: { id: share-include-health }
+- assertVisible: { id: share-health-warning }
+- takeScreenshot: .artifacts/e2e-11b-share-health-on
+- tapOn: { id: share-include-health }
+- assertNotVisible: { id: share-health-warning }
+- tapOn: { id: share-ttl-1 }
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+# 令牌在片段里，地址来自构建时的配置。
+- assertVisible:
+    id: share-link
+    text: https://share\.example\.test/#[A-Za-z0-9_-]{43}
+- assertVisible: { id: share-send }
+- takeScreenshot: .artifacts/e2e-11b-link-created
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+
+# ─── 从全部记录进入，只看不建 ────────────────────
+- scrollUntilVisible:
+    element: { id: records-open }
+- waitForAnimationToEnd
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: { id: records-share-today }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-11b-records-day-header
+- tapOn: { id: records-share-today }
+- extendedWaitUntil:
+    visible: { id: share-create }
+    timeout: 10000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-create }
+    timeout: 10000
+- tapOn: { id: records-back }
+
+# ─── 已分享的链接：看得到，撤销后消失 ────────────
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 10000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-shares }
+- waitForAnimationToEnd
+- assertVisible: { id: open-shares }
+- tapOn: { id: open-shares }
+- extendedWaitUntil:
+    visible: { id: share-row-0 }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-11b-shared-links
+# 撤销要点两次。
+- tapOn: { id: share-revoke-0 }
+- assertVisible:
+    text: 撤销后，拿到链接的人再打开就看不到了.*
+- takeScreenshot: .artifacts/e2e-11b-revoke-confirm
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    visible: { id: shares-empty }
+    timeout: 15000
+- assertNotVisible: { id: share-row-0 }
+- takeScreenshot: .artifacts/e2e-11b-revoked
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: shares-empty }
+    timeout: 10000
+# 回到今天页，后面的流程从这里开始。
+- tapOn: { id: tab-today }

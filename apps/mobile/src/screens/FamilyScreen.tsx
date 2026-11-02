@@ -25,6 +25,7 @@ import { exportFamilyData } from '../lib/familyExport';
 import { ensureNotificationPermission } from '../lib/notifications';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
@@ -49,6 +50,7 @@ export function FamilyScreen() {
   const units = useUnits();
   const pendingFiles = uploadProgress.total + uploadProgress.failedCount;
   const sheet = useSheet();
+  const showShares = useCanShare();
   const router = useRouter();
   const { toast } = useFeedback();
   const now = useNow(60_000);
@@ -238,6 +240,14 @@ export function FamilyScreen() {
             sub={languageSummary(prefs.locale)}
             onPress={() => sheet.open(t().family.language, () => <LanguageSheet />)}
           />
+          {showShares ? (
+            <NavRow
+              testID="open-shares"
+              label={t().share.linksRow}
+              sub={t().share.linksRowSub}
+              onPress={() => sheet.open(t().share.linksRow, () => <SharedLinksSheet />)}
+            />
+          ) : null}
           <NavRow
             testID="export-book"
             label={exporting ? t().family.bookBusy : t().family.exportBook}

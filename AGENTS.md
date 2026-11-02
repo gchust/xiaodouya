@@ -20,6 +20,7 @@
 ```
 apps/mobile/       Expo + React Native App（Expo Router，TypeScript）
 apps/server/       Hono + Postgres 服务端（TypeScript），Node 和 Deno（Supabase Edge Function）共用
+apps/share-web/    分享页：对方不用装 App 打开的静态网页，发布到 Cloudflare Worker 静态资源
 packages/shared/   前后端共用：zod 契约、领域逻辑（喂奶估算、疫苗表、月龄计算）
 e2e/               Maestro 端到端流程和测试辅助脚本
 supabase/          Edge Function 入口和配置，代码由 scripts/build-edge.mjs 从 apps/server 打包
@@ -28,7 +29,7 @@ docs/              DEPLOYMENT.md、ARCHITECTURE.md、CAPACITY.md（容量和成�
 .github/workflows/ CI
 ```
 
-依赖方向：`mobile → shared ← server`。`shared` 不能依赖 React Native 或 Node 专属 API。
+依赖方向：`mobile → shared ← server`，`share-web → shared`。`shared` 不能依赖 React Native 或 Node 专属 API。
 **纯业务规则放 `shared` 并写单元测试**，不要埋在组件或路由里。
 
 ## 3. 常用命令
