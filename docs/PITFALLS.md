@@ -79,6 +79,9 @@
 - **保存时不要同步做缩略图。** `manipulate(uri)` 不带尺寸会整张解码，12 MP 要 48 MB，108 MP 要 430 MB，100 张要等两分钟，这期间记录还没写，被杀就什么都没有。文件挪进 App（同分区是 rename，瞬间完成）就写记录，缩略图放进持久化队列逐张做，并带 `maxWidth`、`maxHeight`。
 - **图片在原生内存里，JS 的垃圾回收感觉不到。** `ImageManipulator` 的 context 和 image 用完要 `release()`。
 - **`hasThumb: true` 不代表缩略图已经有了。** 缩略图是后来生成的，也可能做不出来。取缩略图的地方都要能退回原图，成长册以前就是直接跳过，照片会从册子里消失。
+- **R2 的预签名文档只列了 GET、HEAD、PUT、DELETE，没提 UploadPart。** S3 兼容表把 UploadPart 列为支持，两页合起来没有说预签名的 UploadPart 一定能用。所以真实存储要跑 `cli check-multipart`，不通过就 `S3_MULTIPART_ENABLED=false`，App 退回单个 PUT。
+- **完成分片之前要核对每片的大小，不能只看片数。** `S3_BIND_UPLOAD_SIZE=false` 时一片可以传任意大小，HEAD 只看合并后的总大小，错的片加上错的片可能正好相等。大小不对的片算没传，重传同一个片号会覆盖。
+- **取消上传时的响应可能晚于取消。** `finish` 和 catch 都要先确认任务还在队列里，否则取消后完成的响应会通知“传好了”，失败的响应会把任务写回数据库，重试时复活。
 
 ## 健康内容
 
@@ -142,10 +145,12 @@
 - **`nodeLinker: hoisted` 下 `pnpm install --filter` 不起过滤作用。** 服务端镜像曾因此下载全部 React Native（640 多个包），慢网下超时。Dockerfile 要加 `--node-linker=isolated`（104 个包），之后的 `pnpm run` 还要关掉 `verify-deps-before-run`，否则它会重新安装并报 Broken lockfile。
 - **Deno 不解析没有扩展名的相对导入。** 服务端和 `packages/shared` 都这样写，而 shared 还要给 Metro 用，所以 Edge Function 用 esbuild 打包（`scripts/build-edge.mjs`），不用 import map。
 - **Edge 产物要用 `platform: browser`。** 这样 AWS SDK 走 fetch 和 WebCrypto，不会去读 `~/.aws/config`。postgres 写的是不带前缀的 `import net from 'net'`，要插件改成 `node:net`。打包后依赖算用户代码，旧版 Deno 不给用户代码提供 `Buffer`、`process` 全局变量，要在 banner 里补上。
+- **browser 映射下 AWS SDK 用 DOMParser 解析 XML，Deno 没有。** PUT、HEAD、GET 不解析响应体，所以一直没事；CreateMultipartUpload、ListParts 一调用就抛错，表现成“存储暂时没有响应”。`build-edge.mjs` 把 `xml-parser.browser` 换回纯 JS 的版本，并拦截产物里的 `new DOMParser`。Node 上的测试发现不了，要跑 `pnpm test:edge`。
 - **`request.signal` 不一定会触发。** 普通 Deno 在客户端断开时会触发，但在 `edge-runtime` 镜像里经主服务转发到 Worker 时，断开后一直是 `aborted=false`，Supabase 线上是否一样还不知道。依赖它的逻辑必须另有时限。
 - **Deno 在 `ssl: 'require'` 时也校验证书链。** postgres.js 传了 `rejectUnauthorized: false`，在 edge-runtime 里依然报 `invalid peer certificate`，随后表现成 `write CONNECT_TIMEOUT`，看起来像网络问题。本地连自签名的数据库要设 `SSL_CERT_FILE` 和 `DENO_TLS_CA_STORE=mozilla,system`，而且证书不能是 CA 证书。
 - **本机的 DNS 会把外部域名解析成 `198.18.x.x`。** 这是代理的假 IP，属于 SSRF 检查拦截的范围。在这台机器上测“公网地址放行”会失败，不是代码的问题。
 - **`/tmp` 是共享配额。** 在里面下载大文件会让所有命令报 `EDQUOT`，输出也会丢。大文件放到 worktree 的 `.artifacts/`。
+- **配额被别的项目占满时，命令其实跑了，只是拿不到输出。** Agent 的工具把输出写在 `/tmp` 下，所以这时每条命令都报 `EDQUOT`、看不到结果。把输出重定向到 `.artifacts/` 里的文件再读，`TMPDIR` 也指向那里。不要去删别人的目录。
 
 ## CI
 

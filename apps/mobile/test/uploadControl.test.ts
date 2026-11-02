@@ -971,6 +971,8 @@ describe('速度', () => {
         }
         if (failNext) {
           failNext = false;
+          // 等了一阵才重试：失败前的样本还留着的话，这段空白会把速度算得很低。
+          clock += 60_000;
           throw new Error('断网了');
         }
         await gate.promise;

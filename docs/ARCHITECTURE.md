@@ -66,6 +66,35 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 
 记录和文件上传是分开的：记录先同步，家人马上能看到文字，图片传到后再显示。队列持久化，App 被杀后下次启动接着传。永久错误（比如类型被拒、空间已满）显示失败并可重试，不会卡住后面的文件。
 
+**大文件分片上传（超过 16 MB，每片 8 MB，常量在 `packages/shared/src/domain/multipart.ts`）：**
+
+```
+POST /v1/media/multipart                     开始。配额预留和大小限制同单个 PUT，同一把锁。同一个文件再调一次返回同一个 uploadId
+POST /v1/media/:id/multipart/parts           已传了哪些片。服务端当场 ListParts，以存储为准，数据库不记账
+POST /v1/media/:id/multipart/part-urls       一批（最多 8 片）的预签名链接，分片大小签进去。每次续一下预留
+PUT  直传到 S3                               手机把这一片写成临时文件，再流式上传，onProgress 能到片内字节
+POST /v1/media/:id/multipart/complete        服务端 ListParts 取 ETag，核对每片大小，CompleteMultipartUpload，再走同样的 HEAD 和配额复查
+POST /v1/media/:id/cancel                    取消：删 pending 记录，存储的清理（含中止分片）进待删除队列
+```
+
+- **手机不碰 ETag，也不记哪些片传了。** `job.uploadId`、`partSize` 持久化在上传队列里，断网、失败重试、App 被杀后都走同一条路：先问服务端缺哪些片，只传缺的。`confirmedBytes` 只用来显示进度，重启后还没联网也不从 0 开始。
+- **片的大小记在 `media.upload_part_size`：** 常量以后可能变，没传完的文件还要按当初的算。R2 要求除最后一片外每片一样大。
+- **`upload_gone`（404）：** uploadId 在存储里没了（被清理、过期）。服务端清掉它，手机从头开始，不算失败。ListParts 报 NoSuchUpload 时先 HEAD 一次：可能上次已经合并成功，只是没收到响应，这种情况返回 `complete: true`。
+- **退回单个 PUT：** 接口 404（旧服务端）、501 `multipart_unsupported`（存储拒绝 CreateMultipartUpload，或 `S3_MULTIPART_ENABLED=false`）、预签名分片返回 501/405，都在同一次任务里改用单个 PUT，并记在 `job.singlePut` 上不再试。`upload-url` 看到还有 `upload_id` 的行会清掉并中止。5xx 是暂时的，不退回：退回就丢了已传的片。
+- **文件被改动：** 每片之前比较大小和修改时间，变了就是永久失败，提示取消后重选，不会拼出一个坏文件。
+- **Deno：** `platform: browser` 打包时 AWS SDK 的 XML 解析是 DOMParser，Deno 没有。`scripts/build-edge.mjs` 换成 SDK 里纯 JS 的版本。
+- **没有清理的情况：** 中止失败时转进 `pending_object_deletions`（带 `upload_id`）重试。放弃的上传（24 小时）由 `cli maintenance` 中止，只管平台存储，自带存储的分片要靠用户 Bucket 自己的生命周期规则（`cli maintenance` 不碰用户的 Bucket）。账号删除和取消都是主人要求，队列带着存储快照，自带存储也会中止。
+
+**取消上传（`data/uploadCancel.ts`、`UploadQueue.cancel`）：** 这是用户明确的删除，只有这里会丢任务，失败、断网、App 被杀都不会。
+
+1. 先从记录里去掉文件引用（`withoutMedia`，通过正常的 `write` 同步给家人）。回忆的文字、其他文件、未知字段都保留。只剩空壳的回忆不删，确认时会说明。
+2. 再取消任务：内存里马上拿掉，`AbortController` 中断正在传的（Android 上 `File.upload` 的 `signal` 真的会 `call.cancel()`，见 expo-file-system 的 `FileSystemUploadTask.kt`），删本地副本，写一个墓碑（`${id}/cancel`）。
+3. 墓碑排在队列最前，有网时调 `/cancel`，离线也能取消。通知不到有次数上限，放弃的上传 24 小时后服务端也会清。
+
+顺序不能反：写完记录后被杀，最多是一个没人引用的文件传了上去（服务端 30 天后清）；反过来会留下一个永远打不开的占位。服务端只处理 `pending`，已经 `ready` 的变体等记录去掉引用后走 `unreferenced_at`。
+
+**上传详情页（`app/uploads.tsx`）：** 队列按“文件 id”把原图和缩略图合成一项（`UploadItem`），卡片和详情页只看这一层。文件属于哪条记录不存在任务里，每次从记录反查（入队发生在写记录之前，升级前的任务也没有这个信息）。速度是最近 8 秒的滑动平均（`data/uploadSpeed.ts`），等 Wi-Fi、排队、断网、刚开始、5 秒没有新字节时不显示。
+
 **配额和清理：**
 
 平台存储（`storage_config_id` 为空）上的文件才算配额，用自己存储的家庭不花平台的钱。配额对已有家庭从第一天起就算，超额的家庭什么都不丢，只是传不了新文件。
@@ -127,7 +156,7 @@ SyncEngine ──POST /v1/sync {cursor, changes}──> 服务端
 
 ## 已知限制
 
-- **上传不能在 App 被杀后继续**，也不能断点续传，下次启动从该文件开头重传。大视频要真正后台上传，需要用 Expo Modules 写 WorkManager/URLSession 模块。
+- **上传只在 App 运行时进行。** 被杀后下次打开接着传：大文件（分片）从缺的片开始，16 MB 以下的小文件从头重传。
 - 每个账号只属于一个家庭（`memberships_one_family`），一个家庭只有一个宝宝（`baby` 集合取最新一条）。
 - iOS 没有测试过。
 - 视频没有压缩。
