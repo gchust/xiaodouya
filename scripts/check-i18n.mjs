@@ -86,6 +86,13 @@ for (const [, code] of appSource.matchAll(serverCode)) {
   }
 }
 
+// 当前语言是进程级的状态。服务端同时服务不同语言的人，改了它所有人的文字都会串。
+for (const file of sourceFiles(path.join(root, 'apps/server/src'))) {
+  if (/\b(setLocale|withLocale)\s*\(/.test(fs.readFileSync(file, 'utf8'))) {
+    problems.push(`${path.relative(root, file)}  服务端不能改当前语言，用 messagesFor 明确指定`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(problems.join('\n'));
   console.error(
