@@ -45,7 +45,7 @@ jobs:
             echo "main 上的 push 始终跑全量"
             echo "e2e=true" >> "$GITHUB_OUTPUT"
           fi
-          echo "groups=$(node scripts/e2e-groups.mjs matrix)" >> "$GITHUB_OUTPUT"
+          echo 'groups=["serial"]' >> "$GITHUB_OUTPUT"
 
   check:
     name: 静态检查和单元测试
@@ -193,7 +193,7 @@ jobs:
     needs: [changes, apk]
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       # 各组互不依赖，一组失败也让其他组跑完，一次看到全部问题。
       fail-fast: false
@@ -255,7 +255,7 @@ jobs:
           disk-size: 4096M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh --group "$E2E_GROUP"
+          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh e2e/flows/01_onboarding.yaml e2e/flows/09_growth.yaml && bash scripts/e2e.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
