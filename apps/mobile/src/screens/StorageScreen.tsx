@@ -7,6 +7,8 @@ import {
   type StorageTestResult,
   type StorageUsage,
   storageProviderNames,
+  storageTestMessage,
+  t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
@@ -37,11 +39,11 @@ import {
 } from '../ui/primitives';
 import { StorageUsagePage } from './StorageUsagePage';
 
-const NOTES: Record<StorageProvider, string> = {
-  r2: '推荐。下载流量不收费，适合照片和视频多的情况。创建 Bucket 时位置选离家人最近的区域。',
-  s3: '选离家人最近的区域，数据就存在那里，但下载流量要收费。',
-  other: '适用于 Backblaze B2、Wasabi、阿里云 OSS、自建 MinIO 等任何兼容 S3 接口的存储。',
-};
+const notes = (): Record<StorageProvider, string> => ({
+  r2: t().storageUi.r2Note,
+  s3: t().storageUi.s3Note,
+  other: t().storageUi.otherNote,
+});
 
 interface Form {
   accountId: string;
@@ -74,7 +76,7 @@ export function StorageScreen() {
       const allowed = await app.api.allowCustomStorage();
       setAllowCustom(allowed || canEditStorage(allowed, (await app.api.getStorage()).source));
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '读取失败');
+      setLoadError(error instanceof Error ? error.message : t().storageUi.readFailed);
     }
   }, [app.api]);
 
@@ -93,7 +95,7 @@ export function StorageScreen() {
             <Button
               testID="storage-retry"
               tone="outline"
-              label="重新读取"
+              label={t().storageUi.reread}
               height={44}
               style={{ borderRadius: 14, alignSelf: 'stretch' }}
               labelStyle={s.outlineLabel}
@@ -146,7 +148,7 @@ function CustomStorageForm() {
         });
       }
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '读取失败');
+      setLoadError(error instanceof Error ? error.message : t().storageUi.readFailed);
     }
   }, [app.api]);
 
@@ -179,7 +181,7 @@ function CustomStorageForm() {
       setTest({
         ok: false,
         latencyMs: 0,
-        message: error instanceof Error ? error.message : '连接失败',
+        message: error instanceof Error ? error.message : t().storageUi.connectFailed,
       });
     } finally {
       setTesting(false);
@@ -191,13 +193,13 @@ function CustomStorageForm() {
     try {
       setConfig(await app.api.saveStorage(body()));
       setForm((f) => ({ ...f, secretAccessKey: '' }));
-      toast('存储设置已保存');
+      toast(t().storageUi.settingsSaved);
       router.back();
     } catch (error) {
       setTest({
         ok: false,
         latencyMs: 0,
-        message: error instanceof Error ? error.message : '保存失败',
+        message: error instanceof Error ? error.message : t().storageUi.saveFailed,
       });
     } finally {
       setSaving(false);
@@ -217,11 +219,11 @@ function CustomStorageForm() {
     (total > 0 ? `${Math.max(1, (value / total) * 100)}%` : '0%') as `${number}%`;
   const statusText =
     config?.source === 'family'
-      ? '已连接'
+      ? t().storageUi.connected
       : config?.source === 'server'
-        ? '正在使用服务器默认存储'
+        ? t().storageUi.usingDefault
         : config
-          ? '还没有配置'
+          ? t().storageUi.notSet
           : '';
 
   return (
@@ -242,13 +244,13 @@ function CustomStorageForm() {
           <Pressable
             testID="storage-back"
             accessibilityRole="button"
-            accessibilityLabel="返回家人"
+            accessibilityLabel={t().storageUi.backToFamily}
             hitSlop={12}
             onPress={() => router.back()}
           >
-            <Text style={s.back}>‹ 家人</Text>
+            <Text style={s.back}>{t().storageUi.backFamilyLink}</Text>
           </Pressable>
-          <PageTitle>存储</PageTitle>
+          <PageTitle>{t().family.storage}</PageTitle>
         </View>
 
         {loadError ? (
@@ -257,7 +259,7 @@ function CustomStorageForm() {
             <Button
               testID="storage-retry"
               tone="outline"
-              label="重新读取"
+              label={t().storageUi.reread}
               height={44}
               style={{ borderRadius: 14 }}
               labelStyle={s.outlineLabel}
@@ -270,7 +272,9 @@ function CustomStorageForm() {
         <View style={s.usageCard}>
           <View style={s.usageHead}>
             <Text style={{ fontSize: 15, fontWeight: '500', color: colors.ink }}>
-              {config?.provider ? storageProviderNames[config.provider] : '当前存储'}
+              {config?.provider
+                ? storageProviderNames[config.provider]
+                : t().storageUi.currentStorage}
             </Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Dot color={config?.source === 'none' ? colors.accent : colors.green} size={7} />
@@ -296,15 +300,24 @@ function CustomStorageForm() {
             ) : null}
           </View>
           <View style={s.usageLegend}>
-            <Muted style={{ fontSize: 11 }}>照片 {formatBytes(usage?.image ?? 0)}</Muted>
-            <Muted style={{ fontSize: 11 }}>视频 {formatBytes(usage?.video ?? 0)}</Muted>
-            <Muted style={{ fontSize: 11 }}>录音 {formatBytes(usage?.audio ?? 0)}</Muted>
-            <Muted style={{ fontSize: 11 }}>证件 {formatBytes(usage?.document ?? 0)}</Muted>
+            <Muted style={{ fontSize: 11 }}>
+              {t().storageUi.photos(formatBytes(usage?.image ?? 0))}
+            </Muted>
+            <Muted style={{ fontSize: 11 }}>
+              {t().storageUi.videos(formatBytes(usage?.video ?? 0))}
+            </Muted>
+            <Muted style={{ fontSize: 11 }}>
+              {t().storageUi.audio(formatBytes(usage?.audio ?? 0))}
+            </Muted>
+            <Muted style={{ fontSize: 11 }}>
+              {t().storageUi.docs(formatBytes(usage?.document ?? 0))}
+            </Muted>
           </View>
           <Muted testID="storage-total">
-            共 {formatBytes(total)}
-            {usage?.quota ? `（上限 ${formatBytes(usage.quota)}）` : ''} ·
-            文件从手机直传，不经过服务器
+            {t().storageUi.total(
+              formatBytes(total),
+              usage?.quota ? t().storageUi.limit(formatBytes(usage.quota)) : '',
+            )}
           </Muted>
           {quota?.warning ? (
             <Text
@@ -321,7 +334,7 @@ function CustomStorageForm() {
         </View>
 
         <View style={{ gap: 8 }}>
-          <SectionTitle>服务商</SectionTitle>
+          <SectionTitle>{t().storageUi.provider}</SectionTitle>
           <View style={s.providers}>
             {(['r2', 's3', 'other'] as const).map((p) => {
               const on = provider === p;
@@ -339,13 +352,13 @@ function CustomStorageForm() {
                   style={[s.provider, { backgroundColor: on ? colors.ink : colors.paper }]}
                 >
                   <Text style={{ fontSize: 12, color: on ? colors.paper : colors.ink }}>
-                    {p === 'other' ? '其他 S3 兼容' : storageProviderNames[p]}
+                    {p === 'other' ? t().storageUi.otherS3 : storageProviderNames[p]}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
-          <Muted style={{ fontSize: 11, lineHeight: 18 }}>{NOTES[provider]}</Muted>
+          <Muted style={{ fontSize: 11, lineHeight: 18 }}>{notes()[provider]}</Muted>
         </View>
 
         <View style={{ gap: 10 }}>
@@ -356,7 +369,7 @@ function CustomStorageForm() {
               mono
               autoCapitalize="none"
               autoCorrect={false}
-              placeholder="Cloudflare 控制台右侧可找到"
+              placeholder={t().storageUi.accountIdPlaceholder}
               value={form.accountId}
               onChangeText={set('accountId')}
             />
@@ -412,13 +425,13 @@ function CustomStorageForm() {
             secureTextEntry
             autoCapitalize="none"
             autoCorrect={false}
-            placeholder={secretKept ? '已保存，不改就留空' : ''}
+            placeholder={secretKept ? t().storageUi.secretKept : ''}
             value={form.secretAccessKey}
             onChangeText={set('secretAccessKey')}
           />
           <Field
             testID="field-cdn"
-            label="公开 CDN 域名（可选）"
+            label={t().storageUi.cdn}
             mono
             autoCapitalize="none"
             autoCorrect={false}
@@ -427,16 +440,14 @@ function CustomStorageForm() {
             value={form.publicBaseUrl}
             onChangeText={set('publicBaseUrl')}
           />
-          <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-            留空时所有文件都用短时效的签名链接，最私密。填写后，照片和视频走这个公开地址，加载更快，但地址不会过期（文件名不可猜）。证件始终只走签名链接。
-          </Muted>
+          <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().storageUi.cdnHint}</Muted>
         </View>
 
         <View style={{ gap: 8 }}>
           <Button
             testID="storage-test"
             tone="outline"
-            label={testing ? '测试中…' : '测试连接'}
+            label={testing ? t().storageUi.testing : t().storageUi.testConnection}
             height={48}
             style={{ borderRadius: 14 }}
             labelStyle={s.outlineLabel}
@@ -449,33 +460,33 @@ function CustomStorageForm() {
               style={{ fontSize: 12, color: test.ok ? colors.green : colors.danger }}
             >
               {test.ok
-                ? `连接成功 · ${test.message} · ${test.latencyMs}ms`
-                : `连接失败：${test.message}`}
+                ? t().storageUi.testOk(
+                    storageTestMessage(test.reason, test.message),
+                    test.latencyMs,
+                  )
+                : t().storageUi.testFailed(storageTestMessage(test.reason, test.message))}
             </Text>
           ) : null}
         </View>
 
         <View style={{ gap: 8 }}>
-          <SectionTitle>选项</SectionTitle>
+          <SectionTitle>{t().storageUi.options}</SectionTitle>
           <ListCard>
             <Toggle
               testID="pref-wifi"
-              label="视频只在 Wi-Fi 下上传"
-              sub="用流量时先排队，连上 Wi-Fi 自动继续"
+              label={t().storageUi.videoWifi}
+              sub={t().storageUi.videoWifiSub}
               value={app.prefs.videoWifiOnly}
               onChange={(v) => void app.updatePrefs({ videoWifiOnly: v })}
               last
             />
           </ListCard>
-          <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-            证件始终私有，打开时生成 10
-            分钟有效的链接。密钥只保存在服务器上并加密，不会存到任何人的手机里。
-          </Muted>
+          <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().storageUi.secretNote}</Muted>
         </View>
 
         <Button
           testID="storage-save"
-          label="保存"
+          label={t().common.save}
           disabled={!complete}
           busy={saving}
           onPress={() => void save()}

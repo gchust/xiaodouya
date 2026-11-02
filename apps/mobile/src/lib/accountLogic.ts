@@ -1,6 +1,6 @@
 /** 账号相关的纯逻辑。不依赖 React Native，便于测试。 */
 import type { MeResponse } from '@xiaodouya/shared';
-import { accountText } from './accountText';
+import { t } from '@xiaodouya/shared';
 
 /**
  * 只在还没有家庭时引导验证，而且可以跳过：邮件服务出问题、邮箱填错时不能把人关在外面。
@@ -24,16 +24,16 @@ export function consentSegments(
 ): ConsentSegment[] | null {
   const links: ConsentSegment[] = [];
   if (termsUrl) {
-    links.push({ text: accountText.consentTerms, url: termsUrl, testID: 'consent-terms' });
+    links.push({ text: t().account.consentTerms, url: termsUrl, testID: 'consent-terms' });
   }
   if (privacyUrl) {
-    links.push({ text: accountText.consentPrivacy, url: privacyUrl, testID: 'consent-privacy' });
+    links.push({ text: t().account.consentPrivacy, url: privacyUrl, testID: 'consent-privacy' });
   }
   const [first, second] = links;
   if (!first) return null;
   return second
-    ? [{ text: accountText.consentPrefix }, first, { text: accountText.consentAnd }, second]
-    : [{ text: accountText.consentPrefix }, first];
+    ? [{ text: t().account.consentPrefix }, first, { text: t().account.consentAnd }, second]
+    : [{ text: t().account.consentPrefix }, first];
 }
 
 export function exportFileName(now: Date): string {

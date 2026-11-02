@@ -1,11 +1,13 @@
 import {
   type Dimension,
   type FamilyMember,
+  type Locale,
   lengthUnits,
   type Role,
   regionFor,
   roleLabels,
   scaleFor,
+  t,
   temperatureUnits,
   type UnitPrefs,
   unitsSummary,
@@ -16,7 +18,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { accountText } from '../lib/accountText';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
@@ -69,7 +70,7 @@ export function FamilyScreen() {
       ]);
       setStorageSummary(storageSummaryText(usage, config));
     } catch {
-      setStorageSummary('暂时读不到，联网后再看');
+      setStorageSummary(t().family.cantRead);
     }
   }, [app.api, isAdmin, showStorage]);
 
@@ -83,17 +84,21 @@ export function FamilyScreen() {
 
   const signOut = () => {
     const unsynced = pendingCount > 0 || pendingFiles > 0;
-    sheet.open('退出登录', () => (
+    sheet.open(t().auth.signOut, () => (
       <>
         <Muted style={{ fontSize: 13, lineHeight: 21 }}>
           {unsynced
-            ? `还有${pendingCount ? ` ${pendingCount} 条记录` : ''}${pendingCount && pendingFiles ? '和' : ''}${pendingFiles ? ` ${pendingFiles} 个文件` : ''}没有传到服务器，退出后会丢失。建议联网（视频要连 Wi-Fi）传完后再退出。`
-            : '退出后手机上的数据会被清除，重新登录后会从服务器同步回来。'}
+            ? t().family.pendingWarn(
+                pendingCount ? t().family.pendingRecords(pendingCount) : '',
+                pendingCount && pendingFiles ? t().family.pendingAnd : '',
+                pendingFiles ? t().family.pendingFiles(pendingFiles) : '',
+              )
+            : t().family.signOutNote}
         </Muted>
         <Button
           testID="signout-confirm"
           tone={unsynced ? 'outline' : 'accent'}
-          label={unsynced ? '仍然退出' : '退出登录'}
+          label={unsynced ? t().family.signOutAnyway : t().auth.signOut}
           onPress={() => {
             sheet.close();
             void app.signOut();
@@ -104,14 +109,12 @@ export function FamilyScreen() {
   };
 
   const cancelInvite = (invite: { id: string; label: string }) => {
-    sheet.open(`取消${invite.label}的邀请？`, () => (
+    sheet.open(t().family.cancelInviteQ(invite.label), () => (
       <>
-        <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-          已经发出去的邀请码会立刻失效，之后想邀请可以重新生成。
-        </Muted>
+        <Muted style={{ fontSize: 13, lineHeight: 21 }}>{t().family.cancelInviteNote}</Muted>
         <Button
           testID="invite-cancel-confirm"
-          label="确定取消邀请"
+          label={t().family.confirmCancelInvite}
           onPress={() => {
             sheet.close();
             void app.api
@@ -132,7 +135,7 @@ export function FamilyScreen() {
       contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}
       showsVerticalScrollIndicator={false}
     >
-      <PageTitle>家人</PageTitle>
+      <PageTitle>{t().family.title}</PageTitle>
 
       <ListCard>
         {(me?.members ?? []).map((m, i, all) => (
@@ -156,16 +159,18 @@ export function FamilyScreen() {
             </View>
             <View style={{ flex: 1, gap: 1 }}>
               <Text style={{ fontSize: 14, color: colors.ink }}>{invite.label}</Text>
-              <Muted style={{ fontSize: 11 }}>已发送邀请 · {roleLabels[invite.role]}</Muted>
+              <Muted style={{ fontSize: 11 }}>
+                {t().family.inviteSent(roleLabels[invite.role])}
+              </Muted>
             </View>
             <Pressable
               testID={`invite-cancel-${invite.label}`}
               accessibilityRole="button"
-              accessibilityLabel={`取消${invite.label}的邀请`}
+              accessibilityLabel={t().family.cancelInviteA11y(invite.label)}
               hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
               onPress={() => cancelInvite(invite)}
             >
-              <Text style={{ fontSize: 11, color: colors.accent }}>取消</Text>
+              <Text style={{ fontSize: 11, color: colors.accent }}>{t().common.cancel}</Text>
             </Pressable>
           </View>
         ))}
@@ -173,23 +178,23 @@ export function FamilyScreen() {
           <Pressable
             testID="invite-open"
             accessibilityRole="button"
-            accessibilityLabel="邀请家人"
+            accessibilityLabel={t().family.inviteA11y}
             style={{ paddingVertical: 12 }}
-            onPress={() => sheet.open('邀请家人', () => <InviteSheet />)}
+            onPress={() => sheet.open(t().family.inviteA11y, () => <InviteSheet />)}
           >
-            <Text style={{ fontSize: 13, color: colors.accent }}>＋ 邀请家人</Text>
+            <Text style={{ fontSize: 13, color: colors.accent }}>{t().family.inviteLink}</Text>
           </Pressable>
         ) : null}
       </ListCard>
 
       {canRecord ? (
         <View style={s.section}>
-          <SectionTitle>提醒</SectionTitle>
+          <SectionTitle>{t().family.reminders}</SectionTitle>
           <ListCard>
             <Toggle
               testID="pref-feed"
-              label="喂奶提醒"
-              sub="超过平时间隔时提醒，由这台手机发出"
+              label={t().family.feedReminder}
+              sub={t().family.feedReminderSub}
               value={prefs.feedReminder}
               onChange={(v) => {
                 void app.updatePrefs({ feedReminder: v });
@@ -202,66 +207,72 @@ export function FamilyScreen() {
       ) : null}
 
       <View style={s.section}>
-        <SectionTitle>设置</SectionTitle>
+        <SectionTitle>{t().family.settings}</SectionTitle>
         <ListCard>
           {showStorage ? (
             <NavRow
               testID="open-storage"
-              label="存储"
-              sub={storageSummary || '读取中…'}
+              label={t().family.storage}
+              sub={storageSummary || t().family.loading}
               onPress={() => router.push('/storage')}
             />
           ) : null}
           {canRecord ? (
             <Toggle
               testID="pref-doc-lock"
-              label="证件夹指纹解锁"
-              sub="打开证件前需要验证指纹或锁屏密码"
+              label={t().family.docLock}
+              sub={t().family.docLockSub}
               value={prefs.documentLock}
               onChange={(v) => void app.updatePrefs({ documentLock: v })}
             />
           ) : null}
           <NavRow
             testID="open-units"
-            label="单位"
+            label={t().family.units}
             sub={unitsSummary(units)}
-            onPress={() => sheet.open('单位', () => <UnitsSheet />)}
+            onPress={() => sheet.open(t().family.units, () => <UnitsSheet />)}
+          />
+          <NavRow
+            testID="open-language"
+            label={t().family.language}
+            sub={languageSummary(prefs.locale)}
+            onPress={() => sheet.open(t().family.language, () => <LanguageSheet />)}
           />
           <NavRow
             testID="export-book"
-            label={exporting ? '正在生成成长册…' : '导出成长册'}
-            sub="把回忆、照片和信整理成可打印的 PDF"
+            label={exporting ? t().family.bookBusy : t().family.exportBook}
+            sub={t().family.exportBookSub}
             onPress={() => {
               if (exporting || !baby) return;
               setExporting(true);
               exportGrowthBook(app.api, baby.data, moments, letters)
-                .catch((e: Error) => toast(e.message || '生成失败，请稍后再试'))
+                .catch((e: Error) => toast(e.message || t().family.bookFailed))
                 .finally(() => setExporting(false));
             }}
           />
           <NavRow
             testID="export-data"
-            label={exportingData ? accountText.exportRowBusy : accountText.exportRow}
-            sub={accountText.exportRowSub}
+            label={exportingData ? t().account.exportRowBusy : t().account.exportRow}
+            sub={t().account.exportRowSub}
             onPress={() => {
               if (exportingData) return;
               setExportingData(true);
               exportFamilyData(app.api)
-                .catch((e: Error) => toast(e.message || accountText.exportFailed))
+                .catch((e: Error) => toast(e.message || t().account.exportFailed))
                 .finally(() => setExportingData(false));
             }}
           />
           {me?.emailVerified === false ? (
             <NavRow
               testID="verify-email"
-              label={accountText.verifyRow}
-              sub={accountText.verifyRowSub}
-              onPress={() => sheet.open(accountText.verifyTitle, () => <VerifyEmailSheet />)}
+              label={t().account.verifyRow}
+              sub={t().account.verifyRowSub}
+              onPress={() => sheet.open(t().account.verifyTitle, () => <VerifyEmailSheet />)}
             />
           ) : null}
           <NavRow
             testID="sign-out"
-            label="退出登录"
+            label={t().auth.signOut}
             sub={me?.user.email ?? ''}
             onPress={signOut}
             last
@@ -270,14 +281,14 @@ export function FamilyScreen() {
         <ListCard>
           <NavRow
             testID="delete-account"
-            label={accountText.deleteRow}
-            sub={accountText.deleteRowSub}
-            onPress={() => sheet.open(accountText.deleteTitle, () => <DeleteAccountSheet />)}
+            label={t().account.deleteRow}
+            sub={t().account.deleteRowSub}
+            onPress={() => sheet.open(t().account.deleteTitle, () => <DeleteAccountSheet />)}
             last
           />
         </ListCard>
         <Muted style={{ fontSize: 11, textAlign: 'center', marginTop: 8 }}>
-          小豆芽 · {app.serverUrl}
+          {t().family.versionLine(app.serverUrl)}
         </Muted>
       </View>
     </ScrollView>
@@ -349,17 +360,17 @@ function MemberRow({
         <Muted style={{ fontSize: 11 }}>{roleLabels[member.role]}</Muted>
       </View>
       <Text style={{ fontSize: 11, color: isMe || seen.online ? colors.green : colors.muted }}>
-        {isMe ? '我' : seen.text}
+        {isMe ? t().family.me : seen.text}
       </Text>
     </Pressable>
   );
 }
 
-const UNIT_ROWS: { dimension: Dimension; label: string; options: readonly string[] }[] = [
-  { dimension: 'volume', label: '奶量', options: volumeUnits },
-  { dimension: 'temperature', label: '体温', options: temperatureUnits },
-  { dimension: 'weight', label: '体重', options: weightUnits },
-  { dimension: 'length', label: '身长', options: lengthUnits },
+const unitRows = (): { dimension: Dimension; label: string; options: readonly string[] }[] => [
+  { dimension: 'volume', label: t().family.unitVolume, options: volumeUnits },
+  { dimension: 'temperature', label: t().family.unitTemp, options: temperatureUnits },
+  { dimension: 'weight', label: t().family.unitWeight, options: weightUnits },
+  { dimension: 'length', label: t().family.unitLength, options: lengthUnits },
 ];
 
 /** 单位是每个人自己的：爸爸看 oz、妈妈看 ml 都行，记录里存的都是公制。 */
@@ -370,7 +381,7 @@ function UnitsSheet() {
   const regionName = regionFor(baby?.data.region).name;
   return (
     <>
-      {UNIT_ROWS.map(({ dimension, label, options }) => (
+      {unitRows().map(({ dimension, label, options }) => (
         <View key={dimension} style={s.unitRow}>
           <Text style={{ fontSize: 14, color: colors.ink }}>{label}</Text>
           <View style={s.chips}>
@@ -390,13 +401,11 @@ function UnitsSheet() {
           </View>
         </View>
       ))}
-      <Muted style={{ fontSize: 12, lineHeight: 19 }}>
-        只改变你看到的数字，记录都按公制保存。家人可以用不同的单位。
-      </Muted>
+      <Muted style={{ fontSize: 12, lineHeight: 19 }}>{t().family.unitsNote}</Muted>
       <Button
         testID="units-reset"
         tone="ghost"
-        label={`恢复${regionName}的默认单位`}
+        label={t().family.resetUnits(regionName)}
         disabled={!app.prefs.units}
         onPress={() => void app.updatePrefs({ units: undefined })}
       />
@@ -404,17 +413,51 @@ function UnitsSheet() {
   );
 }
 
-const LABEL_SUGGESTIONS = ['妈妈', '爸爸', '奶奶', '爷爷', '外婆', '外公', '阿姨'];
-const ROLE_OPTIONS: { role: Role; hint: string }[] = [
-  { role: 'caregiver', hint: '能记录和查看全部内容' },
-  { role: 'viewer', hint: '只能看回忆、照片和信' },
-  { role: 'admin', hint: '还能管理家人和存储' },
+function languageSummary(preference: Locale | undefined): string {
+  if (!preference) return t().family.languageSystem;
+  return preference === 'zh' ? t().family.languageZh : t().family.languageEn;
+}
+
+/**
+ * 选好后 AppProvider 换语言并重新挂载界面，弹层也随之关闭。
+ * “中文”和“English”在两种语言下都写自己的文字，看不懂当前语言的人也认得出来。
+ */
+function LanguageSheet() {
+  const app = useApp();
+  const current = app.prefs.locale;
+  const options: { id: string; value: Locale | undefined; label: string }[] = [
+    { id: 'system', value: undefined, label: t().family.languageSystem },
+    { id: 'zh', value: 'zh', label: t().family.languageZh },
+    { id: 'en', value: 'en', label: t().family.languageEn },
+  ];
+  return (
+    <>
+      <View style={s.chips}>
+        {options.map((option) => (
+          <Chip
+            key={option.id}
+            testID={`lang-${option.id}`}
+            label={option.label}
+            selected={current === option.value}
+            onPress={() => void app.updatePrefs({ locale: option.value })}
+          />
+        ))}
+      </View>
+      <Muted style={{ fontSize: 12, lineHeight: 19 }}>{t().family.languageNote}</Muted>
+    </>
+  );
+}
+
+const roleOptions = (): { role: Role; hint: string }[] => [
+  { role: 'caregiver', hint: t().family.caregiverHint },
+  { role: 'viewer', hint: t().family.viewerHint },
+  { role: 'admin', hint: t().family.adminHint },
 ];
 
 function RolePicker({ value, onChange }: { value: Role; onChange: (r: Role) => void }) {
   return (
     <View style={{ gap: 8 }}>
-      {ROLE_OPTIONS.map((o) => {
+      {roleOptions().map((o) => {
         const on = value === o.role;
         return (
           <Pressable
@@ -452,7 +495,7 @@ function InviteSheet() {
       setCode(invite.code);
       await app.refreshMe();
     } catch (error) {
-      toast(error instanceof Error ? error.message : '生成失败');
+      toast(error instanceof Error ? error.message : t().family.inviteFailed);
     } finally {
       setBusy(false);
     }
@@ -462,9 +505,7 @@ function InviteSheet() {
     const formatted = `${code.slice(0, 4)} ${code.slice(4)}`;
     return (
       <>
-        <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-          把邀请码发给{label}。在小豆芽的欢迎页选「我有邀请码」就能加入，7 天内有效，只能用一次。
-        </Muted>
+        <Muted style={{ fontSize: 13, lineHeight: 21 }}>{t().family.inviteSendTo(label)}</Muted>
         <View style={s.codeBox}>
           <Mono weight="medium" style={s.code} testID="invite-code" selectable>
             {formatted}
@@ -472,10 +513,10 @@ function InviteSheet() {
         </View>
         <Button
           testID="invite-share"
-          label="发给家人"
+          label={t().family.sendToFamily}
           onPress={() =>
             void Share.share({
-              message: `一起用小豆芽记录宝宝的成长吧。\n服务器：${app.serverUrl}\n邀请码：${formatted}\n7 天内有效。`,
+              message: t().family.inviteShare(app.serverUrl, formatted),
             })
           }
         />
@@ -486,7 +527,7 @@ function InviteSheet() {
   return (
     <>
       <View style={s.chips}>
-        {LABEL_SUGGESTIONS.map((v) => (
+        {t().family.labelSuggestions.map((v) => (
           <Chip
             key={v}
             testID={`label-${v}`}
@@ -500,13 +541,13 @@ function InviteSheet() {
         testID="invite-label"
         value={label}
         onChangeText={setLabel}
-        placeholder="宝宝怎么称呼 TA？"
+        placeholder={t().family.calledPlaceholder}
         maxLength={40}
       />
       <RolePicker value={role} onChange={setRole} />
       <Button
         testID="invite-create"
-        label="生成邀请码"
+        label={t().family.createInvite}
         disabled={!label.trim()}
         busy={busy}
         onPress={() => void create()}
@@ -528,7 +569,7 @@ function MemberSheet({ member }: { member: FamilyMember }) {
       sheet.close();
       toast(message);
     } catch (error) {
-      toast(error instanceof Error ? error.message : '操作失败');
+      toast(error instanceof Error ? error.message : t().family.actionFailed);
     }
   };
   return (
@@ -536,20 +577,22 @@ function MemberSheet({ member }: { member: FamilyMember }) {
       <RolePicker value={role} onChange={setRole} />
       <Button
         testID="member-save"
-        label="保存"
+        label={t().common.save}
         disabled={role === member.role}
-        onPress={() => void run(() => app.api.updateMember(member.userId, { role }), '已更新')}
+        onPress={() =>
+          void run(() => app.api.updateMember(member.userId, { role }), t().family.updated)
+        }
       />
       <Button
         testID="member-remove"
         tone="ghost"
-        label={confirming ? `确定把${member.label}移出家庭？` : '移出家庭'}
+        label={confirming ? t().family.removeQ(member.label) : t().family.removeMember}
         onPress={() => {
           if (!confirming) {
             setConfirming(true);
             return;
           }
-          void run(() => app.api.removeMember(member.userId), `已把${member.label}移出家庭`);
+          void run(() => app.api.removeMember(member.userId), t().family.removed(member.label));
         }}
       />
     </>

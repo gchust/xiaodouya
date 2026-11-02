@@ -1,4 +1,4 @@
-import { formatMonthDay, type MediaRef } from '@xiaodouya/shared';
+import { formatMonthDay, type MediaRef, t } from '@xiaodouya/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -48,7 +48,7 @@ export function ViewerScreen() {
     if (params.avatar) {
       return {
         items: baby?.data.avatar ? [baby.data.avatar] : [],
-        title: baby ? `${baby.data.name}的头像` : '',
+        title: baby ? t().ui.avatarOf(baby.data.name) : '',
         // 头像不提供下载：它本来就是从相册选的，值得留的照片在回忆里能下载。
         // 而且编辑时预览的是还没保存的图，这里下载到的却是旧图。
         fileNames: null,
@@ -66,10 +66,12 @@ export function ViewerScreen() {
     const moment = moments.find((m) => m.id === params.moment);
     return {
       items: (moment?.data.media ?? []).filter((x) => x.kind === 'image' || x.kind === 'video'),
-      title: moment ? `${moment.data.title || '这一刻'} · ${formatMonthDay(moment.data.at)}` : '',
+      title: moment
+        ? `${moment.data.title || t().ui.thisMoment} · ${formatMonthDay(moment.data.at)}`
+        : '',
       fileNames: moment
         ? downloadFileNames(moment.data.media, {
-            title: moment.data.title || '这一刻',
+            title: moment.data.title || t().ui.thisMoment,
             at: moment.data.at,
           })
         : null,
@@ -134,7 +136,7 @@ export function ViewerScreen() {
         <Pressable
           testID="viewer-close"
           accessibilityRole="button"
-          accessibilityLabel="关闭"
+          accessibilityLabel={t().ui.close}
           hitSlop={12}
           onPress={() => router.back()}
         >
@@ -258,7 +260,7 @@ function VideoPage({ media }: { media: MediaRef }) {
     return (
       <View style={s.center}>
         <ActivityIndicator color={colors.paper} />
-        <Text style={s.loading}>正在准备视频…</Text>
+        <Text style={s.loading}>{t().ui.preparingVideo}</Text>
       </View>
     );
   }

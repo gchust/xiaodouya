@@ -1,4 +1,5 @@
 import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
+import { t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
@@ -117,7 +118,7 @@ export async function pickFromLibrary(options?: {
     return result.canceled ? [] : result.assets.map(fromAsset);
   } catch {
     // 原生层的错误是一长串英文，用户看不懂。
-    throw new Error('打不开相册，请再试一次');
+    throw new Error(t().ui.cantOpenGallery);
   } finally {
     // App 在选择器打开时被杀的话走不到这里，下次启动靠它知道选图被打断了。
     if (!single && marker.exists) marker.delete();
@@ -157,7 +158,7 @@ export async function recoverPendingPick(): Promise<{
 export async function takePhoto(): Promise<PickedFile[]> {
   if (IS_E2E) return e2ePickFiles('document-photo');
   const permission = await ImagePicker.requestCameraPermissionsAsync();
-  if (!permission.granted) throw new Error('没有相机权限，可以在系统设置里打开');
+  if (!permission.granted) throw new Error(t().ui.noCameraPermission);
   const result = await ImagePicker.launchCameraAsync({ quality: 0.9, exif: false });
   return result.canceled ? [] : result.assets.map(fromAsset);
 }
@@ -256,7 +257,7 @@ async function prepareFile(
   const size = target.size ?? file.size;
   if (!size) {
     target.delete();
-    throw new Error(`${file.name ?? '这个文件'}是空的，没有添加`);
+    throw new Error(t().ui.emptyFile(file.name ?? t().ui.thisFile));
   }
   const wifiOnly = file.kind === 'video' && options.videoWifiOnly;
   const thumbKind = file.kind === 'image' || file.kind === 'video' ? file.kind : null;
@@ -362,7 +363,7 @@ export async function loadForEditing(api: Api, ref: MediaRef): Promise<ImageRef>
     return await load(target.uri);
   } catch {
     // 不把原始错误显示出来：里面可能带着签名链接。
-    throw new Error('原图暂时取不到，联网后再试一次');
+    throw new Error(t().ui.originalUnavailable);
   } finally {
     if (target.exists) target.delete();
   }
@@ -410,8 +411,7 @@ export function createUploadTransport(api: Api): UploadTransport {
     },
     async put(job, target, onProgress) {
       const file = new File(job.localUri);
-      if (!file.exists)
-        throw new UploadHttpError(410, 'local_missing', '本地文件不见了，请重新添加');
+      if (!file.exists) throw new UploadHttpError(410, 'local_missing', t().ui.localFileGone);
       const result = await file.upload(target.url, {
         httpMethod: 'PUT',
         uploadType: UploadType.BINARY_CONTENT,
@@ -447,7 +447,7 @@ export async function openDocumentFile(api: Api, queue: UploadQueue, ref: MediaR
   if (!uri) {
     const { urls } = await api.mediaUrls([{ id: ref.id, variant: 'original' }]);
     const url = urls[0]?.url;
-    if (!url) throw new Error('文件还没有上传完成，或者你没有查看权限');
+    if (!url) throw new Error(t().ui.fileNotReady);
     if (target.exists) target.delete();
     await File.downloadFileAsync(url, target);
     uri = target.uri;

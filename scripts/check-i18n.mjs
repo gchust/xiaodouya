@@ -15,52 +15,6 @@ const ROOTS = ['apps/mobile/src', 'apps/mobile/app'];
 const EXEMPT = new Set([
   // E2E 专用的假数据，不进正式界面。
   'apps/mobile/src/lib/e2eFixtures.ts',
-  // 迁移中，每迁完一个模块就删掉（F-91）。
-  'apps/mobile/src/data/store.ts',
-  'apps/mobile/src/data/uploadQueue.ts',
-  'apps/mobile/src/lib/accountText.ts',
-  'apps/mobile/src/lib/api.ts',
-  'apps/mobile/src/lib/app.tsx',
-  'apps/mobile/src/lib/avatar.ts',
-  'apps/mobile/src/lib/bookHtml.ts',
-  'apps/mobile/src/lib/book.ts',
-  'apps/mobile/src/lib/dates.ts',
-  'apps/mobile/src/lib/DownloadButton.tsx',
-  'apps/mobile/src/lib/downloadCore.ts',
-  'apps/mobile/src/lib/media.ts',
-  'apps/mobile/src/lib/mediaUtils.ts',
-  'apps/mobile/src/lib/mediaViews.tsx',
-  'apps/mobile/src/lib/notifications.ts',
-  'apps/mobile/src/lib/pendingPick.tsx',
-  'apps/mobile/src/lib/remoteSummary.ts',
-  'apps/mobile/src/lib/storagePage.ts',
-  'apps/mobile/src/lib/UploadCard.tsx',
-  'apps/mobile/src/lib/uploadStatus.ts',
-  'apps/mobile/src/screens/AccountPanels.tsx',
-  'apps/mobile/src/screens/AuthScreens.tsx',
-  'apps/mobile/src/screens/DocumentScreen.tsx',
-  'apps/mobile/src/screens/FamilyScreen.tsx',
-  'apps/mobile/src/screens/InfoScreen.tsx',
-  'apps/mobile/src/screens/NutritionScreen.tsx',
-  'apps/mobile/src/screens/RecallScreen.tsx',
-  'apps/mobile/src/screens/RecordsScreen.tsx',
-  'apps/mobile/src/screens/StorageScreen.tsx',
-  'apps/mobile/src/screens/StorageUsagePage.tsx',
-  'apps/mobile/src/screens/TodayScreen.tsx',
-  'apps/mobile/src/screens/ViewerScreen.tsx',
-  'apps/mobile/src/sheets/formulaSheets.tsx',
-  'apps/mobile/src/sheets/MomentSheet.tsx',
-  'apps/mobile/src/sheets/recordSheets.tsx',
-  'apps/mobile/app/(tabs)/_layout.tsx',
-  'apps/mobile/src/sheets/vaccineSheets.tsx',
-  'apps/mobile/src/ui/AvatarEditor.tsx',
-  'apps/mobile/src/ui/BirthPicker.tsx',
-  'apps/mobile/src/ui/NotificationPrompt.tsx',
-  'apps/mobile/src/ui/overlays.tsx',
-  'apps/mobile/src/ui/SyncingPlaceholder.tsx',
-  'apps/mobile/src/ui/TimeField.tsx',
-  'apps/mobile/src/widgets/controller.tsx',
-  'apps/mobile/src/widgets/views.tsx',
 ]);
 
 // 汉字、CJK 标点、全角字符。
@@ -121,6 +75,16 @@ function check(file) {
 const problems = ROOTS.flatMap((dir) => sourceFiles(path.join(root, dir)))
   .filter((file) => !EXEMPT.has(path.relative(root, file).split(path.sep).join('/')))
   .flatMap(check);
+
+// 服务端用到的错误码，英文表里都要有，否则英文界面只能显示中文的 message。
+const serverCode = /fail\(\s*\d+,\s*'([a-z_]+)'/g;
+const appSource = fs.readFileSync(path.join(root, 'apps/server/src/app.ts'), 'utf8');
+const apiErrors = fs.readFileSync(path.join(root, 'packages/shared/src/i18n/apiErrors.ts'), 'utf8');
+for (const [, code] of appSource.matchAll(serverCode)) {
+  if (!new RegExp(`^\\s*${code}:`, 'm').test(apiErrors)) {
+    problems.push(`apps/server/src/app.ts  错误码 ${code} 在 i18n/apiErrors.ts 里没有英文`);
+  }
+}
 
 if (problems.length > 0) {
   console.error(problems.join('\n'));

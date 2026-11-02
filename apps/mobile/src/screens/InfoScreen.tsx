@@ -16,6 +16,7 @@ import {
   planSchedule,
   regionFor,
   scaleFor,
+  t,
   toDisplay,
   type Units,
   type VaccineStatus,
@@ -83,11 +84,13 @@ export function InfoScreen() {
   const openShot = (id: string) => {
     const entry = events.find((e) => e.id === id);
     if (!entry) return;
-    sheet.open('这条接种记录', () => <EventActionsSheet id={entry.id} event={entry.data} />);
+    sheet.open(t().info.thisDose, () => <EventActionsSheet id={entry.id} event={entry.data} />);
   };
   const openDose = (dose: VaccineStatus) => {
     if (dose.state !== 'done') {
-      sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} preselect={dose.id} />);
+      sheet.open(t().today.vaccination, () => (
+        <VaccineSheet birthAt={birthAt} preselect={dose.id} />
+      ));
       return;
     }
     const shot = events.find(
@@ -104,55 +107,56 @@ export function InfoScreen() {
       contentContainerStyle={[s.content, { paddingTop: insets.top + 12 }]}
       showsVerticalScrollIndicator={false}
     >
-      <PageTitle>资料</PageTitle>
+      <PageTitle>{t().info.title}</PageTitle>
 
       <View style={s.section}>
-        <SectionTitle>出生档案</SectionTitle>
+        <SectionTitle>{t().info.birthProfile}</SectionTitle>
         <ListCard>
           <Row
-            label="名字"
+            label={t().info.name}
             value={baby.data.name}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'name')}
             testID="birth-name"
           />
           <Row
-            label="出生时间"
+            label={t().info.birthTime}
             value={formatBirthTime(birthAt)}
             testID="birth-at"
             onPress={() =>
-              sheet.open('出生时间', () => <BirthTimeSheet id={baby.id} baby={baby.data} />)
+              sheet.open(t().info.birthTime, () => <BirthTimeSheet id={baby.id} baby={baby.data} />)
             }
           />
           <Row
-            label="体重 / 身长"
+            label={t().info.measures}
             value={
               baby.data.birthWeightKg || baby.data.birthLengthCm
                 ? formatBirthMeasures(baby.data, units)
-                : '待补充'
+                : t().info.toAdd
             }
             onPress={() => openEdit(sheet, baby.id, baby.data, 'measures')}
             testID="birth-measures"
           />
           <Row
-            label="医院"
-            value={baby.data.hospital || '待补充'}
+            label={t().info.hospital}
+            value={baby.data.hospital || t().info.toAdd}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'hospital')}
             testID="birth-hospital"
           />
           <Row
-            label="血型"
-            value={baby.data.bloodType || '待补充'}
+            label={t().info.bloodType}
+            value={baby.data.bloodType || t().info.toAdd}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'bloodType')}
             testID="birth-blood"
           />
           <Row
-            label="地区"
+            label={t().info.region}
             value={region.name}
             testID="region-row"
             // 全家共用同一份疫苗表，只有管理员能改。服务端也按这个规则校验。
             onPress={
               role === 'admin'
-                ? () => sheet.open('所在地区', () => <RegionSheet id={baby.id} baby={baby.data} />)
+                ? () =>
+                    sheet.open(t().auth.region, () => <RegionSheet id={baby.id} baby={baby.data} />)
                 : undefined
             }
             last
@@ -162,21 +166,19 @@ export function InfoScreen() {
 
       <View style={s.section}>
         <View style={s.sectionHead}>
-          <SectionTitle>证件夹</SectionTitle>
+          <SectionTitle>{t().info.documents}</SectionTitle>
           <Pressable
             testID="doc-add"
             accessibilityRole="button"
-            accessibilityLabel="添加证件"
+            accessibilityLabel={t().info.addDocA11y}
             hitSlop={LINK_HIT_SLOP}
-            onPress={() => sheet.open('添加证件 / 资料', () => <DocAddSheet />)}
+            onPress={() => sheet.open(t().info.addDoc, () => <DocAddSheet />)}
           >
-            <Text style={s.link}>＋ 添加</Text>
+            <Text style={s.link}>{t().nutritionUi.addLink}</Text>
           </Pressable>
         </View>
         {documents.length === 0 ? (
-          <Muted style={{ fontSize: 13, lineHeight: 20 }}>
-            出生证明、健康手册、护照……都可以放在这里，需要的时候随时拿得出来。
-          </Muted>
+          <Muted style={{ fontSize: 13, lineHeight: 20 }}>{t().info.docsEmpty}</Muted>
         ) : (
           <View style={s.docGrid}>
             {documents.map((d) => {
@@ -192,7 +194,7 @@ export function InfoScreen() {
                 >
                   <Stripes style={s.docThumb}>
                     <Mono weight="medium" style={{ fontSize: 10, color: colors.muted }}>
-                      {first ? fileBadge(first) : '空'}
+                      {first ? fileBadge(first) : t().info.emptyDoc}
                     </Mono>
                   </Stripes>
                   <Text style={s.docName} numberOfLines={1}>
@@ -204,29 +206,31 @@ export function InfoScreen() {
                       color: d.data.files.length ? colors.muted : colors.accent,
                     }}
                   >
-                    {d.data.files.length ? `${d.data.files.length} 个文件` : '待上传'}
+                    {d.data.files.length
+                      ? t().info.fileCount(d.data.files.length)
+                      : t().info.toUpload}
                   </Text>
                 </PressScale>
               );
             })}
           </View>
         )}
-        <Muted style={{ fontSize: 11 }}>
-          私有存储，只有家人能看 · 打开时生成 10 分钟有效的链接
-        </Muted>
+        <Muted style={{ fontSize: 11 }}>{t().info.docsPrivate}</Muted>
       </View>
 
       <View style={s.section}>
         <View style={s.sectionHead}>
-          <SectionTitle>体重（{scaleFor('weight', units.weight).label}）</SectionTitle>
+          <SectionTitle>
+            {t().info.weightTitle(scaleFor('weight', units.weight).label)}
+          </SectionTitle>
           <Pressable
             testID="growth-add"
             accessibilityRole="button"
-            accessibilityLabel="记录身高体重"
+            accessibilityLabel={t().info.recordGrowth}
             hitSlop={LINK_HIT_SLOP}
-            onPress={() => sheet.open('身高体重', () => <GrowthSheet />)}
+            onPress={() => sheet.open(t().records.growth, () => <GrowthSheet />)}
           >
-            <Text style={s.link}>＋ 记录身高体重</Text>
+            <Text style={s.link}>{t().info.addGrowth}</Text>
           </Pressable>
         </View>
         <GrowthChart baby={baby.data} events={data} units={units} />
@@ -234,32 +238,34 @@ export function InfoScreen() {
 
       <View style={s.section}>
         <View style={s.sectionHead}>
-          <SectionTitle>疫苗本</SectionTitle>
+          <SectionTitle>{t().info.vaccineBook}</SectionTitle>
           <View style={s.headLinks}>
             {/* 放在标题这里：建档时一眼能看到，不用先滑过十几行的表。 */}
             {canBackfill ? (
               <Pressable
                 testID="vaccine-backfill"
                 accessibilityRole="button"
-                accessibilityLabel="一次补记几剂"
+                accessibilityLabel={t().info.backfillDosesA11y}
                 hitSlop={LINK_HIT_SLOP}
                 onPress={() =>
-                  sheet.open('一次补记几剂', () => <VaccineBackfillSheet birthAt={birthAt} />)
+                  sheet.open(t().info.backfillDoses, () => (
+                    <VaccineBackfillSheet birthAt={birthAt} />
+                  ))
                 }
               >
-                <Text style={s.link}>一次补记</Text>
+                <Text style={s.link}>{t().info.backfillLink}</Text>
               </Pressable>
             ) : null}
             <Pressable
               testID="vaccine-add-custom"
               accessibilityRole="button"
-              accessibilityLabel="记一剂其他疫苗"
+              accessibilityLabel={t().info.otherDoseA11y}
               hitSlop={LINK_HIT_SLOP}
               onPress={() =>
-                sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} custom />)
+                sheet.open(t().today.vaccination, () => <VaccineSheet birthAt={birthAt} custom />)
               }
             >
-              <Text style={s.link}>＋ 其他疫苗</Text>
+              <Text style={s.link}>{t().info.otherVaccineLink}</Text>
             </Pressable>
           </View>
         </View>
@@ -284,22 +290,24 @@ export function InfoScreen() {
           <Pressable
             testID="vaccine-hidden"
             accessibilityRole="button"
-            accessibilityLabel={`已隐藏 ${planned.hidden.length} 剂，点开可以恢复`}
+            accessibilityLabel={t().info.hiddenA11y(planned.hidden.length)}
             hitSlop={LINK_HIT_SLOP}
-            onPress={() => sheet.open('已隐藏的剂次', () => <HiddenDosesSheet birthAt={birthAt} />)}
+            onPress={() =>
+              sheet.open(t().info.hiddenTitle, () => <HiddenDosesSheet birthAt={birthAt} />)
+            }
             style={s.hiddenLink}
           >
-            <Text style={s.linkMuted}>已隐藏 {planned.hidden.length} 剂 ›</Text>
+            <Text style={s.linkMuted}>{t().info.hiddenLink(planned.hidden.length)}</Text>
           </Pressable>
         ) : null}
         {inert > 0 ? (
           <Muted testID="vaccine-inert-note" style={{ fontSize: 11, lineHeight: 18 }}>
-            别的地区的表上还有 {inert} 项隐藏或改过时间的设置，这里不生效，换回那个地区就恢复。
+            {t().info.inertPlans(inert)}
           </Muted>
         ) : null}
         {others.length > 0 ? (
           <View testID="vaccine-other-section" style={s.section}>
-            <Text style={s.subTitle}>其他接种记录</Text>
+            <Text style={s.subTitle}>{t().info.otherRecords}</Text>
             <ListCard>
               {others.map((record, i) => (
                 <Pressable
@@ -315,14 +323,12 @@ export function InfoScreen() {
                   </View>
                   <Text style={{ flex: 1, fontSize: 13, color: colors.ink }}>{record.name}</Text>
                   <Text style={{ fontSize: 11, color: colors.green }}>
-                    已接种 {formatFullDate(record.at)}
+                    {t().info.givenOn(formatFullDate(record.at))}
                   </Text>
                 </Pressable>
               ))}
             </ListCard>
-            <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-              这些记录不在当前地区的疫苗表里，也不会自动算进上面的剂次。不同地区的疫苗能不能互相替代，请问医生。
-            </Muted>
+            <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.otherRecordsNote}</Muted>
           </View>
         ) : null}
         <Muted testID="vaccine-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
@@ -331,16 +337,14 @@ export function InfoScreen() {
       </View>
 
       <View style={s.section}>
-        <SectionTitle>这个月该知道的</SectionTitle>
+        <SectionTitle>{t().info.thisMonth}</SectionTitle>
         {knowledge.map((k) => (
           <View key={k.title} testID="knowledge-card" style={s.knowledge}>
             <Text style={{ fontSize: 14, fontWeight: '500', color: colors.ink }}>{k.title}</Text>
             <Text style={{ fontSize: 12, lineHeight: 20, color: colors.inkSoft }}>{k.body}</Text>
           </View>
         ))}
-        <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-          仅供参考，宝宝不舒服时请以医生意见为准。
-        </Muted>
+        <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.knowledgeNote}</Muted>
       </View>
     </ScrollView>
   );
@@ -407,7 +411,7 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
     const latest = app.store.getSnapshot().baby ?? { id, data: baby };
     await app.write('baby', { ...latest.data, region: selected }, latest.id);
     sheet.close();
-    toast(`已换成${target.name}`);
+    toast(t().info.regionChanged(target.name));
   };
 
   return (
@@ -415,12 +419,12 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
       <RegionPicker value={selected} onChange={setSelected} />
       <Muted testID="region-note" style={{ fontSize: 13, lineHeight: 21 }}>
         {changed
-          ? `换成${target.name}后，全家的疫苗本都按当地方案显示。已记下的接种不会丢，不在新方案里的放到“其他接种记录”。${hasPlans ? '你们自己加的疫苗留在疫苗本里；隐藏和改过时间的设置属于原来的表，换回来还在。' : ''}没改过单位的家人，默认单位也会跟着变。`
-          : '地区决定疫苗本和默认单位。'}
+          ? t().info.regionChangeNote(target.name, hasPlans ? t().info.regionPlansNote : '')
+          : t().info.regionHint}
       </Muted>
       <Button
         testID="region-confirm"
-        label={changed ? `确定换成${target.name}` : '确定'}
+        label={changed ? t().info.confirmRegion(target.name) : t().common.confirm}
         disabled={!changed}
         onPress={() => void save()}
       />
@@ -439,7 +443,7 @@ function GrowthChart({
 }) {
   const shown = (kg: number) => toDisplay('weight', kg, units.weight);
   const points = [
-    ...(baby.birthWeightKg ? [{ w: shown(baby.birthWeightKg), label: '出生' }] : []),
+    ...(baby.birthWeightKg ? [{ w: shown(baby.birthWeightKg), label: t().info.birthPoint }] : []),
     ...events
       .filter((e): e is Extract<EventData, { type: 'growth' }> => e.type === 'growth')
       .sort((a, b) => a.at - b.at)
@@ -448,7 +452,7 @@ function GrowthChart({
   if (points.length === 0) {
     return (
       <View style={[s.chart, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Muted style={{ fontSize: 13 }}>记录一次体重，这里就会画出来。</Muted>
+        <Muted style={{ fontSize: 13 }}>{t().info.chartEmpty}</Muted>
       </View>
     );
   }
@@ -494,7 +498,7 @@ function BirthTimeSheet({ id, baby }: { id: string; baby: BabyData }) {
     if (isBirthInFuture(birth.getTime(), Date.now())) return;
     await app.write('baby', { ...baby, birthAt: birth.getTime() }, id);
     sheet.close();
-    toast('已保存');
+    toast(t().records.saved);
   };
 
   return (
@@ -502,14 +506,17 @@ function BirthTimeSheet({ id, baby }: { id: string; baby: BabyData }) {
       <BirthPicker value={birth} onChange={setBirth} />
       {future ? (
         <Text testID="birth-error" style={{ fontSize: 13, lineHeight: 20, color: colors.danger }}>
-          出生时间不能晚于现在
+          {t().auth.birthInFuture}
         </Text>
       ) : (
-        <Muted style={{ fontSize: 12, lineHeight: 19 }}>
-          改了之后，天数、月龄和疫苗时间都会重新计算。
-        </Muted>
+        <Muted style={{ fontSize: 12, lineHeight: 19 }}>{t().info.birthChangeNote}</Muted>
       )}
-      <Button testID="birth-save" label="保存" disabled={future} onPress={() => void save()} />
+      <Button
+        testID="birth-save"
+        label={t().common.save}
+        disabled={future}
+        onPress={() => void save()}
+      />
     </>
   );
 }
@@ -523,10 +530,10 @@ function openEdit(
   field: EditField,
 ) {
   const titles: Record<EditField, string> = {
-    name: '名字',
-    measures: '出生体重和身长',
-    hospital: '出生医院',
-    bloodType: '血型',
+    name: t().info.name,
+    measures: t().info.birthMeasures,
+    hospital: t().auth.birthHospital,
+    bloodType: t().info.bloodType,
   };
   sheet.open(titles[field], () => <BabyEditSheet id={id} baby={baby} field={field} />);
 }
@@ -566,7 +573,7 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
     }
     await app.write('baby', next, id);
     sheet.close();
-    toast('已保存');
+    toast(t().records.saved);
   };
 
   return (
@@ -578,14 +585,20 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
             value={weight}
             onChangeText={setWeight}
             keyboardType="decimal-pad"
-            placeholder={`体重（${units.weight}），比如 ${units.weight === 'kg' ? '3.4' : '7.5'}`}
+            placeholder={t().info.weightExample(
+              units.weight,
+              units.weight === 'kg' ? '3.4' : '7.5',
+            )}
           />
           <SoftInput
             testID="edit-length"
             value={length}
             onChangeText={setLength}
             keyboardType="decimal-pad"
-            placeholder={`身长（${units.length}），比如 ${units.length === 'cm' ? '50' : '19.5'}`}
+            placeholder={t().info.lengthExample(
+              units.length,
+              units.length === 'cm' ? '50' : '19.5',
+            )}
           />
         </>
       ) : (
@@ -593,13 +606,13 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
           testID="edit-text"
           value={text}
           onChangeText={setText}
-          placeholder={field === 'bloodType' ? '比如 O+' : '请填写'}
+          placeholder={field === 'bloodType' ? t().info.bloodExample : t().info.pleaseFill}
           maxLength={100}
         />
       )}
       <Button
         testID="edit-save"
-        label="保存"
+        label={t().common.save}
         disabled={field === 'name' && !text.trim()}
         onPress={() => void save()}
       />
@@ -630,12 +643,12 @@ function DocAddSheet() {
         testID="doc-name"
         value={name}
         onChangeText={setName}
-        placeholder="证件或资料名称"
+        placeholder={t().info.docName}
         maxLength={100}
       />
       <Button
         testID="doc-create"
-        label="创建并添加文件"
+        label={t().info.createAndAdd}
         disabled={!name.trim()}
         onPress={() => {
           const id = Crypto.randomUUID();

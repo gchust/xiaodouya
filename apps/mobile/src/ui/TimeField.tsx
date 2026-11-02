@@ -4,6 +4,7 @@ import {
   formatClock,
   formatFullDate,
   type RecordTimeCheck,
+  t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -21,17 +22,53 @@ import { Chip, Muted } from './primitives';
 
 const HOUR = 3_600_000;
 
+/** 文字用属性，这样每次渲染都读当前语言，模块加载时语言还没定。 */
 export const RECORD_OFFSETS = [
-  { minutes: 0, label: '刚刚' },
-  { minutes: 15, label: '15 分钟前' },
-  { minutes: 30, label: '30 分钟前' },
-  { minutes: 60, label: '1 小时前' },
+  {
+    minutes: 0,
+    get label() {
+      return t().ui.justNow;
+    },
+  },
+  {
+    minutes: 15,
+    get label() {
+      return t().ui.min15;
+    },
+  },
+  {
+    minutes: 30,
+    get label() {
+      return t().ui.min30;
+    },
+  },
+  {
+    minutes: 60,
+    get label() {
+      return t().ui.hour1;
+    },
+  },
 ] as const;
 
 const DAY_CHIPS = [
-  { daysAgo: 0, label: '今天' },
-  { daysAgo: 1, label: '昨天' },
-  { daysAgo: 2, label: '前天' },
+  {
+    daysAgo: 0,
+    get label() {
+      return t().ui.today;
+    },
+  },
+  {
+    daysAgo: 1,
+    get label() {
+      return t().ui.yesterday;
+    },
+  },
+  {
+    daysAgo: 2,
+    get label() {
+      return t().ui.dayBefore;
+    },
+  },
 ] as const;
 
 export interface RecordTime {
@@ -137,7 +174,7 @@ export function DateTimeRow({
         <Pressable
           testID={`${testID}-date`}
           accessibilityRole="button"
-          accessibilityLabel={`选择${label ?? ''}日期，现在是 ${formatFullDate(value)}`}
+          accessibilityLabel={t().ui.pickDateOf(label ?? '', formatFullDate(value))}
           onPress={() => setPicker('date')}
           style={s.button}
         >
@@ -146,7 +183,7 @@ export function DateTimeRow({
         <Pressable
           testID={`${testID}-clock`}
           accessibilityRole="button"
-          accessibilityLabel={`选择${label ?? ''}时刻，现在是 ${formatClock(value)}`}
+          accessibilityLabel={t().ui.pickClockOf(label ?? '', formatClock(value))}
           onPress={() => setPicker('time')}
           style={s.button}
         >
@@ -202,7 +239,7 @@ export function RecordTimeField({
           ))}
           <Chip
             testID="offset-custom"
-            label="更早"
+            label={t().ui.earlier}
             selected={exact}
             onPress={() => {
               if (!exact) setChoice({ kind: 'exact', at: Date.now() - 2 * HOUR });

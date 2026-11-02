@@ -1,4 +1,4 @@
-import { MAX_MEDIA_PER_RECORD } from '@xiaodouya/shared';
+import { MAX_MEDIA_PER_RECORD, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { MomentSheet } from '../sheets/MomentSheet';
@@ -20,12 +20,12 @@ export function PendingPickRecovery() {
         if (!alive) return;
         if (files.length > 0) {
           router.navigate('/recall');
-          open('记下这一刻', () => (
+          open(t().ui.recordMoment, () => (
             <MomentSheet initialFiles={files.slice(0, MAX_MEDIA_PER_RECORD)} />
           ));
         } else if (interrupted) {
           router.navigate('/recall');
-          toast('刚才系统把小豆芽关掉了，选的照片没带回来，再选一次就好。', { durationMs: 8000 });
+          toast(t().ui.pickLost, { durationMs: 8000 });
         }
       })
       .catch(() => {

@@ -15,6 +15,7 @@ export * from './health/formulaPresets';
 export * from './health/nutrition';
 export * from './health/nutritionReferences';
 export * from './i18n';
+export * from './i18n/apiErrors';
 export * from './regions';
 export * from './schemas';
 export * from './sync';

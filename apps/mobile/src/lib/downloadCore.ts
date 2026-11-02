@@ -1,4 +1,5 @@
 import type { MediaKind, MediaRef } from '@xiaodouya/shared';
+import { t } from '@xiaodouya/shared';
 
 /** 下载的纯逻辑：文件名、存到哪里、流程和状态。不依赖 React Native，方便单元测试。 */
 
@@ -123,7 +124,10 @@ export function downloadFileNames(
   const taken = new Set<string>();
   const names = new Map<string, string>();
   for (const item of items) {
-    const base = withExtension(safeFileName(item.name ?? '') || fallback || '小豆芽', item);
+    const base = withExtension(
+      safeFileName(item.name ?? '') || fallback || t().common.appName,
+      item,
+    );
     let n = 1;
     let name = base;
     // 不区分大小写：文件以后可能拷到不区分大小写的文件系统上。
@@ -193,13 +197,17 @@ export interface DownloadState {
   fraction: number | null;
 }
 
-const FAILURE_TEXT: Record<DownloadFailure, string> = {
-  permission: '没有相册权限，可以在系统设置里打开后再点一次',
-  'not-ready': '这个文件还没有上传完成，或者你没有查看权限',
-  network: '下载没有完成，检查网络后再点一次',
-  'no-space': '手机存储空间不够了，清理后再点一次',
-  incomplete: '下载的文件不完整，再点一次试试',
-  save: '保存没有成功，再点一次试试',
+const failureText = (reason: DownloadFailure): string => {
+  const text = t().ui;
+  const byReason: Record<DownloadFailure, string> = {
+    permission: text.dlPermission,
+    'not-ready': text.dlNotReady,
+    network: text.dlNetwork,
+    'no-space': text.dlNoSpace,
+    incomplete: text.dlIncomplete,
+    save: text.dlSave,
+  };
+  return byReason[reason];
 };
 
 /**
@@ -209,12 +217,12 @@ const FAILURE_TEXT: Record<DownloadFailure, string> = {
 export function downloadMessage(outcome: DownloadOutcome): string | null {
   switch (outcome.status) {
     case 'saved':
-      if (outcome.target === 'gallery') return '已保存到相册';
-      return outcome.target === 'folder' ? '已保存到你选的文件夹' : null;
+      if (outcome.target === 'gallery') return t().ui.dlSavedGallery;
+      return outcome.target === 'folder' ? t().ui.dlSavedFolder : null;
     case 'cancelled':
-      return outcome.quiet ? null : '已取消下载';
+      return outcome.quiet ? null : t().ui.dlCancelled;
     case 'failed':
-      return FAILURE_TEXT[outcome.reason];
+      return failureText(outcome.reason);
     case 'busy':
       return null;
   }

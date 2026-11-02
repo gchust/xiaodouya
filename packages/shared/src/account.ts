@@ -79,3 +79,8 @@ export interface SendEmailCodeResponse {
   /** 多少秒后可以再次发送。0 表示不用再发。 */
   retryAfterSeconds: number;
 }
+
+/**
+ * 建家庭时写给服务端的名字。界面上不显示，是数据不是文案，不随语言变。
+ */
+export const DEFAULT_FAMILY_NAME = '我们家';

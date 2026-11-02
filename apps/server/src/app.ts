@@ -25,7 +25,9 @@ import {
   isAllowedMime,
   isFormulaData,
   isVaccinePlanData,
+  type Locale,
   LoginRequest,
+  localeFromAcceptLanguage,
   MediaUrlsRequest,
   type MediaUrlsResponse,
   type MeResponse,
@@ -154,10 +156,11 @@ function fail(
   status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 503,
   code: string,
   message: string,
+  params?: Record<string, string | number>,
 ): never {
   throw new HTTPException(status, {
     message: `${code}: ${message}`,
-    res: new Response(JSON.stringify({ error: { code, message } } satisfies ApiError), {
+    res: new Response(JSON.stringify({ error: { code, message, params } } satisfies ApiError), {
       status,
       headers: { 'content-type': 'application/json; charset=utf-8' },
     }),
@@ -181,6 +184,7 @@ async function parseBody<T extends z.ZodType>(
       400,
       'invalid_input',
       `输入有误：${issue?.path.join('.') || '请求'} ${issue?.message ?? ''}`.trim(),
+      { field: issue?.path.join('.') || 'request', detail: issue?.message ?? '' },
     );
   }
   return parsed.data;
@@ -323,7 +327,8 @@ export function createApp({
    */
   function sendCodeLater(
     purpose: CodePurpose,
-    target: () => Promise<{ id: string; email: string } | undefined>,
+    target: () => Promise<{ id: string; email: string; locale?: Locale } | undefined>,
+    requestLocale: Locale | null,
   ) {
     if (!mailer) return;
     const task = async () => {
@@ -331,10 +336,12 @@ export function createApp({
       if (!user) return;
       const code = await issueEmailCode(sql, config.appSecret, user.id, purpose);
       if (!code) return;
+      // 收件人的语言优先，其次是这次请求的语言。两者都没有时是 v0.1.0 或者旧客户端，用中文。
+      const locale = user.locale ?? requestLocale ?? 'zh';
       await mailer.send(
         purpose === 'verify_email'
-          ? verifyEmailMail(user.email, code)
-          : resetPasswordMail(user.email, code),
+          ? verifyEmailMail(user.email, code, locale)
+          : resetPasswordMail(user.email, code, locale),
       );
     };
     background(
@@ -387,7 +394,7 @@ export function createApp({
       (registerGlobalHour > 0 &&
         !(await allowAttempt(sql, 'register', registerGlobalHour, REGISTER_WINDOW_MS)))
     ) {
-      fail(429, 'too_many_attempts', '注册的人太多了，请过一会儿再试');
+      fail(429, 'too_many_attempts', '注册的人太多了，请过一会儿再试', { reason: 'signup' });
     }
     const email = normalizeEmail(body.email);
     const id = crypto.randomUUID();
@@ -401,7 +408,11 @@ export function createApp({
     // 超过上限只是不发信，注册本身成功，App 的验证页可以重发。否则注册接口就成了给陌生邮箱群发的工具。
     // 拿不到来源时跳过这一条，只剩上面不看来源的注册总量限制。
     if (mailer && (!ip || (await allowAttempt(sql, `register-mail:${ip}`, 20, HOUR_MS)))) {
-      sendCodeLater('verify_email', async () => ({ id, email }));
+      sendCodeLater(
+        'verify_email',
+        async () => ({ id, email }),
+        localeFromAcceptLanguage(c.req.header('accept-language')),
+      );
     }
     return c.json<AuthResponse>({ token, user: { id, email, displayName: body.displayName } }, 201);
   });
@@ -414,7 +425,8 @@ export function createApp({
     const allowed =
       (await allowAttempt(sql, loginIpKey(c, email), 10, LOGIN_WINDOW_MS)) &&
       (await allowAttempt(sql, `login:${email}`, 50, LOGIN_WINDOW_MS));
-    if (!allowed) fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
+    if (!allowed)
+      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试', { minutes: 15 });
     const [user] = await sql<
       { id: string; password_hash: string; display_name: string }[]
     >`SELECT id, password_hash, display_name FROM users WHERE email = ${email}`;
@@ -443,10 +455,16 @@ export function createApp({
       (await allowAttempt(sql, `forgot-hour:${email}`, 5, HOUR_MS)) &&
       (await allowAttempt(sql, `forgot-day:${email}`, 10, 24 * HOUR_MS));
     if (allowed) {
-      sendCodeLater('reset_password', async () => {
-        const [user] = await sql<{ id: string }[]>`SELECT id FROM users WHERE email = ${email}`;
-        return user ? { id: user.id, email } : undefined;
-      });
+      sendCodeLater(
+        'reset_password',
+        async () => {
+          const [user] = await sql<
+            { id: string; prefs: unknown }[]
+          >`SELECT id, prefs FROM users WHERE email = ${email}`;
+          return user ? { id: user.id, email, locale: mergePrefs(user.prefs).locale } : undefined;
+        },
+        localeFromAcceptLanguage(c.req.header('accept-language')),
+      );
     }
     return c.json({ ok: true });
   });
@@ -506,7 +524,7 @@ export function createApp({
       JOIN users u ON u.id = s.user_id
       LEFT JOIN memberships m ON m.user_id = u.id
       WHERE s.token_hash = ${sha256(token)} AND s.expires_at > now()`;
-    if (!row) fail(401, 'unauthenticated', '登录已过期，请重新登录');
+    if (!row) fail(401, 'unauthenticated', '登录已过期，请重新登录', { reason: 'expired' });
     // 常用的手机不应该到期被踢：剩余不足一半时续期（不是每次都写库）。
     await sql`UPDATE sessions SET expires_at = now() + interval '1 day' * ${SESSION_DAYS}
       WHERE token_hash = ${sha256(token)} AND expires_at < now() + interval '1 day' * ${SESSION_DAYS / 2}`;
@@ -533,7 +551,7 @@ export function createApp({
   };
   const requireAdmin = (c: { get(key: 'membership'): Membership | null }): Membership => {
     const m = requireFamily(c);
-    if (m.role !== 'admin') fail(403, 'forbidden', '只有管理员可以这样做');
+    if (m.role !== 'admin') fail(403, 'forbidden', '只有管理员可以这样做', { reason: 'admin' });
     return m;
   };
 
@@ -600,9 +618,13 @@ export function createApp({
       return c.json<SendEmailCodeResponse>({ emailVerified: false, retryAfterSeconds: wait });
     }
     if (!(await allowAttempt(sql, `verify-send:${user.id}`, 5, HOUR_MS))) {
-      fail(429, 'too_many_attempts', '发送次数太多了，请稍后再试');
+      fail(429, 'too_many_attempts', '发送次数太多了，请稍后再试', { reason: 'send' });
     }
-    sendCodeLater('verify_email', async () => ({ id: user.id, email: user.email }));
+    sendCodeLater(
+      'verify_email',
+      async () => ({ id: user.id, email: user.email, locale: user.prefs.locale }),
+      localeFromAcceptLanguage(c.req.header('accept-language')),
+    );
     return c.json<SendEmailCodeResponse>({
       emailVerified: false,
       retryAfterSeconds: EMAIL_CODE_COOLDOWN_SECONDS,
@@ -659,7 +681,7 @@ export function createApp({
     const user = c.get('user');
     const body = await parseBody(c, DeleteAccountRequest);
     if (!(await allowAttempt(sql, `delete-account:${user.id}`, 10, LOGIN_WINDOW_MS))) {
-      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试');
+      fail(429, 'too_many_attempts', '尝试次数太多了，请 15 分钟后再试', { minutes: 15 });
     }
     const [row] = await sql<
       { password_hash: string }[]
@@ -717,7 +739,7 @@ export function createApp({
     const m = requireFamily(c);
     const user = c.get('user');
     if (!(await allowAttempt(sql, `export:${user.id}`, 10, HOUR_MS))) {
-      fail(429, 'too_many_attempts', '导出太频繁了，请稍后再试');
+      fail(429, 'too_many_attempts', '导出太频繁了，请稍后再试', { reason: 'export' });
     }
     const readable = collections.filter((name) => canReadCollection(m.role, name));
     const [family] = await sql<
@@ -1121,11 +1143,12 @@ export function createApp({
       413,
       'quota_exceeded',
       `存储空间已满（共 ${formatBytes(quota)}），删除一些回忆或证件后可以重试`,
+      { quota },
     );
 
   v1.post('/media/upload-url', async (c) => {
     const m = requireFamily(c);
-    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片');
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const { uploadUrlPerWindow } = config.limits;
     if (
       uploadUrlPerWindow > 0 &&
@@ -1145,7 +1168,7 @@ export function createApp({
       config.maxFileBytes[mediaCategory(body.mime, body.scope)],
     );
     if (body.size > maxBytes) {
-      fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(maxBytes)}`);
+      fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(maxBytes)}`, { maxBytes });
     }
     const [existing] = await sql<
       { family_id: string; status: string; object_key: string; storage_config_id: string | null }[]
@@ -1154,7 +1177,10 @@ export function createApp({
     if (existing?.status === 'ready') fail(409, 'already_uploaded', '文件已经上传过了');
 
     const storage = await activeStorage(sql, config, m.familyId);
-    if (!storage) fail(503, 'no_storage', '还没有配置存储，请管理员先在「家人 → 存储」里设置');
+    if (!storage)
+      fail(503, 'no_storage', '还没有配置存储，请管理员先在「家人 → 存储」里设置', {
+        reason: 'notConfigured',
+      });
     const key = objectKey(m.familyId, body.scope, body.id, body.variant);
     await sql.begin(async (tx) => {
       // 自己的存储不花平台的钱，不用配额。查询和预留要在同一把锁里，否则并行上传会一起通过检查。
@@ -1192,7 +1218,7 @@ export function createApp({
 
   v1.post('/media/:id/complete', async (c) => {
     const m = requireFamily(c);
-    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片');
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const { variant } = await parseBody(c, CompleteUploadRequest);
     const id = c.req.param('id');
     const [row] = await sql<
@@ -1340,12 +1366,12 @@ export function createApp({
       if (!active) fail(403, 'custom_storage_disabled', '这台服务器不允许自定义存储');
     }
     if (input.provider === 'r2' && !input.accountId)
-      fail(400, 'invalid_input', '请填写 Account ID');
+      fail(400, 'invalid_input', '请填写 Account ID', { reason: 'accountIdMissing' });
     if (input.provider === 'other' && !input.endpoint)
-      fail(400, 'invalid_input', '请填写 Endpoint');
+      fail(400, 'invalid_input', '请填写 Endpoint', { reason: 'endpointMissing' });
     if (input.accountId && !/^[a-zA-Z0-9-]+$/.test(input.accountId)) {
       // Account ID 会拼进主机名，只允许安全字符。
-      fail(400, 'invalid_input', 'Account ID 格式不正确');
+      fail(400, 'invalid_input', 'Account ID 格式不正确', { reason: 'accountIdBad' });
     }
     const endpoint = endpointForProvider(input.provider, input);
     if (endpoint) {
@@ -1356,7 +1382,7 @@ export function createApp({
       }
     }
     if (input.publicBaseUrl && !input.publicBaseUrl.startsWith('https://')) {
-      fail(400, 'invalid_input', '自定义域名必须使用 https');
+      fail(400, 'invalid_input', '自定义域名必须使用 https', { reason: 'customDomainHttps' });
     }
   }
 
@@ -1376,7 +1402,7 @@ export function createApp({
         });
       if (resolved && sameTarget) return resolved.secretAccessKey;
     }
-    fail(400, 'invalid_input', '请填写 Secret Access Key');
+    fail(400, 'invalid_input', '请填写 Secret Access Key', { reason: 'secretMissing' });
   }
 
   v1.post('/storage/test', async (c) => {
@@ -1393,7 +1419,8 @@ export function createApp({
     await validateStorageInput(m.familyId, input);
     const secret = await secretFor(m.familyId, input);
     const result = await testStorage(resolvedFromInput(input, secret));
-    if (!result.ok) fail(400, 'storage_test_failed', result.message);
+    if (!result.ok)
+      fail(400, 'storage_test_failed', result.message, { reason: result.reason ?? 'unknown' });
     const encrypted = encryptSecret(secret, config.appSecret);
     const id = crypto.randomUUID();
     await sql.begin(async (tx) => {
@@ -1409,7 +1436,7 @@ export function createApp({
 
   v1.get('/storage/usage', async (c) => {
     const m = requireFamily(c);
-    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片');
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const rows = await sql<{ category: string; total: string }[]>`
       SELECT CASE
           WHEN scope = 'document' THEN 'document'

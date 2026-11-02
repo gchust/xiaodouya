@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 /** 不依赖 React Native 的纯函数，方便单元测试。 */
 
 /**
@@ -28,7 +29,7 @@ export async function importEach<T, R>(
     try {
       done.push(await run(item));
     } catch (error) {
-      failed.push(error instanceof Error ? error.message : '有一个文件没有添加成功');
+      failed.push(error instanceof Error ? error.message : t().ui.fileAddFailed);
     }
   }
   return { done, failed };

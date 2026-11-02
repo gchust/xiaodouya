@@ -1,13 +1,76 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
+import { AndroidConfig, withStringsXml } from 'expo/config-plugins';
 
 const version = process.env.APP_VERSION ?? '0.1.0';
 const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
 // 小工具上有宝宝的名字和记录。Android 16 QPR2 起第三方小工具默认可以放到锁屏，这里明确不要。
 const WIDGET_CATEGORY = 'home_screen|not_keyguard';
 
+/**
+ * 手机不是中文时都用英文（和 App 里一样），所以 Android 的默认资源放英文，中文放进 `locales`。
+ * `name` 不能直接改成英文：iOS 的工程目录（`ios/app.xcworkspace`）是用它算出来的。
+ * 名称和 docs/store 里的草稿保持一致。
+ */
+const ANDROID_DEFAULT_STRINGS: Record<string, string> = {
+  app_name: 'Xiaodouya',
+  widget_feed_label: 'Log feed',
+  widget_sleep_label: 'Sleep',
+  widget_summary_label: 'Today',
+};
+
+const withEnglishAndroidDefaults = (expo: ExpoConfig): ExpoConfig =>
+  withStringsXml(expo, (strings) => {
+    strings.modResults = AndroidConfig.Strings.setStringItem(
+      Object.entries(ANDROID_DEFAULT_STRINGS).map(([name, value]) => ({
+        $: { name },
+        _: value,
+      })),
+      strings.modResults,
+    );
+    return strings;
+  });
+
+const zhIos = {
+  CFBundleDisplayName: '小豆芽',
+  NSPhotoLibraryUsageDescription: '选择照片和视频，保存到宝宝的回忆里。',
+  NSPhotoLibraryAddUsageDescription: '把宝宝的照片和视频保存到手机相册。',
+  NSCameraUsageDescription: '拍摄证件和资料。',
+  NSMicrophoneUsageDescription: '录下宝宝的声音，保存到回忆里。',
+  NSFaceIDUsageDescription: '验证身份后查看证件夹。',
+};
+const zhStrings = {
+  ios: zhIos,
+  android: {
+    app_name: '小豆芽',
+    widget_feed_label: '记喂奶',
+    widget_feedwidget_description: '点一下，按上次的奶量记一次喂奶',
+    widget_sleep_label: '睡眠',
+    widget_sleepwidget_description: '看宝宝是不是在睡，点一下开始或结束睡眠',
+    widget_summary_label: '今日汇总',
+    widget_summarywidget_description: '今天喂奶、尿布和睡眠的合计',
+  },
+};
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: '小豆芽',
+  // iOS 只有 lproj 里有这个语言时才用，其他语言退回 en。`zh-Hans` 这样的系统语言不一定匹配 `zh`，都写上。
+  locales: {
+    zh: zhStrings,
+    'zh-Hans': zhStrings,
+    'zh-Hant': zhStrings,
+    en: {
+      ios: {
+        CFBundleDisplayName: 'Xiaodouya',
+        NSPhotoLibraryUsageDescription: "Choose photos and videos to save in your baby's memories.",
+        NSPhotoLibraryAddUsageDescription:
+          "Save your baby's photos and videos to the phone's photo library.",
+        NSCameraUsageDescription: 'Take photos of documents.',
+        NSMicrophoneUsageDescription: "Record your baby's sounds and save them in memories.",
+        NSFaceIDUsageDescription: 'Verify your identity to view documents.',
+      },
+    },
+  },
   slug: 'xiaodouya',
   scheme: 'xiaodouya',
   version,
@@ -42,6 +105,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   experiments: { typedRoutes: false },
   plugins: [
+    withEnglishAndroidDefaults,
     'expo-router',
     'expo-sqlite',
     'expo-secure-store',
@@ -59,8 +123,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     [
       'expo-image-picker',
       {
-        photosPermission: '选择照片和视频，保存到宝宝的回忆里。',
-        cameraPermission: '拍摄证件和资料。',
+        photosPermission: "Choose photos and videos to save in your baby's memories.",
+        cameraPermission: 'Take photos of documents.',
       },
     ],
     [
@@ -70,12 +134,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       {
         granularPermissions: [],
         // 这条和上面的 photosPermission 是 iOS 的同一个键，要写成一样，否则会被默认的英文覆盖。
-        photosPermission: '选择照片和视频，保存到宝宝的回忆里。',
-        savePhotosPermission: '把宝宝的照片和视频保存到手机相册。',
+        photosPermission: "Choose photos and videos to save in your baby's memories.",
+        savePhotosPermission: "Save your baby's photos and videos to the phone's photo library.",
       },
     ],
-    ['expo-audio', { microphonePermission: '录下宝宝的声音，保存到回忆里。' }],
-    ['expo-local-authentication', { faceIDPermission: '验证身份后查看证件夹。' }],
+    [
+      'expo-audio',
+      { microphonePermission: "Record your baby's sounds and save them in memories." },
+    ],
+    ['expo-local-authentication', { faceIDPermission: 'Verify your identity to view documents.' }],
     ['expo-notifications', { color: '#c0714f', icon: './assets/notification-icon.png' }],
     './plugins/with-latest-intent',
     // 只生成 Android 的 receiver 和资源，iOS 上这个插件什么都不做。
@@ -86,8 +153,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         widgets: [
           {
             name: 'FeedWidget',
-            label: '记喂奶',
-            description: '点一下，按上次的奶量记一次喂奶',
+            label: '@string/widget_feed_label',
+            description: 'Tap to log a feed with the last amount',
             previewImage: './assets/widgets/feed-preview.png',
             minWidth: '110dp',
             minHeight: '110dp',
@@ -100,8 +167,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           },
           {
             name: 'SleepWidget',
-            label: '睡眠',
-            description: '看宝宝是不是在睡，点一下开始或结束睡眠',
+            label: '@string/widget_sleep_label',
+            description: 'See whether your baby is asleep. Tap to start or end sleep',
             previewImage: './assets/widgets/sleep-preview.png',
             minWidth: '110dp',
             minHeight: '110dp',
@@ -113,8 +180,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           },
           {
             name: 'SummaryWidget',
-            label: '今日汇总',
-            description: '今天喂奶、尿布和睡眠的合计',
+            label: '@string/widget_summary_label',
+            description: "Today's total feeds, diapers and sleep",
             previewImage: './assets/widgets/summary-preview.png',
             minWidth: '250dp',
             minHeight: '110dp',

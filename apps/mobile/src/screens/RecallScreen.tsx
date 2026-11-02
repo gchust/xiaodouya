@@ -4,6 +4,7 @@ import {
   formatMonthDay,
   type MediaRef,
   milestoneTemplates,
+  t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -21,11 +22,11 @@ import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/
 
 type SubTab = 'timeline' | 'photos' | 'milestones' | 'letters';
 
-const TABS: { key: SubTab; label: string }[] = [
-  { key: 'timeline', label: '时间线' },
-  { key: 'photos', label: '照片' },
-  { key: 'milestones', label: '里程碑' },
-  { key: 'letters', label: '写给你' },
+const tabs = (): { key: SubTab; label: string }[] => [
+  { key: 'timeline', label: t().recall.timeline },
+  { key: 'photos', label: t().recall.photos },
+  { key: 'milestones', label: t().recall.milestones },
+  { key: 'letters', label: t().recall.letters },
 ];
 
 export function RecallScreen() {
@@ -47,9 +48,9 @@ export function RecallScreen() {
   return (
     <View style={s.root} testID="recall-screen">
       <View style={[s.header, { paddingTop: insets.top + 12 }]}>
-        <PageTitle>回忆</PageTitle>
+        <PageTitle>{t().recall.title}</PageTitle>
         <View style={s.tabs}>
-          {TABS.map((t) => {
+          {tabs().map((t) => {
             const on = tab === t.key;
             return (
               <Pressable
@@ -99,11 +100,11 @@ export function RecallScreen() {
       {canWrite ? (
         <PressScale
           testID="recall-fab"
-          accessibilityLabel={tab === 'letters' ? '写一封信' : '记下这一刻'}
+          accessibilityLabel={tab === 'letters' ? t().recall.writeLetter : t().ui.recordMoment}
           style={s.fab}
           onPress={() => {
             const letter = tab === 'letters';
-            sheet.open(letter ? '写给宝宝的信' : '记下这一刻', () => (
+            sheet.open(letter ? t().recall.letterToBaby : t().ui.recordMoment, () => (
               <MomentSheet
                 initialKind={letter ? 'letter' : 'moment'}
                 initialMilestone={tab === 'milestones'}
@@ -112,7 +113,9 @@ export function RecallScreen() {
             ));
           }}
         >
-          <Text style={s.fabLabel}>{tab === 'letters' ? '＋ 写一封信' : '＋ 记下这一刻'}</Text>
+          <Text style={s.fabLabel}>
+            {tab === 'letters' ? t().recall.addLetter : t().recall.addMoment}
+          </Text>
         </PressScale>
       ) : null}
     </View>
@@ -127,36 +130,31 @@ function Timeline({ birthAt }: { birthAt: number }) {
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();
   if (moments.length === 0) {
-    return (
-      <Empty
-        title="第一个瞬间，从今天开始"
-        sub="一张照片、一段哭声，或者几句话都可以。以后宝宝会想看的。"
-      />
-    );
+    return <Empty title={t().recall.emptyTitle} sub={t().recall.emptySub} />;
   }
   const canDelete = app.role !== 'viewer';
   const openActions = (m: (typeof moments)[number]) =>
-    sheet.open(m.data.title || '这一刻', () => (
+    sheet.open(m.data.title || t().ui.thisMoment, () => (
       <>
         <Button
           testID="moment-edit"
           tone="outline"
-          label="修改"
+          label={t().records.edit}
           onPress={() =>
-            sheet.replace('修改这一刻', () => (
+            sheet.replace(t().recall.editMoment, () => (
               <MomentSheet editMoment={{ id: m.id, data: m.data }} />
             ))
           }
         />
-        <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这条回忆了。</Muted>
+        <Muted style={{ fontSize: 13 }}>{t().recall.deleteMomentWarn}</Muted>
         <Button
           testID="moment-delete"
           tone="ghost"
-          label="删除这条回忆"
+          label={t().recall.deleteMoment}
           onPress={() => {
             void app.remove(m.id);
             sheet.close();
-            toast('已删除这条回忆', {
+            toast(t().recall.momentDeleted, {
               undo: () => void app.write('moment', m.data, m.id),
             });
           }}
@@ -170,7 +168,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
         const audios = m.data.media.filter((x) => x.kind === 'audio');
         const cover = visual[0];
         const fileNames = downloadFileNames(m.data.media, {
-          title: m.data.title || '这一刻',
+          title: m.data.title || t().ui.thisMoment,
           at: m.data.at,
         });
         return (
@@ -180,16 +178,16 @@ function Timeline({ birthAt }: { birthAt: number }) {
                 testID={`moment-head-${m.id}`}
                 style={s.momentHead}
                 accessibilityRole="button"
-                accessibilityLabel={m.data.title || '这一刻'}
+                accessibilityLabel={m.data.title || t().ui.thisMoment}
                 onLongPress={canDelete ? () => openActions(m) : undefined}
               >
-                <Text style={s.momentTitle}>{m.data.title || '这一刻'}</Text>
+                <Text style={s.momentTitle}>{m.data.title || t().ui.thisMoment}</Text>
                 <Mono style={s.momentMeta}>
                   {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
                 </Mono>
                 {m.data.milestone ? (
                   <View style={s.milestoneTag}>
-                    <Text style={s.milestoneTagText}>里程碑</Text>
+                    <Text style={s.milestoneTagText}>{t().recall.milestoneTag}</Text>
                   </View>
                 ) : null}
               </Pressable>
@@ -197,7 +195,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
                 <Pressable
                   testID={`moment-more-${m.id}`}
                   accessibilityRole="button"
-                  accessibilityLabel={`${m.data.title || '这一刻'}的更多操作`}
+                  accessibilityLabel={t().recall.moreActions(m.data.title || t().ui.thisMoment)}
                   hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
                   onPress={() => openActions(m)}
                 >
@@ -209,7 +207,9 @@ function Timeline({ birthAt }: { birthAt: number }) {
               <Pressable
                 testID={`moment-cover-${m.id}`}
                 accessibilityRole="imagebutton"
-                accessibilityLabel={cover.kind === 'video' ? '播放视频' : '查看照片'}
+                accessibilityLabel={
+                  cover.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
+                }
                 onPress={() =>
                   router.push({ pathname: '/viewer', params: { moment: m.id, index: 0 } })
                 }
@@ -224,16 +224,20 @@ function Timeline({ birthAt }: { birthAt: number }) {
                 {cover.kind === 'video' ? <PlayBadge /> : null}
                 {visual.length > 1 ? (
                   <View style={s.morePill}>
-                    <Text style={{ fontSize: 11, color: colors.ink }}>共 {visual.length} 项</Text>
+                    <Text style={{ fontSize: 11, color: colors.ink }}>
+                      {t().recall.itemsTotal(visual.length)}
+                    </Text>
                   </View>
                 ) : null}
               </Pressable>
             ) : null}
             {audios.map((a) => (
-              <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? '录音'} />
+              <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? t().ui.recording} />
             ))}
             {m.data.text ? <Serif>{m.data.text}</Serif> : null}
-            {m.data.byName ? <Muted style={{ fontSize: 11 }}>{m.data.byName}写</Muted> : null}
+            {m.data.byName ? (
+              <Muted style={{ fontSize: 11 }}>{t().recall.by(m.data.byName)}</Muted>
+            ) : null}
           </View>
         );
       })}
@@ -255,7 +259,7 @@ function Photos() {
     }))
     .filter((g) => g.cells.length > 0);
   if (groups.length === 0) {
-    return <Empty title="还没有照片" sub="点右下角「记下这一刻」，从相册选几张吧。" />;
+    return <Empty title={t().recall.noPhotos} sub={t().recall.noPhotosSub} />;
   }
   return (
     <View style={s.photos}>
@@ -263,9 +267,9 @@ function Photos() {
         <View key={moment.id} style={{ gap: 8 }}>
           <View style={s.groupHead}>
             <Text style={s.groupTitle} numberOfLines={1}>
-              {moment.data.title || '这一刻'} · {formatMonthDay(moment.data.at)}
+              {moment.data.title || t().ui.thisMoment} · {formatMonthDay(moment.data.at)}
             </Text>
-            <Muted>{cells.length} 项</Muted>
+            <Muted>{t().recall.itemsTotal(cells.length)}</Muted>
           </View>
           <View style={s.grid}>
             {cells.map((cell: MediaRef, index) => (
@@ -273,7 +277,9 @@ function Photos() {
                 key={cell.id}
                 testID={`photo-${cell.id}`}
                 accessibilityRole="imagebutton"
-                accessibilityLabel={cell.kind === 'video' ? '播放视频' : '查看照片'}
+                accessibilityLabel={
+                  cell.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
+                }
                 style={[s.gridCell, { width: cellWidth, height: cellWidth }]}
                 onPress={() =>
                   router.push({ pathname: '/viewer', params: { moment: moment.id, index } })
@@ -309,7 +315,9 @@ function Milestones({
   const { role } = useApp();
   const sheet = useSheet();
   const done = moments.filter((m) => m.data.milestone);
-  const pending = milestoneTemplates.filter((t) => !done.some((m) => m.data.title === t.title));
+  const pending = milestoneTemplates.filter(
+    (item) => !done.some((m) => item.matches(m.data.title)),
+  );
   return (
     <View style={s.milestones}>
       {done.map((m) => (
@@ -317,7 +325,7 @@ function Milestones({
           key={m.id}
           testID={`milestone-done-${m.id}`}
           accessibilityRole="button"
-          accessibilityLabel={`${m.data.title}，查看`}
+          accessibilityLabel={t().recall.viewNamed(m.data.title)}
           onPress={onSeeTimeline}
           style={s.milestoneRow}
         >
@@ -330,27 +338,29 @@ function Milestones({
             />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontSize: 14, color: colors.ink }}>{m.data.title || '这一刻'}</Text>
+            <Text style={{ fontSize: 14, color: colors.ink }}>
+              {m.data.title || t().ui.thisMoment}
+            </Text>
             <Muted style={{ fontSize: 11 }}>
               {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
             </Muted>
           </View>
-          <Text style={s.milestoneAction}>查看</Text>
+          <Text style={s.milestoneAction}>{t().recall.view}</Text>
         </Pressable>
       ))}
-      {pending.map((t) => (
+      {pending.map((item) => (
         <Pressable
-          key={t.title}
-          testID={`milestone-${t.title}`}
+          key={item.id}
+          testID={`milestone-${item.id}`}
           accessibilityRole="button"
-          accessibilityLabel={`${t.title}，记录`}
+          accessibilityLabel={t().recall.recordNamed(item.title)}
           disabled={role === 'viewer'}
           onPress={() =>
-            sheet.open('记下这一刻', () => (
+            sheet.open(t().ui.recordMoment, () => (
               <MomentSheet
                 initialKind="moment"
                 initialMilestone
-                initialTitle={t.title}
+                initialTitle={item.title}
                 onSaved={onSaved}
               />
             ))
@@ -361,14 +371,14 @@ function Milestones({
             <View style={[s.milestoneDot, { borderColor: colors.hint }]} />
           </View>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontSize: 14, color: colors.muted }}>{t.title}</Text>
-            <Muted style={{ fontSize: 11 }}>{t.typical}</Muted>
+            <Text style={{ fontSize: 14, color: colors.muted }}>{item.title}</Text>
+            <Muted style={{ fontSize: 11 }}>{item.typical}</Muted>
           </View>
-          {role === 'viewer' ? null : <Text style={s.milestoneAction}>记录</Text>}
+          {role === 'viewer' ? null : <Text style={s.milestoneAction}>{t().records.record}</Text>}
         </Pressable>
       ))}
       <Muted style={{ marginTop: 14, fontSize: 11, lineHeight: 18 }}>
-        月龄只是大致参考，每个宝宝节奏不同。
+        {t().recall.milestonesNote}
       </Muted>
     </View>
   );
@@ -380,33 +390,31 @@ function Letters() {
   const sheet = useSheet();
   const { toast } = useFeedback();
   if (letters.length === 0) {
-    return (
-      <Empty title="写一封信给长大后的宝宝" sub="现在的心情，等宝宝长大了再读，会很不一样。" />
-    );
+    return <Empty title={t().recall.noLetters} sub={t().recall.noLettersSub} />;
   }
   const canWrite = app.role !== 'viewer';
   const openActions = (l: (typeof letters)[number]) =>
-    sheet.open(l.data.title || '无题', () => (
+    sheet.open(l.data.title || t().ui.untitled, () => (
       <>
         <Button
           testID="letter-edit"
           tone="outline"
-          label="修改"
+          label={t().records.edit}
           onPress={() =>
-            sheet.replace('修改这封信', () => (
+            sheet.replace(t().recall.editLetter, () => (
               <MomentSheet editLetter={{ id: l.id, data: l.data }} />
             ))
           }
         />
-        <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这封信了。</Muted>
+        <Muted style={{ fontSize: 13 }}>{t().recall.deleteLetterWarn}</Muted>
         <Button
           testID="letter-delete"
           tone="ghost"
-          label="删除这封信"
+          label={t().recall.deleteLetter}
           onPress={() => {
             void app.remove(l.id);
             sheet.close();
-            toast('已删除这封信', {
+            toast(t().recall.letterDeleted, {
               undo: () => void app.write('letter', l.data, l.id),
             });
           }}
@@ -418,13 +426,13 @@ function Letters() {
       {letters.map((l) => (
         <View key={l.id} style={s.letter} testID={`letter-${l.id}`}>
           <View style={s.letterHead}>
-            <Text style={s.letterTitle}>{l.data.title || '无题'}</Text>
+            <Text style={s.letterTitle}>{l.data.title || t().ui.untitled}</Text>
             <Mono style={{ fontSize: 11, color: colors.muted }}>{formatMonthDay(l.data.at)}</Mono>
             {canWrite ? (
               <Pressable
                 testID={`letter-more-${l.id}`}
                 accessibilityRole="button"
-                accessibilityLabel={`${l.data.title || '无题'}的更多操作`}
+                accessibilityLabel={t().recall.moreActions(l.data.title || t().ui.untitled)}
                 hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
                 onPress={() => openActions(l)}
               >
@@ -435,7 +443,9 @@ function Letters() {
           <Serif style={{ fontSize: 13, color: colors.inkSoft, lineHeight: 23 }}>
             {l.data.text}
           </Serif>
-          {l.data.byName ? <Muted style={{ fontSize: 11 }}>{l.data.byName}写</Muted> : null}
+          {l.data.byName ? (
+            <Muted style={{ fontSize: 11 }}>{t().recall.by(l.data.byName)}</Muted>
+          ) : null}
         </View>
       ))}
     </View>

@@ -1,7 +1,5 @@
-import { EMAIL_CODE_TTL_MINUTES } from '@xiaodouya/shared';
-
-/** 账号相关的界面文字集中在这里，多语言时一起搬走。 */
-export const accountText = {
+/** 账号相关的界面文字。 */
+export const account = {
   consentPrefix: '注册即表示同意',
   consentTerms: '《用户协议》',
   consentAnd: '和',
@@ -13,16 +11,16 @@ export const accountText = {
   forgotHint: '填写注册时用的邮箱，我们会发一个验证码过去。',
   forgotSubmit: '发送验证码',
   resetTitle: '设置新密码',
-  resetHint: (email: string) =>
-    `如果 ${email} 注册过，验证码已经发过去了，${EMAIL_CODE_TTL_MINUTES} 分钟内有效。`,
+  resetHint: (email: string, minutes: number) =>
+    `如果 ${email} 注册过，验证码已经发过去了，${minutes} 分钟内有效。`,
   resetCode: '6 位验证码',
   resetNewPassword: '新密码（至少 8 位）',
   resetSubmit: '更新密码',
   resetDone: '密码已更新，所有设备都需要重新登录。',
 
   verifyTitle: '验证邮箱',
-  verifyHint: (email: string) =>
-    `验证码会发到 ${email}，${EMAIL_CODE_TTL_MINUTES} 分钟内有效。忘记密码时要靠这个邮箱找回。`,
+  verifyHint: (email: string, minutes: number) =>
+    `验证码会发到 ${email}，${minutes} 分钟内有效。忘记密码时要靠这个邮箱找回。`,
   verifySubmit: '验证',
   verifyResend: '重新发送验证码',
   verifyResendWait: (seconds: number) => `${seconds} 秒后可以重新发送`,
@@ -54,4 +52,4 @@ export const accountText = {
   deleteConfirm: '永久删除账号',
   deleteDone: '账号已删除',
   deleteSessionGone: '登录已失效，手机上的数据已清除。如果账号还在，重新登录后可以再删除一次。',
-} as const;
+};

@@ -5,6 +5,7 @@ import {
   type StorageConfigView,
   type StorageUsage,
   storageProviderNames,
+  t,
 } from '@xiaodouya/shared';
 
 /** 只看回忆的家人不上传，用量和他们没有关系。 */
@@ -28,18 +29,25 @@ export function canEditStorage(
   return allowCustomStorage || source === 'family';
 }
 
-const LEVEL_PREFIX = { none: '', ok: '', warn: '快满了 · ', full: '已满 · ' } as const;
+const levelPrefix = (level: 'none' | 'ok' | 'warn' | 'full'): string =>
+  level === 'warn' ? t().ui.nearlyFullPrefix : level === 'full' ? t().ui.fullPrefix : '';
 
 /** 家人页“存储”那一行的小字。`config` 只有管理员拿得到，其他人传 null。 */
 export function storageSummaryText(usage: StorageUsage, config: StorageConfigView | null): string {
-  if (config?.source === 'none') return '还没有配置，上传前需要先设置';
+  if (config?.source === 'none') return t().ui.storageNotSet;
   const status = quotaStatus(usage);
   if (status.level !== 'none') {
     const used = usage.quotaUsed ?? usage.total;
-    return `${LEVEL_PREFIX[status.level]}已用 ${formatBytes(used)}，共 ${formatBytes(usage.quota ?? 0)}`;
+    return t().ui.storageUsedOf(
+      levelPrefix(status.level),
+      formatBytes(used),
+      formatBytes(usage.quota ?? 0),
+    );
   }
-  const used = `已用 ${usage.total ? formatBytes(usage.total) : '0'}`;
+  const used = t().ui.storageUsed(usage.total ? formatBytes(usage.total) : '0');
   if (!config) return used;
-  const name = config.provider ? storageProviderNames[config.provider] : '服务器默认存储';
+  const name = config.provider
+    ? storageProviderNames[config.provider]
+    : t().ui.serverDefaultStorage;
   return `${name} · ${used}`;
 }

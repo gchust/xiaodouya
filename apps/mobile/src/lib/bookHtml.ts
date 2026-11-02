@@ -2,9 +2,11 @@ import {
   type BabyData,
   dayLabel,
   formatFullDate,
+  getLocale,
   type LetterData,
   type MomentData,
   type PaperSize,
+  t,
 } from '@xiaodouya/shared';
 import { escapeHtml } from './mediaUtils';
 
@@ -24,17 +26,18 @@ export function buildBookHtml(
   moments: BookMoment[],
   letters: LetterData[],
 ): string {
+  const text = t().ui;
   const momentHtml = moments
     .slice()
     .sort((a, b) => a.data.at - b.data.at)
     .map(({ data, photos }) => {
       const images = photos.map((p) => `<img src="${p.src}" />`).join('');
       return `<article>
-  <h2>${escapeHtml(data.title || '这一刻')}</h2>
-  <p class="meta">${formatFullDate(data.at)} · ${dayLabel(baby.birthAt, data.at)}${data.milestone ? ' · 里程碑' : ''}</p>
+  <h2>${escapeHtml(data.title || text.thisMoment)}</h2>
+  <p class="meta">${formatFullDate(data.at)} · ${dayLabel(baby.birthAt, data.at)}${data.milestone ? text.bookMilestoneSuffix : ''}</p>
   ${images ? `<div class="photos">${images}</div>` : ''}
   ${data.text ? `<p class="text">${escapeHtml(data.text)}</p>` : ''}
-  ${data.byName ? `<p class="by">${escapeHtml(data.byName)}写</p>` : ''}
+  ${data.byName ? `<p class="by">${text.bookBy(escapeHtml(data.byName))}</p>` : ''}
 </article>`;
     })
     .join('\n');
@@ -43,15 +46,15 @@ export function buildBookHtml(
     .sort((a, b) => a.at - b.at)
     .map(
       (l) => `<article class="letter">
-  <h2>${escapeHtml(l.title || '无题')}</h2>
+  <h2>${escapeHtml(l.title || text.untitled)}</h2>
   <p class="meta">${formatFullDate(l.at)}</p>
   <p class="text">${escapeHtml(l.text)}</p>
-  ${l.byName ? `<p class="by">${escapeHtml(l.byName)}写</p>` : ''}
+  ${l.byName ? `<p class="by">${text.bookBy(escapeHtml(l.byName))}</p>` : ''}
 </article>`,
     )
     .join('\n');
   const name = escapeHtml(baby.name);
-  return `<!doctype html><html lang="zh"><head><meta charset="utf-8" /><style>
+  return `<!doctype html><html lang="${getLocale()}"><head><meta charset="utf-8" /><style>
   @page { margin: 22mm 18mm; }
   body { font-family: "Noto Serif CJK SC", "Noto Serif SC", serif; color: #2b2622; background: #fff; }
   .cover { height: 90vh; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
@@ -66,9 +69,9 @@ export function buildBookHtml(
   .by { color: #7a6f66; font-size: 10pt; margin: 0; }
   .section { font-size: 24pt; margin: 0 0 18pt; color: #c0714f; page-break-before: always; }
 </style></head><body>
-<section class="cover"><h1>${name}的成长册</h1><p>出生于 ${formatFullDate(baby.birthAt)}</p></section>
-${momentHtml ? `<h1 class="section" style="page-break-before:auto">回忆</h1>${momentHtml}` : ''}
-${letterHtml ? `<h1 class="section">写给你的信</h1>${letterHtml}` : ''}
+<section class="cover"><h1>${text.bookTitle(name)}</h1><p>${text.bookBornOn(formatFullDate(baby.birthAt))}</p></section>
+${momentHtml ? `<h1 class="section" style="page-break-before:auto">${text.bookMemories}</h1>${momentHtml}` : ''}
+${letterHtml ? `<h1 class="section">${text.bookLetters}</h1>${letterHtml}` : ''}
 </body></html>`;
 }
 
@@ -85,5 +88,5 @@ export function bookPage(paper: PaperSize): { width: number; height: number } {
 /** 分享和保存时用户会看到文件名，不能是一串随机 id。去掉文件系统不允许的字符。 */
 export function bookFileName(babyName: string): string {
   const safe = babyName.replace(/[\\/:*?"<>|]/g, '').trim();
-  return `${safe || '宝宝'}的成长册.pdf`;
+  return t().ui.bookFile(safe || t().ui.baby);
 }

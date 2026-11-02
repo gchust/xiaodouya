@@ -1,4 +1,4 @@
-import { type EventData, feedReminderDelayMs } from '@xiaodouya/shared';
+import { type EventData, feedReminderDelayMs, t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
@@ -20,11 +20,11 @@ Notifications.setNotificationHandler({
 async function ensureChannels() {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync('feed', {
-    name: '喂奶提醒',
+    name: t().ui.channelFeed,
     importance: Notifications.AndroidImportance.HIGH,
   });
   await Notifications.setNotificationChannelAsync('family', {
-    name: '家人的记录',
+    name: t().ui.channelFamily,
     importance: Notifications.AndroidImportance.DEFAULT,
   });
 }
@@ -60,7 +60,7 @@ export async function scheduleFeedReminder(events: EventData[], enabled: boolean
     await ensureChannels();
     await Notifications.scheduleNotificationAsync({
       identifier: FEED_REMINDER_ID,
-      content: { title: '差不多该喂奶了', body: '已到平时的喂奶间隔。' },
+      content: { title: t().ui.feedReminderTitle, body: t().ui.feedReminderBody },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
         seconds: Math.max(60, Math.round(delayMs / 1000)),

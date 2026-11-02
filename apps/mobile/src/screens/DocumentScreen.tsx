@@ -4,6 +4,7 @@ import {
   MAX_MEDIA_PER_RECORD,
   type MediaRef,
   mergeEdit,
+  t,
 } from '@xiaodouya/shared';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useRouter } from 'expo-router';
@@ -59,13 +60,13 @@ export function DocumentScreen({ id }: { id: string }) {
     const enrolled = await LocalAuthentication.isEnrolledAsync().catch(() => false);
     if (!enrolled) {
       // 手机没设锁屏就无从验证，放行但不静默：提示用户这个开关现在不起作用。
-      toast('这台手机没有设置指纹或锁屏密码，证件夹无法上锁');
+      toast(t().info.noDeviceLock);
       setUnlocked(true);
       return;
     }
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: '验证后查看证件',
-      cancelLabel: '取消',
+      promptMessage: t().info.verifyToView,
+      cancelLabel: t().common.cancel,
     });
     if (result.success) setUnlocked(true);
     else setAuthFailed(true);
@@ -81,11 +82,11 @@ export function DocumentScreen({ id }: { id: string }) {
     <Pressable
       testID="doc-back"
       accessibilityRole="button"
-      accessibilityLabel="返回资料"
+      accessibilityLabel={t().info.backToInfo}
       hitSlop={12}
       onPress={() => router.back()}
     >
-      <Text style={s.back}>‹ 资料</Text>
+      <Text style={s.back}>{t().info.backInfoLink}</Text>
     </Pressable>
   );
 
@@ -93,7 +94,7 @@ export function DocumentScreen({ id }: { id: string }) {
     return (
       <View style={[s.root, { paddingTop: insets.top + 8, paddingHorizontal: spacing.page }]}>
         {back}
-        <Empty title="这份资料已经不在了" sub="可能被其他家人删除了。" />
+        <Empty title={t().info.docGone} sub={t().info.docGoneSub} />
       </View>
     );
   }
@@ -105,10 +106,10 @@ export function DocumentScreen({ id }: { id: string }) {
       >
         {back}
         <Empty
-          title="证件夹已上锁"
-          sub={authFailed ? '验证没有通过，可以再试一次。' : '验证指纹或锁屏密码后查看。'}
+          title={t().info.docsLocked}
+          sub={authFailed ? t().info.verifyFailed : t().info.verifyPrompt}
         />
-        <Button testID="doc-unlock" label="验证" onPress={() => void authenticate()} />
+        <Button testID="doc-unlock" label={t().info.verify} onPress={() => void authenticate()} />
       </View>
     );
   }
@@ -120,7 +121,7 @@ export function DocumentScreen({ id }: { id: string }) {
   const addFiles = async (files: PickedFile[]) => {
     if (files.length === 0) return;
     if (latest().files.length + files.length > MAX_MEDIA_PER_RECORD) {
-      throw new Error(`一份证件最多放 ${MAX_MEDIA_PER_RECORD} 个文件`);
+      throw new Error(t().info.docTooMany(MAX_MEDIA_PER_RECORD));
     }
     const { refs, failed } = await queueAllForUpload(app.uploads, files, {
       scope: 'document',
@@ -138,7 +139,7 @@ export function DocumentScreen({ id }: { id: string }) {
     const current = latest();
     const files = current.files.filter((f) => f.id !== file.id);
     await app.write('document', { ...current, files }, id);
-    toast(`已移除${file.name ?? '文件'}`, {
+    toast(t().info.removedFile(file.name ?? t().info.aFile), {
       undo: () => {
         const now = latest();
         void app.write('document', { ...now, files: [...now.files, file] }, id);
@@ -151,7 +152,7 @@ export function DocumentScreen({ id }: { id: string }) {
     try {
       await addFiles(await run());
     } catch (error) {
-      toast(error instanceof Error ? error.message : '添加失败，请再试一次');
+      toast(error instanceof Error ? error.message : t().info.addFailed);
     } finally {
       setPreparing(null);
     }
@@ -163,7 +164,7 @@ export function DocumentScreen({ id }: { id: string }) {
     ? showNumber
       ? data.number
       : `${data.number.slice(0, 3)}•••••${data.number.slice(-1)}`
-    : '未填写';
+    : t().info.notFilled;
 
   const openFile = (file: MediaRef) => {
     if (file.kind === 'pdf') {
@@ -194,9 +195,9 @@ export function DocumentScreen({ id }: { id: string }) {
 
         <ListCard>
           <Row
-            label="证件号码"
+            label={t().info.docNumber}
             testID="doc-number-toggle"
-            accessibilityLabel={showNumber ? '隐藏证件号码' : '显示证件号码'}
+            accessibilityLabel={showNumber ? t().info.hideDocNumber : t().info.showDocNumber}
             onPress={() => setShowNumber((v) => !v)}
             value={
               <Mono style={{ fontSize: 13 }} testID="doc-number-value">
@@ -205,43 +206,43 @@ export function DocumentScreen({ id }: { id: string }) {
             }
           />
           <Row
-            label="签发日期"
-            value={data.issuedOn || '未填写'}
+            label={t().info.issueDate}
+            value={data.issuedOn || t().info.notFilled}
             testID="doc-issued"
             onPress={() =>
-              sheet.open('编辑证件信息', () => <DocumentEditSheet id={id} data={data} />)
+              sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
             }
           />
           <Row
-            label="有效期至"
-            value={data.expiresOn || '未填写'}
+            label={t().info.expiry}
+            value={data.expiresOn || t().info.notFilled}
             last
             onPress={() =>
-              sheet.open('编辑证件信息', () => <DocumentEditSheet id={id} data={data} />)
+              sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
             }
           />
         </ListCard>
         <Pressable
           testID="doc-edit"
           accessibilityRole="button"
-          accessibilityLabel="编辑证件信息"
+          accessibilityLabel={t().info.editDoc}
           hitSlop={{ top: 8, bottom: 20 }}
           onPress={() =>
-            sheet.open('编辑证件信息', () => <DocumentEditSheet id={id} data={data} />)
+            sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
           }
           style={{ marginTop: -12 }}
         >
-          <Text style={{ fontSize: 12, color: colors.accent }}>编辑名称、号码和日期</Text>
+          <Text style={{ fontSize: 12, color: colors.accent }}>{t().info.editDocLink}</Text>
         </Pressable>
 
         <View style={{ gap: 8 }}>
           <View style={s.fileHead}>
-            <SectionTitle>文件</SectionTitle>
-            <Muted testID="doc-file-count">{data.files.length} 个</Muted>
+            <SectionTitle>{t().info.files}</SectionTitle>
+            <Muted testID="doc-file-count">{t().info.filesCount(data.files.length)}</Muted>
           </View>
           {data.files.length === 0 ? (
             <Text style={{ fontSize: 13, color: colors.muted, paddingVertical: 14 }}>
-              还没有文件。拍一张或上传 PDF。
+              {t().info.noFiles}
             </Text>
           ) : (
             <View style={s.files}>
@@ -250,7 +251,7 @@ export function DocumentScreen({ id }: { id: string }) {
                   <Pressable
                     testID={`doc-file-${file.name ?? file.id}`}
                     accessibilityRole="button"
-                    accessibilityLabel={file.name ?? '文件'}
+                    accessibilityLabel={file.name ?? t().info.aFile}
                     style={s.fileOpen}
                     onPress={() => openFile(file)}
                   >
@@ -266,7 +267,7 @@ export function DocumentScreen({ id }: { id: string }) {
                       )}
                     </View>
                     <Text numberOfLines={1} style={{ fontSize: 11, color: colors.ink }}>
-                      {file.name ?? '文件'}
+                      {file.name ?? t().info.aFile}
                     </Text>
                   </Pressable>
                   <View style={s.fileMeta}>
@@ -281,12 +282,14 @@ export function DocumentScreen({ id }: { id: string }) {
                       <Pressable
                         testID={`doc-file-remove-${file.name ?? file.id}`}
                         accessibilityRole="button"
-                        accessibilityLabel={`移除${file.name ?? '文件'}`}
+                        accessibilityLabel={t().info.removeFileNamed(file.name ?? t().info.aFile)}
                         // 左边紧挨着下载按钮（它的热区是 12），这边不能再往左扩，否则会点错。
                         hitSlop={{ top: 14, bottom: 14, left: 4, right: 14 }}
                         onPress={() => void removeFile(file)}
                       >
-                        <Text style={{ fontSize: 11, color: colors.muted }}>移除</Text>
+                        <Text style={{ fontSize: 11, color: colors.muted }}>
+                          {t().common.remove}
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -301,7 +304,7 @@ export function DocumentScreen({ id }: { id: string }) {
             testID="doc-scan"
             tone="outline"
             height={52}
-            label="拍照 / 扫描"
+            label={t().info.takePhoto}
             labelStyle={s.actionLabel}
             busy={preparing === 'scan'}
             disabled={preparing === 'upload'}
@@ -311,7 +314,7 @@ export function DocumentScreen({ id }: { id: string }) {
           <Button
             testID="doc-upload"
             height={52}
-            label="上传文件"
+            label={t().info.uploadFile}
             labelStyle={s.actionLabel}
             busy={preparing === 'upload'}
             disabled={preparing === 'scan'}
@@ -319,26 +322,24 @@ export function DocumentScreen({ id }: { id: string }) {
             onPress={() => void guard('upload', pickDocument)()}
           />
         </View>
-        <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-          支持 JPG、PNG、HEIC、PDF。存放在私有目录，不会出现在回忆里。
-        </Muted>
+        <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.fileTypesNote}</Muted>
         <Button
           testID="doc-delete"
           tone="ghost"
           height={44}
-          label="删除这份资料"
+          label={t().info.deleteDoc}
           onPress={() =>
-            sheet.open(`删除${data.name}？`, () => (
+            sheet.open(t().info.deleteNamed(data.name), () => (
               <>
-                <Muted style={{ fontSize: 13 }}>删除后，全家都看不到这份资料了。</Muted>
+                <Muted style={{ fontSize: 13 }}>{t().info.deleteDocWarn}</Muted>
                 <Button
                   testID="doc-delete-confirm"
-                  label="确定删除"
+                  label={t().info.confirmDelete}
                   onPress={() => {
                     void app.remove(id);
                     sheet.close();
                     router.back();
-                    toast(`已删除${data.name}`, {
+                    toast(t().info.deletedNamed(data.name), {
                       undo: () => void app.write('document', data, id),
                     });
                   }}
@@ -366,21 +367,21 @@ function DocumentEditSheet({ id, data }: { id: string; data: DocumentData }) {
         testID="doc-edit-name"
         value={name}
         onChangeText={setName}
-        placeholder="证件或资料名称"
+        placeholder={t().info.docName}
         maxLength={100}
       />
       <SoftInput
         testID="doc-edit-subtitle"
         value={subtitle}
         onChangeText={setSubtitle}
-        placeholder="说明，比如：ICA 电子版"
+        placeholder={t().info.descPlaceholder}
         maxLength={100}
       />
       <SoftInput
         testID="doc-edit-number"
         value={number}
         onChangeText={setNumber}
-        placeholder="证件号码"
+        placeholder={t().info.docNumber}
         autoCapitalize="characters"
         autoCorrect={false}
         maxLength={100}
@@ -390,19 +391,19 @@ function DocumentEditSheet({ id, data }: { id: string; data: DocumentData }) {
         testID="doc-edit-issued"
         value={issued}
         onChangeText={setIssued}
-        placeholder="签发日期，比如 2026.10.06"
+        placeholder={t().info.issueDatePlaceholder}
         maxLength={40}
       />
       <SoftInput
         testID="doc-edit-expires"
         value={expires}
         onChangeText={setExpires}
-        placeholder="有效期至（可选）"
+        placeholder={t().info.expiryPlaceholder}
         maxLength={40}
       />
       <Button
         testID="doc-edit-save"
-        label="保存"
+        label={t().common.save}
         disabled={!name.trim()}
         onPress={() => {
           const latest = app.store.getSnapshot().documents.find((d) => d.id === id)?.data ?? data;

@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useApp } from '../lib/app';
@@ -13,17 +14,13 @@ export function SyncingPlaceholder() {
     <View style={s.root} testID="syncing-placeholder">
       {offline ? null : <ActivityIndicator color={colors.accent} />}
       <Empty
-        title={offline ? '连不上服务器' : '正在同步家人的记录'}
-        sub={
-          offline
-            ? '第一次使用这台手机需要联网。请检查网络后再试。'
-            : '第一次同步需要一点时间。如果一直没有内容，请检查网络。'
-        }
+        title={offline ? t().ui.cantReachServer : t().ui.syncingFamily}
+        sub={offline ? t().ui.firstUseNeedsNetwork : t().ui.firstSyncTakesTime}
       />
       {offline ? (
         <Button
           testID="sync-retry"
-          label="再试一次"
+          label={t().ui.tryAgain}
           busy={retrying}
           onPress={() => {
             setRetrying(true);

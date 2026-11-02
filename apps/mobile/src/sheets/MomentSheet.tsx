@@ -6,6 +6,7 @@ import {
   type MomentData,
   mergeEdit,
   mergeMediaEdit,
+  t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -22,7 +23,14 @@ import { RecordTimeField, useRecordTime } from '../ui/TimeField';
 
 export type MomentKind = 'moment' | 'letter';
 
-const NOW_ONLY = [{ minutes: 0, label: '现在' }] as const;
+const NOW_ONLY = [
+  {
+    minutes: 0,
+    get label() {
+      return t().recall.now;
+    },
+  },
+] as const;
 
 export function MomentSheet({
   initialKind = 'moment',
@@ -65,8 +73,8 @@ export function MomentSheet({
   const isLetter = kind === 'letter';
   const { setTitle: setSheetTitle } = sheet;
   useEffect(() => {
-    if (editing) setSheetTitle(isLetter ? '修改这封信' : '修改这一刻');
-    else setSheetTitle(isLetter ? '写给宝宝的信' : '记下这一刻');
+    if (editing) setSheetTitle(isLetter ? t().recall.editLetter : t().recall.editMoment);
+    else setSheetTitle(isLetter ? t().recall.letterToBaby : t().ui.recordMoment);
   }, [editing, isLetter, setSheetTitle]);
   const hasContent = isLetter
     ? Boolean(title.trim() || text.trim())
@@ -81,12 +89,10 @@ export function MomentSheet({
       const merged = mergePicked(files, picked, kept.length, MAX_MEDIA_PER_RECORD);
       setFiles(merged.files);
       if (merged.dropped > 0) {
-        toast(
-          `一条回忆最多放 ${MAX_MEDIA_PER_RECORD} 个文件，这次有 ${merged.dropped} 个没放进来，可以再记一条。`,
-        );
+        toast(t().recall.tooManyDropped(MAX_MEDIA_PER_RECORD, merged.dropped));
       }
     } catch (error) {
-      toast(error instanceof Error ? error.message : '打不开相册');
+      toast(error instanceof Error ? error.message : t().recall.cantOpenGallery);
     } finally {
       setPicking(false);
     }
@@ -100,7 +106,7 @@ export function MomentSheet({
     }
     const started = await recorder.start();
     if (!started) {
-      Alert.alert('没有麦克风权限', '可以在系统设置里给小豆芽打开麦克风权限。');
+      Alert.alert(t().recall.noMic, t().recall.micSettings);
     }
   };
 
@@ -113,23 +119,23 @@ export function MomentSheet({
       }
       const at = time.resolve();
       if (!isLetter && kept.length + files.length > MAX_MEDIA_PER_RECORD) {
-        toast(`一条回忆最多放 ${MAX_MEDIA_PER_RECORD} 个文件，可以再记一条。`);
+        toast(t().recall.tooMany(MAX_MEDIA_PER_RECORD));
         return;
       }
       if (isLetter) {
-        const fields = { title: title.trim() || '无题', text: text.trim(), at };
+        const fields = { title: title.trim() || t().ui.untitled, text: text.trim(), at };
         if (editLetter) {
           const { id, data } = editLetter;
           // 弹层可能开了一会儿，只改用户动过的字段，不要盖掉家人刚改的内容。
           const latest = app.store.getSnapshot().letters.find((l) => l.id === id)?.data ?? data;
           await app.write('letter', mergeEdit(data, latest, fields), id);
           sheet.close();
-          toast('已保存', { undo: () => void app.write('letter', latest, id) });
+          toast(t().records.saved, { undo: () => void app.write('letter', latest, id) });
           return;
         }
         await app.write('letter', { ...fields, byName: app.label });
         sheet.close();
-        toast('信已保存');
+        toast(t().recall.letterSaved);
       } else {
         // 先进上传队列再写记录，文件传不上去也不会丢：队列会一直重试，记录里已经有引用。
         const { refs, failed } = await queueAllForUpload(app.uploads, files, {
@@ -141,7 +147,7 @@ export function MomentSheet({
           toast(failed[0]);
           return;
         }
-        const failedNote = failed[0] ? `有 ${failed.length} 个文件没有添加：${failed[0]}` : null;
+        const failedNote = failed[0] ? t().recall.filesFailed(failed.length, failed[0]) : null;
         const fields = { title: title.trim(), text: text.trim(), at, milestone };
         if (editMoment) {
           const { id, data } = editMoment;
@@ -150,18 +156,20 @@ export function MomentSheet({
           const media = mergeMediaEdit(data.media, latest.media, [...kept, ...refs]);
           await app.write('moment', mergeEdit(data, latest, { ...fields, media }), id);
           sheet.close();
-          toast(failedNote ?? '已保存', { undo: () => void app.write('moment', latest, id) });
+          toast(failedNote ?? t().records.saved, {
+            undo: () => void app.write('moment', latest, id),
+          });
           return;
         }
         await app.write('moment', { ...fields, media: refs, byName: app.label });
         sheet.close();
         if (failedNote) toast(failedNote);
-        else if (refs.length === 0) toast('已保存到回忆');
+        else if (refs.length === 0) toast(t().recall.savedToMemories);
       }
       onSaved?.(kind);
       router.navigate('/recall');
     } catch (error) {
-      toast(error instanceof Error ? error.message : '保存失败，请再试一次');
+      toast(error instanceof Error ? error.message : t().recall.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -173,14 +181,14 @@ export function MomentSheet({
         <View style={s.kinds}>
           <Chip
             testID="kind-moment"
-            label="这一刻"
+            label={t().recall.thisMoment}
             selected={kind === 'moment'}
             onPress={() => setKind('moment')}
             style={s.kindChip}
           />
           <Chip
             testID="kind-letter"
-            label="写给宝宝的信"
+            label={t().recall.letterToBaby}
             selected={kind === 'letter'}
             onPress={() => setKind('letter')}
             style={s.kindChip}
@@ -193,19 +201,23 @@ export function MomentSheet({
             <Pressable
               testID="pick-media"
               accessibilityRole="button"
-              accessibilityLabel="选择照片或视频"
+              accessibilityLabel={t().recall.pickMedia}
               disabled={picking}
               onPress={() => void pick()}
               onLongPress={IS_E2E ? () => void pick({ e2eBulk: true }) : undefined}
               style={s.picker}
             >
-              <Text style={s.pickerLabel}>{picking ? '正在打开…' : '照片 / 视频'}</Text>
-              <Text style={s.pickerSub}>从相册选，可多选</Text>
+              <Text style={s.pickerLabel}>
+                {picking ? t().recall.opening : t().recall.photoVideo}
+              </Text>
+              <Text style={s.pickerSub}>{t().recall.fromGallery}</Text>
             </Pressable>
             <Pressable
               testID="record-audio"
               accessibilityRole="button"
-              accessibilityLabel={recorder.recording ? '停止录音' : '开始录音'}
+              accessibilityLabel={
+                recorder.recording ? t().recall.stopRecording : t().recall.startRecording
+              }
               onPress={() => void toggleRecord()}
               style={[
                 s.picker,
@@ -219,14 +231,14 @@ export function MomentSheet({
               ]}
             >
               <Text style={[s.pickerLabel, recorder.recording ? { color: colors.white } : null]}>
-                {recorder.recording ? '● 录音中' : '录音'}
+                {recorder.recording ? t().recall.recordingNow : t().ui.recording}
               </Text>
               {recorder.recording ? (
                 <Mono style={{ fontSize: 10, color: colors.white, opacity: 0.8 }}>
-                  {formatMediaDuration(recorder.elapsedMs)} · 点击停止
+                  {t().recall.tapToStop(formatMediaDuration(recorder.elapsedMs))}
                 </Mono>
               ) : (
-                <Text style={s.pickerSub}>哭声、咿呀、你说的话</Text>
+                <Text style={s.pickerSub}>{t().recall.recordHint}</Text>
               )}
             </Pressable>
           </View>
@@ -258,7 +270,9 @@ export function MomentSheet({
         testID="moment-title"
         value={title}
         onChangeText={setTitle}
-        placeholder={isLetter ? '信的标题，比如：百天快乐' : '这一刻叫什么？比如：第一次笑出声'}
+        placeholder={
+          isLetter ? t().recall.letterTitlePlaceholder : t().recall.momentTitlePlaceholder
+        }
         maxLength={100}
         style={{ fontFamily: fonts.serifMedium, fontSize: 15 }}
       />
@@ -267,7 +281,7 @@ export function MomentSheet({
         maxLength={20000}
         value={text}
         onChangeText={setText}
-        placeholder={isLetter ? '想对长大后的宝宝说的话…' : '写下当时的样子，以后宝宝会想看的。'}
+        placeholder={isLetter ? t().recall.letterPlaceholder : t().recall.momentPlaceholder}
         multiline
         numberOfLines={4}
         textAlignVertical="top"
@@ -278,7 +292,7 @@ export function MomentSheet({
         <View>
           <Toggle
             testID="moment-milestone"
-            label="标为里程碑"
+            label={t().recall.markMilestone}
             value={milestone}
             onChange={setMilestone}
             last
@@ -286,12 +300,12 @@ export function MomentSheet({
         </View>
       )}
       {!hasContent ? (
-        <Muted style={{ fontSize: 11, marginBottom: -8 }}>写点什么，或者选一张照片。</Muted>
+        <Muted style={{ fontSize: 11, marginBottom: -8 }}>{t().recall.needContent}</Muted>
       ) : null}
       <Button
         testID="moment-save"
         tone="dark"
-        label="保存"
+        label={t().common.save}
         disabled={!canSave}
         busy={saving}
         onPress={() => void save()}

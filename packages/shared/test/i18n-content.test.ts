@@ -155,8 +155,9 @@ describe('英文目录', () => {
         return;
       }
       if (typeof text === 'string') out.push([path, text]);
-    } else if (Array.isArray(node)) node.forEach((v, i) => leaves(v, `${path}[${i}]`, out));
-    else if (node && typeof node === 'object') {
+    } else if (Array.isArray(node)) {
+      for (const [i, v] of node.entries()) leaves(v, `${path}[${i}]`, out);
+    } else if (node && typeof node === 'object') {
       for (const [key, value] of Object.entries(node)) leaves(value, `${path}.${key}`, out);
     }
   }

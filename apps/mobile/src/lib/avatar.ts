@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import type { AppApi } from './app';
 import { type PickedFile, queueForUpload } from './media';
@@ -17,6 +18,6 @@ export async function saveAvatar(
   });
   // 选图、编辑都可能花了一会儿，用最新的档案，不要盖掉家人刚改的内容。
   const latest = app.store.getSnapshot().baby;
-  if (!latest) throw new Error('宝宝档案还没有同步好，请稍后再试');
+  if (!latest) throw new Error(t().ui.babyNotSynced);
   await app.write('baby', { ...latest.data, avatar }, latest.id);
 }

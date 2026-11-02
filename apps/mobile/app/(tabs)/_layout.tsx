@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 import { Redirect, Tabs } from 'expo-router';
 import { useApp } from '../../src/lib/app';
 import { PendingPickRecovery } from '../../src/lib/pendingPick';
@@ -16,10 +17,16 @@ export default function TabsLayout() {
         tabBar={(props) => <TabBar {...props} />}
         screenOptions={{ headerShown: false, sceneStyle: { backgroundColor: colors.paper } }}
       >
-        <Tabs.Screen name="today" options={{ title: '今天', href: viewer ? null : undefined }} />
-        <Tabs.Screen name="recall" options={{ title: '回忆' }} />
-        <Tabs.Screen name="info" options={{ title: '资料', href: viewer ? null : undefined }} />
-        <Tabs.Screen name="family" options={{ title: '家人' }} />
+        <Tabs.Screen
+          name="today"
+          options={{ title: t().ui.tabToday, href: viewer ? null : undefined }}
+        />
+        <Tabs.Screen name="recall" options={{ title: t().ui.tabRecall }} />
+        <Tabs.Screen
+          name="info"
+          options={{ title: t().ui.tabInfo, href: viewer ? null : undefined }}
+        />
+        <Tabs.Screen name="family" options={{ title: t().ui.tabFamily }} />
       </Tabs>
       <StatusBarScrim />
       {viewer ? null : <PendingPickRecovery />}

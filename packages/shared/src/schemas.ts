@@ -493,6 +493,8 @@ export interface StorageTestResult {
   ok: boolean;
   latencyMs: number;
   message: string;
+  /** 新版 App 按它显示当前语言，v0.1.0 显示 message。 */
+  reason?: string;
 }
 
 export interface StorageUsage {
@@ -525,5 +527,10 @@ export interface PublicConfig {
 }
 
 export interface ApiError {
-  error: { code: string; message: string };
+  error: {
+    code: string;
+    /** 一直是中文：v0.1.0 直接显示它。新版 App 按 `code` 和 `params` 显示当前语言（见 apiErrorMessage）。 */
+    message: string;
+    params?: Record<string, string | number>;
+  };
 }
