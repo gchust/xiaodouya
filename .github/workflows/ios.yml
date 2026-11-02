@@ -1,8 +1,33 @@
 name: iOS
 
+# macOS Runner 跑一轮一个多小时，只在会影响 App 的改动上跑。不要把它设成合并前必须通过的检查：
+# 只改文档的 PR 不会触发它，必需检查会一直等下去。
 on:
   push:
-    branches: [feat/ios-build]
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "apps/server/**"
+      - "packages/shared/**"
+      - "e2e/**"
+      - "deploy/dev/**"
+      - "scripts/ios-*"
+      - "scripts/install-maestro.sh"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "apps/server/**"
+      - "packages/shared/**"
+      - "e2e/**"
+      - "deploy/dev/**"
+      - "scripts/ios-*"
+      - "scripts/install-maestro.sh"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - ".github/workflows/ios.yml"
 
 concurrency:
   group: ios-${{ github.ref }}
