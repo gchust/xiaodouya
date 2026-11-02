@@ -23,6 +23,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: upload-card }
     timeout: 60000
+# “文件都上传好了”的 Toast 在屏幕下方，不等它消失可能盖住“查看原图”。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
 - tapOn:
     id: moment-cover-.*
     index: 0

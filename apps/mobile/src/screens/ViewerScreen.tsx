@@ -88,7 +88,7 @@ export function ViewerScreen() {
   const [zoomed, setZoomed] = useState(false);
   const list = useRef<FlatList<MediaRef>>(null);
 
-  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
   };
   const current = items[index];
@@ -104,9 +104,15 @@ export function ViewerScreen() {
       scrollEnabled={!zoomed}
       initialScrollIndex={initial}
       getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+      // 预览不缩小解码，一张约 12 MB。默认前后各留 10 屏，翻过的 20 张都在内存里。
+      initialNumToRender={1}
+      maxToRenderPerBatch={1}
+      windowSize={3}
       keyExtractor={(item) => item.id}
       showsHorizontalScrollIndicator={false}
-      onMomentumScrollEnd={onScrollEnd}
+      // 跟着实际位置走，不等惯性结束：页码和“查看原图”要和眼前这张对得上。
+      onScroll={onScroll}
+      scrollEventThrottle={32}
       renderItem={({ item, index: i }) => (
         <View style={{ width, flex: 1 }}>
           {item.kind === 'video' ? (
