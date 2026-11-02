@@ -100,7 +100,7 @@ export const ui: Catalog['ui'] = {
   uploadsAllDoneSub: 'Your photos and videos are saved, and family can see them too.',
   uploadsNothing: 'Nothing to upload right now',
   uploadsNothingSub: 'Once you add photos or videos, their progress shows up here.',
-  openUploads: 'See upload details',
+  openUploads: (status) => `See upload details: ${status}`,
   uploadOf: (sent, total) => `${sent} / ${total}`,
   uploadStatusUploading: 'Uploading',
   uploadStatusQueued: 'Queued',

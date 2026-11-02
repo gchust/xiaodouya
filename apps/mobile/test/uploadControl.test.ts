@@ -1051,9 +1051,7 @@ describe('取消后从记录里去掉引用', () => {
     const b = randomUUID();
     const d = deps(
       records({
-        moments: [
-          moment('m1', [ref(a), ref(b)], { text: '第一次笑', future: 'keep' }),
-        ] as never,
+        moments: [moment('m1', [ref(a), ref(b)], { text: '第一次笑', future: 'keep' })] as never,
       }),
     );
     await cancelUploads([a], d.value);
@@ -1066,7 +1064,16 @@ describe('取消后从记录里去掉引用', () => {
 
   it('一条回忆取消 100 个文件只写一次', async () => {
     const ids = Array.from({ length: 100 }, () => randomUUID());
-    const d = deps(records({ moments: [moment('m1', ids.map((id) => ref(id)))] as never }));
+    const d = deps(
+      records({
+        moments: [
+          moment(
+            'm1',
+            ids.map((id) => ref(id)),
+          ),
+        ] as never,
+      }),
+    );
     await cancelUploads(ids, d.value);
     expect(d.writes).toHaveLength(1);
   });

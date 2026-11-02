@@ -562,7 +562,7 @@ export class UploadQueue {
     multipart: MultipartTransport,
     signal: AbortSignal,
   ): Promise<'done' | 'paused' | 'fallback'> {
-    const useSinglePut = async () => {
+    const switchToSinglePut = async () => {
       job.singlePut = true;
       job.uploadId = undefined;
       job.partSize = undefined;
@@ -577,7 +577,7 @@ export class UploadQueue {
         return await this.sendParts(job, multipart, signal);
       } catch (error) {
         if (!(error instanceof UploadHttpError)) throw error;
-        if (error.code === 'multipart_unsupported') return useSinglePut();
+        if (error.code === 'multipart_unsupported') return switchToSinglePut();
         if (error.code === 'upload_gone' && restart === 0) {
           job.uploadId = undefined;
           job.partSize = undefined;
@@ -588,7 +588,7 @@ export class UploadQueue {
           continue;
         }
         // 旧服务端没有这些接口（Hono 的 notFound），也可能是别的网关返回的 404。服务端回滚后也走到这里。
-        if (error.status === 404 && error.code !== 'upload_gone') return useSinglePut();
+        if (error.status === 404 && error.code !== 'upload_gone') return switchToSinglePut();
         throw error;
       }
     }

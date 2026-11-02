@@ -120,7 +120,9 @@ try {
     const storage = await storageById(sql, config, '', null);
     if (!storage) throw new Error('没有配置 S3_*');
     const result = await checkMultipartUpload(storage, config.bindUploadSize);
-    console.log(result.ok ? result.message : `不通过，请设置 S3_MULTIPART_ENABLED=false：${result.message}`);
+    console.log(
+      result.ok ? result.message : `不通过，请设置 S3_MULTIPART_ENABLED=false：${result.message}`,
+    );
     ok = result.ok;
   } else {
     ok = await resetPassword(sql, email!);

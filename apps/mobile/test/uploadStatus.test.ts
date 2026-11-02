@@ -1,3 +1,4 @@
+import { setLocale } from '@xiaodouya/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { UploadCounts, UploadProgress } from '../src/data/uploadQueue';
 import {
@@ -7,7 +8,6 @@ import {
   uploadCountsText,
   uploadSpeedText,
 } from '../src/lib/uploadStatus';
-import { setLocale } from '@xiaodouya/shared';
 
 const counts = (over: Partial<UploadCounts> = {}): UploadCounts => ({
   image: 0,

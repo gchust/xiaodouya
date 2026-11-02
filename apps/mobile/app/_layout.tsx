@@ -45,6 +45,7 @@ export default function RootLayout() {
                 <Stack.Screen name="nutrition" />
                 <Stack.Screen name="doc/[id]" />
                 <Stack.Screen name="records" />
+                <Stack.Screen name="uploads" />
                 <Stack.Screen
                   name="viewer"
                   options={{ animation: 'fade', contentStyle: { backgroundColor: '#000' } }}

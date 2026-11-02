@@ -209,6 +209,15 @@ export function FamilyScreen() {
       <View style={s.section}>
         <SectionTitle>{t().family.settings}</SectionTitle>
         <ListCard>
+          {pendingFiles > 0 ? (
+            // 卡片可以关掉，关掉之后这里还能找到上传详情。
+            <NavRow
+              testID="open-uploads"
+              label={t().ui.uploadsTitle}
+              sub={t().family.pendingFiles(pendingFiles).trim()}
+              onPress={() => router.push('/uploads')}
+            />
+          ) : null}
           {showStorage ? (
             <NavRow
               testID="open-storage"

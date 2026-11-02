@@ -56,6 +56,11 @@ need(
   rows.some((r) => r.scope === 'memory' && r.variant === 'thumb'),
   '没有回忆缩略图',
 );
+// 流程 03a、03b 的样例里有超过分片阈值（16 MB）的图。服务端的完成接口核对过每一片，这里再下载核对大小。
+need(
+  rows.some((r) => r.scope === 'memory' && Number(r.size) > 16 * 1024 * 1024),
+  '没有超过分片阈值的文件，分片上传没有被走到',
+);
 need(
   rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
   '没有证件 PDF',

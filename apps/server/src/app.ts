@@ -28,21 +28,20 @@ import {
   type Locale,
   LoginRequest,
   localeFromAcceptLanguage,
+  MediaUrlsRequest,
+  type MediaUrlsResponse,
+  type MeResponse,
+  type MultipartPartsResponse,
   MultipartPartUrlsRequest,
   type MultipartPartUrlsResponse,
-  type MultipartPartsResponse,
   MultipartRef,
   MultipartStartRequest,
   type MultipartStartResponse,
+  mediaCategory,
   missingParts,
   multipartPartBytes,
   multipartPartCount,
   multipartPartSize,
-  validParts,
-  MediaUrlsRequest,
-  type MediaUrlsResponse,
-  type MeResponse,
-  mediaCategory,
   type PendingInvite,
   Prefs,
   type PublicConfig,
@@ -63,6 +62,7 @@ import {
   UploadUrlRequest,
   type UploadUrlResponse,
   VerifyEmailRequest,
+  validParts,
 } from '@xiaodouya/shared';
 import { type Context, Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -1477,7 +1477,8 @@ export function createApp({
     const { variant, uploadId } = await parseBody(c, MultipartRef);
     const row = await multipartRow(m, id, variant);
     if (!row) return uploadGone();
-    if (row.status === 'ready') return c.json<MultipartPartsResponse>({ parts: [], complete: true });
+    if (row.status === 'ready')
+      return c.json<MultipartPartsResponse>({ parts: [], complete: true });
     if (row.upload_id !== uploadId) return uploadGone();
     const storage = await reachableStorage(m.familyId, row.storage_config_id);
     try {

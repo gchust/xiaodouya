@@ -373,7 +373,9 @@ export async function checkMultipartUpload(
     await completeMultipart(s, key, uploadId, parts);
     uploadId = null;
     steps.push('完成');
-    const read = await client(s, s.endpoint).send(new GetObjectCommand({ Bucket: s.bucket, Key: key }));
+    const read = await client(s, s.endpoint).send(
+      new GetObjectCommand({ Bucket: s.bucket, Key: key }),
+    );
     const downloaded = await read.Body?.transformToByteArray();
     if (!downloaded || !sameBytes(downloaded, file)) {
       return { ok: false, message: '下载回来的内容和上传的不一致' };
@@ -383,7 +385,8 @@ export async function checkMultipartUpload(
     abortId = await createMultipart(s, abortKey, mime);
     const abortUrl = await presignPart(s, abortKey, abortId, 1, partSize, 300, bindSize);
     const aborted = await put(abortUrl, file.subarray(0, partSize));
-    if (aborted < 200 || aborted >= 300) return { ok: false, message: `中止前的上传返回 ${aborted}` };
+    if (aborted < 200 || aborted >= 300)
+      return { ok: false, message: `中止前的上传返回 ${aborted}` };
     await abortMultipart(s, abortKey, abortId);
     const stillThere = await listMultipartParts(s, abortKey, abortId).then(
       () => true,

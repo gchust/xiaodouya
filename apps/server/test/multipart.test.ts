@@ -254,7 +254,12 @@ describe('完整的分片上传', () => {
     await putParts(admin.token, id, uploadId, partSize, [1, 2, 3]);
     const storage = await storageFor(family.id);
     const key = (await mediaRow(id))?.object_key ?? '';
-    await completeMultipart(storage, key, uploadId, await listMultipartParts(storage, key, uploadId));
+    await completeMultipart(
+      storage,
+      key,
+      uploadId,
+      await listMultipartParts(storage, key, uploadId),
+    );
 
     const listed = await parts(admin.token, id, uploadId);
     expect(listed.json.complete).toBe(true);
@@ -355,9 +360,7 @@ describe('配额', () => {
   it('并行开始不会一起超出', async () => {
     withQuota(SIZE + 100);
     const { admin } = await newFamily(app);
-    const results = await Promise.all(
-      Array.from({ length: 4 }, () => start(admin.token)),
-    );
+    const results = await Promise.all(Array.from({ length: 4 }, () => start(admin.token)));
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
     expect(results.filter((r) => r.status === 413)).toHaveLength(3);
   });

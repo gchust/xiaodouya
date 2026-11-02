@@ -1,0 +1,72 @@
+# 上传详情和取消：选多个文件，点开卡片看到每个文件，取消一个，其余传完，确认取消的那个不在回忆里。
+# 样例里有一张超过分片阈值的图，所以这条流程也走真实的分片上传（verify-uploads.mjs 会确认它传上去了）。
+# 用 60 张样例是为了时序稳定：队列按顺序一个一个传，排在后面的来得及点开和取消。
+# 没覆盖：断点续传要断网或杀 App，这里做不到，靠 uploadControl.test.ts 和手动验证，见 PROGRESS F-106。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- tapOn: { id: recall-fab }
+- longPressOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 30000
+- tapOn: { id: moment-title }
+- inputText: Control ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Control ${RUN_ID}
+    timeout: 10000
+- assertVisible: 共 60 项
+- extendedWaitUntil:
+    visible: { id: upload-card }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-03b-card
+- tapOn: { id: upload-card }
+- extendedWaitUntil:
+    visible: { id: uploads-screen }
+    timeout: 10000
+- assertVisible: { id: uploads-summary }
+- assertVisible: { id: "upload-item-.*" }
+- assertVisible: Control ${RUN_ID}
+- takeScreenshot: .artifacts/e2e-03b-details
+# 排在后面的那个还没开始传。
+- tapOn:
+    id: "upload-cancel-.*"
+    index: 3
+- extendedWaitUntil:
+    visible: { id: upload-cancel-confirm }
+    timeout: 5000
+- assertVisible: 取消后要重新选择才能再传。已经写下的文字不受影响，家人那边也不会再显示这个文件。
+- takeScreenshot: .artifacts/e2e-03b-confirm
+- tapOn: { id: upload-cancel-confirm }
+- extendedWaitUntil:
+    notVisible: { id: upload-cancel-confirm }
+    timeout: 5000
+# 其余的继续传完，页面要说清楚传完了，不能一片空白。
+- extendedWaitUntil:
+    visible: { id: uploads-empty }
+    timeout: 240000
+- assertVisible: 全部传完了
+- takeScreenshot: .artifacts/e2e-03b-all-done
+- tapOn: { id: uploads-back }
+- extendedWaitUntil:
+    visible: Control ${RUN_ID}
+    timeout: 10000
+- assertVisible: 共 59 项
+- takeScreenshot: .artifacts/e2e-03b-after-cancel
+# 删掉，不留给后面的流程：它们默认时间线最上面是流程 03 的回忆。
+- tapOn:
+    id: moment-more-.*
+    index: 0
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Control ${RUN_ID}
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
