@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 防回退：apps/mobile 的代码里不能再出现中文字符串字面量（注释不算），用户可见文案走
+// 防回退：apps/mobile 和 apps/share-web 的代码里不能再出现中文字符串字面量（注释不算），用户可见文案走
 // packages/shared/src/i18n 的目录。也不能在模块顶层调用 t()：那时语言还没定，之后也不会变。
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ts = createRequire(path.join(root, 'package.json'))('typescript');
 
-const ROOTS = ['apps/mobile/src', 'apps/mobile/app'];
+const ROOTS = ['apps/mobile/src', 'apps/mobile/app', 'apps/share-web/src'];
 
 /** 明确豁免。每个文件写清楚为什么，不要因为迁移麻烦就加进来。 */
 const EXEMPT = new Set([

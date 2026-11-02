@@ -32,3 +32,6 @@ supabase/.branches/
 
 # Agent 的 worktree
 .claude/worktrees/
+
+# wrangler dev 的本地状态
+.wrangler/
