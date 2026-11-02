@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 export type RecordTimeProblem = 'future' | 'end-future' | 'end-before-start';
 
 export interface RecordTimeCheck {
@@ -34,10 +35,10 @@ export function checkRecordTime(input: {
     error: { code, message },
     notice: null,
   });
-  if (at > now) return fail('future', '这个时间还没到，选现在或更早的时间。');
+  if (at > now) return fail('future', t().domain.recordTime.future);
   if (endAt !== undefined) {
-    if (endAt > now) return fail('end-future', '醒来的时间还没到，选现在或更早的时间。');
-    if (endAt < at) return fail('end-before-start', '醒来的时间不能早于入睡的时间。');
+    if (endAt > now) return fail('end-future', t().domain.recordTime.endFuture);
+    if (endAt < at) return fail('end-before-start', t().domain.recordTime.endBeforeStart);
   }
   const beforeBirth =
     birthAt !== undefined && (dateOnly ? startOfDay(at) < startOfDay(birthAt) : at < birthAt);
@@ -46,7 +47,7 @@ export function checkRecordTime(input: {
     error: null,
     notice:
       subject === 'memory'
-        ? '这是出生前的日子，会按“出生前”显示。'
-        : '这个时间比出生时间还早，确认没有选错再保存。',
+        ? t().domain.recordTime.memoryBeforeBirth
+        : t().domain.recordTime.eventBeforeBirth,
   };
 }

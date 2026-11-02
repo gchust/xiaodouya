@@ -1,3 +1,4 @@
+import { getLocale, type Localized, localized } from '../i18n';
 import type { EventData } from '../schemas';
 import { ageParts } from './age';
 
@@ -13,7 +14,13 @@ export interface VaccineDose {
   id: string;
   /** 地区内的 id（`bcg`），用来生成 testID。 */
   localId: string;
+  /** 界面上显示的名字，跟随当前语言。 */
   name: string;
+  /**
+   * 写进接种记录的名字。记录里存的是数据，不跟着写的人的语言变：v0.1.0 和其他家人读的都是它，
+   * 内置剂次永远写中文原名，显示时再按 id 换成当前语言（见 vaccineRecordName）。
+   */
+  recordName: string;
   /** 建议接种月龄；是一段时间时取最早的月龄。 */
   months: number;
   ageLabel: string;
@@ -25,22 +32,47 @@ export interface VaccineDose {
   plannedAt?: number;
 }
 
-export type VaccineDoseInput = Omit<VaccineDose, 'id' | 'localId' | 'kind'> & {
+export type VaccineDoseInput = Omit<
+  VaccineDose,
+  'id' | 'localId' | 'kind' | 'name' | 'recordName' | 'ageLabel' | 'note'
+> & {
   id: string;
   kind?: VaccineKind;
+  name: Localized;
+  ageLabel: Localized;
+  note?: Localized;
 };
+
+/** 所有内置剂次的名字，给 vaccineRecordName 查。换了地区之后，旧的记录也要能显示成当前语言。 */
+const doseNames = new Map<string, Localized>();
 
 /** 地区文件用它声明疫苗表：写地区内的 id，这里统一加前缀。 */
 export function defineSchedule(
   namespace: string,
   doses: readonly VaccineDoseInput[],
 ): readonly VaccineDose[] {
-  return doses.map(({ id, kind, ...dose }) => ({
-    ...dose,
-    id: `${namespace}:${id}`,
-    localId: id,
-    kind: kind ?? 'routine',
-  }));
+  return doses.map(({ id, kind, name, ...dose }) => {
+    const fullId = `${namespace}:${id}`;
+    doseNames.set(fullId, name);
+    return localized({
+      ...dose,
+      name,
+      recordName: name.zh,
+      id: fullId,
+      localId: id,
+      kind: kind ?? 'routine',
+    });
+  });
+}
+
+/**
+ * 接种记录显示成什么名字。自己填的和不认识的原样显示，内置剂次按当前语言：
+ * 记录里存的是中文原名，中文界面就显示记录里的字，不改变已有内容。
+ */
+export function vaccineRecordName(vaccineId: string, stored: string): string {
+  const locale = getLocale();
+  if (locale === 'zh') return stored;
+  return doseNames.get(normalizeVaccineId(vaccineId))?.[locale] ?? stored;
 }
 
 const CUSTOM_PREFIX = 'custom:';
@@ -162,7 +194,9 @@ export function otherVaccineRecords(
   for (const { id, data } of entries) {
     if (data.type !== 'vaccine') continue;
     const vaccineId = normalizeVaccineId(data.vaccineId);
-    if (!inSchedule.has(vaccineId)) records.push({ id, vaccineId, name: data.name, at: data.at });
+    if (!inSchedule.has(vaccineId)) {
+      records.push({ id, vaccineId, name: vaccineRecordName(vaccineId, data.name), at: data.at });
+    }
   }
   return records.sort((a, b) => b.at - a.at);
 }

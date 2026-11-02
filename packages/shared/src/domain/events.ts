@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { EventData } from '../schemas';
 import { formatDuration } from './age';
 import { FORGOTTEN_SLEEP_MS } from './feeding';
@@ -9,6 +10,7 @@ import {
   metricUnits,
   type Units,
 } from './units';
+import { vaccineRecordName } from './vaccines';
 
 export const eventColors: Record<EventData['type'], string> = {
   feed: '#c0714f',
@@ -22,30 +24,32 @@ export const eventColors: Record<EventData['type'], string> = {
   vaccine: '#6f9a6a',
 };
 
-const diaperLabels = { wee: '尿尿', poo: '便便', both: '尿尿 + 便便' } as const;
-
 export function describeEvent(event: EventData, now: number, units: Units = metricUnits): string {
+  const text = t().domain.events;
   switch (event.type) {
     case 'feed':
-      return `喂奶 ${formatVolume(event.ml, units.volume)}`;
+      return text.feed(formatVolume(event.ml, units.volume));
     case 'diaper':
-      return `换尿布 · ${diaperLabels[event.kind]}`;
+      return text.diaper(text[event.kind]);
     case 'sleep':
       return event.endAt
-        ? `睡了 ${formatDuration(event.endAt - event.at)}`
-        : `睡觉中 · 已 ${formatDuration(now - event.at)}`;
+        ? text.slept(formatDuration(event.endAt - event.at))
+        : text.sleeping(formatDuration(now - event.at));
     case 'temp':
-      return `体温 ${formatTemperature(event.celsius, units.temperature)}`;
+      return text.temp(formatTemperature(event.celsius, units.temperature));
     case 'med':
-      return `吃药 · ${event.name}${event.dose ? ` ${event.dose}` : ''}`;
+      return text.med(event.name, event.dose);
     case 'bath':
-      return '洗澡';
+      return text.bath;
     case 'solids':
-      return `辅食 · ${event.food}`;
+      return text.solids(event.food);
     case 'growth':
-      return `体重 ${formatWeight(event.weightKg, units.weight)} · 身长 ${formatLength(event.lengthCm, units.length)}`;
+      return text.growth(
+        formatWeight(event.weightKg, units.weight),
+        formatLength(event.lengthCm, units.length),
+      );
     case 'vaccine':
-      return `接种 ${event.name}`;
+      return text.vaccine(vaccineRecordName(event.vaccineId, event.name));
   }
 }
 
@@ -154,5 +158,10 @@ export function eventsByDay<E extends { data: EventData }>(entries: readonly E[]
 }
 
 export function summaryText(s: DaySummary, units: Units = metricUnits): string {
-  return `喂奶 ${s.feeds} 次 · ${formatVolume(s.ml, units.volume)}　尿布 ${s.diapers}　睡 ${(s.sleepMs / 3_600_000).toFixed(1)}h`;
+  return t().domain.events.summary(
+    s.feeds,
+    formatVolume(s.ml, units.volume),
+    s.diapers,
+    (s.sleepMs / 3_600_000).toFixed(1),
+  );
 }

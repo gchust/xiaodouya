@@ -575,7 +575,7 @@ export function MedSheet({ initial, id, backfill }: SheetMode<'med'> = {}) {
     <>
       <RecordTimeField time={time} />
       <View style={s.chips}>
-        {medicineSuggestions.map((v) => (
+        {medicineSuggestions().map((v) => (
           <Chip
             key={v}
             label={v}
@@ -828,7 +828,7 @@ export function VaccineSheet({
   const [date, setDate] = useState(() => new Date());
   const isCustom = selected === CUSTOM_OPTION;
   const dose = pending.find((v) => v.id === selected);
-  const name = isCustom ? customName.trim() : dose?.name;
+  const name = isCustom ? customName.trim() : dose?.recordName;
   const now = Date.now();
   const check = checkRecordTime({ at: doseTimestamp(date, now), birthAt, now, dateOnly: true });
   const submit = () => {

@@ -34,11 +34,46 @@ export function messagesFor(locale: Locale): Catalog {
   return catalogs[locale];
 }
 
-/** 一段文字的两种语言。地区数据用它：疫苗名、备注这些是数据，跟着地区文件走，不放进目录。 */
-export type Localized = Readonly<Record<Locale, string>>;
+/**
+ * 一段内容的两种语言。地区和预置数据用它：疫苗名、备注这些跟着数据文件走，不放进目录，
+ * 新增地区只加一个文件。
+ */
+export class Localized<T = string> {
+  constructor(
+    readonly zh: T,
+    readonly en: T,
+  ) {}
+}
 
-export function pick(text: Localized): string {
-  return text[current];
+export function L<T = string>(zh: T, en: T): Localized<T> {
+  return new Localized(zh, en);
+}
+
+type Resolved<T> = {
+  [K in keyof T]: [NonNullable<T[K]>] extends [never]
+    ? T[K]
+    : NonNullable<T[K]> extends Localized<infer V>
+      ? V | Extract<T[K], undefined>
+      : T[K];
+};
+
+/**
+ * 把 `Localized` 字段变成跟随当前语言的属性。数据文件在模块加载时就求值，
+ * 那时还不知道语言，所以不能直接存成字符串。
+ */
+export function localized<T extends object>(source: T): Resolved<T> {
+  const out = {} as Resolved<T>;
+  for (const key of Object.keys(source) as (keyof T)[]) {
+    const value = source[key];
+    Object.defineProperty(
+      out,
+      key,
+      value instanceof Localized
+        ? { enumerable: true, get: () => value[current] }
+        : { enumerable: true, value },
+    );
+  }
+  return out;
 }
 
 /** 测试用：在指定语言下跑一段同步代码，结束后恢复。 */

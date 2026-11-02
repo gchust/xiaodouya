@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { MediaScope, StorageUsage } from '../schemas';
 import { formatBytes } from './age';
 
@@ -38,14 +39,14 @@ export function quotaStatus(
     return {
       level: 'full',
       fraction,
-      warning: `存储空间已满（共 ${formatBytes(quota)}），新的照片和视频传不上去了。删除一些不需要的回忆或证件后，可以点重试。`,
+      warning: t().domain.storage.full(formatBytes(quota)),
     };
   }
   if (fraction >= WARN_FRACTION) {
     return {
       level: 'warn',
       fraction,
-      warning: `存储空间快满了，已用 ${Math.floor(fraction * 100)}%。满了之后新的文件会传不上去。`,
+      warning: t().domain.storage.nearlyFull(Math.floor(fraction * 100)),
     };
   }
   return { level: 'ok', fraction, warning: null };

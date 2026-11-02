@@ -402,7 +402,7 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
           type: 'vaccine',
           at: doseTimestamp(dateOf(dose.id), at),
           vaccineId: dose.id,
-          name: dose.name,
+          name: dose.recordName,
           byName: app.label,
         }),
       );

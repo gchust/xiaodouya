@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type {
   EventData,
   FormulaBasis,
@@ -31,15 +32,23 @@ export const nutrientKeys: readonly NutrientKey[] = [
   'vitaminDUg',
 ];
 
+const nutrient = (key: NutrientKey, unit: string, decimals: number) => ({
+  get label() {
+    return t().domain.nutrition[key];
+  },
+  unit,
+  decimals,
+});
+
 export const nutrientMeta: Record<NutrientKey, { label: string; unit: string; decimals: number }> =
   {
-    energyKcal: { label: '能量', unit: 'kcal', decimals: 0 },
-    proteinG: { label: '蛋白质', unit: 'g', decimals: 1 },
-    fatG: { label: '脂肪', unit: 'g', decimals: 1 },
-    carbsG: { label: '碳水化合物', unit: 'g', decimals: 1 },
-    calciumMg: { label: '钙', unit: 'mg', decimals: 0 },
-    ironMg: { label: '铁', unit: 'mg', decimals: 2 },
-    vitaminDUg: { label: '维生素 D', unit: 'µg', decimals: 1 },
+    energyKcal: nutrient('energyKcal', 'kcal', 0),
+    proteinG: nutrient('proteinG', 'g', 1),
+    fatG: nutrient('fatG', 'g', 1),
+    carbsG: nutrient('carbsG', 'g', 1),
+    calciumMg: nutrient('calciumMg', 'mg', 0),
+    ironMg: nutrient('ironMg', 'mg', 2),
+    vitaminDUg: nutrient('vitaminDUg', 'µg', 1),
   };
 
 /** 1 µg 维生素 D = 40 IU。NIH ODS Vitamin D Fact Sheet（更新于 2025-06-27）。 */
@@ -188,11 +197,12 @@ export type FormulaFormResult = { ok: true; data: FormulaData } | { ok: false; e
 /** 空着的保持缺失，填错的报错：两者都不能悄悄变成 0。 */
 export function formulaFromForm(form: FormulaForm, existing?: FormulaData): FormulaFormResult {
   const name = form.name.trim();
-  if (!name) return { ok: false, error: '给这款奶粉起个名字吧' };
+  if (!name) return { ok: false, error: t().domain.nutrition.needName };
   const values: NutrientValues = {};
   for (const key of nutrientKeys) {
     const parsed = parseAmount(form.fields[key]);
-    if (parsed === null) return { ok: false, error: `${nutrientMeta[key].label}的数字看起来不对` };
+    if (parsed === null)
+      return { ok: false, error: t().domain.nutrition.badNumber(nutrientMeta[key].label) };
     if (parsed === undefined) continue;
     if (key === 'energyKcal' && form.energyUnit === 'kj') values[key] = kjToKcal(parsed);
     else if (key === 'vitaminDUg' && form.vitaminDUnit === 'iu') values[key] = iuToUg(parsed);
@@ -200,7 +210,7 @@ export function formulaFromForm(form: FormulaForm, existing?: FormulaData): Form
   }
   const ratio = form.basis === 'per100g' ? parseAmount(form.powderGPer100ml) : undefined;
   if (ratio === null || ratio === 0 || (ratio !== undefined && ratio > 100)) {
-    return { ok: false, error: '冲调比例看起来不对，请对照罐身的冲调表' };
+    return { ok: false, error: t().domain.nutrition.badRatio };
   }
   const { powderGPer100ml: _old, ...rest } = existing ?? {};
   const data: FormulaData = { ...rest, type: 'formula', name, basis: form.basis, values };
@@ -286,13 +296,14 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
   }
   const uncountedFeeds = unmarked + noFormula + breast + mixed + noData;
 
+  const text = t().domain.nutrition;
   const reasons: string[] = [];
-  if (feeds.length === 0) reasons.push('这一天没有喂奶记录');
-  if (unmarked > 0) reasons.push(`有 ${unmarked} 次喂奶没有标注奶类型，没算进去`);
-  if (noFormula > 0) reasons.push(`有 ${noFormula} 次喂奶没有标注奶粉，没算进去`);
-  if (breast > 0) reasons.push(`有 ${breast} 次是母乳，母乳的成分没法估算，没算进去`);
-  if (mixed > 0) reasons.push(`有 ${mixed} 次是混合喂养，没法估算，没算进去`);
-  if (noData > 0) reasons.push(`有 ${noData} 次用的奶粉还没有营养数据，没算进去`);
+  if (feeds.length === 0) reasons.push(text.noFeeds);
+  if (unmarked > 0) reasons.push(text.unmarked(unmarked));
+  if (noFormula > 0) reasons.push(text.noFormula(noFormula));
+  if (breast > 0) reasons.push(text.breast(breast));
+  if (mixed > 0) reasons.push(text.mixed(mixed));
+  if (noData > 0) reasons.push(text.noData(noData));
 
   // 已结束的日子才有“记得够不够”的问题，今天本来就还没记完。
   let thinRecord = false;
@@ -300,10 +311,10 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
     const times = feeds.map((feed) => feed.at);
     if (feeds.length < MIN_FEEDS_FOR_CONCLUSION) {
       thinRecord = true;
-      reasons.push(`这一天只记了 ${feeds.length} 次喂奶，可能有漏记，不下结论`);
+      reasons.push(text.thinCount(feeds.length));
     } else if (Math.max(...times) - Math.min(...times) < MIN_SPAN_FOR_CONCLUSION_MS) {
       thinRecord = true;
-      reasons.push('这一天的喂奶记录时间太集中，可能有漏记，不下结论');
+      reasons.push(text.thinSpan);
     }
   }
   const blocked = feeds.length === 0 || uncountedFeeds > 0 || thinRecord;
@@ -326,23 +337,24 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
     const amount = missing < counted.length ? total : null;
     const target = band?.amounts[key] ?? null;
     const percent = target && amount !== null ? Math.floor((amount / target.amount) * 100) : null;
-    const note = missing > 0 ? `有 ${missing} 次用的奶粉没填这一项` : null;
+    const note = missing > 0 ? text.missingField(missing) : null;
     const result = { key, amount, target, percent, note };
-    if (blocked || missing > 0) return { ...result, status: 'insufficient', text: '数据不足' };
-    if (!target) return { ...result, status: 'no-reference', text: '不作比较' };
-    if (!ended) return { ...result, status: 'progress', text: `目前已摄入 ${percent}%` };
-    if (total >= target.amount) return { ...result, status: 'met', text: '达到参考量' };
+    if (blocked || missing > 0)
+      return { ...result, status: 'insufficient', text: text.insufficient };
+    if (!target) return { ...result, status: 'no-reference', text: text.noReference };
+    if (!ended) return { ...result, status: 'progress', text: text.progress(percent) };
+    if (total >= target.amount) return { ...result, status: 'met', text: text.met };
     // 奶以外的来源没记或没法估算：“够”可以说，“不够”不能说。
     const medMatters = hasMed && SUPPLEMENT_NUTRIENTS.includes(key);
     if (solidsMatter || medMatters) {
       if (solidsMatter) solidsNoted = true;
       else medNoted = true;
-      return { ...result, status: 'insufficient', text: '数据不足' };
+      return { ...result, status: 'insufficient', text: text.insufficient };
     }
-    return { ...result, status: 'below', text: '低于参考量' };
+    return { ...result, status: 'below', text: text.below };
   });
-  if (solidsNoted) reasons.push('辅食没有算进去，只看奶不能说不够');
-  if (medNoted) reasons.push('这一天有吃药记录，补充剂没有算进去');
+  if (solidsNoted) reasons.push(text.solidsNote);
+  if (medNoted) reasons.push(text.medNote);
 
   return {
     ended,
@@ -358,10 +370,13 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
 /** 今天页入口的一句话，克制，不说够不够。没有喂奶记录时不显示入口。 */
 export function nutritionEntryText(day: DayNutrition): string | null {
   if (day.feeds === 0) return null;
-  if (day.uncountedFeeds > 0) return `数据不足 · 有 ${day.uncountedFeeds} 次喂奶没算进去`;
+  const text = t().domain.nutrition;
+  if (day.uncountedFeeds > 0) return text.entryUncounted(day.uncountedFeeds);
   const first = day.nutrients.find((n) => n.status === 'progress');
-  if (first) return `目前已摄入${nutrientMeta[first.key].label} ${first.percent}%`;
-  return day.nutrients.every((n) => n.status === 'no-reference') ? '只显示摄入量' : '数据不足';
+  if (first) return text.entryProgress(nutrientMeta[first.key].label, first.percent);
+  return day.nutrients.every((n) => n.status === 'no-reference')
+    ? text.entryIntakeOnly
+    : text.insufficient;
 }
 
 export function formatNutrientAmount(key: NutrientKey, amount: number): string {
@@ -372,7 +387,8 @@ export function formatNutrientAmount(key: NutrientKey, amount: number): string {
 /** 列表里的一行数量。数据不足时写“已算”，不让人把算进去的部分当成当天的总量。 */
 export function nutrientAmountText(nutrient: NutrientResult): string {
   const { key, amount, target, status } = nutrient;
-  const prefix = status === 'insufficient' ? '已算 ' : '';
+  const text = t().domain.nutrition;
+  const prefix = status === 'insufficient' ? text.countedPrefix : '';
   const head = amount === null ? '—' : `${prefix}${formatNutrientAmount(key, amount)}`;
-  return target ? `${head} / 参考 ${formatNutrientAmount(key, target.amount)}` : head;
+  return target ? text.reference(head, formatNutrientAmount(key, target.amount)) : head;
 }

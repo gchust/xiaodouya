@@ -1,3 +1,4 @@
+import { L, type Localized, localized } from '../i18n';
 import type { NutrientValues } from '../schemas';
 import { emptyFormulaForm, type FormulaForm, formulaFormFromData, iuToUg } from './nutrition';
 
@@ -24,7 +25,17 @@ export interface FormulaPreset {
 const HEALTH_CANADA_LABELS =
   'https://www.canada.ca/en/health-canada/services/food-nutrition/legislation-guidelines/policies/interim-policy-importation-sale-infant-formula-human-milk-fortifiers-metabolic-products';
 
-export const formulaPresets: readonly FormulaPreset[] = [
+/** 中文品牌名原样留着：那是罐身上印的字，英文名没有读到的不编。 */
+type PresetInput = Omit<FormulaPreset, 'name' | 'label'> & {
+  name: string | Localized;
+  label: null | {
+    basis: 'per100ml';
+    values: NutrientValues;
+    source: { label: Localized; url: string; readOn: string; version: Localized };
+  };
+};
+
+const presetData: readonly PresetInput[] = [
   {
     // 合生元官网（biostime.com.cn/pai-star.html，2026-11-01）正文没有营养数值，只有宣传图，图片的 CDN
     // 返回 403 读不到；市场监管总局的配方注册信息也没查到。搜索到的只有测评和电商转述，彼此矛盾，不能用。
@@ -47,7 +58,7 @@ export const formulaPresets: readonly FormulaPreset[] = [
     // 这是 2022–23 年短缺时临时进口加拿大的美国产品的标签，现在销售的版本可能不同。
     // 能量 Cal 就是 kcal；标签写的维生素 D 是 51 IU，按 1 µg = 40 IU 换算。
     id: 'enfamil-neuropro-powder',
-    name: 'Enfamil NeuroPro Infant 粉',
+    name: L('Enfamil NeuroPro Infant 粉', 'Enfamil NeuroPro Infant (powder)'),
     regions: ['US'],
     label: {
       basis: 'per100ml',
@@ -61,10 +72,13 @@ export const formulaPresets: readonly FormulaPreset[] = [
         vitaminDUg: iuToUg(51),
       },
       source: {
-        label: 'Health Canada 公布的产品标签（读的是 Internet Archive 的副本，canada.ca 连接失败）',
+        label: L(
+          'Health Canada 公布的产品标签（读的是 Internet Archive 的副本，canada.ca 连接失败）',
+          'Product label published by Health Canada (read from an Internet Archive copy; canada.ca could not be reached)',
+        ),
         url: `${HEALTH_CANADA_LABELS}/english-label-enfamil-neuropro-powder-890g.html`,
         readOn: '2026-11-01',
-        version: '页面更新于 2023-04-24，890 g 粉',
+        version: L('页面更新于 2023-04-24，890 g 粉', 'Page updated 2023-04-24, 890 g powder'),
       },
     },
   },
@@ -72,7 +86,7 @@ export const formulaPresets: readonly FormulaPreset[] = [
     // Health Canada 公布的英文标签 “Similac 360 Total Care (59 mL)”，每 100 mL 一列。配料以水开头，是即饮液。
     // Abbott 官网的粉和液的数值不一样（脂肪、碳水都不同），这条只代表即饮液。
     id: 'similac-360-rtf',
-    name: 'Similac 360 Total Care 即饮液',
+    name: L('Similac 360 Total Care 即饮液', 'Similac 360 Total Care (ready-to-feed)'),
     regions: ['US'],
     label: {
       basis: 'per100ml',
@@ -86,18 +100,34 @@ export const formulaPresets: readonly FormulaPreset[] = [
         vitaminDUg: iuToUg(41),
       },
       source: {
-        label: 'Health Canada 公布的产品标签（读的是 Internet Archive 的副本，canada.ca 连接失败）',
+        label: L(
+          'Health Canada 公布的产品标签（读的是 Internet Archive 的副本，canada.ca 连接失败）',
+          'Product label published by Health Canada (read from an Internet Archive copy; canada.ca could not be reached)',
+        ),
         url: `${HEALTH_CANADA_LABELS}/label-similac-360-total-care.html`,
         readOn: '2026-11-01',
-        version: '59 mL 即饮液，页面日期未读到',
+        version: L('59 mL 即饮液，页面日期未读到', '59 mL ready-to-feed, page date not found'),
       },
     },
   },
   // Abbott 官网的粉有数值，但页面同时列了粉和液，没能确认每组数值对应哪一种，所以不带数值。
-  { id: 'similac-360-powder', name: 'Similac 360 Total Care 粉', regions: ['US'], label: null },
+  {
+    id: 'similac-360-powder',
+    name: L('Similac 360 Total Care 粉', 'Similac 360 Total Care (powder)'),
+    regions: ['US'],
+    label: null,
+  },
   // 官方的 aptaclub 没读到，零售页互相不完全一致。
   { id: 'aptamil-1', name: 'Aptamil 1 First Infant Milk', regions: [], label: null },
 ];
+
+export const formulaPresets: readonly FormulaPreset[] = presetData.map(({ label, ...rest }) => {
+  const preset = localized({
+    ...rest,
+    label: label && { ...label, source: localized(label.source) },
+  });
+  return preset as FormulaPreset;
+});
 
 /** 当前地区的排前面，其余的也列出来：搬家、代购都很常见。 */
 export function presetsForRegion(regionId: string): FormulaPreset[] {

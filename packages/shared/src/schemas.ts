@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
+import { t } from './i18n';
 import { locales } from './i18n/locale';
 
 /** 所有时间都是毫秒时间戳（UTC）。 */
@@ -235,10 +236,17 @@ export const roles = ['admin', 'caregiver', 'viewer'] as const;
 export const Role = z.enum(roles);
 export type Role = z.infer<typeof Role>;
 
+/** 跟随当前语言，所以是属性而不是固定的文字。 */
 export const roleLabels: Record<Role, string> = {
-  admin: '管理员',
-  caregiver: '一起记录',
-  viewer: '只看回忆和照片',
+  get admin() {
+    return t().domain.roles.admin;
+  },
+  get caregiver() {
+    return t().domain.roles.caregiver;
+  },
+  get viewer() {
+    return t().domain.roles.viewer;
+  },
 };
 
 const viewerCollections: readonly Collection[] = ['baby', 'moment', 'letter'];
@@ -450,7 +458,9 @@ export type StorageProvider = z.infer<typeof StorageProvider>;
 export const storageProviderNames: Record<StorageProvider, string> = {
   r2: 'Cloudflare R2',
   s3: 'AWS S3',
-  other: 'S3 兼容存储',
+  get other() {
+    return t().domain.storage.otherProvider;
+  },
 };
 
 /** 写入配置。secret 省略表示沿用已保存的值。 */
