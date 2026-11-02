@@ -33,7 +33,7 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - assertVisible: { id: uploads-summary }
 - assertVisible: { id: "upload-item-.*" }
-- assertVisible: Control ${RUN_ID}
+- assertVisible: 回忆 · Control ${RUN_ID}
 - assertVisible: 等网络
 - takeScreenshot: .artifacts/e2e-03b-details
 - tapOn:
