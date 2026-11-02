@@ -231,6 +231,19 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: 下载模拟器和系统镜像
+        run: |
+          # 每组各下载一次，下载偶尔拿到坏包（“Error on ZipFile unknown archive”），模拟器都起不来。
+          # 只重试下载：装好后下一步的 sdkmanager 什么都不用做。测试失败不重试。
+          yes | sdkmanager --licenses > /dev/null
+          for attempt in 1 2 3; do
+            if sdkmanager --install emulator 'system-images;android-35;default;x86_64' --channel=0 > /dev/null; then
+              exit 0
+            fi
+            echo "第 $attempt 次下载失败"
+            sleep 20
+          done
+          exit 1
       - name: 运行端到端测试
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
