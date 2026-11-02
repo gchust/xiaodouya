@@ -205,6 +205,22 @@ export async function presignDownload(
   );
 }
 
+/**
+ * 一次签很多个文件。每次新建 S3Client 很贵，分享页一天可能有几百个链接，而 Edge Function 的 CPU 时间有限。
+ */
+export async function presignDownloads(
+  s: ResolvedStorage,
+  keys: readonly string[],
+  expiresIn: number,
+): Promise<string[]> {
+  const shared = client(s, s.publicEndpoint);
+  return Promise.all(
+    keys.map((key) =>
+      getSignedUrl(shared, new GetObjectCommand({ Bucket: s.bucket, Key: key }), { expiresIn }),
+    ),
+  );
+}
+
 export async function headObject(
   s: ResolvedStorage,
   key: string,

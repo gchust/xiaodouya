@@ -20,7 +20,10 @@ export function dayNumber(birthAt: number, at: number): number {
 
 /** 回忆可以早于出生（孕期的照片），不能显示成“第 -3 天”。 */
 export function dayLabel(birthAt: number, at: number): string {
-  const day = dayNumber(birthAt, at);
+  return dayNumberLabel(dayNumber(birthAt, at));
+}
+
+export function dayNumberLabel(day: number): string {
   return day > 0 ? t().domain.time.dayNumber(day) : t().domain.time.daysBeforeBirth(1 - day);
 }
 
@@ -49,7 +52,11 @@ export function ageParts(birthAt: number, at: number): Age {
 export function ageText(birthAt: number, at: number): string {
   const text = t().domain.time;
   if (at < birthAt) return text.notBorn;
-  const { months, days } = ageParts(birthAt, at);
+  return agePartsText(ageParts(birthAt, at));
+}
+
+export function agePartsText({ months, days }: Age): string {
+  const text = t().domain.time;
   if (months >= 24) {
     const years = Math.floor(months / 12);
     const rest = months % 12;

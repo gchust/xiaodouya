@@ -123,7 +123,7 @@ export async function upload(
   token: string,
   overrides: Record<string, unknown> = {},
 ): Promise<string> {
-  const id = randomUUID();
+  const id = (overrides.id as string | undefined) ?? randomUUID();
   const variant = (overrides.variant as string) ?? 'original';
   const { json, status, text } = await call<UploadUrlResponse>(
     app,

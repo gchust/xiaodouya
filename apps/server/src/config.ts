@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { MAX_PUBLIC_MEDIA } from '@xiaodouya/shared';
 import { z } from 'zod';
 
 const bool = (fallback: boolean) =>
@@ -40,6 +41,9 @@ const EnvSchema = DbEnvSchema.extend({
   RATE_UPLOAD_URL_PER_HOUR: z.coerce.number().int().nonnegative().default(2000),
   RATE_REGISTER_PER_IP_HOUR: z.coerce.number().int().nonnegative().default(20),
   RATE_REGISTER_GLOBAL_HOUR: z.coerce.number().int().nonnegative().default(1000),
+  // 一个大家庭群里几十个人同时点开、NAT 后面共用一个地址也不该被挡。
+  RATE_PUBLIC_SHARE_PER_IP_15MIN: z.coerce.number().int().nonnegative().default(120),
+  RATE_PUBLIC_SHARE_PER_TOKEN_HOUR: z.coerce.number().int().nonnegative().default(600),
   S3_ENDPOINT: optionalText,
   S3_PUBLIC_ENDPOINT: optionalText,
   S3_REGION: optionalText,
@@ -90,6 +94,12 @@ export interface RateLimits {
   uploadUrlPerWindow: number;
   registerPerIpHour: number;
   registerGlobalHour: number;
+  /** 分享页的公开接口，15 分钟一个窗口。 */
+  sharePublicPerIp: number;
+  /** 分享页的公开接口，一小时一个窗口。 */
+  sharePublicPerToken: number;
+  /** 一次公开响应最多带多少个文件，不是请求频率，也不能是 0。 */
+  sharePublicMedia: number;
 }
 
 export interface Config {
@@ -187,6 +197,9 @@ export function loadConfig(env: Env = process.env): Config {
       uploadUrlPerWindow: e.RATE_UPLOAD_URL_PER_HOUR,
       registerPerIpHour: e.RATE_REGISTER_PER_IP_HOUR,
       registerGlobalHour: e.RATE_REGISTER_GLOBAL_HOUR,
+      sharePublicPerIp: e.RATE_PUBLIC_SHARE_PER_IP_15MIN,
+      sharePublicPerToken: e.RATE_PUBLIC_SHARE_PER_TOKEN_HOUR,
+      sharePublicMedia: MAX_PUBLIC_MEDIA,
     },
     serverStorage: hasStorage
       ? {

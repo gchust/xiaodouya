@@ -197,6 +197,30 @@ export const migrations: readonly string[] = [
   CREATE INDEX pending_object_deletions_due ON pending_object_deletions(next_attempt_at);
   ALTER TABLE pending_object_deletions ENABLE ROW LEVEL SECURITY;
   `,
+  // 分享一天的公开链接。令牌只存哈希。from_at、to_at 是分享者手机算好的当地一天，timezone 是那个时区：
+  // 打开页面的人可能在别的时区，日期和钟点要按记录的人那边显示。units 是分享者选的显示单位。
+  `
+  CREATE TABLE shares (
+    id UUID PRIMARY KEY,
+    family_id UUID NOT NULL REFERENCES families(id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    from_at BIGINT NOT NULL,
+    to_at BIGINT NOT NULL,
+    timezone TEXT NOT NULL,
+    include_moments BOOLEAN NOT NULL,
+    include_daily BOOLEAN NOT NULL,
+    include_health BOOLEAN NOT NULL,
+    units JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX shares_family ON shares(family_id, expires_at) WHERE revoked_at IS NULL;
+  CREATE INDEX shares_expires ON shares(expires_at);
+  CREATE INDEX shares_revoked ON shares(revoked_at) WHERE revoked_at IS NOT NULL;
+  ALTER TABLE shares ENABLE ROW LEVEL SECURITY;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {
