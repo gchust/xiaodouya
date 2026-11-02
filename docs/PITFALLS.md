@@ -78,6 +78,8 @@
 - **不要把 `selectionLimit` 当上限用。** `parseResult` 里有 `it.take(selectionLimit)`：没有原生上限的回退选择器上，多选的图会被悄悄截掉。在 JS 里合并并提示数量（`mergePicked`）。传 0 表示不限，也是个坑。
 - **保存时不要同步做缩略图。** `manipulate(uri)` 不带尺寸会整张解码，12 MP 要 48 MB，108 MP 要 430 MB，100 张要等两分钟，这期间记录还没写，被杀就什么都没有。文件挪进 App（同分区是 rename，瞬间完成）就写记录，缩略图放进持久化队列逐张做，并带 `maxWidth`、`maxHeight`。
 - **图片在原生内存里，JS 的垃圾回收感觉不到。** `ImageManipulator` 的 context 和 image 用完要 `release()`。
+- **S3 签名链接的路径就是 object key。** 我们的 key 带家庭 id，所以公开页面的文件链接里一定有家庭 id 和存储地址，这和“响应不含家庭 id”冲突。测试只能查链接以外的字段，并如实写进文档和隐私政策。要去掉得改对象路径或代理文件。
+- **公开页面不能用存储配置的 `publicBaseUrl`。** App 的 `/media/urls` 对回忆走这个公开地址，它不会过期，撤销链接后还能一直打开。分享页一律签名。
 - **`hasThumb: true` 不代表缩略图已经有了。** 缩略图是后来生成的，也可能做不出来。取缩略图的地方都要能退回原图，成长册以前就是直接跳过，照片会从册子里消失。
 
 ## 健康内容
@@ -145,6 +147,10 @@
 - **`request.signal` 不一定会触发。** 普通 Deno 在客户端断开时会触发，但在 `edge-runtime` 镜像里经主服务转发到 Worker 时，断开后一直是 `aborted=false`，Supabase 线上是否一样还不知道。依赖它的逻辑必须另有时限。
 - **Deno 在 `ssl: 'require'` 时也校验证书链。** postgres.js 传了 `rejectUnauthorized: false`，在 edge-runtime 里依然报 `invalid peer certificate`，随后表现成 `write CONNECT_TIMEOUT`，看起来像网络问题。本地连自签名的数据库要设 `SSL_CERT_FILE` 和 `DENO_TLS_CA_STORE=mozilla,system`，而且证书不能是 CA 证书。
 - **本机的 DNS 会把外部域名解析成 `198.18.x.x`。** 这是代理的假 IP，属于 SSRF 检查拦截的范围。在这台机器上测“公网地址放行”会失败，不是代码的问题。
+- **工作区新增一个包，服务端镜像的 `--frozen-lockfile` 就要多拷一个 `package.json`。** 锁文件校验要所有工作区的包，`deploy/server.Dockerfile` 里少一行镜像就构建不了，本地测试发现不了。
+- **`import { z } from 'zod'` 会把所有语言的报错文字打进包里。** 分享页因此多了 250 KB。用 esbuild 插件把 `locales/index.js` 换成空模块。
+- **zod 在定义 schema 时就试探 `new Function`，严格 CSP 下控制台会报错。** `z.config({ jitless: true })` 要放在单独的文件里，排在所有 import 最前面，放在入口文件的正文里已经晚了。
+- **Chromium 的 `TMPDIR` 路径不能太长。** 放到 worktree 的 `.artifacts/tmp` 后报 `Socket path too long` 直接崩，换一个短路径。
 - **`/tmp` 是共享配额。** 在里面下载大文件会让所有命令报 `EDQUOT`，输出也会丢。大文件放到 worktree 的 `.artifacts/`。
 
 ## CI
@@ -196,6 +202,7 @@
 - **长时间等待之后，`extendedWaitUntil notVisible` 可能不等够超时就失败。** 流程 03a 等完上传再等 Toast 消失，超时写的 15 秒，1.4 秒就报错；同一条命令紧跟在点击后面时能正常等。这时距上次交互已经约 28 秒，原因没有查证。先看失败现场的 App 是否正常，再看这一步是否真的需要。
 - **单元测试绿了，原生行为不一定对。** 找回选择结果的重试逻辑测试全绿，模拟器上一跑就发现原生层根本不给结果。涉及系统界面和进程生死的修复，要看到模拟器上真的生效。
 - **响应之后才写库的内容，测试里要先 `bg.flush()` 再做下一步。** “重发次数有上限”曾偶发失败（期望 429，实际 200）：验证码在响应后才写，写入如果落在下一轮的 `skipCooldown` 和请求之间，这次请求就在冷却期里，不计数也返回 200。平时失败率低，多跑几次未必看得到；要在写入前等 30ms、`skipCooldown` 后等 100ms 才能稳定复现。
+- **页面的日期和钟点要写明按谁的时区算。** shared 里的格式化函数都读运行环境的时区，服务端和对方的浏览器都不是分享者的时区。本机时区和分享者相同时什么都看不出来，走查要把浏览器设成另一个时区（`timezoneId`）。
 - **`testID` 不能用翻译后的文字生成。** `self-妈妈`、`milestone-第一次抬头` 都是从文字来的，英文下就变了。固定用中文原文（`messagesFor('zh')` 或数据里的 `id`）。
 - **脚本里 `process.exit` 会截断管道里还没写完的输出。** `check-i18n` 报几百条时，`| grep` 只收到前面一部分，看起来问题比实际少。用 `process.exitCode`。
 
@@ -207,4 +214,5 @@
 - **8787 端口已有服务时，`e2e.sh` 会直接复用它。** 那可能是别的分支的代码，脚本会打印警告。改了服务端就先停掉旧服务。
 - **Biome 不要格式化 Markdown。** 它会重新对齐表格列宽，改一行就动到整张表，并行开发时 `PROGRESS.md` 必然冲突。已在 `biome.json` 里排除。
 - **`/tmp` 是按用户限额的内存盘，几个会话共用。** 写满后连命令输出都会丢。大文件（测试图片、APK）放 worktree 的 `.artifacts`。
+- **子 Agent 的 scratchpad 和主会话是同一个目录。** 目录名里是会话 id，不是 Agent 自己的。`/tmp` 配额满时不要清 `scratchpad/*`：里面有别的 Agent 和主会话的文件。自己的临时文件放 worktree 的 `.artifacts/`。
 - **`flock` 排队不等于拿到锁。** 后台挂着 `flock ... sleep` 时要确认它下面已经有 `sleep` 子进程，别的会话可能抢在前面。长任务要算好时间，不要跑到锁到期之后；收尾的命令直接用 `flock` 包住。

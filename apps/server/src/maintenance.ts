@@ -13,6 +13,8 @@ const ABANDONED_HOURS = 24;
 const UNATTACHED_DAYS = 30;
 /** 处理一批时持有家庭锁，那个家庭的同步要等它。批次要小。 */
 const BATCH = 50;
+/** 失效的分享链接不再有用，留一段时间方便排查“为什么打不开”。 */
+const SHARE_KEEP_DAYS = 30;
 
 export interface MaintenanceReport {
   /** 放弃的上传：记录和可能传了一半的对象都删了。 */
@@ -26,6 +28,8 @@ export interface MaintenanceReport {
   /** 存储删除失败的文件。记录保留，下次再试。 */
   failed: number;
   rateLimitsRemoved: number;
+  /** 过期或撤销很久的分享链接。 */
+  sharesRemoved: number;
   /** 账号删除留下的文件（pending_object_deletions），删掉了多少。 */
   deletionsDone: number;
   deletionsFailed: number;
@@ -65,6 +69,7 @@ export async function runMaintenance(
     rescued: 0,
     failed: 0,
     rateLimitsRemoved: 0,
+    sharesRemoved: 0,
     deletionsDone: 0,
     deletionsFailed: 0,
     deletionsRemaining: 0,
@@ -82,6 +87,11 @@ export async function runMaintenance(
   report.deletionsWaitingForSecret = queue.waitingForSecret;
   const removed = await sql`DELETE FROM rate_limits WHERE reset_at < now()`;
   report.rateLimitsRemoved = removed.count;
+  const shares = await sql`
+    DELETE FROM shares
+    WHERE expires_at < now() - interval '1 day' * ${SHARE_KEEP_DAYS}
+       OR revoked_at < now() - interval '1 day' * ${SHARE_KEEP_DAYS}`;
+  report.sharesRemoved = shares.count;
   return report;
 }
 

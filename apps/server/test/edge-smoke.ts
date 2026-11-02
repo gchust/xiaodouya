@@ -336,6 +336,184 @@ async function mainFlow(runtime: Runtime) {
   return owner;
 }
 
+/** 分享页的公开接口：不登录、跨域、令牌在请求体里；再看一天有很多文件时要签多久。 */
+async function publicShare(base: string) {
+  console.log('分享一天：公开接口');
+  type Auth = { token: string };
+  const registered = await request<Auth>(base, 'POST', '/v1/auth/register', {
+    body: {
+      email: `edge-share-${randomUUID().slice(0, 8)}@example.test`,
+      password: 'correct horse',
+      displayName: '虚构用户',
+    },
+  });
+  const owner = registered.json.token;
+  const created = await request<{ family: { id: string } }>(base, 'POST', '/v1/families', {
+    token: owner,
+    body: { name: '虚构一家', label: '爸爸' },
+  });
+  const familyId = created.json.family.id;
+  const at = Date.UTC(2026, 5, 15, 2);
+  const bytes = Buffer.from('xiaodouya-fictional-share');
+  const mediaId = randomUUID();
+  const upload = await request<{ url: string; headers: Record<string, string> }>(
+    base,
+    'POST',
+    '/v1/media/upload-url',
+    {
+      token: owner,
+      body: {
+        id: mediaId,
+        scope: 'memory',
+        variant: 'original',
+        mime: 'image/jpeg',
+        size: bytes.length,
+      },
+    },
+  );
+  await fetch(upload.json.url, { method: 'PUT', headers: upload.json.headers, body: bytes });
+  await request(base, 'POST', `/v1/media/${mediaId}/complete`, {
+    token: owner,
+    body: { variant: 'original' },
+  });
+  await request(base, 'POST', '/v1/sync', {
+    token: owner,
+    body: {
+      cursor: 0,
+      changes: [
+        {
+          id: familyId,
+          collection: 'baby',
+          data: { name: '测试豆', birthAt: at - 30 * 86_400_000 },
+          deleted: false,
+          updatedAt: Date.now(),
+        },
+        {
+          id: randomUUID(),
+          collection: 'event',
+          data: { type: 'feed', at, ml: 90, byName: '爸爸', extra: '不该出现' },
+          deleted: false,
+          updatedAt: Date.now(),
+        },
+        {
+          id: randomUUID(),
+          collection: 'moment',
+          data: {
+            title: '虚构回忆',
+            text: '',
+            at,
+            milestone: false,
+            media: [{ id: mediaId, kind: 'image', mime: 'image/jpeg', size: bytes.length }],
+          },
+          deleted: false,
+          updatedAt: Date.now(),
+        },
+      ],
+    },
+  });
+  const share = await request<{ id: string; token: string }>(base, 'POST', '/v1/shares', {
+    token: owner,
+    body: {
+      fromAt: Date.UTC(2026, 5, 14, 16),
+      toAt: Date.UTC(2026, 5, 15, 16),
+      timezone: 'Asia/Singapore',
+      units: { volume: 'ml', temperature: 'c', weight: 'kg', length: 'cm' },
+    },
+  });
+  check(share.status === 201, '创建链接');
+
+  const preflight = await fetch(`${base}/v1/public/share`, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://share.fictional.test',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type,x-region',
+    },
+  });
+  check(
+    preflight.status === 204 && preflight.headers.get('access-control-allow-origin') === '*',
+    '预检不用登录',
+  );
+
+  const open = async (token: string) => {
+    const response = await fetch(`${base}/v1/public/share`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://share.fictional.test' },
+      body: JSON.stringify({ token }),
+    });
+    return { response, text: await response.text() };
+  };
+  const page = await open(share.json.token);
+  check(page.response.status === 200, '不登录能打开');
+  check(page.response.headers.get('access-control-allow-origin') === '*', '响应带 CORS 头');
+  check(page.response.headers.get('cache-control') === 'no-store', '响应禁止缓存');
+  check(!page.text.includes('不该出现'), '多余字段发不出去');
+  const parsed = JSON.parse(page.text) as {
+    baby: { dayNumber: number };
+    events: unknown[];
+    moments: { media: { url: string }[] }[];
+  };
+  check(parsed.events.length === 1 && parsed.baby.dayNumber === 31, '内容和第几天');
+  const download = await fetch(parsed.moments[0]?.media[0]?.url ?? '');
+  check(Buffer.from(await download.arrayBuffer()).equals(bytes), '签名链接能下载');
+
+  const miss = await open('A'.repeat(43));
+  check(
+    miss.response.status === 404 &&
+      miss.response.headers.get('access-control-allow-origin') === '*',
+    '不存在的令牌 404，也带 CORS 头',
+  );
+  const notFromOutside = await fetch(`${base}/v1/config`, {
+    headers: { origin: 'https://share.fictional.test' },
+  });
+  await notFromOutside.text();
+  check(notFromOutside.headers.get('access-control-allow-origin') === null, '其他接口没有 CORS');
+
+  // 200 个文件各有原图和缩略图，是这个接口最贵的情况。Edge Function 的 CPU 时间有限，要知道它离上限多远。
+  const manyIds = Array.from({ length: 200 }, () => randomUUID());
+  for (const id of manyIds) {
+    for (const variant of ['original', 'thumb']) {
+      await sql`INSERT INTO media (id, variant, family_id, scope, mime, size, object_key, status)
+        VALUES (${id}, ${variant}, ${familyId}, 'memory', 'image/jpeg', 1, ${`families/${familyId}/memory/${id}/${variant}`}, 'ready')`;
+    }
+  }
+  const chunks = [manyIds.slice(0, 100), manyIds.slice(100)];
+  await request(base, 'POST', '/v1/sync', {
+    token: owner,
+    body: {
+      cursor: 0,
+      changes: chunks.map((ids) => ({
+        id: randomUUID(),
+        collection: 'moment',
+        data: {
+          title: '很多照片',
+          text: '',
+          at,
+          milestone: false,
+          media: ids.map((id) => ({ id, kind: 'image', mime: 'image/jpeg', size: 1 })),
+        },
+        deleted: false,
+        updatedAt: Date.now(),
+      })),
+    },
+  });
+  const started = Date.now();
+  const heavy = await open(share.json.token);
+  const signatures = heavy.text.match(/X-Amz-Signature/g)?.length ?? 0;
+  check(
+    heavy.response.status === 200,
+    `200 个文件也能打开（${Date.now() - started} ms，${signatures} 个签名）`,
+  );
+  check(
+    (JSON.parse(heavy.text) as { omittedMedia: number }).omittedMedia === 1,
+    '超出上限的文件如实告诉页面',
+  );
+
+  const revoked = await request(base, 'DELETE', `/v1/shares/${share.json.id}`, { token: owner });
+  check(revoked.status === 200, '撤销');
+  check((await open(share.json.token)).response.status === 404, '撤销后打不开');
+}
+
 async function customStorage(base: string, token: string) {
   console.log('存储设置：写入、读回、删除（SDK 走 fetch）');
   const tested = await request<{ ok: boolean; message: string }>(base, 'POST', '/v1/storage/test', {
@@ -453,6 +631,7 @@ try {
   let owner = '';
   try {
     owner = await mainFlow(permissive);
+    await publicShare(permissive.base);
     await customStorage(permissive.base, owner);
     await accountLifecycle(permissive.base);
   } catch (error) {
