@@ -19,13 +19,24 @@ test('正则里的反斜杠要能通过 YAML，滚动的目标也按包含匹配
   assert.equal(adaptFlow('    element: { id: sign-out }'), '    element: { id: sign-out }');
 });
 
+test('写在花括号里的文字、加号和按 id 的断言', () => {
+  assert.equal(
+    adaptFlow('    element: { text: 还没有数据 }'),
+    "    element: { text: '.*还没有数据.*' }",
+  );
+  assert.equal(adaptFlow('- assertVisible: 尿尿 + 便便'), "- assertVisible: '.*尿尿 \\+ 便便.*'");
+  assert.equal(
+    adaptFlow('- assertVisible: { id: avatar-save }'),
+    '- extendedWaitUntil:\n    visible: { id: avatar-save }\n    timeout: 30000',
+  );
+});
+
 test('点击按开头匹配，不会点中别处提到同样文字的地方', () => {
   assert.equal(adaptFlow('- tapOn: 喂奶 110ml'), "- tapOn: '喂奶 110ml.*'");
 });
 
 test('按 id 的匹配、输入和否定断言不动', () => {
   for (const line of [
-    '- assertVisible: { id: feed-save }',
     '    visible: { id: today-screen }',
     '- tapOn: { id: action-feed }',
     '- inputText: First smile',

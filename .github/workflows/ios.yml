@@ -19,7 +19,7 @@ jobs:
     name: iOS 构建和端到端测试
     # 上传 App Store 必须用 Xcode 26 和 iOS 26 SDK，这里和正式版用同一代工具。
     runs-on: macos-26
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4

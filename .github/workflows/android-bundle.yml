@@ -3,6 +3,8 @@ name: Android AAB 检查
 # 不用打标签也能验证 AAB：走和 release.yml 相同的 android-build.sh release，
 # 但密钥是这一次运行临时生成的，产物不上传，不能用于发布。
 on:
+  push:
+    branches: [feat/ios-build]
   workflow_dispatch:
 
 permissions:

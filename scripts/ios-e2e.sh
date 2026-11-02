@@ -83,7 +83,9 @@ xcrun simctl terminate "$UDID" "$BUNDLE_ID" || true
 
 FLOWS=("$@")
 if [ ${#FLOWS[@]} -eq 0 ]; then
-  while IFS= read -r flow; do FLOWS+=("$flow"); done < <(ls e2e/flows/*.yaml)
+  # 14c 测桌面小工具点进 App 的链接，小工具只有 Android 有。iOS 打开自定义链接时系统还会弹
+  # “Open in 小豆芽?”，Maestro 看不到也点不了，后面的流程全部被挡住。
+  while IFS= read -r flow; do FLOWS+=("$flow"); done < <(ls e2e/flows/*.yaml | grep -v '/14c_')
 fi
 
 photo_count() {

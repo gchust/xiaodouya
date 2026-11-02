@@ -137,6 +137,8 @@
 - **断网的流程中途失败，转发要接回去。** 否则后面每条要联网的流程都跟着失败，看起来像一片新问题。`ios-e2e.sh` 失败时会恢复。
 - **iOS 上产物大，`gh run download` 默认写 `/tmp`。** 一百多 MB 就触发配额，报 `disk quota exceeded`。设 `TMPDIR` 到 `.artifacts/` 下面。
 - **iOS 的钥匙串不随卸载和 `clearState` 清掉。** 重装后令牌还在，App 直接进主页而不是欢迎页。流程要从欢迎页开始就先 `clearKeychain`（`22_delete_account.yaml`）。真实用户重装后也是登录状态，本地数据从服务器重新同步，这一点没有改。
+- **expo-file-system 的进度值在 iOS 上是 BigInt。** Swift 的 `Int64` 传到 JS 不是 number，进度计算里 `Math.min` 抛 `Cannot convert BigInt to number`，上传本身不受影响，只有 `simulator.log` 里能看到。用之前先 `Number()`。
+- **iOS 打开自定义链接时系统弹“Open in …?”。** Maestro 看不到这个框，之后每条流程都卡在它下面，失败现象是第一个元素找不到，要看截图才知道。
 - **iOS 的“存储密码”对话框 Maestro 看不到。** 无障碍树里没有它，截图上却盖在最上面，之后的点击全部落空，表现成下一步的元素找不到。E2E 构建里不把输入框当成密码框。流程莫名失败时一定先看失败截图。
 
 ## 依赖和环境
