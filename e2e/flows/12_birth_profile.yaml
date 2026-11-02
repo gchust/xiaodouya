@@ -68,6 +68,9 @@ appId: com.gchust.xiaodouya
 # 出生体重也会成为柱状图的第一根。“出生”两个字疫苗本里也有，所以看数值。
 - scrollUntilVisible:
     element: { id: growth-chart }
+# 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+- scrollUntilVisible:
+    element: "3.2"
 - assertVisible: "3.2"
 - takeScreenshot: .artifacts/e2e-12-chart-with-birth
 # 重启后还在，今天页的标题也跟着变

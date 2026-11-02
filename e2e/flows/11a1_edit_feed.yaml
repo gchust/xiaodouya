@@ -1,0 +1,123 @@
+# 喂奶：时间能改到以前再改回来，补记早于最后一次时“距上次喂奶”不变。
+# 系统日期和时刻选择器不好自动化，这里用“今天 / 昨天 / 前天”胶囊，系统选择器在模拟器上手动看过。
+# 要有今天更晚的喂奶：否则改到昨天的那条还是“上次喂奶”，卡片上看得到它。
+# 测试用的记录最后都删掉。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 喂奶：把时间改到昨天，再改回来 ────────────────
+- tapOn: { id: action-feed }
+- takeScreenshot: .artifacts/e2e-11a-feed-new
+- tapOn: { id: ml-chip-60 }
+- tapOn: { id: ml-dec }
+- assertVisible: "50"
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 喂奶 50ml
+    timeout: 30000
+- tapOn: 喂奶 50ml
+- assertVisible: { id: event-detail }
+- takeScreenshot: .artifacts/e2e-11a-event-actions
+- tapOn: { id: event-edit }
+- assertVisible: 修改喂奶
+- assertVisible: { id: time-date }
+- assertVisible: { id: time-clock }
+- tapOn: { id: time-day-1 }
+- takeScreenshot: .artifacts/e2e-11a-feed-edit-time
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+# 昨天的记录不在过去 24 小时里，也不再是“上次喂奶”。正则把喂奶卡片和 Toast 都算上。
+- extendedWaitUntil:
+    notVisible:
+      text: .*喂奶 50ml.*
+    timeout: 20000
+- takeScreenshot: .artifacts/e2e-11a-after-move
+- scrollUntilVisible:
+    element: { id: records-open }
+- takeScreenshot: .artifacts/e2e-11a-today-footer
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- tapOn: { id: records-filter-feed }
+- scrollUntilVisible:
+    element: 喂奶 50ml
+- takeScreenshot: .artifacts/e2e-11a-records
+- tapOn: 喂奶 50ml
+- tapOn: { id: event-edit }
+- tapOn: { id: time-day-0 }
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: action-feed }
+    direction: UP
+- extendedWaitUntil:
+    visible: 喂奶 50ml
+    timeout: 15000
+- tapOn: 喂奶 50ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 喂奶 50ml
+    timeout: 15000
+
+# ─── 补记喂奶：早于最后一次，距上次喂奶不变 ──────────
+- scrollUntilVisible:
+    element: { id: backfill-open }
+- tapOn: { id: backfill-open }
+- assertVisible: { id: more-feed }
+- takeScreenshot: .artifacts/e2e-11a-backfill-menu
+- tapOn: { id: more-feed }
+- assertVisible: 补记喂奶
+- tapOn: { id: time-day-1 }
+- tapOn: { id: ml-chip-120 }
+- tapOn: { id: ml-inc }
+- tapOn: { id: ml-inc }
+- tapOn: { id: ml-inc }
+- assertVisible: "150"
+- takeScreenshot: .artifacts/e2e-11a-backfill-feed
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+# 卡片要在屏幕上，下面的断言才有意义。
+- scrollUntilVisible:
+    element: { id: last-feed }
+    direction: UP
+- extendedWaitUntil:
+    notVisible:
+      text: .*喂奶 150ml.*
+    timeout: 20000
+- assertVisible: { id: last-feed }
+- takeScreenshot: .artifacts/e2e-11a-after-backfill
+- scrollUntilVisible:
+    element: { id: records-open }
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- tapOn: { id: records-filter-feed }
+- scrollUntilVisible:
+    element: 喂奶 150ml
+- tapOn: 喂奶 150ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: 喂奶 150ml
+    timeout: 15000

@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # 纯文档改动不用跑半小时的 Android 流程，并行开发时这也少占很多队列。
+  # 纯文档改动连这个工作流都不用触发，并行开发时这也少占很多队列。
   push:
     branches: [main]
     paths-ignore: ["docs/**", "**/*.md"]
@@ -17,14 +17,42 @@ permissions:
 
 env:
   NODE_VERSION: "24.21.0"
+  JAVA_VERSION: "17"
 
 jobs:
+  changes:
+    name: 判断要不要跑 E2E
+    runs-on: ubuntu-latest
+    outputs:
+      e2e: ${{ steps.decide.outputs.e2e }}
+      groups: ${{ steps.decide.outputs.groups }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR 检出的是合并提交，它的第一个父提交就是目标分支，差两层就够了。
+          fetch-depth: 2
+      - name: 看 PR 改了什么
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          # 在工作流里判断，不用 on.paths：那样 job 根本不出现，分不清是跳过还是没跑。
+          if [ "$EVENT" = "pull_request" ]; then
+            # 取差异失败时得到空列表，ci-changes 会当成要跑。
+            git diff --name-only HEAD^1 HEAD > "$RUNNER_TEMP/changed.txt" || : > "$RUNNER_TEMP/changed.txt"
+            node scripts/ci-changes.mjs < "$RUNNER_TEMP/changed.txt" >> "$GITHUB_OUTPUT"
+          else
+            echo "main 上的 push 始终跑全量"
+            echo "e2e=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "groups=$(node scripts/e2e-groups.mjs matrix)" >> "$GITHUB_OUTPUT"
+
   check:
     name: 静态检查和单元测试
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -39,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -71,15 +99,111 @@ jobs:
           docker logs smoke
           exit 1
 
-  android-e2e:
-    name: Android 构建和端到端测试
+  apk:
+    name: 准备 E2E APK
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      - name: 算缓存键
+        id: key
+        run: echo "key=$(node scripts/apk-key.mjs --explain)" >> "$GITHUB_OUTPUT"
+      - name: 找缓存
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          # 只认完整的键，不写 restore-keys：相近的键就是旧代码。
+          key: e2e-apk-${{ runner.os }}-${{ steps.key.outputs.key }}
+          path: .artifacts/apk-cache
+      - name: 决定要不要构建
+        id: plan
+        env:
+          HIT: ${{ steps.restore.outputs.cache-hit }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          # main 上就算命中也重新构建一次，再和缓存比：PR 能用缓存，靠的是这里一直在核对键没有漏输入。
+          if [ "$HIT" = "true" ] && [ "$EVENT" != "push" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "复用 APK：$(cat .artifacts/apk-cache/stamp.txt)"
+            cp .artifacts/apk-cache/xiaodouya-e2e.apk .artifacts/xiaodouya-e2e.apk
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "重新构建 APK，缓存命中：${HIT:-false}，事件：$EVENT"
+          fi
       - name: 释放磁盘空间
+        if: steps.plan.outputs.build == 'true'
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        if: steps.plan.outputs.build == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.plan.outputs.build == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        if: steps.plan.outputs.build == 'true'
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        if: steps.plan.outputs.build == 'true'
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        if: steps.plan.outputs.build == 'true'
+      - if: steps.plan.outputs.build == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: 构建 E2E APK
+        if: steps.plan.outputs.build == 'true'
+        env:
+          GRADLE_WORKERS: "4"
+          GRADLE_HEAP: 6g
+        run: bash scripts/android-build.sh e2e --clean
+      - name: 核对缓存里的 APK
+        if: steps.plan.outputs.build == 'true' && steps.restore.outputs.cache-hit == 'true'
+        run: bash scripts/compare-apk.sh .artifacts/apk-cache/xiaodouya-e2e.apk .artifacts/xiaodouya-e2e.apk
+      - name: 放进缓存目录
+        if: steps.restore.outputs.cache-hit != 'true'
+        env:
+          KEY: ${{ steps.key.outputs.key }}
+        run: |
+          mkdir -p .artifacts/apk-cache
+          cp .artifacts/xiaodouya-e2e.apk .artifacts/apk-cache/
+          echo "键 $KEY，提交 $GITHUB_SHA，run $GITHUB_RUN_ID" > .artifacts/apk-cache/stamp.txt
+      - name: 存缓存
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: e2e-apk-${{ runner.os }}-${{ steps.key.outputs.key }}
+          path: .artifacts/apk-cache
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xiaodouya-e2e-apk
+          path: .artifacts/xiaodouya-e2e.apk
+          retention-days: 7
+          if-no-files-found: error
+          include-hidden-files: true
+          # APK 本来就是压缩过的。
+          compression-level: 0
+
+  e2e:
+    name: 端到端 ${{ matrix.group }}
+    needs: [changes, apk]
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # 各组互不依赖，一组失败也让其他组跑完，一次看到全部问题。
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.changes.outputs.groups) }}
+    env:
+      E2E_GROUP: ${{ matrix.group }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -87,22 +211,15 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
-      - uses: android-actions/setup-android@v3
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           packages: platform-tools
-      - uses: gradle/actions/setup-gradle@v4
       - run: pnpm install --frozen-lockfile
-      - name: 构建 E2E APK
-        env:
-          GRADLE_WORKERS: "4"
-          GRADLE_HEAP: 6g
-        run: bash scripts/android-build.sh e2e --clean
-      - uses: actions/upload-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: xiaodouya-e2e-apk
-          path: .artifacts/xiaodouya-e2e.apk
-          retention-days: 7
+          path: .artifacts
       - name: 启动 Postgres 和 S3
         run: |
           cp apps/server/.env.example apps/server/.env
@@ -114,8 +231,21 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: 下载模拟器和系统镜像
+        run: |
+          # 每组各下载一次，下载偶尔拿到坏包（“Error on ZipFile unknown archive”），模拟器都起不来。
+          # 只重试下载：装好后下一步的 sdkmanager 什么都不用做。测试失败不重试。
+          yes | sdkmanager --licenses > /dev/null
+          for attempt in 1 2 3; do
+            if sdkmanager --install emulator 'system-images;android-35;default;x86_64' --channel=0 > /dev/null; then
+              exit 0
+            fi
+            echo "第 $attempt 次下载失败"
+            sleep 20
+          done
+          exit 1
       - name: 运行端到端测试
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
           api-level: 35
           # 不用 google_apis：Google 服务开机后负载更重。
@@ -125,11 +255,11 @@ jobs:
           disk-size: 4096M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh
+          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh --group "$E2E_GROUP"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-screenshots
+          name: e2e-screenshots-${{ matrix.group }}
           path: |
             .artifacts/*.png
             .artifacts/maestro
@@ -138,3 +268,26 @@ jobs:
           if-no-files-found: warn
           # .artifacts 是隐藏目录，默认会被跳过。
           include-hidden-files: true
+
+  result:
+    # 只看这一个就知道能不能合并。E2E 被跳过时它是绿的；该跑却没跑（比如 APK 没构建出来）时是红的。
+    name: CI 结果
+    if: always()
+    needs: [changes, check, server, apk, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          CHANGES: ${{ needs.changes.result }}
+          CHECK: ${{ needs.check.result }}
+          SERVER: ${{ needs.server.result }}
+          APK: ${{ needs.apk.result }}
+          E2E: ${{ needs.e2e.result }}
+          WANT_E2E: ${{ needs.changes.outputs.e2e }}
+        run: |
+          echo "判断 $CHANGES，静态检查 $CHECK，服务端 $SERVER，APK $APK，端到端 $E2E，要跑 E2E：$WANT_E2E"
+          [ "$CHANGES" = "success" ] && [ "$CHECK" = "success" ] && [ "$SERVER" = "success" ] || exit 1
+          if [ "$WANT_E2E" = "false" ]; then
+            [ "$APK" = "skipped" ] && [ "$E2E" = "skipped" ]
+          else
+            [ "$APK" = "success" ] && [ "$E2E" = "success" ]
+          fi

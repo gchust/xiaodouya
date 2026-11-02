@@ -1,0 +1,125 @@
+# 修改回忆和信：回忆能加减文件、撤销、改时间，信能改标题和正文。
+# 测试用的回忆和信最后都删掉。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+
+# ─── 回忆：改标题、里程碑，加文件，移除文件，改时间 ───
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+- tapOn: { id: recall-fab }
+- takeScreenshot: .artifacts/e2e-11a-moment-new
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Edit me ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Edit me ${RUN_ID}
+    timeout: 15000
+# 等上传卡片消失，不等“文件都上传好了”：那是 Toast，会被下一个 Toast 换掉，传得快时就等不到了。
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+- tapOn: Edit me ${RUN_ID}的更多操作
+- takeScreenshot: .artifacts/e2e-11a-moment-actions
+- tapOn: { id: moment-edit }
+- assertVisible: 修改这一刻
+- assertVisible: { id: existing-media }
+- assertNotVisible: { id: kind-letter }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- eraseText: 40
+- inputText: Edited ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-milestone }
+- takeScreenshot: .artifacts/e2e-11a-moment-edit
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Edited ${RUN_ID}
+    timeout: 15000
+- assertVisible: 共 2 项
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+- takeScreenshot: .artifacts/e2e-11a-moment-after-add
+# 移除一个，再撤销
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- tapOn:
+    id: existing-media-remove
+    index: 0
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    notVisible: { id: moment-save }
+    timeout: 10000
+- assertNotVisible: 共 2 项
+- tapOn: { id: toast-undo }
+- extendedWaitUntil:
+    visible: 共 2 项
+    timeout: 10000
+# 移除一个，不撤销。时间改到昨天，排到前面那条回忆的后面。
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- tapOn:
+    id: existing-media-remove
+    index: 0
+- tapOn: { id: time-day-1 }
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    notVisible: { id: moment-save }
+    timeout: 10000
+- assertNotVisible: 共 2 项
+- takeScreenshot: .artifacts/e2e-11a-moment-after-remove
+- scrollUntilVisible:
+    element: Edited ${RUN_ID}的更多操作
+- tapOn: Edited ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Edited ${RUN_ID}
+    timeout: 15000
+
+# ─── 信：改标题和正文 ─────────────────────────
+- tapOn: { id: recall-tab-letters }
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Letter ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: First words
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Letter ${RUN_ID}
+    timeout: 15000
+- tapOn: Letter ${RUN_ID}的更多操作
+- tapOn: { id: letter-edit }
+- assertVisible: 修改这封信
+- assertNotVisible: { id: pick-media }
+- tapOn: { id: moment-text }
+- eraseText: 20
+- inputText: Second words
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-11a-letter-edit
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Second words
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-11a-letters
+- tapOn: Letter ${RUN_ID}的更多操作
+- tapOn: { id: letter-delete }
+- extendedWaitUntil:
+    notVisible: Letter ${RUN_ID}
+    timeout: 15000
+- tapOn: { id: recall-tab-timeline }
