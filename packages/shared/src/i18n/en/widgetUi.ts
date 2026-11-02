@@ -21,7 +21,7 @@ export const widgetUi: Catalog['widgetUi'] = {
   fellAsleepAt: (clock) => `Asleep ${clock}`,
   sleepingA11y: (detail) => `Asleep, ${detail}`,
   logAwake: 'Record awake',
-  forgotWake: (clock) => `Since ${clock}. Forgot to tap Awake?`,
+  forgotWake: (clock) => `Since ${clock}. Still asleep?`,
   timerOnA11y: (detail) => `Sleep timer still running, ${detail}`,
   timerOn: 'Timer still on',
   confirm: 'Confirm',

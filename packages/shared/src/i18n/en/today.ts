@@ -17,7 +17,7 @@ export const today: Catalog['today'] = {
   sinceLastFeedA11y: 'Time since last feed. Tap to record a feed.',
   sinceLastFeed: 'Since last feed',
   lastFeed: (clock, volume, by) => `${clock} Feed ${volume}${by}`,
-  lastFeedBy: (name) => `·  by ${name}`,
+  lastFeedBy: (name) => ` · by ${name}`,
   noFeedYet: 'No feeds yet. Tap here to record the first one.',
   diaper: 'Diaper',
   changeDiaper: 'Change diaper',

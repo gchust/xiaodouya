@@ -268,7 +268,7 @@ describe('记录是数据，不翻译', () => {
     const stored = record('乙肝疫苗 HepB 第 1 剂', 'us:hepb-1');
     expect(describeEvent(stored, NOW)).toBe('接种 乙肝疫苗 HepB 第 1 剂');
     expect(withLocale('en', () => describeEvent(stored, NOW))).toBe(
-      'Vaccine: Hepatitis B (HepB), dose 1',
+      'Vaccine: Hepatitis B (HepB), dose\u00a01',
     );
     // 没有地区前缀的旧记录来自新加坡的表。
     expect(withLocale('en', () => vaccineRecordName('bcg', '卡介苗 BCG'))).toBe('BCG');
@@ -328,7 +328,7 @@ describe('地区内容', () => {
 
   it('美国的疫苗名用 AAP 表上的术语', () => {
     const names = withLocale('en', () =>
-      regionFor('US').vaccineSchedule.map((dose: VaccineDose) => dose.name),
+      regionFor('US').vaccineSchedule.map((dose: VaccineDose) => dose.name.replace('\u00a0', ' ')),
     );
     for (const term of [
       'Hepatitis B (HepB), dose 1',

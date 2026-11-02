@@ -115,6 +115,7 @@
 - **换语言时直接重新挂载界面。** 文字散在 `useMemo` 和被 memo 的组件里，靠 context 刷新总有漏的。`AppProvider` 里 `<Fragment key={locale}>` 最简单，导航状态在容器里不丢，打开的弹层会关掉。
 - **`name` 不能换成英文。** iOS 的工程目录（`ios/app.xcworkspace`）是从它算的，非 ASCII 的名字才得到 `app`，改了会弄坏 `scripts/ios-build.sh`。Android 的默认 `app_name` 用 `withStringsXml` 覆盖，中文放 `locales`。
 - **`locales` 只写带限定符的资源目录，默认的 `values/strings.xml` 不归它管。** 手机是法语时用默认资源，所以默认资源要写英文。小工具的 `label` 直接进清单，要写成 `@string/...` 才能本地化。
+- **跟着文字收缩的 Text 可能把最后一个单词折到看不见的第二行。** 空状态的标题 “The first moment starts today” 在屏幕上只剩 “The first moment starts”，`uiautomator` 读到的文字是完整的，只有看截图才发现。量出来的宽度比实际画的窄一点时，高度还是一行。中文没遇到过。居中的文字用 `alignSelf: 'stretch'`。
 
 ## Android 构建和模拟器
 
