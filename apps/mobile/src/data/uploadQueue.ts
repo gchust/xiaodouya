@@ -155,6 +155,8 @@ export interface UploadProgress {
   /** 全部等 Wi-Fi 时为 true，界面据此提示而不是假装在传。 */
   waitingForWifi: boolean;
   offline: boolean;
+  /** 队列停了：退出登录、登录失效，或者到了系统的后台上限。任务还在，只是现在不传。 */
+  halted: boolean;
   failedCount: number;
   failedCounts: UploadCounts;
   /** 第一个失败文件的原因，界面要告诉用户为什么失败。 */
@@ -205,6 +207,7 @@ export class UploadQueue {
     active: false,
     waitingForWifi: false,
     offline: false,
+    halted: false,
     failedCount: 0,
     failedCounts: noCounts(),
     failedReason: null,
@@ -225,6 +228,7 @@ export class UploadQueue {
   private speedTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
+  private loaded = false;
 
   constructor(
     private db: UploadQueueDb,
@@ -237,7 +241,13 @@ export class UploadQueue {
   ) {}
 
   async load(): Promise<void> {
+    // 界面重新挂载（划掉最近任务后再打开）时，队列可能还在后台传。重新读一遍会换掉任务对象，正在传的就白传了。
+    if (this.loaded && !this.stopped) {
+      this.kick();
+      return;
+    }
     this.stopped = false;
+    this.loaded = true;
     const saved = await this.db.loadJobs();
     this.cancels = new Map(saved.filter((j) => j.cancelled).map((j) => [j.key, j]));
     const cancelledIds = new Set([...this.cancels.values()].map((j) => j.id));
@@ -352,6 +362,7 @@ export class UploadQueue {
     this.current?.controller.abort();
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
+    this.publish();
   }
 
   /** 手机上的数据被清空时调用。在路上的任务结束后不会再写回数据库，下次 load 才恢复工作。 */
@@ -479,6 +490,10 @@ export class UploadQueue {
     } catch (error) {
       // 这个任务已经被清空（退出登录）：写回去的话，下一个登录的人会看到别人的墓碑。
       if (this.cancels.get(tombstone.key) !== tombstone || this.stopped) return true;
+      if (error instanceof UploadHttpError && error.code === 'unauthenticated') {
+        this.stop();
+        return true;
+      }
       tombstone.attempts += 1;
       // 4xx 重试也没用（旧服务端没有这个接口时就是 404），401 要等重新登录。
       const permanent =
@@ -539,6 +554,11 @@ export class UploadQueue {
       // 取消了，或者队列已经被清空：写回去的话，下一个登录的人会看到别人的失败任务。
       // 用 stopped 判断：登录失效时会中止正在传的，那不算这个文件失败。
       if (!this.isLive(job) || this.stopped) return true;
+      // 登录失效了，后台一直重试也没用。任务留着，重新登录后 load 接着传。只认服务端说的，代理也可能返回 401。
+      if (error instanceof UploadHttpError && error.code === 'unauthenticated') {
+        this.stop();
+        return true;
+      }
       if (error instanceof UploadHttpError && error.code === 'already_uploaded') {
         // 上次传完后还没来得及更新队列就被杀了，这种情况算成功。
         await this.finish(job);
@@ -838,6 +858,7 @@ export class UploadQueue {
       active: isActive,
       waitingForWifi,
       offline,
+      halted: this.stopped,
       failedCount: items.length - liveItems.length,
       failedCounts,
       failedReason: jobs.find((j) => j.failed)?.failed ?? null,

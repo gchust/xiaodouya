@@ -24,7 +24,7 @@
 
 | # | 问题 | 现状 | 要做什么 |
 |---|---|---|---|
-| 8 | **Foreground service 权限** | 生成的清单有 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`，来自依赖的默认配置。App 代码里没有打开后台播放的设置 | 不需要的话用 `android.blockedPermissions` 去掉，并回归测试。留下就要在 App content 里[声明并提供视频](https://support.google.com/googleplay/android-developer/answer/13392821) |
+| 8 | **Foreground service 声明** | App 自己用了 `dataSync` 前台服务（`FOREGROUND_SERVICE_DATA_SYNC`，见 ARCHITECTURE 的“后台上传”）：用户选好照片或视频后后台继续上传。另外清单还有依赖带来的 `FOREGROUND_SERVICE_MEDIA_PLAYBACK`，App 代码里没有打开后台播放的设置 | 在 App content 里[声明 `dataSync`](https://support.google.com/googleplay/android-developer/answer/13392821)：功能说明、被系统推迟或打断时对用户的影响（大视频传不完，下次打开接着传）、演示视频（要拍到用户自己选文件并保存）。**注意：** 这页对“响应用户明确请求的网络传输”建议用 user-initiated data transfer job，不是 `dataSync`，审核可能会问，要准备好说明；没有实际提交过，结果未知。`MEDIA_PLAYBACK` 不需要的话用 `android.blockedPermissions` 去掉并回归测试，留下也要声明 |
 | 9 | **多余的权限** | 清单有 `SYSTEM_ALERT_WINDOW`（模板带的）、`READ/WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=32`，其中 `WRITE` 现在要留着：Android 12 及以下把照片和视频保存到相册时 expo-media-library 要检查它，见 F-114）、`BIND_GET_INSTALL_REFERRER_SERVICE`（来自 `expo-application`，App 代码没有调用） | 逐个确认用不到后屏蔽。审核员会问为什么要悬浮窗权限 |
 | 10 | **明文流量** | 看到的 `AndroidManifest` 是 E2E 构建的，`usesCleartextTraffic="true"`。`android-build.sh release` 会设 `ANDROID_ALLOW_HTTP=0` | 打出正式包后确认实际是 false。数据安全表里“传输加密”的答案取决于它 |
 | 11 | **英文界面还没放行** | F-91 代码已完成（见 PROGRESS），待验证 | 英文走查和医护复核（F-100）通过后才能用英文资料 |
@@ -34,6 +34,7 @@
 ### 已经满足的
 
 - **Target API：** 生成的清单是 `targetSdkVersion=36`、`minSdkVersion=24`，满足 [2026-08-31 起新 App 和更新要 API 36](https://developer.android.com/google/play/requirements/target-sdk) 的要求。这个数字来自 React Native 的默认值，每年 8 月前后都要重新查。
+- **`WAKE_LOCK`：** 上传时用部分唤醒锁和 Wi-Fi 锁，传完就释放，最长 6 小时。不需要单独申报。
 - **照片权限：** 选照片用系统选择器，保存到相册只写不读，没有声明 `READ_MEDIA_IMAGES` 或 `READ_MEDIA_VIDEO`。`expo-media-library` 的默认配置会加上它们，`app.config.ts` 里已经关掉，升级依赖后要再看一眼清单。
 - **64 位：** 正式版默认 `arm64-v8a`。
 

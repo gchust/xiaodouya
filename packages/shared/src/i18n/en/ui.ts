@@ -129,6 +129,10 @@ export const ui: Catalog['ui'] = {
   uploadCancelKeep: 'Keep uploading',
   uploadsCancelled: 'Canceled',
   uploadCancelFailed: "That didn't work. Please try again.",
+  uploadChannel: 'Upload progress',
+  uploadsPausedNotice: 'Uploads paused. Open Xiaodouya to continue.',
+  uploadNotifPrompt:
+    'Turn on notifications to see upload progress in the background. Uploads continue either way.',
   avatarFailed: "That didn't work. Please try again.",
   avatarDone: 'Photo updated',
   avatarPreview: 'Preview of the edited photo',

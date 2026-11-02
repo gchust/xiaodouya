@@ -94,6 +94,18 @@ POST /v1/media/:id/cancel                    取消：删 pending 记录，存�
 
 顺序不能反：写完记录后被杀，最多是一个没人引用的文件传了上去（服务端 30 天后清）；反过来会留下一个永远打不开的占位。服务端只处理 `pending`，已经 `ready` 的变体等记录去掉引用后走 `unreferenced_at`。
 
+**后台上传（Android，`modules/upload-service`、`data/uploadServiceController.ts`）：** 上传还是 JS 队列在做，没有另写原生上传。本地 Expo 模块只提供一个 `dataSync` 前台服务，让进程活着：
+
+- **清单放在模块里**（`FOREGROUND_SERVICE_DATA_SYNC`、`WAKE_LOCK`、`stopWithTask=false`），`app.config.ts` 不用改，iOS 不带这些。`expo-module.config.json` 只写了 `android`，iOS 上 `requireOptionalNativeModule` 返回 null，什么都不做。
+- **何时启停是纯函数**（`shouldRunUploadService`）：有能传的任务才跑。传完、全部等 Wi-Fi、队列停了（退出登录、登录失效、到系统上限）马上停，通知跟着消失。断网撑 10 分钟再停，因为 Android 12 起后台不能启动前台服务，停了之后网络回来也起不来；一直没有进展 30 分钟也停，不能常驻。所以 **全部等 Wi-Fi 时 Wi-Fi 在后台回来不会自动接着传，要等下次打开。**
+- **定时器：** RN 的定时器在 App 暂停后不走（`JavaTimerManager`），只有 Headless JS 任务在跑时例外。fetch 是 whatwg-fetch，完成后要 `setTimeout(0)` 才 resolve，所以没有这个任务的话后台第一个请求就永远等不到结果。服务运行时模块挂一个不结束的 Headless 任务（`XiaodouyaUploadKeepAlive`）。
+- **CPU 和网络：** 前台服务不让 CPU 保持唤醒，要部分唤醒锁（6 小时超时兜底）和 Wi-Fi 锁。
+- **队列是单例**（`lib/uploadRuntime.ts`）：从最近任务划掉后进程还在，React 界面卸载；再打开时界面重新挂载，要接上同一个队列，否则两个队列同时传。`load` 重复调用不重读。网络和前后台的监听也在这里，不跟着界面走。
+- **Android 15 的 6 小时上限（targetSdk 36 适用）：** `dataSync` 24 小时内最多 6 小时，用户回到前台后重新计时。到了系统调 `onTimeout`，几秒内必须 `stopSelf`，否则抛 `RemoteServiceException`。这时队列也停下，任务留着，留一条“上传暂停了”的通知，回到前台接着传。之后再启动会抛 `ForegroundServiceStartNotAllowedException`，模块接住返回 false。
+- **没进前台就停服务会崩：** 系统报 `did not then call startForeground`。小文件可能在 `onStartCommand` 之前就传完了，所以先进前台再停（`stopRequested`）。
+- **通知：** 标题和速度由 JS 给，跟随 App 语言；每秒最多刷新一次。点通知打开详情页。`全部取消` 打开详情页的确认弹层，不直接删，取消都要确认。**没有通知权限时服务照常运行**，只是通知栏看不到（官方文档：出现在任务管理器里）。详情页用现有的提示卡提示打开，不主动弹系统对话框。
+- **登录失效：** 队列收到 `unauthenticated` 就停，任务留着，重新登录后接着传。不依赖 React 状态，界面卸载时也生效。
+
 **上传详情页（`app/uploads.tsx`）：** 队列按“文件 id”把原图和缩略图合成一项（`UploadItem`），卡片和详情页只看这一层。文件属于哪条记录不存在任务里，每次从记录反查（入队发生在写记录之前，升级前的任务也没有这个信息）。速度是最近 8 秒的滑动平均（`data/uploadSpeed.ts`），等 Wi-Fi、排队、断网、刚开始、5 秒没有新字节时不显示。
 
 **配额和清理：**
@@ -157,7 +169,7 @@ POST /v1/media/:id/cancel                    取消：删 pending 记录，存�
 
 ## 已知限制
 
-- **上传只在 App 运行时进行。** 被杀后下次打开接着传：大文件（分片）从缺的片开始，16 MB 以下的小文件从头重传。
+- **后台上传只有 Android，靠前台服务保活。** App 退到后台、锁屏、从最近任务划掉都继续传（见“后台上传”）。`force-stop`、系统或厂商杀进程后不能继续，下次打开接着传：大文件（分片）从缺的片开始，16 MB 以下的小文件从头重传。iOS 上只在 App 运行时传。
 - 每个账号只属于一个家庭（`memberships_one_family`），一个家庭只有一个宝宝（`baby` 集合取最新一条）。
 - iOS 没有测试过。
 - 视频没有压缩。

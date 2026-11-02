@@ -28,6 +28,7 @@ describe('上传卡片', () => {
     active: false,
     waitingForWifi: false,
     offline: false,
+    halted: false,
     failedCount: 0,
     failedCounts: counts(),
     failedReason: null,

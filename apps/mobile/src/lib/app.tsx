@@ -32,7 +32,7 @@ import { getCoreServices } from '../data/services';
 import type { SqliteDb } from '../data/sqlite';
 import type { RecordStore, Snapshot } from '../data/store';
 import type { SyncEngine, SyncEvents, SyncStatus } from '../data/syncEngine';
-import { UploadQueue } from '../data/uploadQueue';
+import type { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
 import { scheduleWidgetRefresh } from '../widgets/controller';
 import { shouldOfferVerifyStep } from './accountLogic';
@@ -41,11 +41,12 @@ import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
 import { applyLocale, deviceLanguageTag } from './locale';
-import { clearLocalMedia, createUploadTransport } from './media';
+import { clearLocalMedia } from './media';
 import { scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 import { ME_KEY, OWNER_KEY, SERVER_KEY, TOKEN_KEY } from './storedSession';
+import { getUploadRuntime } from './uploadRuntime';
 
 const SYNCED_KEY = 'synced';
 /** 跳过邮箱验证的账号 id。 */
@@ -163,7 +164,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     void (async () => {
       // 小工具的后台任务和界面在同一个 JS 运行环境，必须共用这一份，否则界面看不到小工具的写入。
       const { db, api, store, engine, syncEvents } = await getCoreServices();
-      const uploads = new UploadQueue(db, createUploadTransport(api));
+      // 活得比界面长：从最近任务划掉后界面卸载了，上传还在继续，再打开时要接上同一个队列。
+      const uploads = getUploadRuntime(db, api).queue;
       Object.assign(syncEvents, {
         onStatus: setSyncStatus,
         onRemote: (records: ServerRecord[]) => {
@@ -284,7 +286,6 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     const netSub = NetInfo.addEventListener((state) => {
       const online = state.isConnected !== false;
       engine.setOnline(online);
-      uploads.setNetwork(!online ? 'none' : state.type === 'wifi' ? 'wifi' : 'cellular');
     });
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') void engine.syncNow();

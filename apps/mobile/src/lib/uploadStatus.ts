@@ -1,5 +1,6 @@
 import { type MediaKind, t } from '@xiaodouya/shared';
 import type { UploadCounts, UploadProgress } from '../data/uploadQueue';
+import type { ServiceNotice } from '../data/uploadServiceController';
 
 const KIND_ORDER: readonly MediaKind[] = ['image', 'video', 'audio', 'pdf'];
 
@@ -67,4 +68,20 @@ export function uploadSpeedText(
   return progress.etaSeconds === null
     ? speed
     : t().ui.uploadSpeed(speed, formatEta(progress.etaSeconds));
+}
+
+export const UPLOADS_LINK = 'xiaodouya://uploads';
+
+/** 前台服务的通知。取消要确认，所以通知上的按钮是打开 App 的确认弹层。 */
+export function uploadServiceNotice(progress: UploadProgress): ServiceNotice {
+  return {
+    channelName: t().ui.uploadChannel,
+    title: uploadCardStatus(progress).text,
+    text: uploadSpeedText(progress),
+    percent: Math.round(progress.fraction * 100),
+    cancelLabel: t().ui.uploadCancelAll,
+    pausedTitle: t().ui.uploadsPausedNotice,
+    detailsLink: UPLOADS_LINK,
+    cancelLink: `${UPLOADS_LINK}?cancelAll=1`,
+  };
 }

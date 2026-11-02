@@ -111,6 +111,9 @@
 - **不要在记录后直接请求系统权限。** 系统弹窗会盖住 Toast 和撤销，用户拒绝后下一次又会弹。用页面上的提示卡，由用户自己点开。
 - **字体子集只有 GB2312 加一张名字用字表。** 表外的生僻字仍然回退到系统字体，和衬线标题放在一起字形不一样。要加字就改 `scripts/subset-fonts.py` 的 `NAME_CHARS` 再重新生成，并看 E2E 的 `e2e-05-rare-name` 截图。玥、喆已经在表里，这张截图现在看的是表内的字，不是回退。
 - **expo-file-system 的 `copy`、`move`、`write` 是异步的，必须 await。** 同名的 `delete`、`create` 却是同步的，TypeScript 也不报错。漏写之后读到的大小是 0，所有上传都被服务端拒绝。只有在模拟器上真正跑才发现。
+- **RN 的定时器在 App 暂停后不走，而 fetch 要靠它。** `JavaTimerManager` 在 `onHostPause` 后停掉，只有 Headless JS 任务在跑时例外；whatwg-fetch 收到响应后 `setTimeout(0)` 才 resolve，所以后台的 fetch 请求发得出去、响应也到了，Promise 却一直不结束，没有任何报错。后台要继续跑 JS 就要挂一个 Headless 任务。
+- **Activity 销毁时 React 界面会卸载，JS 和进程还在。** `ReactDelegate.onHostDestroy` 调 `unloadApp`，所有 effect 的清理都会跑，再打开时重新挂载。放在 `useEffect` 或 `useState` 里的单例（队列、监听）会变成两份。要活得比界面长的放模块级。
+- **`startForegroundService` 之后没进前台就 `stopService` 会崩。** 系统报 `did not then call startForeground`，小文件传得快就可能碰上。要等 `onStartCommand` 进了前台再停。
 - **Biome 的 `noReactNativeRawText` 认不出包了 Text 的组件。** 已关闭，不要重新打开。
 - **弹层不能假设键盘有没有把窗口顶起来。** `softwareKeyboardLayoutMode: 'resize'` 在 edge-to-edge 下不一定缩小窗口，假设错了要么被键盘挡住，要么抬高两次。`overlays.tsx` 用量到的层高算差额（`keyboardLift`）。还没在设备上看过，改这里要在模拟器上打开喂奶弹层点备注确认。
 - **`hitSlop` 只在父视图没有裁剪时才生效，后面的兄弟视图还会抢走重叠区域。** `overflow: hidden` 的卡片里，× 的热区要向卡片内部扩。紧贴滚动区的控件（回忆页子标签）用内边距加负外边距，再给头部 `zIndex`。

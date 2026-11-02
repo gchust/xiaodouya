@@ -1,8 +1,8 @@
 import { formatBytes, t } from '@xiaodouya/shared';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
-import { memo, useMemo } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { memo, useEffect, useMemo, useRef } from 'react';
+import { FlatList, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   cancelUploads,
@@ -15,6 +15,7 @@ import { useApp, useRecords, useUploadProgress } from '../lib/app';
 import { localUriFor } from '../lib/media';
 import { uploadCardStatus, uploadCountsText, uploadSpeedText } from '../lib/uploadStatus';
 import { colors, spacing } from '../theme';
+import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, Stripes } from '../ui/primitives';
 
@@ -193,7 +194,8 @@ export function UploadsScreen() {
       sheet.open(t().ui.uploadCancelOneTitle, () => <CancelSheet ids={[item.id]} />),
     [sheet],
   );
-  const confirmAll = () => {
+  const confirmAll = useRef(() => {});
+  confirmAll.current = () => {
     const counts = {
       image: progress.counts.image + progress.failedCounts.image,
       video: progress.counts.video + progress.failedCounts.video,
@@ -206,6 +208,23 @@ export function UploadsScreen() {
     ));
   };
 
+  // 通知上的“全部取消”先打开这里确认，不能在通知栏一点就删。
+  const { cancelAll } = useLocalSearchParams<{ cancelAll?: string }>();
+  const hasItems = items.length > 0;
+  const askedFromLink = useRef(false);
+  useEffect(() => {
+    if (cancelAll !== '1') {
+      askedFromLink.current = false;
+      return;
+    }
+    if (!hasItems || askedFromLink.current) return;
+    askedFromLink.current = true;
+    // 清参数会让这个 effect 重跑，所以定时器不能放在清理函数里取消。
+    // 等一下再打开：弹层容器可能刚挂载，见 PITFALLS“弹层刚挂载时马上打开会被清掉”。
+    setTimeout(() => confirmAll.current(), 400);
+    router.setParams({ cancelAll: undefined });
+  }, [cancelAll, hasItems, router]);
+
   return (
     <View style={s.root} testID="uploads-screen">
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
@@ -215,7 +234,8 @@ export function UploadsScreen() {
             accessibilityRole="button"
             accessibilityLabel={t().common.back}
             hitSlop={12}
-            onPress={() => router.back()}
+            // 从通知点进来时下面没有页面。
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
           >
             <Text style={s.back}>{t().auth.backLink}</Text>
           </Pressable>
@@ -225,7 +245,7 @@ export function UploadsScreen() {
               accessibilityRole="button"
               accessibilityLabel={t().ui.uploadCancelAll}
               hitSlop={12}
-              onPress={confirmAll}
+              onPress={() => confirmAll.current()}
             >
               <Text style={s.link}>{t().ui.uploadCancelAll}</Text>
             </Pressable>
@@ -248,29 +268,37 @@ export function UploadsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
           ListHeaderComponent={
-            <View style={s.summary} testID="uploads-summary">
-              <Text testID="uploads-summary-text" style={s.summaryText}>
-                {uploadCardStatus(progress).text}
-              </Text>
-              <View style={s.summaryLine}>
-                <Mono testID="uploads-speed" style={s.speed}>
-                  {speed ?? ' '}
-                </Mono>
-                <Mono style={s.speed}>{percent}%</Mono>
-              </View>
-              <View style={s.track}>
-                <View style={[s.fill, { width: `${percent}%` }]} />
-              </View>
-              {hasFailed ? (
-                <Button
-                  testID="uploads-retry"
-                  tone="outline"
-                  height={40}
-                  label={t().common.retry}
-                  onPress={() => void app.uploads.retryFailed()}
+            <>
+              {Platform.OS === 'android' ? (
+                <NotificationPrompt
+                  text={t().ui.uploadNotifPrompt}
+                  dismissKey="upload-notification-prompt-dismissed"
                 />
               ) : null}
-            </View>
+              <View style={s.summary} testID="uploads-summary">
+                <Text testID="uploads-summary-text" style={s.summaryText}>
+                  {uploadCardStatus(progress).text}
+                </Text>
+                <View style={s.summaryLine}>
+                  <Mono testID="uploads-speed" style={s.speed}>
+                    {speed ?? ' '}
+                  </Mono>
+                  <Mono style={s.speed}>{percent}%</Mono>
+                </View>
+                <View style={s.track}>
+                  <View style={[s.fill, { width: `${percent}%` }]} />
+                </View>
+                {hasFailed ? (
+                  <Button
+                    testID="uploads-retry"
+                    tone="outline"
+                    height={40}
+                    label={t().common.retry}
+                    onPress={() => void app.uploads.retryFailed()}
+                  />
+                ) : null}
+              </View>
+            </>
           }
           renderItem={({ item }) => (
             <ItemRow item={item} owner={owners.get(item.id)} onCancel={confirmOne} />

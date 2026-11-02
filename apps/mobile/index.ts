@@ -1,6 +1,7 @@
 import 'expo-router/entry';
-import { Platform } from 'react-native';
+import { AppRegistry, Platform } from 'react-native';
 import { registerWidgetTaskHandler } from 'react-native-android-widget';
+import { KEEP_ALIVE_TASK } from './modules/upload-service';
 import { startLinkInbox } from './src/widgets/linkInbox';
 import { widgetTaskHandler } from './src/widgets/taskHandler';
 
@@ -9,4 +10,6 @@ import { widgetTaskHandler } from './src/widgets/taskHandler';
 if (Platform.OS === 'android') {
   registerWidgetTaskHandler(widgetTaskHandler);
   startLinkInbox();
+  // 有上传时一直挂着，让定时器在后台也走，见 UploadServiceModule。结束由原生层决定，这个 Promise 不用 resolve。
+  AppRegistry.registerHeadlessTask(KEEP_ALIVE_TASK, () => () => new Promise(() => {}));
 }
