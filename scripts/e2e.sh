@@ -95,8 +95,11 @@ if [ "${1:-}" = "--group" ]; then
 elif [ $# -gt 0 ]; then
   run_flows "$@"
 else
-  while IFS= read -r group; do
+  # 不能用 while read：循环里的 adb 和 maestro 会读走标准输入，后面的分组被悄悄跳过，还报全部通过。
+  mapfile -t groups < <(node scripts/e2e-groups.mjs names)
+  [ ${#groups[@]} -gt 0 ] || { echo "没有分组" >&2; exit 1; }
+  for group in "${groups[@]}"; do
     run_group "$group"
-  done < <(node scripts/e2e-groups.mjs names)
+  done
 fi
 echo "E2E 全部通过"
