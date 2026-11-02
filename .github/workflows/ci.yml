@@ -124,7 +124,7 @@ jobs:
           EVENT: ${{ github.event_name }}
         run: |
           # main 上就算命中也重新构建一次，再和缓存比：PR 能用缓存，靠的是这里一直在核对键没有漏输入。
-          if [ "$HIT" = "true" ] && [ "$EVENT" != "push" ]; then
+          if [ "$HIT" = "true" ] && [ "$EVENT" = "never" ]; then
             echo "build=false" >> "$GITHUB_OUTPUT"
             echo "复用 APK：$(cat .artifacts/apk-cache/stamp.txt)"
             cp .artifacts/apk-cache/xiaodouya-e2e.apk .artifacts/xiaodouya-e2e.apk
