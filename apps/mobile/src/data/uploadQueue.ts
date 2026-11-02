@@ -35,7 +35,7 @@ export interface UploadJob {
   attempts: number;
   /** 不可恢复的错误（例如文件类型被拒绝），需要用户处理。 */
   failed?: string;
-  /** 缩略图还没生成时才有：记录要先写下来，解码原图放到队列里一张一张做。 */
+  /** 缩略图或预览还没生成时才有：记录要先写下来，解码原图放到队列里一张一张做。 */
   thumbSource?: { uri: string; kind: 'image' | 'video' };
   /** 用户看到的类型。缩略图的 mime 永远是 jpeg，所以单独记。升级前的任务没有，按 mime 算。 */
   mediaKind?: MediaKind;
@@ -99,7 +99,7 @@ export interface UploadTransport {
   complete(id: string, variant: MediaVariant): Promise<void>;
   /** 上传成功后清理本地副本。 */
   removeLocal(uri: string): Promise<void>;
-  /** 把缩略图生成到 job.localUri。做不出来返回 null，这个文件就只有原图。 */
+  /** 把缩略图或预览（看 job.variant）生成到 job.localUri。做不出来返回 null，这个文件就没有这个变体。 */
   makeThumb?(job: UploadJob): Promise<{ size: number } | null>;
   /** 没有时大文件也走单个 PUT。 */
   multipart?: MultipartTransport;
@@ -128,7 +128,7 @@ export type UploadItemStatus =
   | 'retrying'
   | 'failed';
 
-/** 用户看到的一项。一张照片的原图和缩略图是两个任务，但对用户只是一个文件。 */
+/** 用户看到的一项。一张照片的原图、预览和缩略图是几个任务，但对用户只是一个文件。 */
 export interface UploadItem {
   id: string;
   scope: MediaScope;
@@ -144,7 +144,7 @@ export interface UploadItem {
 export type UploadCounts = Record<MediaKind, number>;
 
 export interface UploadProgress {
-  /** 还在传的文件数（按媒体算，原图和缩略图算一个）。 */
+  /** 还在传的文件数（按媒体算，一张照片的几个变体算一个）。 */
   total: number;
   counts: UploadCounts;
   /** 0–1，按字节加权。 */
@@ -566,6 +566,10 @@ export class UploadQueue {
       }
       job.attempts += 1;
       if (error instanceof UploadHttpError) {
+        if (isPermanent(error) && isOptionalLoss(job, error)) {
+          await this.dropOptional(job);
+          return true;
+        }
         if (isPermanent(error)) job.failed = error.message;
         // 存储持续报错（配额满、配置错）时重试没有意义，交给用户处理。
         else if (isCapped(error) && job.attempts >= MAX_PUT_ATTEMPTS) {
@@ -755,7 +759,18 @@ export class UploadQueue {
     this.partSent.clear();
   }
 
-  /** 返回 false 表示这个任务不用再传了。缩略图只是省流量，任何失败都不能挡住原图。 */
+  /** 这个变体不要了，文件照常传。 */
+  private async dropOptional(job: UploadJob): Promise<void> {
+    this.jobs.delete(job.key);
+    this.batchBytes = Math.max(0, this.batchBytes - job.size);
+    await this.db.deleteJob(job.key);
+    await this.transport.removeLocal(job.localUri).catch(() => {});
+    this.samples = [];
+    this.clearAllSent();
+    this.publish();
+  }
+
+  /** 返回 false 表示这个任务不用再传了。缩略图和预览只是省流量，任何失败都不能挡住原图。 */
   private async prepareThumb(job: UploadJob): Promise<boolean> {
     const made = await Promise.resolve(this.transport.makeThumb?.(job)).catch(() => null);
     // 队列已经被清空或者取消了：写回去的话，下一个登录的人会看到别人的任务。
@@ -896,6 +911,14 @@ function isPermanent(error: UploadHttpError): boolean {
   // 预签名链接过期等 S3 层错误，重新申请链接即可恢复。
   if (error.code === 'put_failed' || error.code === 'parts_incomplete') return false;
   return error.status >= 400 && error.status < 500 && error.code !== 'not_uploaded';
+}
+
+/**
+ * 预览被拒绝时（比如还没升级的旧服务端不认识这个变体），这张照片没有预览就是了，看原图也一样。
+ * 显示失败的话用户什么也做不了，还有个永远传不完的文件。配额不算：腾出空间后点重试还能传。
+ */
+function isOptionalLoss(job: UploadJob, error: UploadHttpError): boolean {
+  return job.variant === 'preview' && error.code !== 'quota_exceeded';
 }
 
 /** 不算永久失败，但一直这样也没有意义，到次数上限后交给用户。 */

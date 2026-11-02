@@ -174,6 +174,12 @@ export const ui: Catalog['ui'] = {
   avatarOf: (name) => `${name}: profile photo`,
   thisMoment: 'This moment',
   preparingVideo: 'Preparing video…',
+  viewOriginal: (size: string) => `View original ${size}`,
+  loadingOriginal: (percent: number | null) =>
+    percent === null ? 'Loading original…' : `Loading original ${percent}%`,
+  showingOriginal: (size: string) => `Showing original ${size}`,
+  originalLoadFailed: "Couldn't load the original. Tap to try again",
+  originalNotUploaded: 'The original is still uploading',
   bookMilestoneSuffix: ' · Milestone',
   bookBy: (name) => `By ${name}`,
   untitled: 'Untitled',

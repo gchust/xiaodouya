@@ -1,4 +1,4 @@
-import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
+import type { MediaKind, MediaRef, MediaScope, MediaVariant } from '@xiaodouya/shared';
 import { MULTIPART_PARALLEL, t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
@@ -23,6 +23,7 @@ import { type Api, ApiFailure } from './api';
 import { IS_E2E } from './config';
 import { e2eBulkMoment, e2ePickFiles } from './e2eFixtures';
 import { firstFound, importEach, isRecentPick, pickDurationMs } from './mediaUtils';
+import { mediaJobs, PREVIEW_MAX_SIDE, PREVIEW_QUALITY } from './photoPreview';
 
 export interface PickedFile {
   uri: string;
@@ -48,15 +49,35 @@ function uploadsDir(): Directory {
   return dir;
 }
 
-function localFile(id: string, variant: 'original' | 'thumb'): File {
+function localFile(id: string, variant: MediaVariant): File {
   return new File(uploadsDir(), `${id}-${variant}`);
 }
 
 /** 上传中或刚选好的文件，优先从本地显示，不用等网络。 */
-export function localUriFor(id: string, variant: 'original' | 'thumb'): string | null {
+export function localUriFor(id: string, variant: MediaVariant): string | null {
   try {
     const file = localFile(id, variant);
     return file.exists ? file.uri : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 本机已有的原图：上传队列的副本，或看过的原图留在 expo-image 磁盘缓存里的那份（缓存键见 useMediaSource）。
+ * 大小对得上才算原件，缓存里可能是缩小过的。
+ */
+export async function localOriginalCopy(
+  media: Pick<MediaRef, 'id' | 'kind' | 'size'>,
+): Promise<string | null> {
+  const pending = localUriFor(media.id, 'original');
+  if (pending) return pending;
+  if (media.kind !== 'image') return null;
+  try {
+    const path = await Image.getCachePathAsync(`${media.id}/original`);
+    if (!path) return null;
+    const file = new File(path.startsWith('file:') ? path : `file://${path}`);
+    return file.exists && file.size === media.size ? file.uri : null;
   } catch {
     return null;
   }
@@ -178,6 +199,32 @@ export async function pickDocument(): Promise<PickedFile[]> {
   });
 }
 
+/** 解码和保存共用一段：图片在原生内存里，JS 的垃圾回收感觉不到它的大小，等它来回收的话几张大图就能撑爆内存。 */
+async function renderJpeg(
+  source: string,
+  targetUri: string,
+  options: { decodeMaxSide: number; resizeWidth?: number; compress: number },
+): Promise<{ size: number }> {
+  const { decodeMaxSide, resizeWidth, compress } = options;
+  const context = ImageManipulator.manipulate(source, {
+    maxWidth: decodeMaxSide,
+    maxHeight: decodeMaxSide,
+  });
+  let image: ImageRef | null = null;
+  try {
+    if (resizeWidth) context.resize({ width: resizeWidth });
+    image = await context.renderAsync();
+    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress });
+    const target = new File(targetUri);
+    if (target.exists) target.delete();
+    await new File(saved.uri).move(target);
+    return { size: target.size ?? 0 };
+  } finally {
+    image?.release();
+    context.release();
+  }
+}
+
 async function makeThumbnail(
   source: { uri: string; kind: 'image' | 'video' },
   targetUri: string,
@@ -189,24 +236,11 @@ async function makeThumbnail(
         await VideoThumbnails.getThumbnailAsync(source.uri, { time: 500, quality: 0.8 })
       ).uri;
     }
-    const context = ImageManipulator.manipulate(videoFrame ?? source.uri, {
-      maxWidth: THUMB_DECODE_MAX_SIDE,
-      maxHeight: THUMB_DECODE_MAX_SIDE,
+    return await renderJpeg(videoFrame ?? source.uri, targetUri, {
+      decodeMaxSide: THUMB_DECODE_MAX_SIDE,
+      resizeWidth: THUMB_WIDTH,
+      compress: 0.8,
     });
-    let image: ImageRef | null = null;
-    try {
-      context.resize({ width: THUMB_WIDTH });
-      image = await context.renderAsync();
-      const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.8 });
-      const target = new File(targetUri);
-      if (target.exists) target.delete();
-      await new File(saved.uri).move(target);
-      return { size: target.size ?? 0 };
-    } finally {
-      // 图片在原生内存里，JS 的垃圾回收感觉不到它的大小，等它来回收的话几张大图就能撑爆内存。
-      image?.release();
-      context.release();
-    }
   } catch {
     // 缩略图失败不阻止上传：界面会退回显示原图或占位。
     return null;
@@ -218,6 +252,22 @@ async function makeThumbnail(
         // 留在缓存里也无妨，退出登录时会清。
       }
     }
+  }
+}
+
+/**
+ * 解码时就限制在长边以内（比这小的不放大），不用再 resize。
+ * JPEG 是从解码后的位图重新编码的，不带原图的 EXIF：分享页靠这一点才不泄露拍摄地点，见 verify-uploads。
+ */
+async function makePreview(sourceUri: string, targetUri: string): Promise<{ size: number } | null> {
+  try {
+    return await renderJpeg(sourceUri, targetUri, {
+      decodeMaxSide: PREVIEW_MAX_SIDE,
+      compress: PREVIEW_QUALITY,
+    });
+  } catch {
+    // 预览失败不阻止上传：这张照片就没有预览，查看器和分享页退回原图。
+    return null;
   }
 }
 
@@ -254,33 +304,17 @@ async function prepareFile(
     target.delete();
     throw new Error(t().ui.emptyFile(file.name ?? t().ui.thisFile));
   }
-  const wifiOnly = file.kind === 'video' && options.videoWifiOnly;
-  const thumbKind = file.kind === 'image' || file.kind === 'video' ? file.kind : null;
-  const jobs: Omit<UploadJob, 'key' | 'attempts'>[] = [];
-  // 缩略图排在前面：它小，传得快，家人能先看到。解码原图很慢也很占内存，交给队列一张一张做，不让用户等。
-  if (thumbKind) {
-    jobs.push({
-      id,
-      variant: 'thumb',
-      scope,
-      localUri: localFile(id, 'thumb').uri,
-      mime: 'image/jpeg',
-      size: 0,
-      wifiOnly: false,
-      mediaKind: file.kind,
-      thumbSource: { uri: target.uri, kind: thumbKind },
-    });
-  }
-  jobs.push({
+  const thumbable = file.kind === 'image' || file.kind === 'video';
+  const jobs = mediaJobs({
     id,
-    variant: 'original',
+    file: { kind: file.kind, mime: file.mime, size, name: file.name },
     scope,
-    localUri: target.uri,
-    mime: file.mime,
-    size,
-    filename: file.name,
-    wifiOnly,
-    mediaKind: file.kind,
+    wifiOnly: file.kind === 'video' && options.videoWifiOnly,
+    uris: {
+      original: target.uri,
+      thumb: localFile(id, 'thumb').uri,
+      preview: localFile(id, 'preview').uri,
+    },
   });
   return {
     jobs,
@@ -295,7 +329,7 @@ async function prepareFile(
       height: file.height,
       peaks: file.peaks,
       // 还没生成也写 true：显示时取不到缩略图会退回原图，生成后不用再改一次记录。
-      hasThumb: Boolean(thumbKind),
+      hasThumb: thumbable,
     },
   };
 }
@@ -481,6 +515,7 @@ export function createUploadTransport(api: Api): UploadTransport {
     },
     async makeThumb(job) {
       if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
+      if (job.variant === 'preview') return makePreview(job.thumbSource.uri, job.localUri);
       return makeThumbnail(job.thumbSource, job.localUri);
     },
     cancelRemote: (id) => wrap(() => api.cancelUpload(id)),

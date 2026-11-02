@@ -1040,8 +1040,8 @@ describe('按媒体显示', () => {
     expect(progress.items.every((i) => i.status === 'waitingNetwork')).toBe(true);
   });
 
-  it('不假设只有两种变体：多一种也合成一项，按顺序传，取消时全部取消', async () => {
-    const preview = 'preview' as unknown as UploadJob['variant'];
+  it('三个变体合成一项，按顺序传，取消时全部取消', async () => {
+    const preview = 'preview';
     const { transport, calls } = fakeTransport();
     const db = new MemoryDb();
     const queue = new UploadQueue(db, transport);
@@ -1079,6 +1079,147 @@ describe('按媒体显示', () => {
       `put:${id}/original`,
     ]);
     expect(queue.getProgress().finishedInBatch).toBe(1);
+  });
+
+  const photoJobs = (id: string) => [
+    small({
+      id,
+      variant: 'thumb' as const,
+      localUri: `file:///${id}-thumb`,
+      size: 0,
+      thumbSource: { uri: `file:///${id}-original`, kind: 'image' as const },
+    }),
+    small({
+      id,
+      variant: 'preview' as const,
+      localUri: `file:///${id}-preview`,
+      size: 0,
+      thumbSource: { uri: `file:///${id}-original`, kind: 'image' as const },
+    }),
+    small({ id, localUri: `file:///${id}-original`, size: 900 }),
+  ];
+
+  it('预览生成失败不挡原图：这张照片就没有预览，也不算失败', async () => {
+    const made: string[] = [];
+    const { transport, calls } = fakeTransport(undefined, {
+      async makeThumb(job) {
+        made.push(job.variant);
+        return job.variant === 'preview' ? null : { size: 9 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport);
+    const id = randomUUID();
+    await queue.enqueue(photoJobs(id));
+    await flush();
+    await queue.idle();
+    expect(made).toEqual(['thumb', 'preview']);
+    expect(calls.filter((c) => c.startsWith('put:'))).toEqual([
+      `put:${id}/thumb`,
+      `put:${id}/original`,
+    ]);
+    expect(queue.getProgress().failedCount).toBe(0);
+    expect(queue.getProgress().finishedInBatch).toBe(1);
+  });
+
+  it('预览按顺序现场生成，生成的大小算进进度，三个变体只算一个文件', async () => {
+    const { transport, calls } = fakeTransport(undefined, {
+      async makeThumb(job) {
+        return { size: job.variant === 'preview' ? 90 : 9 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport);
+    const id = randomUUID();
+    await queue.enqueue(photoJobs(id));
+    expect(queue.getProgress().total).toBe(1);
+    expect(queue.getProgress().counts.image).toBe(1);
+    await flush();
+    await queue.idle();
+    expect(calls.filter((c) => c.startsWith('put:'))).toEqual([
+      `put:${id}/thumb`,
+      `put:${id}/preview`,
+      `put:${id}/original`,
+    ]);
+    expect(calls.filter((c) => c.startsWith('rm:'))).toEqual([
+      `rm:file:///${id}-thumb`,
+      `rm:file:///${id}-preview`,
+      `rm:file:///${id}-original`,
+    ]);
+    expect(queue.getProgress().finishedInBatch).toBe(1);
+  });
+
+  it('预览被服务端拒绝（旧服务端不认识这个变体）：丢掉预览，原图照传，不显示失败', async () => {
+    const { transport, calls } = fakeTransport(undefined, {
+      async requestUrl(req) {
+        if (req.variant === 'preview') throw new UploadHttpError(400, 'bad_request', '请求不对');
+        return { url: 'https://s3.test/x', headers: {}, expiresIn: 3600 };
+      },
+      async makeThumb() {
+        return { size: 9 };
+      },
+    });
+    const db = new MemoryDb();
+    const queue = new UploadQueue(db, transport);
+    const id = randomUUID();
+    await queue.enqueue(photoJobs(id));
+    await flush();
+    await queue.idle();
+    expect(calls).toContain(`put:${id}/original`);
+    expect(calls).toContain(`rm:file:///${id}-preview`);
+    expect(queue.getProgress().failedCount).toBe(0);
+    expect(queue.getProgress().total).toBe(0);
+    expect(db.rows.size).toBe(0);
+  });
+
+  it('预览碰到配额满：和别的文件一样显示失败，腾出空间后能重试', async () => {
+    let full = true;
+    const { transport, calls } = fakeTransport(undefined, {
+      async requestUrl(req) {
+        if (full && req.variant === 'preview') {
+          throw new UploadHttpError(413, 'quota_exceeded', '存储空间已满');
+        }
+        return { url: 'https://s3.test/x', headers: {}, expiresIn: 3600 };
+      },
+      async makeThumb() {
+        return { size: 9 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport);
+    const id = randomUUID();
+    await queue.enqueue(photoJobs(id));
+    await flush();
+    await queue.idle();
+    expect(queue.getProgress().failedCount).toBe(1);
+    expect(queue.getProgress().failedReason).toBe('存储空间已满');
+    full = false;
+    await queue.retryFailed();
+    await flush();
+    await queue.idle();
+    expect(calls).toContain(`put:${id}/preview`);
+    expect(queue.getProgress().failedCount).toBe(0);
+  });
+
+  it('预览暂时传不上去不挡原图，原图传完后预览接着重试', async () => {
+    let failures = 1;
+    const { transport, calls } = fakeTransport(undefined, {
+      async requestUrl(req) {
+        if (req.variant === 'preview' && failures-- > 0) throw new Error('断网了');
+        return { url: 'https://s3.test/x', headers: {}, expiresIn: 3600 };
+      },
+      async makeThumb() {
+        return { size: 9 };
+      },
+    });
+    const queue = new UploadQueue(new MemoryDb(), transport, { sleepMs: () => 1 });
+    const id = randomUUID();
+    await queue.enqueue(photoJobs(id));
+    await new Promise((r) => setTimeout(r, 30));
+    await queue.idle();
+    expect(calls.filter((c) => c.startsWith('put:'))).toEqual([
+      `put:${id}/thumb`,
+      `put:${id}/original`,
+      `put:${id}/preview`,
+    ]);
+    expect(queue.getProgress().total).toBe(0);
   });
 
   it('升级前的任务没有 mediaKind，按 mime 算', async () => {
