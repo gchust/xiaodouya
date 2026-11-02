@@ -14,6 +14,12 @@ import type {
   StorageUsage,
   SyncRequest,
   SyncResponse,
+  MultipartPartsResponse,
+  MultipartPartUrlsRequest,
+  MultipartPartUrlsResponse,
+  MultipartRef,
+  MultipartStartRequest,
+  MultipartStartResponse,
   UploadUrlRequest,
   UploadUrlResponse,
 } from '@xiaodouya/shared';
@@ -177,6 +183,25 @@ export class Api {
   }
   completeUpload(id: string, variant: MediaVariant) {
     return this.request('POST', `/v1/media/${id}/complete`, { variant });
+  }
+  multipartStart(body: MultipartStartRequest) {
+    return this.request<MultipartStartResponse>('POST', '/v1/media/multipart', body);
+  }
+  multipartParts(id: string, body: MultipartRef) {
+    return this.request<MultipartPartsResponse>('POST', `/v1/media/${id}/multipart/parts`, body);
+  }
+  multipartPartUrls(id: string, body: MultipartPartUrlsRequest) {
+    return this.request<MultipartPartUrlsResponse>(
+      'POST',
+      `/v1/media/${id}/multipart/part-urls`,
+      body,
+    );
+  }
+  async multipartComplete(id: string, body: MultipartRef) {
+    await this.request('POST', `/v1/media/${id}/multipart/complete`, body);
+  }
+  async cancelUpload(id: string) {
+    await this.request('POST', `/v1/media/${id}/cancel`, {});
   }
   mediaUrls(items: { id: string; variant: MediaVariant }[]) {
     return this.request<MediaUrlsResponse>('POST', '/v1/media/urls', { items });
