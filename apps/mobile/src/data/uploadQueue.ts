@@ -779,15 +779,15 @@ export class UploadQueue {
   private async finish(job: UploadJob): Promise<void> {
     // 取消和完成同时发生：取消赢了，不能再算传好，也不能通知“传完了”。
     if (!this.isLive(job)) return;
+    // 这几个要一起变，中间不能有 await：定时刷新可能落在中间，界面看到任务没了、传完数还是 0，
+    // 就以为全取消了，不说“都传好了”。
     this.jobs.delete(job.key);
-    await this.db.deleteJob(job.key);
     this.batchDone += job.size;
     this.clearAllSent();
+    if (job.variant === 'original') this.finishedInBatch += 1;
+    await this.db.deleteJob(job.key);
     await this.transport.removeLocal(job.localUri).catch(() => {});
-    if (job.variant === 'original') {
-      this.finishedInBatch += 1;
-      this.options.onUploaded?.(job.id);
-    }
+    if (job.variant === 'original') this.options.onUploaded?.(job.id);
     this.publish();
   }
 
