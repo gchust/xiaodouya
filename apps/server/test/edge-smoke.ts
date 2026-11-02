@@ -333,6 +333,90 @@ async function mainFlow(runtime: Runtime) {
     '下载内容和上传一致（预签名下载）',
   );
 
+  // 开始、列分片、完成都要解析存储返回的 XML，单个 PUT 用不到这条路径，所以要单独跑一遍。
+  console.log('分片上传：开始、断点查询、完成、取消（SDK 解析 XML）');
+  const partFile = Buffer.alloc(8 * 1024 * 1024 + 321, 9);
+  const multipartId = randomUUID();
+  const multipart = await request<{ uploadId: string; partSize: number }>(
+    base,
+    'POST',
+    '/v1/media/multipart',
+    {
+      token: owner,
+      body: {
+        id: multipartId,
+        scope: 'memory',
+        variant: 'original',
+        mime: 'video/mp4',
+        size: partFile.length,
+      },
+    },
+  );
+  check(multipart.status === 200 && Boolean(multipart.json.uploadId), '开始分片上传');
+  const { uploadId, partSize } = multipart.json;
+  const ref = { variant: 'original', uploadId };
+  const partUrls = await request<{ urls: { partNumber: number; url: string }[] }>(
+    base,
+    'POST',
+    `/v1/media/${multipartId}/multipart/part-urls`,
+    { token: owner, body: { ...ref, partNumbers: [1, 2] } },
+  );
+  check(partUrls.status === 200 && partUrls.json.urls.length === 2, '取分片链接');
+  const putPart = async (index: number) => {
+    const entry = partUrls.json.urls[index];
+    const start = index * partSize;
+    const response = await fetch(entry?.url ?? '', {
+      method: 'PUT',
+      body: partFile.subarray(start, start + partSize),
+    });
+    return response.status;
+  };
+  check((await putPart(0)) === 200, '预签名链接能传第一片');
+  const halfway = await request<{ parts: { partNumber: number; size: number }[] }>(
+    base,
+    'POST',
+    `/v1/media/${multipartId}/multipart/parts`,
+    { token: owner, body: ref },
+  );
+  check(
+    halfway.status === 200 && halfway.json.parts.map((p) => p.partNumber).join() === '1',
+    '断点查询只看到已传的片（ListParts）',
+  );
+  check((await putPart(1)) === 200, '补传第二片');
+  const merged = await request(base, 'POST', `/v1/media/${multipartId}/multipart/complete`, {
+    token: owner,
+    body: ref,
+  });
+  check(merged.status === 200, '完成分片上传（ListParts + CompleteMultipartUpload + HEAD）');
+  const mergedUrls = await request<{ urls: { url: string }[] }>(base, 'POST', '/v1/media/urls', {
+    token: owner,
+    body: { items: [{ id: multipartId, variant: 'original' }] },
+  });
+  const mergedFile = await fetch(mergedUrls.json.urls[0]?.url ?? '');
+  check(Buffer.from(await mergedFile.arrayBuffer()).equals(partFile), '合并后的内容和上传一致');
+
+  const cancelledId = randomUUID();
+  const toCancel = await request<{ uploadId: string }>(base, 'POST', '/v1/media/multipart', {
+    token: owner,
+    body: {
+      id: cancelledId,
+      scope: 'memory',
+      variant: 'original',
+      mime: 'video/mp4',
+      size: partFile.length,
+    },
+  });
+  check(toCancel.status === 200, '再开始一个分片上传');
+  const cancelled = await request(base, 'POST', `/v1/media/${cancelledId}/cancel`, {
+    token: owner,
+  });
+  check(cancelled.status === 200, '取消上传');
+  const afterCancel = await request(base, 'POST', `/v1/media/${cancelledId}/multipart/parts`, {
+    token: owner,
+    body: { variant: 'original', uploadId: toCancel.json.uploadId },
+  });
+  check(afterCancel.status === 404, '取消后查询返回 upload_gone');
+
   return owner;
 }
 

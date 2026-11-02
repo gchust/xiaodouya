@@ -52,6 +52,7 @@ const EnvSchema = DbEnvSchema.extend({
   S3_SECRET_ACCESS_KEY: optionalText,
   S3_FORCE_PATH_STYLE: bool(false),
   S3_BIND_UPLOAD_SIZE: bool(true),
+  S3_MULTIPART_ENABLED: bool(true),
   ALLOW_CUSTOM_STORAGE: optionalText,
   ALLOW_PRIVATE_STORAGE_ENDPOINTS: bool(false),
   PUSH_ENABLED: bool(false),
@@ -119,6 +120,8 @@ export interface Config {
   serverStorage: ServerStorageEnv | null;
   /** 把声明的大小签进上传链接。个别存储不支持时关掉，complete 的校验还在。 */
   bindUploadSize: boolean;
+  /** 大文件分片上传。存储不支持时（`cli check-multipart` 不通过）关掉，App 会退回单个 PUT。 */
+  multipartEnabled: boolean;
   allowCustomStorage: boolean;
   allowPrivateEndpoints: boolean;
   pushEnabled: boolean;
@@ -218,6 +221,7 @@ export function loadConfig(env: Env = process.env): Config {
         ? !hasStorage
         : e.ALLOW_CUSTOM_STORAGE === 'true' || e.ALLOW_CUSTOM_STORAGE === '1',
     bindUploadSize: e.S3_BIND_UPLOAD_SIZE,
+    multipartEnabled: e.S3_MULTIPART_ENABLED,
     allowPrivateEndpoints: e.ALLOW_PRIVATE_STORAGE_ENDPOINTS,
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,

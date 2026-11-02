@@ -123,6 +123,8 @@ describe('界面文字跟随语言', () => {
         () =>
           uploadCardStatus({
             failedCount: 1,
+            failedCounts: { image: 0, video: 0, audio: 0, pdf: 1 },
+            counts: { image: 0, video: 0, audio: 0, pdf: 0 },
             waitingForWifi: false,
             total: 0,
             active: false,

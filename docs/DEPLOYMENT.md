@@ -57,6 +57,8 @@ curl -i "https://<project-ref>.supabase.co/rest/v1/users?select=id" -H "apikey: 
 
 备份也放在这个 Bucket 的 `backups/` 前缀下。到 Bucket 的 **Settings → Object lifecycle rules** 加一条规则：前缀 `backups/`，30 天后删除。备份脚本自己不删旧文件。
 
+**未完成的分片上传：** App 传大文件用 S3 分片。取消、放弃和账号删除都会主动中止，中止失败也会重试，生命周期规则是最后的兜底。R2 文档写的是默认 7 天自动中止未完成的分片，不用额外配置，上线后可以在同一页确认。AWS S3 和其他兼容存储没有这个默认值，要自己加一条 `AbortIncompleteMultipartUpload` 规则。用户自带存储的家庭也一样，定时清理不碰他们的 Bucket（账号删除和用户主动取消除外）。
+
 > **不要开 Bucket 的公开访问。** 备份是加密的，但证件文件不是，见下文“公开 CDN 域名要不要填”。
 
 ### 4. 准备工具和连接串
@@ -278,6 +280,8 @@ UPDATE families SET quota_mb = 20480 WHERE id = '<家庭 id>';  -- 20 GB；0 表
 # 1. 先确认 R2 接受把大小签进链接。不通过的话所有上传都会失败，要先 supabase secrets set S3_BIND_UPLOAD_SIZE=false
 S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_FORCE_PATH_STYLE=true \
 DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli check-upload-size
+# 同样的环境变量再跑一次 cli check-multipart，确认预签名分片上传能用。不通过时先 supabase secrets set S3_MULTIPART_ENABLED=false，App 会退回单个 PUT
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli check-multipart
 # 2. 迁移。旧函数在新表结构上能继续跑，出问题可以只回滚函数
 DATABASE_URL='<Session pooler 连接串>' DB_SSL=require pnpm --filter @xiaodouya/server cli migrate
 # 3. 部署函数，见上面
@@ -655,7 +659,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `RATE_REGISTER_GLOBAL_HOUR`       | 否   | `1000`                                   | 全站每小时能注册几次，`0` 不限。换地址绕不过。爆发式增长时要调高                                          |
 | `RATE_PUBLIC_SHARE_PER_IP_15MIN`  | 否   | `120`                                    | 分享页的公开接口，每个来源 15 分钟几次，`0` 不限。取不到来源时不按来源限制 |
 | `RATE_PUBLIC_SHARE_PER_TOKEN_HOUR` | 否  | `600`                                    | 分享页的公开接口，每个链接每小时几次，`0` 不限。换地址绕不过 |
-| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次                                        |
+| `RATE_UPLOAD_URL_PER_HOUR`        | 否   | `2000`                                   | 每人每小时申请上传链接的次数，`0` 不限。一次传 100 张照片是 200 次，1 GB 的视频是 17 次                   |
 | `RATE_SYNC_PER_10MIN`             | 否   | `600`                                    | 每人每 10 分钟同步的次数，`0` 不限。被限流时 App 退避后自动重试，不丢数据                                 |
 | `SERVER_IMAGE`                    | 否   | `ghcr.io/gchust/xiaodouya-server:latest` | 服务端镜像，可以固定到某个版本，比如 `:v0.1.0`                                                            |
 | `ALLOW_CUSTOM_STORAGE`            | 否   | 配了 `S3_*` 时 `false`，否则 `true`（Compose 是 `true`） | `false` 时只用下面的默认存储，App 显示用量页，没有 S3 表单。已经在用自己存储的家庭不受影响，还能改配置 |
@@ -683,6 +687,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `S3_SECRET_ACCESS_KEY` | 访问密钥 Secret                                                                                  |
 | `S3_FORCE_PATH_STYLE`  | R2 和大多数兼容存储用 `true`，AWS S3 用 `false`                                                  |
 | `S3_BIND_UPLOAD_SIZE`  | 默认 `true`，把声明的大小签进上传链接。`cli check-upload-size` 不通过时才关掉，文件大小仍会在上传完成时校验 |
+| `S3_MULTIPART_ENABLED` | 默认 `true`，大文件用分片上传，能断点续传。`cli check-multipart` 不通过时关掉，App 自动退回单个 PUT，大文件断了就要从头传 |
 
 各服务商怎么填：
 

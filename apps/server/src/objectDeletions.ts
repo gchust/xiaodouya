@@ -13,6 +13,7 @@
 import type { Config } from './config';
 import type { Sql, Tx } from './db';
 import {
+  abortMultipart,
   assertEndpointAllowed,
   deleteObject,
   describeStorageError,
@@ -27,15 +28,38 @@ import {
  * NULL 表示服务端默认存储，处理时再读环境变量。
  *
  * 还没传完的文件要多记一条，等预签名链接过期后再删一次：手机上的上传可能在账号删除之后才到达。
+ * 没合并的分片也跟着记下来，能中止就中止；万一失败，存储的生命周期规则是兜底（见 DEPLOYMENT）。
  */
 export async function enqueueFamilyObjects(
   tx: Tx,
   familyId: string,
   uploadUrlTtlSeconds: number,
 ): Promise<void> {
+  await enqueueObjects(tx, tx`m.family_id = ${familyId}`, uploadUrlTtlSeconds);
+}
+
+/** 用户取消上传。必须在删除 media 记录的事务里调用，并且在删除之前。只收还没传完的，传好的归记录引用管。 */
+export async function enqueueCancelledUpload(
+  tx: Tx,
+  familyId: string,
+  id: string,
+  uploadUrlTtlSeconds: number,
+): Promise<void> {
+  await enqueueObjects(
+    tx,
+    tx`m.id = ${id}::uuid AND m.family_id = ${familyId} AND m.status = 'pending'`,
+    uploadUrlTtlSeconds,
+  );
+}
+
+async function enqueueObjects(
+  tx: Tx,
+  where: ReturnType<Tx>,
+  uploadUrlTtlSeconds: number,
+): Promise<void> {
   await tx`
-    INSERT INTO pending_object_deletions (id, object_key, storage, next_attempt_at)
-    SELECT gen_random_uuid(), m.object_key, s.snapshot, t.at
+    INSERT INTO pending_object_deletions (id, object_key, storage, upload_id, next_attempt_at)
+    SELECT gen_random_uuid(), m.object_key, s.snapshot, m.upload_id, t.at
     FROM media m
     LEFT JOIN LATERAL (
       SELECT jsonb_build_object(
@@ -51,12 +75,14 @@ export async function enqueueFamilyObjects(
       SELECT now() + interval '1 second' * ${uploadUrlTtlSeconds + 300}
       WHERE m.status = 'pending'
     ) t
-    WHERE m.family_id = ${familyId}`;
+    WHERE ${where}`;
 }
 
 interface PendingRow {
   id: string;
   object_key: string;
+  /** 还没合并的分片上传。只删对象删不掉它们。 */
+  upload_id: string | null;
   storage: StorageRow | null;
 }
 
@@ -81,6 +107,9 @@ async function removeObject(row: PendingRow, config: Config, timeoutMs: number):
   // 地址可能在保存之后改为解析到内网，连接前再查一次。
   if (storage.configId && storage.endpoint) await assertEndpointAllowed(storage.endpoint, config);
   try {
+    if (row.upload_id) {
+      await withTimeout(abortMultipart(storage, row.object_key, row.upload_id), timeoutMs);
+    }
     await withTimeout(deleteObject(storage, row.object_key), timeoutMs);
   } catch (error) {
     // 文件或 Bucket 已经不在了，目的已经达到。
@@ -130,7 +159,7 @@ export async function processPendingDeletions(
         WHERE next_attempt_at <= now() AND (${customStorage}::boolean OR storage IS NULL)
         ORDER BY next_attempt_at LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, object_key, storage`;
+      RETURNING id, object_key, storage, upload_id`;
     if (rows.length === 0) break;
     const results = await Promise.allSettled(
       rows.map((row) => removeObject(row, config, objectTimeoutMs)),

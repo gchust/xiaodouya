@@ -81,6 +81,12 @@
 - **S3 签名链接的路径就是 object key。** 我们的 key 带家庭 id，所以公开页面的文件链接里一定有家庭 id 和存储地址，这和“响应不含家庭 id”冲突。测试只能查链接以外的字段，并如实写进文档和隐私政策。要去掉得改对象路径或代理文件。
 - **公开页面不能用存储配置的 `publicBaseUrl`。** App 的 `/media/urls` 对回忆走这个公开地址，它不会过期，撤销链接后还能一直打开。分享页一律签名。
 - **`hasThumb: true` 不代表缩略图已经有了。** 缩略图是后来生成的，也可能做不出来。取缩略图的地方都要能退回原图，成长册以前就是直接跳过，照片会从册子里消失。
+- **R2 的预签名文档只列了 GET、HEAD、PUT、DELETE，没提 UploadPart。** S3 兼容表把 UploadPart 列为支持，两页合起来没有说预签名的 UploadPart 一定能用。所以真实存储要跑 `cli check-multipart`，不通过就 `S3_MULTIPART_ENABLED=false`，App 退回单个 PUT。
+- **完成分片之前要核对每片的大小，不能只看片数。** `S3_BIND_UPLOAD_SIZE=false` 时一片可以传任意大小，HEAD 只看合并后的总大小，错的片加上错的片可能正好相等。大小不对的片算没传，重传同一个片号会覆盖。
+- **expo-file-system 上传的超时写死 60 秒，进度数的是写进 socket 的字节。** 模拟器的网络栈能缓存好几 MB，进度先冲到 8 MB，然后 OkHttp 等响应，慢网下 60 秒内发不完就超时重传。不能配置。这也是分片不能太大的原因之一。真实手机的缓存通常小得多，没有在真机上量过。
+- **模拟器的 `network speed` 对到宿主机 S3 的流量不起作用。** 想慢下来要在宿主机上放一个限速的 TCP 转发，`S3_PUBLIC_ENDPOINT` 指向它（SigV4 看 Host 头，转发不改它）。
+- **会一起看的几个状态不要隔着 await 改。** 任务从队列拿掉和“传完数加一”中间隔着写 SQLite，每秒一次的刷新正好落在中间时，界面看到任务没了、传完数是 0，就当成全取消了，不说“文件都上传好了”。CI 上慢才碰到，流程 14a 等满 60 秒失败。
+- **取消上传时的响应可能晚于取消。** `finish` 和 catch 都要先确认任务还在队列里，否则取消后完成的响应会通知“传好了”，失败的响应会把任务写回数据库，重试时复活。
 
 ## 健康内容
 
@@ -144,6 +150,7 @@
 - **`nodeLinker: hoisted` 下 `pnpm install --filter` 不起过滤作用。** 服务端镜像曾因此下载全部 React Native（640 多个包），慢网下超时。Dockerfile 要加 `--node-linker=isolated`（104 个包），之后的 `pnpm run` 还要关掉 `verify-deps-before-run`，否则它会重新安装并报 Broken lockfile。
 - **Deno 不解析没有扩展名的相对导入。** 服务端和 `packages/shared` 都这样写，而 shared 还要给 Metro 用，所以 Edge Function 用 esbuild 打包（`scripts/build-edge.mjs`），不用 import map。
 - **Edge 产物要用 `platform: browser`。** 这样 AWS SDK 走 fetch 和 WebCrypto，不会去读 `~/.aws/config`。postgres 写的是不带前缀的 `import net from 'net'`，要插件改成 `node:net`。打包后依赖算用户代码，旧版 Deno 不给用户代码提供 `Buffer`、`process` 全局变量，要在 banner 里补上。
+- **browser 映射下 AWS SDK 用 DOMParser 解析 XML，Deno 没有。** PUT、HEAD、GET 不解析响应体，所以一直没事；CreateMultipartUpload、ListParts 一调用就抛错，表现成“存储暂时没有响应”。`build-edge.mjs` 把 `xml-parser.browser` 换回纯 JS 的版本，并拦截产物里的 `new DOMParser`。Node 上的测试发现不了，要跑 `pnpm test:edge`。
 - **`request.signal` 不一定会触发。** 普通 Deno 在客户端断开时会触发，但在 `edge-runtime` 镜像里经主服务转发到 Worker 时，断开后一直是 `aborted=false`，Supabase 线上是否一样还不知道。依赖它的逻辑必须另有时限。
 - **Deno 在 `ssl: 'require'` 时也校验证书链。** postgres.js 传了 `rejectUnauthorized: false`，在 edge-runtime 里依然报 `invalid peer certificate`，随后表现成 `write CONNECT_TIMEOUT`，看起来像网络问题。本地连自签名的数据库要设 `SSL_CERT_FILE` 和 `DENO_TLS_CA_STORE=mozilla,system`，而且证书不能是 CA 证书。
 - **本机的 DNS 会把外部域名解析成 `198.18.x.x`。** 这是代理的假 IP，属于 SSRF 检查拦截的范围。在这台机器上测“公网地址放行”会失败，不是代码的问题。
@@ -152,6 +159,7 @@
 - **zod 在定义 schema 时就试探 `new Function`，严格 CSP 下控制台会报错。** `z.config({ jitless: true })` 要放在单独的文件里，排在所有 import 最前面，放在入口文件的正文里已经晚了。
 - **Chromium 的 `TMPDIR` 路径不能太长。** 放到 worktree 的 `.artifacts/tmp` 后报 `Socket path too long` 直接崩，换一个短路径。
 - **`/tmp` 是共享配额。** 在里面下载大文件会让所有命令报 `EDQUOT`，输出也会丢。大文件放到 worktree 的 `.artifacts/`。
+- **配额被别的项目占满时，命令其实跑了，只是拿不到输出。** Agent 的工具把输出写在 `/tmp` 下，所以这时每条命令都报 `EDQUOT`、看不到结果。把输出重定向到 `.artifacts/` 里的文件再读，`TMPDIR` 也指向那里。不要去删别人的目录。
 
 ## CI
 
@@ -184,6 +192,7 @@
 - **用 `uiautomator` 或 Maestro 点 Toast 里的按钮可能点空。** 取一次界面要好几秒，Toast 已经消失，点击会穿透到下面的内容。E2E 构建已把 Toast 放长到 8 秒。
 - **“断言失败、截图里弹层还开着”不一定是时序问题。** 这里实际是 Toast 盖住了弹层底部的按钮，真实用户也会点空。第一反应是怪测试时，先用真实操作顺序复现一遍。
 - **`takeScreenshot` 的文件在 Maestro 的调试目录里。** CI 产物路径是 `maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在 `maestro/<流程>/screenshots/`。
+- **上传中 `uiautomator dump` 要等很久。** 进度条一直在动，实测 32 秒，界面已经变了。手动走查时用截图加坐标点击。
 - **`uiautomator dump` 在界面一直有动画时会卡住。** 输入框光标闪烁、录音计时都会让它等不到空闲，`adb-ui.py` 看起来像挂了。这时用坐标点击和 `screencap`，或者先让输入框失去焦点。
 - **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。

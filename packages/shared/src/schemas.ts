@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MULTIPART_URL_BATCH } from './domain/multipart';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
 import { t } from './i18n';
 import { locales } from './i18n/locale';
@@ -440,6 +441,37 @@ export interface UploadUrlResponse {
 }
 
 export const CompleteUploadRequest = z.object({ variant: MediaVariant });
+
+export const MultipartStartRequest = UploadUrlRequest;
+export type MultipartStartRequest = z.infer<typeof MultipartStartRequest>;
+
+export interface MultipartStartResponse {
+  uploadId: string;
+  partSize: number;
+}
+
+export const MultipartRef = z.object({
+  variant: MediaVariant,
+  uploadId: z.string().min(1).max(2048),
+});
+export type MultipartRef = z.infer<typeof MultipartRef>;
+
+export interface MultipartPartsResponse {
+  /** 存储里已有的片。服务端直接问存储，不记账。 */
+  parts: { partNumber: number; size: number }[];
+  /** 文件其实已经合并好了（上次完成后还没来得及收到响应），直接调完成接口。 */
+  complete: boolean;
+}
+
+export const MultipartPartUrlsRequest = MultipartRef.extend({
+  partNumbers: z.array(z.number().int().min(1).max(10_000)).min(1).max(MULTIPART_URL_BATCH),
+});
+export type MultipartPartUrlsRequest = z.infer<typeof MultipartPartUrlsRequest>;
+
+export interface MultipartPartUrlsResponse {
+  urls: { partNumber: number; url: string; size: number }[];
+  expiresIn: number;
+}
 
 export const MediaUrlsRequest = z.object({
   items: z.array(z.object({ id: z.uuid(), variant: MediaVariant })).max(200),

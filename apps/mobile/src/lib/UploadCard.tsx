@@ -1,4 +1,5 @@
 import { quotaStatus, t } from '@xiaodouya/shared';
+import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -7,17 +8,19 @@ import { colors, motion } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Mono } from '../ui/primitives';
 import { useApp, useUploadProgress } from './app';
-import { uploadCardStatus } from './uploadStatus';
+import { uploadCardStatus, uploadSpeedText } from './uploadStatus';
 
 /**
  * 顶部上传进度。排队等 Wi-Fi 或失败时也如实显示，不让用户以为传完了。
- * 它盖在页面标题和返回链接上面，所以可以关掉，而且除了自己的按钮，点击都要穿透给下面的页面。
+ * 点卡片打开上传详情。它盖在页面标题和返回链接上面，所以可以关掉，卡片之外的点击照常给下面的页面。
  */
 export function UploadCard() {
   const { uploads, sessionState, api } = useApp();
   const progress = useUploadProgress();
   const insets = useSafeAreaInsets();
   const { toast } = useFeedback();
+  const router = useRouter();
+  const pathname = usePathname();
   const visible = useSharedValue(0);
   const fill = useSharedValue(0);
   const wasActive = useRef(false);
@@ -26,8 +29,11 @@ export function UploadCard() {
 
   const status = uploadCardStatus(progress);
   const hasWork = progress.total > 0 || progress.failedCount > 0;
-  const show = sessionState === 'ready' && hasWork && dismissedKey !== status.key;
+  // 详情页自己就显示进度，卡片再盖在标题上没有意义。
+  const show =
+    sessionState === 'ready' && hasWork && dismissedKey !== status.key && pathname !== '/uploads';
   const percent = Math.round(progress.fraction * 100);
+  const speed = uploadSpeedText(progress);
 
   // 这一批传完了就忘掉：下一批文件的状态可能和关掉时一样，但那是新的事。
   useEffect(() => {
@@ -47,6 +53,8 @@ export function UploadCard() {
     if (progress.total > 0) wasActive.current = true;
     if (wasActive.current && progress.total === 0 && progress.failedCount === 0) {
       wasActive.current = false;
+      // 全部取消时什么也没传，不能说“都传好了”。
+      if (progress.finishedInBatch === 0) return;
       toast(t().ui.allUploaded);
       // 这时候提醒快满了最有用：用户刚传完，知道是什么占了空间。读不到就算了，下次再说。
       void api
@@ -57,7 +65,7 @@ export function UploadCard() {
         })
         .catch(() => {});
     }
-  }, [progress.total, progress.failedCount, toast, api]);
+  }, [progress.total, progress.failedCount, progress.finishedInBatch, toast, api]);
 
   const style = useAnimatedStyle(() => ({
     opacity: visible.value,
@@ -69,18 +77,22 @@ export function UploadCard() {
 
   return (
     <Animated.View
-      testID={show ? 'upload-card' : undefined}
       pointerEvents={show ? 'box-none' : 'none'}
       style={[s.card, { top: insets.top + 6 }, style]}
     >
+      {/* 整张卡片的点击放在最底下一层，而不是把内容包起来：包起来的话 × 和重试成了它的子元素，无障碍会把它们合并掉。 */}
+      <Pressable
+        testID={show ? 'upload-card' : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={t().ui.openUploads(status.text)}
+        style={s.tapLayer}
+        onPress={() => router.push('/uploads')}
+      />
       <View style={s.row} pointerEvents="box-none">
         <View style={s.main} pointerEvents="none">
           <Text testID="upload-text" style={{ fontSize: 12, color: colors.ink, flexShrink: 1 }}>
             {status.text}
           </Text>
-          {progress.failedCount > 0 ? null : (
-            <Mono style={{ fontSize: 12, color: colors.muted }}>{percent}%</Mono>
-          )}
         </View>
         {progress.failedCount > 0 ? (
           <Pressable
@@ -112,7 +124,15 @@ export function UploadCard() {
           >
             {progress.failedReason}
           </Text>
-        ) : null}
+        ) : (
+          // 没有速度时也占着这一行，卡片的高度不会跟着跳。
+          <View style={s.speedLine}>
+            <Mono testID="upload-speed" style={{ fontSize: 11, color: colors.muted }}>
+              {speed ?? ' '}
+            </Mono>
+            <Mono style={{ fontSize: 11, color: colors.muted }}>{percent}%</Mono>
+          </View>
+        )}
         <View style={s.track}>
           <Animated.View style={[s.fill, fillStyle]} />
         </View>
@@ -139,8 +159,10 @@ const s = StyleSheet.create({
     shadowRadius: 9,
     shadowOffset: { width: 0, height: 6 },
   },
+  tapLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   main: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  speedLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   dismiss: { fontSize: 15, lineHeight: 16, color: colors.muted },
   track: { height: 4, borderRadius: 2, backgroundColor: '#efe7dc', overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.accent },

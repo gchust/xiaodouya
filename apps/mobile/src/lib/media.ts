@@ -1,8 +1,8 @@
 import type { MediaKind, MediaRef, MediaScope } from '@xiaodouya/shared';
-import { t } from '@xiaodouya/shared';
+import { MULTIPART_PARALLEL, t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
-import { Directory, File, Paths, UploadType } from 'expo-file-system';
+import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
 import { Image } from 'expo-image';
 import { ImageManipulator, type ImageRef, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,8 +11,10 @@ import * as Sharing from 'expo-sharing';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { Platform } from 'react-native';
 import {
+  kindFromMime,
   UploadHttpError,
   type UploadJob,
+  type UploadPartTarget,
   type UploadQueue,
   type UploadTransport,
 } from '../data/uploadQueue';
@@ -58,13 +60,6 @@ export function localUriFor(id: string, variant: 'original' | 'thumb'): string |
   } catch {
     return null;
   }
-}
-
-function kindFromMime(mime: string): MediaKind {
-  if (mime.startsWith('video/')) return 'video';
-  if (mime.startsWith('audio/')) return 'audio';
-  if (mime === 'application/pdf') return 'pdf';
-  return 'image';
 }
 
 function fileSize(uri: string, fallback?: number | null): number {
@@ -272,6 +267,7 @@ async function prepareFile(
       mime: 'image/jpeg',
       size: 0,
       wifiOnly: false,
+      mediaKind: file.kind,
       thumbSource: { uri: target.uri, kind: thumbKind },
     });
   }
@@ -284,6 +280,7 @@ async function prepareFile(
     size,
     filename: file.name,
     wifiOnly,
+    mediaKind: file.kind,
   });
   return {
     jobs,
@@ -400,7 +397,52 @@ function toUploadError(error: unknown): unknown {
   return error;
 }
 
+/** 一片的临时文件。按并行的路数命名，所以最多这么几个，上次被杀留下的下次会被覆盖。 */
+function partFile(localUri: string, slot: number): File {
+  return new File(`${localUri}-part-${slot}`);
+}
+
+/** 一次读多少。分片本身只有 8 MB，但手机内存紧张时也不值得把一整片读进 JS。 */
+const PART_COPY_CHUNK = 1024 * 1024;
+
+/**
+ * 把这一片复制成临时文件，再交给原生层流式上传。这样 JS 里只有一小块在内存里，
+ * 进度和中断也都能用 File.upload 现成的（onProgress 能到片内字节，signal 真的断开连接）。
+ */
+async function writePartFile(
+  source: File,
+  temp: File,
+  part: UploadPartTarget,
+  signal: AbortSignal,
+): Promise<void> {
+  if (temp.exists) temp.delete();
+  temp.create();
+  const from = source.open(FileMode.ReadOnly);
+  const to = temp.open(FileMode.ReadWrite);
+  try {
+    from.offset = part.offset;
+    let left = part.size;
+    while (left > 0) {
+      signal.throwIfAborted();
+      const chunk = await from.readBytes(Math.min(PART_COPY_CHUNK, left));
+      if (chunk.length === 0) throw new UploadHttpError(409, 'file_changed', t().ui.fileChanged);
+      await to.writeBytes(chunk);
+      left -= chunk.length;
+    }
+  } finally {
+    from.close();
+    to.close();
+  }
+}
+
 export function createUploadTransport(api: Api): UploadTransport {
+  const wrap = async <T>(call: () => Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      throw toUploadError(error);
+    }
+  };
   return {
     async requestUrl(request) {
       try {
@@ -409,7 +451,7 @@ export function createUploadTransport(api: Api): UploadTransport {
         throw toUploadError(error);
       }
     },
-    async put(job, target, onProgress) {
+    async put(job, target, onProgress, signal) {
       const file = new File(job.localUri);
       if (!file.exists) throw new UploadHttpError(410, 'local_missing', t().ui.localFileGone);
       const result = await file.upload(target.url, {
@@ -417,6 +459,7 @@ export function createUploadTransport(api: Api): UploadTransport {
         uploadType: UploadType.BINARY_CONTENT,
         headers: target.headers,
         onProgress: ({ bytesSent }) => onProgress(bytesSent),
+        signal,
       });
       return { status: result.status };
     },
@@ -430,10 +473,47 @@ export function createUploadTransport(api: Api): UploadTransport {
     async removeLocal(uri) {
       const file = new File(uri);
       if (file.exists) file.delete();
+      // 传到一半被取消或被杀时，临时文件还在。
+      for (let slot = 0; slot < MULTIPART_PARALLEL; slot++) {
+        const part = partFile(uri, slot);
+        if (part.exists) part.delete();
+      }
     },
     async makeThumb(job) {
       if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
       return makeThumbnail(job.thumbSource, job.localUri);
+    },
+    cancelRemote: (id) => wrap(() => api.cancelUpload(id)),
+    multipart: {
+      start: (request) => wrap(() => api.multipartStart(request)),
+      listParts: (job, uploadId) =>
+        wrap(() => api.multipartParts(job.id, { variant: job.variant, uploadId })),
+      partUrls: (job, uploadId, partNumbers) =>
+        wrap(() => api.multipartPartUrls(job.id, { variant: job.variant, uploadId, partNumbers })),
+      complete: (job, uploadId) =>
+        wrap(() => api.multipartComplete(job.id, { variant: job.variant, uploadId })),
+      async stat(job) {
+        const file = new File(job.localUri);
+        if (!file.exists) return null;
+        return { size: file.size ?? 0, modifiedAt: file.modificationTime ?? undefined };
+      },
+      async putPart(job, part, onProgress, signal) {
+        const source = new File(job.localUri);
+        if (!source.exists) throw new UploadHttpError(410, 'local_missing', t().ui.localFileGone);
+        const temp = partFile(job.localUri, part.slot);
+        try {
+          await writePartFile(source, temp, part, signal);
+          const result = await temp.upload(part.url, {
+            httpMethod: 'PUT',
+            uploadType: UploadType.BINARY_CONTENT,
+            onProgress: ({ bytesSent }) => onProgress(bytesSent),
+            signal,
+          });
+          return { status: result.status };
+        } finally {
+          if (temp.exists) temp.delete();
+        }
+      },
     },
   };
 }
