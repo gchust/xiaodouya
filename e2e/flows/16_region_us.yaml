@@ -109,7 +109,10 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: vaccine-row-bcg }
     timeout: 30000
-# 卡介苗又回到表里，还是已接种
+# 卡介苗又回到表里，还是已接种。这一行露个头就算看到了，状态可能还在屏幕外，要滚到状态本身。
+- scrollUntilVisible:
+    element: { id: vaccine-status-bcg }
+    timeout: 30000
 - assertVisible:
     text: 已接种 .*
 # Toast 可能盖住底部标签，等它消失再点
