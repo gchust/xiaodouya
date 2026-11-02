@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -23,6 +23,8 @@ describe('打包结果', () => {
   let script = '';
 
   beforeAll(() => {
+    // CI 上这个目录还不存在。
+    mkdirSync(artifacts, { recursive: true });
     out = mkdtempSync(resolve(artifacts, 'share-web-build-'));
     runBuild(API, out);
     html = readFileSync(resolve(out, 'index.html'), 'utf8');
