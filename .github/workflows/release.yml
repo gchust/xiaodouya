@@ -1,4 +1,5 @@
 name: Release
+# 临时提交：验证只改工作流文件时 E2E 被跳过，不会合并。
 
 # 打 v* 标签时发布：服务端镜像推到 GHCR，签名 APK 放到 GitHub Release。
 # 需要配置的 Secrets 和变量见 docs/DEPLOYMENT.md。
