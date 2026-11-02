@@ -225,6 +225,14 @@ RESTORE_DATABASE_URL='<Session pooler 连接串>' BACKUP_PG_IMAGE=postgres:17 \
 
 ### 10. 日常维护
 
+**升级用手动工作流最省事。** 到 Actions 页面运行“部署后端”（`.github/workflows/deploy-backend.yml`），它依次做：备份、确认存储支持把大小签进上传链接、迁移、部署函数、冒烟。任何一步失败都会停下。只能从 `main` 运行。
+
+第一次要在仓库 Secrets 里添加 `SUPABASE_ACCESS_TOKEN`，在 Supabase 控制台的 [Access Tokens](https://supabase.com/dashboard/account/tokens) 页面创建。这个令牌能操作你账号下的所有项目，用完可以撤销，下次再建。其他都沿用备份已有的 Secret，所以 `BACKUP_DATABASE_URL` 要用能改表结构的账号（Session pooler 连接串）。
+
+新函数有问题时，可以在本机检出旧版本重新部署函数。迁移只增不改，旧函数在新表结构上能继续跑，不需要回滚数据库。
+
+也可以在本机手动执行：
+
 ```bash
 # 升级：顺序不能反，新代码可能用到新表
 git pull

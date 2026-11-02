@@ -1,0 +1,97 @@
+name: 部署后端
+
+# 手动触发，把 main 上的服务端部署到 Supabase：备份 → 检查存储 → 迁移 → 部署函数 → 冒烟。
+# 顺序不能反：新代码可能用到新表，而迁移只增不改，旧函数在新表结构上能继续跑。
+# 任何一步失败都会停下，不会继续往线上写。
+# 需要 Secret SUPABASE_ACCESS_TOKEN，其他沿用备份的 Secret。说明见 docs/DEPLOYMENT.md。
+# 公开仓库的日志谁都能看：这里不能打开 set -x，也不能打印连接串和备份内容。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 和定时备份、定时清理一样不排队抢数据库；同时点两次时后一次等前一次。
+concurrency:
+  group: deploy-backend
+
+env:
+  NODE_VERSION: "24.21.0"
+  SUPABASE_CLI_VERSION: "2.122.0"
+
+jobs:
+  deploy:
+    name: 部署到 Supabase
+    # 这个任务能改生产数据库，只部署已经合并、CI 通过的代码。
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      DB_SSL: require
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      S3_REGION: auto
+      S3_FORCE_PATH_STYLE: "true"
+    steps:
+      - name: 确认配置齐全
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+        run: |
+          for name in SUPABASE_ACCESS_TOKEN DATABASE_URL S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY API_URL; do
+            [ -n "${!name}" ] || { echo "::error::没有设置 $name，见 docs/DEPLOYMENT.md"; exit 1; }
+          done
+          ref="${API_URL#https://}"
+          ref="${ref%%.*}"
+          [ -n "$ref" ] || { echo "::error::从 EXPO_PUBLIC_API_URL 取不到项目 ID"; exit 1; }
+          echo "PROJECT_REF=$ref" >> "$GITHUB_ENV"
+      # 这个任务能改生产数据，全部用 commit 固定版本，标签可以被改动。
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - name: 迁移前备份
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_PG_IMAGE: postgres:17
+        run: deploy/cloud-backup.sh backup
+      # 不通过时所有上传都会失败，要先给函数设置 S3_BIND_UPLOAD_SIZE=false 再部署。
+      - name: 确认存储支持把大小签进上传链接
+        run: pnpm --filter @xiaodouya/server cli check-upload-size
+      - name: 迁移数据库
+        run: pnpm --filter @xiaodouya/server cli migrate
+      - name: 部署函数
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          pnpm build:edge
+          supabase functions deploy api --project-ref "$PROJECT_REF"
+      - name: 冒烟检查
+        env:
+          API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          API_REGION: ${{ vars.EXPO_PUBLIC_API_REGION }}
+        run: |
+          # /v1/config 不用登录，旧版本没有这个公开接口（返回 401），所以它能证明新函数真的生效了。
+          for _ in $(seq 1 12); do
+            config="$(curl -s -m 15 -H "x-region: $API_REGION" "$API_URL/v1/config" || true)"
+            health="$(curl -s -m 15 -o /dev/null -w '%{http_code}' -H "x-region: $API_REGION" "$API_URL/healthz" || true)"
+            if [ "$health" = "200" ] && printf '%s' "$config" | grep -q '"allowCustomStorage"'; then
+              echo "冒烟通过：$config"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::新函数没有生效：healthz=$health"
+          exit 1
