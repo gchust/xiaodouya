@@ -12,6 +12,7 @@ import {
   type MomentData,
   parseCollectionData,
   type ServerRecord,
+  t,
   type VaccinePlanData,
 } from '@xiaodouya/shared';
 
@@ -160,7 +161,7 @@ export class RecordStore {
   ): Promise<void> {
     // rebuild 会跳过校验不过的记录：不在这里拦的话，它存得下却看不见，服务端也不收，改已有记录时原来的内容也没了。
     if (!parseCollectionData(collection, data)) {
-      throw new Error('内容超出了限制，没有保存');
+      throw new Error(t().ui.recordTooLarge);
     }
     const record: StoredRecord = {
       id,

@@ -461,7 +461,13 @@ export const styles = StyleSheet.create({
   },
   stripes: { overflow: 'hidden', backgroundColor: colors.line },
   empty: { paddingVertical: 48, paddingHorizontal: 22, alignItems: 'center', gap: 8 },
-  emptyTitle: { fontSize: 16, fontFamily: fonts.serifBold, textAlign: 'center' },
+  // 撑满宽度：跟着文字收缩时，Android 量出的宽度偶尔比实际画的窄一点，最后一个英文单词被折到看不见的第二行。
+  emptyTitle: {
+    fontSize: 16,
+    fontFamily: fonts.serifBold,
+    textAlign: 'center',
+    alignSelf: 'stretch',
+  },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
 });
 

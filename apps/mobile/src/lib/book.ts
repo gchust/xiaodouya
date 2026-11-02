@@ -4,6 +4,7 @@ import {
   type MediaRef,
   type MomentData,
   regionFor,
+  t,
 } from '@xiaodouya/shared';
 import { File, Paths } from 'expo-file-system';
 import * as Print from 'expo-print';
@@ -32,7 +33,7 @@ export async function exportGrowthBook(
   letters: { data: LetterData }[],
 ): Promise<void> {
   if (moments.length === 0 && letters.length === 0) {
-    throw new Error('还没有回忆和信，先记下一些吧');
+    throw new Error(t().ui.bookEmpty);
   }
   const wanted = moments.map((m) => ({
     data: m.data,
@@ -86,6 +87,6 @@ export async function exportGrowthBook(
   await new File(printed.uri).move(target);
   await Sharing.shareAsync(target.uri, {
     mimeType: 'application/pdf',
-    dialogTitle: `${baby.name}的成长册`,
+    dialogTitle: t().ui.bookTitle(baby.name),
   });
 }

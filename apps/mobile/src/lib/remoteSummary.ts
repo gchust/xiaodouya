@@ -1,4 +1,4 @@
-import { describeEvent, EventData, type ServerRecord, type Units } from '@xiaodouya/shared';
+import { describeEvent, EventData, type ServerRecord, t, type Units } from '@xiaodouya/shared';
 
 interface Member {
   userId: string;
@@ -30,7 +30,7 @@ export function summarizeRemote(
   const authorOf = (record: ServerRecord) =>
     members.find((m) => m.userId === record.createdBy)?.label ??
     (record.data as { byName?: string }).byName ??
-    '家人';
+    t().ui.familyMember;
   const latest = relevant.reduce<ServerRecord | null>(
     (found, r) => (!found || atOf(r) >= atOf(found) ? r : found),
     null,
@@ -39,16 +39,19 @@ export function summarizeRemote(
   const text =
     latest.collection === 'event'
       ? describeEvent(latest.data as EventData, now, units)
-      : (latest.data as { title?: string }).title || '新的一刻';
+      : (latest.data as { title?: string }).title || t().ui.newMoment;
   const author = authorOf(latest);
   if (relevant.length === 1) {
-    return { initial: author.slice(0, 1), message: `${author} 记录了 ${text}` };
+    return { initial: author.slice(0, 1), message: t().ui.remoteOne(author, text) };
   }
   if (new Set(relevant.map(authorOf)).size === 1) {
     return {
       initial: author.slice(0, 1),
-      message: `${author} 记了 ${relevant.length} 条，最近是 ${text}`,
+      message: t().ui.remoteMany(author, relevant.length, text),
     };
   }
-  return { initial: '家', message: `家人记了 ${relevant.length} 条，最近是 ${author} · ${text}` };
+  return {
+    initial: t().ui.familyInitial,
+    message: t().ui.remoteFamily(relevant.length, author, text),
+  };
 }

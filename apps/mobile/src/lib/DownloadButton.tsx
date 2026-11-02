@@ -1,4 +1,5 @@
 import type { MediaRef } from '@xiaodouya/shared';
+import { t } from '@xiaodouya/shared';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -48,15 +49,14 @@ export function DownloadButton({
       begin();
       return;
     }
-    sheet.open('保存到手机', () => (
+    sheet.open(t().ui.saveToPhone, () => (
       <>
         <Muted style={{ fontSize: 13, lineHeight: 20 }} testID="doc-download-note">
-          保存后，「{fileName}
-          」会离开小豆芽的保护，手机上的其他应用可能看到它。请选一个你放心的位置。
+          {t().ui.saveLeavesApp(fileName)}
         </Muted>
         <Button
           testID="doc-download-confirm"
-          label="选择位置"
+          label={t().ui.chooseLocation}
           onPress={() => {
             sheet.close();
             begin();
@@ -75,9 +75,9 @@ export function DownloadButton({
       accessibilityLabel={
         state
           ? saving
-            ? `正在保存${fileName}`
-            : `取消下载${fileName}${progress ? `，已完成 ${progress}` : ''}`
-          : `下载${fileName}`
+            ? t().ui.savingFile(fileName)
+            : t().ui.cancelDownload(fileName, progress ? t().ui.cancelDownloadDone(progress) : '')
+          : t().ui.downloadFile(fileName)
       }
       accessibilityState={{ busy: Boolean(state), disabled: saving }}
       disabled={saving}
@@ -92,7 +92,7 @@ export function DownloadButton({
       ) : state ? (
         <ActivityIndicator size="small" color={ink} />
       ) : (
-        <Text style={[s.label, { color: ink }]}>下载</Text>
+        <Text style={[s.label, { color: ink }]}>{t().ui.download}</Text>
       )}
     </Pressable>
   );

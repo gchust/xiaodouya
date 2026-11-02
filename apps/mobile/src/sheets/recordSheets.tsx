@@ -26,8 +26,10 @@ import {
   planSchedule,
   scaleFor,
   stepDisplay,
+  t,
   toDisplay,
   toMetric,
+  vaccineRecordName,
   vaccineStatuses,
   vaccinesToOffer,
 } from '@xiaodouya/shared';
@@ -83,20 +85,23 @@ export function useSaveEvent() {
       sheet.close();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
-      const suffix = others.length === 1 ? ` · 已同步给${others[0]?.label}` : '';
+      const suffix = others.length === 1 ? t().records.syncedTo(others[0]?.label ?? '') : '';
       const now = Date.now();
       // 不是今天的记录在时间线上看不到，Toast 要说清楚记到了哪一天。
       const day =
         new Date(data.at).toDateString() === new Date(now).toDateString()
           ? ''
           : `${formatMonthDay(data.at)} `;
-      toast(`${id ? '已保存' : '已记录'} · ${day}${describeEvent(data, now, units)}${suffix}`, {
-        undo: id
-          ? latest
-            ? () => void app.write('event', latest, id)
-            : undefined
-          : () => void app.remove(recordId),
-      });
+      toast(
+        `${id ? t().records.saved : t().records.logged} · ${day}${describeEvent(data, now, units)}${suffix}`,
+        {
+          undo: id
+            ? latest
+              ? () => void app.write('event', latest, id)
+              : undefined
+            : () => void app.remove(recordId),
+        },
+      );
     },
     [app, sheet, toast, me, label, units],
   );
@@ -109,7 +114,7 @@ function EventNote({ value, onChange }: { value: string; onChange: (next: string
       testID="event-note"
       value={value}
       onChangeText={onChange}
-      placeholder="备注（可选）"
+      placeholder={t().records.noteOptional}
       maxLength={200}
     />
   );
@@ -135,7 +140,7 @@ function Stepper({
       <Pressable
         testID={`${testPrefix}-dec`}
         accessibilityRole="button"
-        accessibilityLabel="减少"
+        accessibilityLabel={t().records.decrease}
         onPress={onDec}
         style={s.stepBtn}
       >
@@ -150,11 +155,11 @@ function Stepper({
       <Pressable
         testID={`${testPrefix}-inc`}
         accessibilityRole="button"
-        accessibilityLabel="增加"
+        accessibilityLabel={t().records.increase}
         onPress={onInc}
         style={s.stepBtn}
       >
-        <Text style={s.stepSign}>＋</Text>
+        <Text style={s.stepSign}>{t().records.plus}</Text>
       </Pressable>
     </View>
   );
@@ -189,7 +194,7 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
   if (addingFormula) {
     return (
       <AddFormulaFlow
-        heading="添加奶粉"
+        heading={t().records.addFormula}
         onCancel={() => setAddingFormula(false)}
         onDone={(formulaId) => {
           setAddingFormula(false);
@@ -236,7 +241,7 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
         testID="feed-note"
         value={note}
         onChangeText={setNote}
-        placeholder="备注（可选）：吐奶、打嗝、喝得慢…"
+        placeholder={t().records.feedNotePlaceholder}
         maxLength={200}
       />
       <MilkChooser
@@ -246,7 +251,7 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
       />
       <Button
         testID="feed-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={Boolean(time.check.error)}
         onPress={() =>
           void save(
@@ -270,11 +275,12 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
   );
 }
 
-const DIAPER_OPTIONS = [
-  { kind: 'wee', label: '尿尿' },
-  { kind: 'poo', label: '便便' },
-  { kind: 'both', label: '都有' },
-] as const;
+const diaperOptions = () =>
+  [
+    { kind: 'wee', label: t().records.diaperWet },
+    { kind: 'poo', label: t().records.diaperDirty },
+    { kind: 'both', label: t().records.diaperBoth },
+  ] as const;
 
 export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {}) {
   const save = useSaveEvent();
@@ -298,7 +304,7 @@ export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {})
     <>
       <RecordTimeField time={time} />
       <View style={s.diaperRow}>
-        {DIAPER_OPTIONS.map(({ kind, label }) => {
+        {diaperOptions().map(({ kind, label }) => {
           const on = selected === kind;
           return (
             <PressScale
@@ -329,7 +335,7 @@ export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {})
           <EventNote value={note} onChange={setNote} />
           <Button
             testID="diaper-save"
-            label="保存"
+            label={t().common.save}
             disabled={invalid}
             onPress={() => {
               if (selected) record(selected);
@@ -337,7 +343,7 @@ export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {})
           />
         </>
       ) : (
-        <Muted>点一下就记好了。</Muted>
+        <Muted>{t().records.oneTapHint}</Muted>
       )}
     </>
   );
@@ -367,12 +373,17 @@ export function SleepSheet({ initial, id }: SheetMode<'sleep'> = {}) {
   };
   return (
     <>
-      <DateTimeRow label="睡着" testID="sleep-start" value={start} onChange={changeStart} />
+      <DateTimeRow
+        label={t().records.fellAsleep}
+        testID="sleep-start"
+        value={start}
+        onChange={changeStart}
+      />
       {wasOpen ? (
         <View>
           <Toggle
             testID="sleep-still"
-            label="还在睡"
+            label={t().records.stillAsleep}
             value={stillAsleep}
             onChange={(next) => {
               setStillAsleep(next);
@@ -383,13 +394,13 @@ export function SleepSheet({ initial, id }: SheetMode<'sleep'> = {}) {
         </View>
       ) : null}
       {stillAsleep ? null : (
-        <DateTimeRow label="醒来" testID="sleep-end" value={end} onChange={setEnd} />
+        <DateTimeRow label={t().records.wokeUp} testID="sleep-end" value={end} onChange={setEnd} />
       )}
       <TimeCheckText check={check} />
       <EventNote value={note} onChange={setNote} />
       <Button
         testID="sleep-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={Boolean(check.error)}
         onPress={() =>
           void save(
@@ -417,27 +428,27 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
   const itemWidth = gridItemWidth(windowWidth - spacing.page * 2, 3, MORE_GAP);
   const canEatSolids = ageParts(birthAt, Date.now()).months >= 6;
   const open = (label: string, render: () => ReactNode) =>
-    sheet.replace(backfill ? `补记${label}` : label, render);
+    sheet.replace(backfill ? t().records.backfillTitle(label) : label, render);
   // 平时这三样在今天页有自己的按钮，只有补记才要从这里进。
   const daily = backfill
     ? [
         {
           key: 'feed',
-          label: '喂奶',
+          label: t().today.feed,
           color: colors.accent,
-          onPress: () => open('喂奶', () => <FeedSheet backfill />),
+          onPress: () => open(t().today.feed, () => <FeedSheet backfill />),
         },
         {
           key: 'diaper',
-          label: '尿布',
+          label: t().today.diaper,
           color: colors.diaper,
-          onPress: () => open('尿布', () => <DiaperSheet backfill />),
+          onPress: () => open(t().today.diaper, () => <DiaperSheet backfill />),
         },
         {
           key: 'sleep',
-          label: '睡眠',
+          label: t().today.sleep,
           color: colors.sleep,
-          onPress: () => open('睡眠', () => <SleepSheet />),
+          onPress: () => open(t().today.sleep, () => <SleepSheet />),
         },
       ]
     : [];
@@ -446,42 +457,49 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
       ...daily,
       {
         key: 'temp',
-        label: '体温',
+        label: t().records.temp,
         color: '#b8645e',
-        onPress: () => open('体温', () => <TempSheet birthAt={birthAt} backfill={backfill} />),
+        onPress: () =>
+          open(t().records.temp, () => <TempSheet birthAt={birthAt} backfill={backfill} />),
       },
       {
         key: 'med',
-        label: '吃药',
+        label: t().records.med,
         color: '#8a7a9e',
-        onPress: () => open('吃药', () => <MedSheet backfill={backfill} />),
+        onPress: () => open(t().records.med, () => <MedSheet backfill={backfill} />),
       },
       {
         key: 'bath',
-        label: '洗澡',
+        label: t().records.bath,
         color: '#6f9aa0',
-        onPress: () => open('洗澡', () => <BathSheet backfill={backfill} />),
+        onPress: () => open(t().records.bath, () => <BathSheet backfill={backfill} />),
       },
       {
         key: 'growth',
-        label: '身高体重',
+        label: t().records.growth,
         color: '#6f9a6a',
-        onPress: () => open('身高体重', () => <GrowthSheet backfill={backfill} />),
+        onPress: () => open(t().records.growth, () => <GrowthSheet backfill={backfill} />),
       },
       {
         key: 'vaccine',
-        label: '疫苗',
+        label: t().records.vaccine,
         color: '#6f9a6a',
-        onPress: () => sheet.replace('疫苗接种', () => <VaccineSheet birthAt={birthAt} />),
+        onPress: () =>
+          sheet.replace(t().today.vaccination, () => <VaccineSheet birthAt={birthAt} />),
       },
       canEatSolids
         ? {
             key: 'solids',
-            label: '辅食',
+            label: t().records.solids,
             color: '#c9a24a',
-            onPress: () => open('辅食', () => <SolidsSheet backfill={backfill} />),
+            onPress: () => open(t().records.solids, () => <SolidsSheet backfill={backfill} />),
           }
-        : { key: 'solids', label: '辅食', color: colors.hint, sub: '6 个月后开放' },
+        : {
+            key: 'solids',
+            label: t().records.solids,
+            color: colors.hint,
+            sub: t().records.solidsFrom6m,
+          },
     ];
   return (
     <View style={s.moreGrid}>
@@ -541,7 +559,7 @@ export function TempSheet({
       </Text>
       <Button
         testID="temp-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={Boolean(time.check.error)}
         onPress={() => {
           const at = time.resolve();
@@ -567,22 +585,22 @@ export function TempSheet({
 
 export function MedSheet({ initial, id, backfill }: SheetMode<'med'> = {}) {
   const save = useSaveEvent();
-  const [name, setName] = useState(initial?.name ?? '维生素D');
-  const [dose, setDose] = useState(initial ? (initial.dose ?? '') : '1 滴');
+  const [name, setName] = useState(initial?.name ?? medicineSuggestions()[0] ?? '');
+  const [dose, setDose] = useState(initial ? (initial.dose ?? '') : t().records.oneDrop);
   const [note, setNote] = useState(initial?.note ?? '');
   const time = useRecordTime({ at: initial?.at, backfill });
   return (
     <>
       <RecordTimeField time={time} />
       <View style={s.chips}>
-        {medicineSuggestions.map((v) => (
+        {medicineSuggestions().map((v) => (
           <Chip
             key={v}
             label={v}
             selected={name === v}
             onPress={() => {
               setName(v);
-              setDose(v === '维生素D' ? '1 滴' : '');
+              setDose(v === medicineSuggestions()[0] ? t().records.oneDrop : '');
             }}
           />
         ))}
@@ -591,20 +609,20 @@ export function MedSheet({ initial, id, backfill }: SheetMode<'med'> = {}) {
         testID="med-name"
         value={name}
         onChangeText={setName}
-        placeholder="药名"
+        placeholder={t().records.medName}
         maxLength={100}
       />
       <SoftInput
         testID="med-dose"
         value={dose}
         onChangeText={setDose}
-        placeholder="剂量"
+        placeholder={t().records.dose}
         maxLength={100}
       />
       {id ? <EventNote value={note} onChange={setNote} /> : null}
       <Button
         testID="med-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={!name.trim() || Boolean(time.check.error)}
         onPress={() =>
           void save(
@@ -637,13 +655,12 @@ export function BathSheet({ initial, id, backfill }: SheetMode<'bath'> = {}) {
         <EventNote value={note} onChange={setNote} />
       ) : (
         <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-          水温 {formatTemperatureRange(37, 40, temperature)}
-          ，用手肘试一下不烫就好。洗完先擦干脐部和皮肤褶皱。
+          {t().records.bathTip(formatTemperatureRange(37, 40, temperature))}
         </Muted>
       )}
       <Button
         testID="bath-save"
-        label={id ? '保存' : '记录洗澡'}
+        label={id ? t().common.save : t().records.recordBath}
         disabled={Boolean(time.check.error)}
         onPress={() =>
           void save(
@@ -669,13 +686,13 @@ export function SolidsSheet({ initial, id, backfill }: SheetMode<'solids'> = {})
         testID="solids-note"
         value={food}
         onChangeText={setFood}
-        placeholder="吃了什么？比如：南瓜泥两勺"
+        placeholder={t().records.solidsPlaceholder}
         maxLength={200}
       />
       {id ? <EventNote value={note} onChange={setNote} /> : null}
       <Button
         testID="solids-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={!food.trim() || Boolean(time.check.error)}
         onPress={() =>
           void save(
@@ -716,7 +733,7 @@ function SmallStepper({
       <Pressable
         testID={`${testPrefix}-dec`}
         accessibilityRole="button"
-        accessibilityLabel={`${label}减少`}
+        accessibilityLabel={t().records.labelDecrease(label)}
         onPress={onDec}
         style={s.smallBtn}
       >
@@ -729,11 +746,11 @@ function SmallStepper({
       <Pressable
         testID={`${testPrefix}-inc`}
         accessibilityRole="button"
-        accessibilityLabel={`${label}增加`}
+        accessibilityLabel={t().records.labelIncrease(label)}
         onPress={onInc}
         style={s.smallBtn}
       >
-        <Text style={{ fontSize: 18, color: colors.ink }}>＋</Text>
+        <Text style={{ fontSize: 18, color: colors.ink }}>{t().records.plus}</Text>
       </Pressable>
     </View>
   );
@@ -757,7 +774,7 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
       <RecordTimeField time={time} />
       <SmallStepper
         testPrefix="weight"
-        label="体重"
+        label={t().records.weight}
         value={w.toFixed(1)}
         unit={scaleFor('weight', units.weight).label}
         onDec={() => setW((v) => stepDisplay('weight', v, -1, units.weight))}
@@ -765,7 +782,7 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
       />
       <SmallStepper
         testPrefix="length"
-        label="身长"
+        label={t().records.length}
         value={h.toFixed(1)}
         unit={scaleFor('length', units.length).label}
         onDec={() => setH((v) => stepDisplay('length', v, -1, units.length))}
@@ -774,7 +791,7 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
       {id ? <EventNote value={note} onChange={setNote} /> : null}
       <Button
         testID="growth-save"
-        label={id ? '保存' : '记录'}
+        label={id ? t().common.save : t().records.record}
         disabled={Boolean(time.check.error)}
         onPress={() =>
           void save(
@@ -828,7 +845,7 @@ export function VaccineSheet({
   const [date, setDate] = useState(() => new Date());
   const isCustom = selected === CUSTOM_OPTION;
   const dose = pending.find((v) => v.id === selected);
-  const name = isCustom ? customName.trim() : dose?.name;
+  const name = isCustom ? customName.trim() : dose?.recordName;
   const now = Date.now();
   const check = checkRecordTime({ at: doseTimestamp(date, now), birthAt, now, dateOnly: true });
   const submit = () => {
@@ -845,20 +862,20 @@ export function VaccineSheet({
     <View style={s.chips}>
       <Chip
         testID="vaccine-mode-done"
-        label="已经打了"
+        label={t().records.alreadyGiven}
         selected={!planning}
         onPress={() => {
           setPlanning(false);
-          sheet.setTitle('疫苗接种');
+          sheet.setTitle(t().today.vaccination);
         }}
       />
       <Chip
         testID="vaccine-mode-plan"
-        label="还没打，加进计划"
+        label={t().records.notYetPlan}
         selected={planning}
         onPress={() => {
           setPlanning(true);
-          sheet.setTitle('加进计划');
+          sheet.setTitle(t().records.addToPlan);
         }}
       />
     </View>
@@ -875,7 +892,12 @@ export function VaccineSheet({
     <>
       {modeChips}
       {preselect && dose ? <DosePlanBar dose={dose} /> : null}
-      <PastDatePicker label="接种日期" testID="vaccine-date" value={date} onChange={setDate} />
+      <PastDatePicker
+        label={t().records.doseDate}
+        testID="vaccine-date"
+        value={date}
+        onChange={setDate}
+      />
       <DayChips
         testID="vaccine-date"
         value={date.getTime()}
@@ -905,13 +927,13 @@ export function VaccineSheet({
           <Pressable
             testID="vaccine-custom"
             accessibilityRole="button"
-            accessibilityLabel="其他疫苗"
+            accessibilityLabel={t().records.otherVaccine}
             accessibilityState={{ selected: isCustom }}
             onPress={() => setSelected(CUSTOM_OPTION)}
             style={[s.vaccineOption, { backgroundColor: isCustom ? colors.ink : colors.paper }]}
           >
             <Text style={{ fontSize: 14, color: isCustom ? colors.paper : colors.ink }}>
-              其他疫苗（自己填名字）
+              {t().records.otherVaccineCustom}
             </Text>
           </Pressable>
         ) : null}
@@ -921,7 +943,7 @@ export function VaccineSheet({
           testID="vaccine-custom-name"
           value={customName}
           onChangeText={setCustomName}
-          placeholder="疫苗名称"
+          placeholder={t().records.vaccineName}
           maxLength={100}
         />
       ) : null}
@@ -929,7 +951,13 @@ export function VaccineSheet({
       <Muted testID="vaccine-sheet-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
         {region.disclaimer}
       </Muted>
-      <Button testID="vaccine-save" tone="green" label="已接种" disabled={!name} onPress={submit} />
+      <Button
+        testID="vaccine-save"
+        tone="green"
+        label={t().records.given}
+        disabled={!name}
+        onPress={submit}
+      />
     </>
   );
 }
@@ -952,7 +980,12 @@ function VaccineEditSheet({ initial, id }: { initial: EventOf<'vaccine'>; id: st
   });
   return (
     <>
-      <PastDatePicker label="接种日期" testID="vaccine-date" value={date} onChange={setDate} />
+      <PastDatePicker
+        label={t().records.doseDate}
+        testID="vaccine-date"
+        value={date}
+        onChange={setDate}
+      />
       <DayChips
         testID="vaccine-date"
         value={date.getTime()}
@@ -964,7 +997,7 @@ function VaccineEditSheet({ initial, id }: { initial: EventOf<'vaccine'>; id: st
           testID="vaccine-custom-name"
           value={name}
           onChangeText={setName}
-          placeholder="疫苗名称"
+          placeholder={t().records.vaccineName}
           maxLength={100}
         />
       ) : null}
@@ -973,7 +1006,7 @@ function VaccineEditSheet({ initial, id }: { initial: EventOf<'vaccine'>; id: st
       <Button
         testID="vaccine-edit-save"
         tone="green"
-        label="保存"
+        label={t().common.save}
         disabled={!name.trim() || Boolean(check.error)}
         onPress={() =>
           void save(
@@ -999,26 +1032,38 @@ function eventEditor(
 ): { title: string; render: () => ReactNode } {
   switch (event.type) {
     case 'feed':
-      return { title: '修改喂奶', render: () => <FeedSheet initial={event} id={id} /> };
+      return { title: t().records.editFeed, render: () => <FeedSheet initial={event} id={id} /> };
     case 'diaper':
-      return { title: '修改尿布', render: () => <DiaperSheet initial={event} id={id} /> };
+      return {
+        title: t().records.editDiaper,
+        render: () => <DiaperSheet initial={event} id={id} />,
+      };
     case 'sleep':
-      return { title: '修改睡眠', render: () => <SleepSheet initial={event} id={id} /> };
+      return { title: t().records.editSleep, render: () => <SleepSheet initial={event} id={id} /> };
     case 'temp':
       return {
-        title: '修改体温',
+        title: t().records.editTemp,
         render: () => <TempSheet birthAt={birthAt} initial={event} id={id} />,
       };
     case 'med':
-      return { title: '修改吃药', render: () => <MedSheet initial={event} id={id} /> };
+      return { title: t().records.editMed, render: () => <MedSheet initial={event} id={id} /> };
     case 'bath':
-      return { title: '修改洗澡', render: () => <BathSheet initial={event} id={id} /> };
+      return { title: t().records.editBath, render: () => <BathSheet initial={event} id={id} /> };
     case 'solids':
-      return { title: '修改辅食', render: () => <SolidsSheet initial={event} id={id} /> };
+      return {
+        title: t().records.editSolids,
+        render: () => <SolidsSheet initial={event} id={id} />,
+      };
     case 'growth':
-      return { title: '修改身高体重', render: () => <GrowthSheet initial={event} id={id} /> };
+      return {
+        title: t().records.editGrowth,
+        render: () => <GrowthSheet initial={event} id={id} />,
+      };
     case 'vaccine':
-      return { title: event.name, render: () => <VaccineEditSheet initial={event} id={id} /> };
+      return {
+        title: vaccineRecordName(event.vaccineId, event.name),
+        render: () => <VaccineEditSheet initial={event} id={id} />,
+      };
   }
 }
 
@@ -1043,28 +1088,32 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
   const remove = async () => {
     await app.remove(id);
     sheet.close();
-    toast('已删除这条记录', {
+    toast(t().records.recordDeleted, {
       undo: () => void app.write('event', event, id),
     });
   };
   return (
     <>
       <Muted testID="event-detail" style={{ fontSize: 13, lineHeight: 20 }}>
-        {[eventTimeText(event), event.note, event.byName ? `${event.byName}记录` : null]
+        {[
+          eventTimeText(event),
+          event.note,
+          event.byName ? t().records.recordedBy(event.byName) : null,
+        ]
           .filter(Boolean)
           .join(' · ')}
       </Muted>
       <Button
         testID="event-edit"
         tone="outline"
-        label="修改"
+        label={t().records.edit}
         onPress={() => sheet.replace(editor.title, editor.render)}
       />
       {isOpenSleep ? (
         <Button
           testID="event-wake"
           tone="outline"
-          label="现在醒了"
+          label={t().records.awakeNow}
           onPress={() => {
             void app.write('event', { ...event, endAt: Date.now() }, id);
             sheet.close();
@@ -1074,7 +1123,7 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
       <Button
         testID="event-delete"
         tone="ghost"
-        label="删除这条记录"
+        label={t().records.deleteRecord}
         onPress={() => void remove()}
       />
     </>

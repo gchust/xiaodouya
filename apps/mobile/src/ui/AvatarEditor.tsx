@@ -1,4 +1,5 @@
 import type { MediaRef } from '@xiaodouya/shared';
+import { t } from '@xiaodouya/shared';
 import { Image } from 'expo-image';
 import type { ImageRef } from 'expo-image-manipulator';
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from 'react';
@@ -46,7 +47,7 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
     try {
       await work();
     } catch (error) {
-      toast(error instanceof Error ? error.message : '没有改成，请再试一次');
+      toast(error instanceof Error ? error.message : t().ui.avatarFailed);
     } finally {
       setBusy(false);
     }
@@ -61,7 +62,7 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
   const persist = async (file: PickedFile) => {
     await saveAvatar(app, file);
     reset();
-    toast('头像换好了');
+    toast(t().ui.avatarDone);
   };
 
   const replace = () =>
@@ -116,7 +117,7 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
         ) : (
           <Image
             testID="avatar-draft"
-            accessibilityLabel="改好的头像预览"
+            accessibilityLabel={t().ui.avatarPreview}
             source={draft}
             contentFit="contain"
             style={StyleSheet.absoluteFill}
@@ -131,10 +132,15 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
       <View style={[s.bar, { paddingBottom: Math.max(insets.bottom, 8) + 4 }]}>
         {cropping ? (
           <>
-            <BarButton id="avatar-cancel" label="取消" disabled={busy} onPress={cancel} />
+            <BarButton
+              id="avatar-cancel"
+              label={t().common.cancel}
+              disabled={busy}
+              onPress={cancel}
+            />
             <BarButton
               id="avatar-crop-confirm"
-              label="裁好了"
+              label={t().ui.cropDone}
               primary
               disabled={busy}
               onPress={() => void confirmCrop()}
@@ -142,22 +148,27 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
           </>
         ) : dirty ? (
           <>
-            <BarButton id="avatar-cancel" label="取消" disabled={busy} onPress={cancel} />
+            <BarButton
+              id="avatar-cancel"
+              label={t().common.cancel}
+              disabled={busy}
+              onPress={cancel}
+            />
             <BarButton
               id="avatar-rotate"
-              label="旋转"
+              label={t().ui.rotate}
               disabled={busy}
               onPress={() => void rotate()}
             />
             <BarButton
               id="avatar-crop"
-              label="裁剪"
+              label={t().ui.crop}
               disabled={busy}
               onPress={() => void startCrop()}
             />
             <BarButton
               id="avatar-save"
-              label="保存"
+              label={t().common.save}
               primary
               disabled={busy}
               onPress={() => void save()}
@@ -167,19 +178,19 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
           <>
             <BarButton
               id="avatar-replace"
-              label="换一张"
+              label={t().ui.replacePhoto}
               disabled={busy}
               onPress={() => void replace()}
             />
             <BarButton
               id="avatar-rotate"
-              label="旋转"
+              label={t().ui.rotate}
               disabled={busy || !media}
               onPress={() => void rotate()}
             />
             <BarButton
               id="avatar-crop"
-              label="裁剪"
+              label={t().ui.crop}
               disabled={busy || !media}
               onPress={() => void startCrop()}
             />
@@ -330,7 +341,7 @@ function CropStage({
                 {/* 今天页的头像是圆的，这条线告诉家长最后露出来的是哪一块。 */}
                 <View style={[s.circle, { borderRadius: frame / 2 }]} />
               </View>
-              <Text style={[s.hint, { top: frameTop + frame + 14 }]}>拖动调整位置，双击放大</Text>
+              <Text style={[s.hint, { top: frameTop + frame + 14 }]}>{t().ui.cropHint}</Text>
             </View>
           </>
         ) : null}

@@ -1,4 +1,4 @@
-import { formatBytes, quotaStatus, type StorageUsage } from '@xiaodouya/shared';
+import { formatBytes, quotaStatus, type StorageUsage, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -23,7 +23,7 @@ export function StorageUsagePage() {
     try {
       setUsage(await app.api.storageUsage());
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '读取失败');
+      setLoadError(error instanceof Error ? error.message : t().storageUi.readFailed);
     }
   }, [app.api]);
 
@@ -52,13 +52,13 @@ export function StorageUsagePage() {
           <Pressable
             testID="storage-back"
             accessibilityRole="button"
-            accessibilityLabel="返回家人"
+            accessibilityLabel={t().storageUi.backToFamily}
             hitSlop={12}
             onPress={() => router.back()}
           >
-            <Text style={s.back}>‹ 家人</Text>
+            <Text style={s.back}>{t().storageUi.backFamilyLink}</Text>
           </Pressable>
-          <PageTitle>存储</PageTitle>
+          <PageTitle>{t().family.storage}</PageTitle>
         </View>
 
         {loadError ? (
@@ -67,7 +67,7 @@ export function StorageUsagePage() {
             <Button
               testID="storage-retry"
               tone="outline"
-              label="重新读取"
+              label={t().storageUi.reread}
               height={44}
               style={{ borderRadius: 14 }}
               labelStyle={s.outlineLabel}
@@ -81,8 +81,11 @@ export function StorageUsagePage() {
           <View style={s.card} testID="storage-usage">
             <Text testID="storage-usage-total" style={s.total}>
               {limited
-                ? `已用 ${formatBytes(usage.quotaUsed ?? usage.total)}，共 ${formatBytes(usage.quota ?? 0)}`
-                : `已用 ${formatBytes(usage.total)}`}
+                ? t().storageUi.usedOf(
+                    formatBytes(usage.quotaUsed ?? usage.total),
+                    formatBytes(usage.quota ?? 0),
+                  )
+                : t().storageUi.usedOnly(formatBytes(usage.total))}
             </Text>
             <View style={s.bar}>
               <View style={{ width: width(usage.image), backgroundColor: colors.accent }} />
@@ -91,10 +94,26 @@ export function StorageUsagePage() {
               <View style={{ width: width(usage.document), backgroundColor: colors.green }} />
             </View>
             <View style={s.legend}>
-              <LegendItem color={colors.accent} label="照片" value={usage.image} />
-              <LegendItem color={colors.sleep} label="视频" value={usage.video} />
-              <LegendItem color={colors.diaper} label="录音" value={usage.audio} />
-              <LegendItem color={colors.green} label="证件" value={usage.document} />
+              <LegendItem
+                color={colors.accent}
+                label={t().storageUi.photosLabel}
+                value={usage.image}
+              />
+              <LegendItem
+                color={colors.sleep}
+                label={t().storageUi.videosLabel}
+                value={usage.video}
+              />
+              <LegendItem
+                color={colors.diaper}
+                label={t().storageUi.audioLabel}
+                value={usage.audio}
+              />
+              <LegendItem
+                color={colors.green}
+                label={t().storageUi.docsLabel}
+                value={usage.document}
+              />
             </View>
             {status?.warning ? (
               <Text testID="storage-quota-warning" style={[s.warning, { color: warnColor }]}>
@@ -106,20 +125,20 @@ export function StorageUsagePage() {
 
         {usage ? (
           <Muted style={s.note}>
-            {limited ? '照片、视频和证件都存在小豆芽的服务器上，不用自己设置什么。\n' : ''}
+            {limited ? t().storageUi.hostedNote : ''}
             {usage.trash > 0
-              ? `刚删除的内容（${formatBytes(usage.trash)}）会再保留 ${usage.trashDays} 天，之后彻底清理。这期间不算在已用空间里，一次删得特别多时超出上限的部分除外。`
-              : `删除回忆或证件后，空间马上就能用，文件会再保留 ${usage.trashDays} 天才彻底清理。`}
+              ? t().storageUi.trashHeld(formatBytes(usage.trash), usage.trashDays)
+              : t().storageUi.trashFree(usage.trashDays)}
           </Muted>
         ) : null}
 
         <View style={{ gap: 8 }}>
-          <SectionTitle>选项</SectionTitle>
+          <SectionTitle>{t().storageUi.options}</SectionTitle>
           <ListCard>
             <Toggle
               testID="pref-wifi"
-              label="视频只在 Wi-Fi 下上传"
-              sub="用流量时先排队，连上 Wi-Fi 自动继续"
+              label={t().storageUi.videoWifi}
+              sub={t().storageUi.videoWifiSub}
               value={app.prefs.videoWifiOnly}
               onChange={(v) => void app.updatePrefs({ videoWifiOnly: v })}
               last

@@ -1,0 +1,72 @@
+# 多语言：在设置里换成英文，今天页和喂奶记录都是英文，记录里的内容不变；换回中文，后面的流程不受影响。
+# E2E 构建没选过语言时固定中文（CI 模拟器是 en-US），所以这里要明确换回去。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-language }
+- tapOn: { id: open-language }
+- extendedWaitUntil:
+    visible: { id: lang-en }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-18a-language-sheet
+- tapOn: { id: lang-en }
+# 界面重新挂载：弹层关闭，还在家人页，导航状态没有丢
+- extendedWaitUntil:
+    notVisible: { id: lang-en }
+    timeout: 10000
+- assertVisible: { id: open-language }
+- assertVisible: Language
+- assertVisible: Settings
+- takeScreenshot: .artifacts/e2e-18a-family-en
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- assertVisible:
+    id: today-title
+    text: Day \d+ with .*
+- assertVisible: Past 24 hours
+- takeScreenshot: .artifacts/e2e-18a-today-en
+- tapOn: { id: action-feed }
+- extendedWaitUntil:
+    visible: { id: feed-save }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-18a-feed-sheet-en
+- tapOn: { id: ml-chip-120 }
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    visible: Feed 120ml
+    timeout: 10000
+- assertVisible:
+    text: .*Logged.*
+- takeScreenshot: .artifacts/e2e-18a-after-feed-en
+# 撤销，不留给后面的流程
+- tapOn: { id: toast-undo }
+- assertNotVisible: Feed 120ml
+# Toast 可能盖住底部标签
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-language }
+- tapOn: { id: open-language }
+- extendedWaitUntil:
+    visible: { id: lang-zh }
+    timeout: 10000
+- tapOn: { id: lang-zh }
+- extendedWaitUntil:
+    notVisible: { id: lang-zh }
+    timeout: 10000
+- assertVisible: 语言
+- assertVisible: 设置
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- assertVisible: 过去 24 小时

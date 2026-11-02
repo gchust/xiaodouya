@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 const DAY_MS = 86_400_000;
 
 function startOfDay(ms: number): Date {
@@ -19,7 +21,7 @@ export function dayNumber(birthAt: number, at: number): number {
 /** 回忆可以早于出生（孕期的照片），不能显示成“第 -3 天”。 */
 export function dayLabel(birthAt: number, at: number): string {
   const day = dayNumber(birthAt, at);
-  return day > 0 ? `第 ${day} 天` : `出生前 ${1 - day} 天`;
+  return day > 0 ? t().domain.time.dayNumber(day) : t().domain.time.daysBeforeBirth(1 - day);
 }
 
 export interface Age {
@@ -45,15 +47,16 @@ export function ageParts(birthAt: number, at: number): Age {
 }
 
 export function ageText(birthAt: number, at: number): string {
-  if (at < birthAt) return '还没出生';
+  const text = t().domain.time;
+  if (at < birthAt) return text.notBorn;
   const { months, days } = ageParts(birthAt, at);
   if (months >= 24) {
     const years = Math.floor(months / 12);
     const rest = months % 12;
-    return rest ? `${years} 岁 ${rest} 个月` : `${years} 岁`;
+    return rest ? text.yearsMonths(years, rest) : text.years(years);
   }
-  if (months === 0) return days === 0 ? '今天出生' : `${days} 天`;
-  return days ? `${months} 个月零 ${days} 天` : `${months} 个月`;
+  if (months === 0) return days === 0 ? text.bornToday : text.days(days);
+  return days ? text.monthsDays(months, days) : text.months(months);
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -64,26 +67,26 @@ export function formatClock(ms: number): string {
 }
 
 export function formatMonthDay(ms: number): string {
-  const d = new Date(ms);
-  return `${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  return t().domain.time.monthDay(new Date(ms));
 }
 
 export function formatFullDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+  return t().domain.time.fullDate(new Date(ms));
 }
 
 export function formatDateHeader(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}月${d.getDate()}日 · 星期${'日一二三四五六'[d.getDay()]}`;
+  return t().domain.time.dateHeader(new Date(ms));
 }
 
-/** “1小时9分” / “25分钟” */
+/** “10月31日” / “Oct 31”，比 formatMonthDay 更像一句话里的日期。 */
+export function formatShortDate(ms: number): string {
+  return t().domain.time.shortDate(new Date(ms));
+}
+
+/** “1小时9分” / “25分钟”，英文 “1 hr 9 min” / “25 min” */
 export function formatDuration(ms: number): string {
   const minutes = Math.max(0, Math.floor(ms / 60_000));
-  const hours = Math.floor(minutes / 60);
-  if (!hours) return `${minutes}分钟`;
-  return minutes % 60 ? `${hours}小时${minutes % 60}分` : `${hours}小时`;
+  return t().domain.time.duration(Math.floor(minutes / 60), minutes % 60);
 }
 
 /** 计时器样式 “2:41”（时:分） */

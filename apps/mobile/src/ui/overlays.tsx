@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 import { usePathname } from 'expo-router';
 import {
   createContext,
@@ -50,7 +51,7 @@ const SheetContext = createContext<SheetApi | null>(null);
 
 export function useSheet(): SheetApi {
   const api = useContext(SheetContext);
-  if (!api) throw new Error('useSheet 必须在 SheetProvider 内使用');
+  if (!api) throw new Error('useSheet must be used inside SheetProvider');
   return api;
 }
 
@@ -156,7 +157,7 @@ function SheetLayer({
               style={StyleSheet.absoluteFill}
               onPress={onClose}
               testID="sheet-scrim"
-              accessibilityLabel="关闭"
+              accessibilityLabel={t().ui.close}
             />
           </Animated.View>
           <Animated.View
@@ -184,9 +185,9 @@ function SheetLayer({
                     hitSlop={12}
                     testID="sheet-cancel"
                     accessibilityRole="button"
-                    accessibilityLabel="取消"
+                    accessibilityLabel={t().common.cancel}
                   >
-                    <Text style={s.cancel}>取消</Text>
+                    <Text style={s.cancel}>{t().common.cancel}</Text>
                   </Pressable>
                 </View>
               </View>
@@ -224,7 +225,7 @@ const FeedbackContext = createContext<FeedbackApi | null>(null);
 
 export function useFeedback(): FeedbackApi {
   const api = useContext(FeedbackContext);
-  if (!api) throw new Error('useFeedback 必须在 FeedbackProvider 内使用');
+  if (!api) throw new Error('useFeedback must be used inside FeedbackProvider');
   return api;
 }
 
@@ -264,9 +265,9 @@ function ToastLayer({
           hitSlop={10}
           testID="toast-undo"
           accessibilityRole="button"
-          accessibilityLabel="撤销"
+          accessibilityLabel={t().common.undo}
         >
-          <Text style={s.toastUndo}>撤销</Text>
+          <Text style={s.toastUndo}>{t().common.undo}</Text>
         </Pressable>
       ) : null}
     </Animated.View>
@@ -295,7 +296,7 @@ function BannerLayer({ banner }: { banner: { initial: string; message: string } 
         <Text style={s.bannerInitial}>{last.current?.initial}</Text>
       </View>
       <View style={{ flex: 1, gap: 1 }}>
-        <Text style={s.bannerApp}>小豆芽</Text>
+        <Text style={s.bannerApp}>{t().common.appName}</Text>
         <Text style={s.bannerText} numberOfLines={2}>
           {last.current?.message}
         </Text>

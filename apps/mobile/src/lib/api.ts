@@ -1,5 +1,4 @@
 import type {
-  ApiError,
   AuthResponse,
   FamilyExport,
   MediaUrlsResponse,
@@ -18,18 +17,25 @@ import type {
   UploadUrlRequest,
   UploadUrlResponse,
 } from '@xiaodouya/shared';
+import {
+  type ApiError,
+  type ApiErrorParams,
+  apiErrorMessage,
+  getLocale,
+  t,
+} from '@xiaodouya/shared';
 
 export class ApiFailure extends Error {
   constructor(
     public status: number,
     public code: string,
     message: string,
+    params?: ApiErrorParams,
   ) {
-    super(message);
+    // 所有界面都直接显示 error.message，所以在这里换成当前语言。
+    super(apiErrorMessage(code, params, message));
   }
 }
-
-export const NETWORK_ERROR = '连不上服务器，请检查网络或服务器地址';
 
 const SUPABASE_FUNCTION_URL = /^https:\/\/[a-z0-9-]+\.supabase\.co\/functions\/v1\//;
 
@@ -52,6 +58,8 @@ export class Api {
         method,
         signal,
         headers: {
+          // 让服务端知道发验证码邮件用什么语言：注册和找回密码时还没有偏好。
+          'accept-language': getLocale(),
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
           ...(process.env.EXPO_PUBLIC_API_REGION && SUPABASE_FUNCTION_URL.test(this.baseUrl)
@@ -62,7 +70,7 @@ export class Api {
       });
     } catch (error) {
       if (signal?.aborted) throw error;
-      throw new ApiFailure(0, 'network', NETWORK_ERROR);
+      throw new ApiFailure(0, 'network', t().ui.networkError);
     }
     const text = await response.text();
     let json: unknown = null;
@@ -81,7 +89,8 @@ export class Api {
       throw new ApiFailure(
         response.status,
         error?.code ?? 'http_error',
-        error?.message ?? `服务器返回错误（${response.status}）`,
+        error?.message ?? t().ui.serverError(response.status),
+        error?.params,
       );
     }
     return json as T;

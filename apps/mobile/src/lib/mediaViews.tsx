@@ -1,4 +1,4 @@
-import { formatMediaDuration, type MediaRef, type MediaVariant } from '@xiaodouya/shared';
+import { formatMediaDuration, type MediaRef, type MediaVariant, t } from '@xiaodouya/shared';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -194,7 +194,7 @@ export function MediaImage({
           contentFit={contentFit}
           transition={200}
           cachePolicy="disk"
-          accessibilityLabel={media.name ?? '照片'}
+          accessibilityLabel={media.name ?? t().ui.photo}
         />
       ) : null}
     </View>
@@ -259,7 +259,7 @@ export function AudioCard({ media, fileName }: { media: MediaRef; fileName: stri
     <Pressable
       testID={`audio-${media.id}`}
       accessibilityRole="button"
-      accessibilityLabel={`播放录音 ${media.name ?? ''}`}
+      accessibilityLabel={t().ui.playRecordingNamed(media.name ?? '')}
       style={s.audio}
       onPress={() => setActive(true)}
     >
@@ -267,7 +267,7 @@ export function AudioCard({ media, fileName }: { media: MediaRef; fileName: stri
         <View style={s.audioTriangle} />
       </View>
       <View style={s.audioMain}>
-        <Muted numberOfLines={1}>{media.name || '录音'}</Muted>
+        <Muted numberOfLines={1}>{media.name || t().ui.recording}</Muted>
         <Waveform peaks={peaks} progress={0} />
       </View>
       <Mono style={s.audioDuration}>{duration}</Mono>
@@ -300,7 +300,7 @@ function ActiveAudio({
   const started = useRef(false);
   const failRef = useRef(() => {});
   failRef.current = () => {
-    toast('这段录音暂时打不开，联网后再试一次');
+    toast(t().ui.recordingUnavailable);
     onFail();
   };
   const play = useCallback(() => {
@@ -332,7 +332,9 @@ function ActiveAudio({
     <Pressable
       testID={`audio-${media.id}`}
       accessibilityRole="button"
-      accessibilityLabel={loading ? '录音加载中' : playing ? '暂停录音' : '播放录音'}
+      accessibilityLabel={
+        loading ? t().ui.recordingLoading : playing ? t().ui.pauseRecording : t().ui.playRecording
+      }
       accessibilityState={{ busy: loading }}
       disabled={loading}
       style={s.audio}
@@ -354,7 +356,7 @@ function ActiveAudio({
         )}
       </View>
       <View style={s.audioMain}>
-        <Muted numberOfLines={1}>{media.name || '录音'}</Muted>
+        <Muted numberOfLines={1}>{media.name || t().ui.recording}</Muted>
         <Waveform peaks={peaks} progress={progress} />
       </View>
       <Mono style={s.audioDuration}>{duration}</Mono>
@@ -411,7 +413,7 @@ export function useRecorder() {
       kind: 'audio',
       mime: 'audio/mp4',
       size: new File(uri).size ?? 0,
-      name: `录音 · ${stamp}`,
+      name: t().ui.recordingAt(stamp),
       durationMs: Math.max(1000, duration),
       peaks: downsamplePeaks(samples.current),
     };
@@ -435,8 +437,7 @@ export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: 
               weight="medium"
               style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}
             >
-              录音{'\n'}
-              {media.durationMs ? formatMediaDuration(media.durationMs) : ''}
+              {t().ui.recordingLabel(media.durationMs ? formatMediaDuration(media.durationMs) : '')}
             </Mono>
           </View>
         </>
@@ -451,7 +452,7 @@ export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: 
       <Pressable
         testID="existing-media-remove"
         accessibilityRole="button"
-        accessibilityLabel="从这条回忆里移除"
+        accessibilityLabel={t().ui.removeFromMemory}
         // 同 LocalThumb：缩略图裁剪了溢出，热区只能往图内扩。
         hitSlop={{ top: 3, right: 3, bottom: 23, left: 23 }}
         onPress={onRemove}
@@ -473,8 +474,7 @@ export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () 
       ) : (
         <View style={s.localAudio}>
           <Mono weight="medium" style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}>
-            录音{'\n'}
-            {file.durationMs ? formatMediaDuration(file.durationMs) : ''}
+            {t().ui.recordingLabel(file.durationMs ? formatMediaDuration(file.durationMs) : '')}
           </Mono>
         </View>
       )}
@@ -488,7 +488,7 @@ export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () 
       <Pressable
         testID="selected-media-remove"
         accessibilityRole="button"
-        accessibilityLabel="移除"
+        accessibilityLabel={t().common.remove}
         // 缩略图裁剪了溢出，热区只能往图内扩：上右到图边，下左补足 44。
         hitSlop={{ top: 3, right: 3, bottom: 23, left: 23 }}
         onPress={onRemove}

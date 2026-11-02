@@ -1,10 +1,14 @@
 import {
   birthMeasuresFromInput,
   convertMeasureText,
+  DEFAULT_FAMILY_NAME,
   EMAIL_CODE_COOLDOWN_SECONDS,
+  EMAIL_CODE_TTL_MINUTES,
   effectiveUnits,
   guessRegionId,
+  messagesFor,
   scaleFor,
+  t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
 import {
@@ -19,7 +23,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { consentSegments } from '../lib/accountLogic';
-import { accountText } from '../lib/accountText';
 import { Api } from '../lib/api';
 import { useApp } from '../lib/app';
 import { PRIVACY_URL, TERMS_URL } from '../lib/config';
@@ -65,7 +68,7 @@ function ServerField({ value, onChange }: { value: string; onChange: (v: string)
   return open ? (
     <Field
       testID="field-server"
-      label="服务器地址"
+      label={t().auth.serverAddress}
       mono
       autoCapitalize="none"
       autoCorrect={false}
@@ -77,11 +80,11 @@ function ServerField({ value, onChange }: { value: string; onChange: (v: string)
     <Pressable
       testID="server-toggle"
       accessibilityRole="button"
-      accessibilityLabel="修改服务器地址"
+      accessibilityLabel={t().auth.changeServer}
       hitSlop={8}
       onPress={() => setOpen(true)}
     >
-      <Muted numberOfLines={1}>服务器：{value} · 修改</Muted>
+      <Muted numberOfLines={1}>{t().auth.serverLine(value)}</Muted>
     </Pressable>
   );
 }
@@ -144,7 +147,7 @@ function ForgotPassword({
       setLeft(EMAIL_CODE_COOLDOWN_SECONDS);
       setStep('reset');
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setError(e instanceof Error ? e.message : t().ui.somethingWrong);
     } finally {
       setBusy(false);
     }
@@ -161,7 +164,7 @@ function ForgotPassword({
       });
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setError(e instanceof Error ? e.message : t().ui.somethingWrong);
       setBusy(false);
     }
   };
@@ -169,12 +172,12 @@ function ForgotPassword({
   const back = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="返回"
+      accessibilityLabel={t().common.back}
       hitSlop={12}
       onPress={step === 'reset' ? () => setStep('request') : onBack}
       testID="auth-back"
     >
-      <Text style={s.back}>‹ 返回</Text>
+      <Text style={s.back}>{t().auth.backLink}</Text>
     </Pressable>
   );
 
@@ -184,14 +187,14 @@ function ForgotPassword({
         {back}
         <View style={{ gap: 6 }}>
           <Text accessibilityRole="header" style={s.title}>
-            {accountText.forgotTitle}
+            {t().account.forgotTitle}
           </Text>
-          <Muted style={{ fontSize: 13 }}>{accountText.forgotHint}</Muted>
+          <Muted style={{ fontSize: 13 }}>{t().account.forgotHint}</Muted>
         </View>
         <View style={{ gap: 12 }}>
           <Field
             testID="field-email"
-            label="邮箱"
+            label={t().auth.email}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
@@ -203,7 +206,7 @@ function ForgotPassword({
         </View>
         <Button
           testID="forgot-submit"
-          label={accountText.forgotSubmit}
+          label={t().account.forgotSubmit}
           disabled={!email.trim()}
           busy={busy}
           onPress={() => void request()}
@@ -217,16 +220,16 @@ function ForgotPassword({
       {back}
       <View style={{ gap: 6 }}>
         <Text accessibilityRole="header" style={s.title}>
-          {accountText.resetTitle}
+          {t().account.resetTitle}
         </Text>
         <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-          {accountText.resetHint(email.trim())}
+          {t().account.resetHint(email.trim(), EMAIL_CODE_TTL_MINUTES)}
         </Muted>
       </View>
       <View style={{ gap: 12 }}>
         <Field
           testID="field-reset-code"
-          label={accountText.resetCode}
+          label={t().account.resetCode}
           mono
           keyboardType="number-pad"
           autoComplete="one-time-code"
@@ -236,7 +239,7 @@ function ForgotPassword({
         />
         <Field
           testID="field-new-password"
-          label={accountText.resetNewPassword}
+          label={t().account.resetNewPassword}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
@@ -247,7 +250,7 @@ function ForgotPassword({
       </View>
       <Button
         testID="reset-submit"
-        label={accountText.resetSubmit}
+        label={t().account.resetSubmit}
         disabled={code.trim().length !== 6 || password.length < 8}
         busy={busy}
         onPress={() => void reset()}
@@ -258,27 +261,33 @@ function ForgotPassword({
 }
 
 /** 注册之后、建家庭之前。可以跳过：邮件服务出问题或邮箱填错时不能把人关在外面。 */
+/** 称呼是用户自己的内容，选中后存下来的就是这段文字。testID 用固定的中文，不随语言变。 */
+const selfLabels = () => [
+  { id: messagesFor('zh').auth.dad, label: t().auth.dad },
+  { id: messagesFor('zh').auth.mom, label: t().auth.mom },
+];
+
 export function VerifyEmailStep() {
   const app = useApp();
   return (
     <Page testID="verify-email-screen">
       <Text accessibilityRole="header" style={s.title}>
-        {accountText.verifyTitle}
+        {t().account.verifyTitle}
       </Text>
       <VerifyEmailForm onVerified={(me) => void app.finishEmailStep(me)} />
       <View style={{ gap: 4 }}>
         <Button
           testID="email-skip"
           tone="ghost"
-          label={accountText.verifySkip}
+          label={t().account.verifySkip}
           onPress={() => void app.finishEmailStep()}
         />
-        <Muted style={s.note}>{accountText.verifySkipHint}</Muted>
+        <Muted style={s.note}>{t().account.verifySkipHint}</Muted>
       </View>
       <Button
         testID="verify-signout"
         tone="ghost"
-        label="退出登录"
+        label={t().auth.signOut}
         onPress={() => void app.signOut()}
       />
     </Page>
@@ -337,7 +346,7 @@ export function AuthFlow() {
         const result = await client.register({
           email: email.trim(),
           password,
-          displayName: name.trim() || '家人',
+          displayName: name.trim() || t().auth.defaultName,
           inviteCode,
         });
         client.token = result.token;
@@ -350,7 +359,7 @@ export function AuthFlow() {
         await app.signIn(result.token, server.trim());
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setError(e instanceof Error ? e.message : t().ui.somethingWrong);
     } finally {
       setBusy(false);
     }
@@ -360,21 +369,21 @@ export function AuthFlow() {
     return (
       <Page testID="welcome-screen">
         <View style={s.brand}>
-          <Text style={s.logo}>小豆芽</Text>
-          <Serif style={s.tagline}>一家人，一起记下宝宝长大的每一天。</Serif>
+          <Text style={s.logo}>{t().common.appName}</Text>
+          <Serif style={s.tagline}>{t().auth.tagline}</Serif>
         </View>
         <View style={{ gap: 10 }}>
-          <Button testID="welcome-create" label="开始记录" onPress={() => go('register')} />
+          <Button testID="welcome-create" label={t().auth.start} onPress={() => go('register')} />
           <Button
             testID="welcome-join"
             tone="outline"
-            label="我有邀请码"
+            label={t().auth.haveInvite}
             onPress={() => go('join')}
           />
           <Button
             testID="welcome-login"
             tone="ghost"
-            label="已有账号，登录"
+            label={t().auth.haveAccount}
             onPress={() => go('login')}
           />
         </View>
@@ -391,16 +400,16 @@ export function AuthFlow() {
         onDone={() => {
           go('login');
           setPassword('');
-          setNotice(accountText.resetDone);
+          setNotice(t().account.resetDone);
         }}
       />
     );
   }
 
   const titles: Record<Exclude<Mode, 'welcome' | 'forgot'>, string> = {
-    login: '欢迎回来',
-    register: '创建账号',
-    join: '加入家庭',
+    login: t().auth.welcomeBack,
+    register: t().auth.createAccount,
+    join: t().auth.joinFamily,
   };
   const complete =
     Boolean(email.trim()) &&
@@ -411,12 +420,12 @@ export function AuthFlow() {
     <Page testID={`${mode}-screen`}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="返回"
+        accessibilityLabel={t().common.back}
         hitSlop={12}
         onPress={() => go('welcome')}
         testID="auth-back"
       >
-        <Text style={s.back}>‹ 返回</Text>
+        <Text style={s.back}>{t().auth.backLink}</Text>
       </Pressable>
       <Text accessibilityRole="header" style={s.title}>
         {titles[mode]}
@@ -425,11 +434,11 @@ export function AuthFlow() {
         {mode === 'join' ? (
           <Field
             testID="field-code"
-            label="邀请码"
+            label={t().auth.inviteCode}
             mono
             autoCapitalize="characters"
             autoCorrect={false}
-            placeholder="家人发给你的 8 位邀请码"
+            placeholder={t().auth.invitePlaceholder}
             value={code}
             onChangeText={setCode}
           />
@@ -437,8 +446,8 @@ export function AuthFlow() {
         {mode !== 'login' ? (
           <Field
             testID="field-name"
-            label="你的名字"
-            placeholder={mode === 'join' ? '可以不填' : '可以不填'}
+            label={t().auth.yourName}
+            placeholder={mode === 'join' ? t().auth.optional : t().auth.optional}
             value={name}
             onChangeText={setName}
             maxLength={40}
@@ -446,7 +455,7 @@ export function AuthFlow() {
         ) : null}
         <Field
           testID="field-email"
-          label="邮箱"
+          label={t().auth.email}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -456,7 +465,7 @@ export function AuthFlow() {
         />
         <Field
           testID="field-password"
-          label={mode === 'login' ? '密码' : '密码（至少 8 位）'}
+          label={mode === 'login' ? t().auth.password : t().auth.passwordRule}
           secureTextEntry
           autoCapitalize="none"
           autoCorrect={false}
@@ -473,7 +482,7 @@ export function AuthFlow() {
       </View>
       <Button
         testID="auth-submit"
-        label={mode === 'login' ? '登录' : mode === 'join' ? '加入' : '下一步'}
+        label={mode === 'login' ? t().auth.signIn : mode === 'join' ? t().auth.join : t().auth.next}
         disabled={!complete}
         busy={busy}
         onPress={() => void submit()}
@@ -482,12 +491,12 @@ export function AuthFlow() {
         <Button
           testID="forgot-password"
           tone="ghost"
-          label={accountText.forgotLink}
+          label={t().account.forgotLink}
           onPress={() => go('forgot')}
         />
       ) : null}
       {mode === 'login' && !canReset ? (
-        <Muted style={s.note}>{accountText.forgotDeployerNote}</Muted>
+        <Muted style={s.note}>{t().account.forgotDeployerNote}</Muted>
       ) : null}
       {mode !== 'login' ? <ConsentLine /> : null}
     </Page>
@@ -507,9 +516,9 @@ export function FamilySetup() {
     setBusy(true);
     setError(null);
     try {
-      await app.setMe(await app.api.createFamily('我们家', label.trim()));
+      await app.setMe(await app.api.createFamily(DEFAULT_FAMILY_NAME, label.trim()));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了');
+      setError(e instanceof Error ? e.message : t().auth.error);
     } finally {
       setBusy(false);
     }
@@ -521,7 +530,7 @@ export function FamilySetup() {
     try {
       await app.setMe(await app.api.acceptInvite(code.trim()));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了');
+      setError(e instanceof Error ? e.message : t().auth.error);
     } finally {
       setBusy(false);
     }
@@ -532,16 +541,16 @@ export function FamilySetup() {
       <Page testID="join-family-screen">
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="返回"
+          accessibilityLabel={t().common.back}
           hitSlop={12}
           onPress={() => setJoining(false)}
         >
-          <Text style={s.back}>‹ 返回</Text>
+          <Text style={s.back}>{t().auth.backLink}</Text>
         </Pressable>
-        <Text style={s.title}>加入家庭</Text>
+        <Text style={s.title}>{t().auth.joinFamily}</Text>
         <Field
           testID="field-code"
-          label="邀请码"
+          label={t().auth.inviteCode}
           mono
           autoCapitalize="characters"
           autoCorrect={false}
@@ -551,7 +560,7 @@ export function FamilySetup() {
         <ErrorText message={error} />
         <Button
           testID="join-submit"
-          label="加入"
+          label={t().auth.join}
           disabled={!code.trim()}
           busy={busy}
           onPress={() => void join()}
@@ -563,13 +572,13 @@ export function FamilySetup() {
   return (
     <Page testID="family-setup-screen">
       <Text accessibilityRole="header" style={s.title}>
-        你是宝宝的？
+        {t().auth.whoAreYou}
       </Text>
       <View style={s.chips}>
-        {['爸爸', '妈妈'].map((v) => (
+        {selfLabels().map(({ id, label: v }) => (
           <Chip
-            key={v}
-            testID={`self-${v}`}
+            key={id}
+            testID={`self-${id}`}
             label={v}
             selected={label === v}
             onPress={() => setLabel(v)}
@@ -579,7 +588,7 @@ export function FamilySetup() {
       </View>
       <Field
         testID="field-label"
-        label="或者填写其他称呼"
+        label={t().auth.otherLabel}
         value={label}
         onChangeText={setLabel}
         maxLength={40}
@@ -587,7 +596,7 @@ export function FamilySetup() {
       <ErrorText message={error} />
       <Button
         testID="family-create"
-        label="下一步"
+        label={t().auth.next}
         disabled={!label.trim()}
         busy={busy}
         onPress={() => void create()}
@@ -595,13 +604,13 @@ export function FamilySetup() {
       <Button
         testID="family-join"
         tone="ghost"
-        label="我有邀请码"
+        label={t().auth.haveInvite}
         onPress={() => setJoining(true)}
       />
       <Button
         testID="family-signout"
         tone="ghost"
-        label="退出登录"
+        label={t().auth.signOut}
         onPress={() => void app.signOut()}
       />
     </Page>
@@ -634,7 +643,7 @@ export function BabySetup() {
   const submit = async () => {
     const measures = birthMeasuresFromInput(weight, length, units);
     if (!measures.ok) return setError(measures.error);
-    if (birth.getTime() > Date.now()) return setError('出生时间不能晚于现在');
+    if (birth.getTime() > Date.now()) return setError(t().auth.birthInFuture);
     setError(null);
     await app.write(
       'baby',
@@ -655,32 +664,30 @@ export function BabySetup() {
     <Page testID="baby-setup-screen">
       <View style={{ gap: 6 }}>
         <Text accessibilityRole="header" style={s.title}>
-          认识一下宝宝
+          {t().auth.meetBaby}
         </Text>
-        <Muted style={{ fontSize: 13 }}>只有名字和出生时间是必填的，其他以后再补也行。</Muted>
+        <Muted style={{ fontSize: 13 }}>{t().auth.onlyRequired}</Muted>
       </View>
       <View style={{ gap: 12 }}>
         <Field
           testID="field-baby-name"
-          label="名字或小名"
-          placeholder="比如：小豆芽"
+          label={t().auth.babyName}
+          placeholder={t().auth.babyNamePlaceholder}
           value={name}
           onChangeText={setName}
           maxLength={40}
         />
         <BirthPicker value={birth} onChange={setBirth} />
         <View style={{ gap: 5 }}>
-          <Muted style={{ fontSize: 12 }}>所在地区</Muted>
+          <Muted style={{ fontSize: 12 }}>{t().auth.region}</Muted>
           <RegionPicker value={region} onChange={changeRegion} />
-          <Muted style={{ fontSize: 11, lineHeight: 18 }}>
-            决定疫苗本和默认单位，以后可以在资料里改。
-          </Muted>
+          <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().auth.regionHint}</Muted>
         </View>
         <View style={s.dateRow}>
           <View style={{ flex: 1 }}>
             <Field
               testID="field-baby-weight"
-              label={`出生体重（${scaleFor('weight', units.weight).label}）`}
+              label={t().auth.birthWeight(scaleFor('weight', units.weight).label)}
               keyboardType="decimal-pad"
               placeholder={units.weight === 'kg' ? '3.4' : '7.5'}
               value={weight}
@@ -690,7 +697,7 @@ export function BabySetup() {
           <View style={{ flex: 1 }}>
             <Field
               testID="field-baby-length"
-              label={`出生身长（${scaleFor('length', units.length).label}）`}
+              label={t().auth.birthLength(scaleFor('length', units.length).label)}
               keyboardType="decimal-pad"
               placeholder={units.length === 'cm' ? '50' : '19.5'}
               value={length}
@@ -700,7 +707,7 @@ export function BabySetup() {
         </View>
         <Field
           testID="field-baby-hospital"
-          label="出生医院"
+          label={t().auth.birthHospital}
           value={hospital}
           onChangeText={setHospital}
           maxLength={100}
@@ -709,7 +716,7 @@ export function BabySetup() {
       </View>
       <Button
         testID="baby-submit"
-        label="开始记录"
+        label={t().auth.start}
         disabled={!name.trim()}
         onPress={() => void submit()}
       />

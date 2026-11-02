@@ -9,6 +9,7 @@ import {
   type NutrientStatus,
   nutrientAmountText,
   nutrientMeta,
+  t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -69,20 +70,20 @@ export function NutritionScreen() {
         <Pressable
           testID="nutrition-back"
           accessibilityRole="button"
-          accessibilityLabel="返回今天"
+          accessibilityLabel={t().today.backToToday}
           hitSlop={12}
           onPress={() => router.back()}
         >
-          <Text style={s.back}>‹ 今天</Text>
+          <Text style={s.back}>{t().today.backTodayLink}</Text>
         </Pressable>
-        <PageTitle>奶粉营养</PageTitle>
+        <PageTitle>{t().today.nutrition}</PageTitle>
       </View>
 
       <View style={s.dayRow}>
         <Pressable
           testID="nutrition-prev"
           accessibilityRole="button"
-          accessibilityLabel="前一天"
+          accessibilityLabel={t().nutritionUi.prevDay}
           accessibilityState={{ disabled: back >= DAYS_BACK }}
           disabled={back >= DAYS_BACK}
           hitSlop={12}
@@ -91,12 +92,12 @@ export function NutritionScreen() {
           <Text style={[s.dayArrow, back >= DAYS_BACK ? s.dayArrowOff : null]}>‹</Text>
         </Pressable>
         <Text style={s.dayLabel} testID="nutrition-day">
-          {back === 0 ? '今天' : back === 1 ? '昨天' : formatFullDate(start)}
+          {back === 0 ? t().ui.today : back === 1 ? t().ui.yesterday : formatFullDate(start)}
         </Text>
         <Pressable
           testID="nutrition-next"
           accessibilityRole="button"
-          accessibilityLabel="后一天"
+          accessibilityLabel={t().nutritionUi.nextDay}
           accessibilityState={{ disabled: back === 0 }}
           disabled={back === 0}
           hitSlop={12}
@@ -109,7 +110,9 @@ export function NutritionScreen() {
       {day.reasons.length > 0 ? (
         <View style={s.reasons} testID="nutrition-reasons">
           <Text style={s.reasonsLabel}>
-            {day.nutrients.some((n) => n.status === 'insufficient') ? '数据不足' : '说明'}
+            {day.nutrients.some((n) => n.status === 'insufficient')
+              ? t().nutritionUi.insufficient
+              : t().nutritionUi.note}
           </Text>
           {day.reasons.map((reason) => (
             <Text key={reason} style={s.reasonText}>
@@ -131,60 +134,63 @@ export function NutritionScreen() {
 
       <View style={{ gap: 6 }}>
         <Muted style={s.note}>
-          按记下的奶量和奶粉标签估算，算进去 {day.countedFeeds} 次、
-          {formatVolume(day.countedMl, units.volume)}，不知道宝宝有没有喝完，也不含辅食和补充剂。
+          {t().nutritionUi.estimate(day.countedFeeds, formatVolume(day.countedMl, units.volume))}
         </Muted>
-        {anyBelow ? (
-          <Muted style={s.note}>
-            参考量不是每个宝宝的目标。连续几天都低于参考量，或者有担心，可以问问医生。
-          </Muted>
-        ) : null}
+        {anyBelow ? <Muted style={s.note}>{t().nutritionUi.refNote}</Muted> : null}
         <Muted style={s.note} testID="nutrition-disclaimer">
-          估算，不能替代医生建议。早产或有特殊情况的宝宝，请听医生的。
+          {t().nutritionUi.disclaimer}
         </Muted>
         <Muted style={s.note} testID="nutrition-source">
-          参考量：{region.nutrition.table.name}。
-          {region.nutrition.note ? `${region.nutrition.note}。` : ''}
+          {t().nutritionUi.reference(
+            region.nutrition.table.name,
+            region.nutrition.note ? t().nutritionUi.referenceNote(region.nutrition.note) : '',
+          )}
         </Muted>
       </View>
 
       <View style={{ gap: 10 }}>
         <View style={s.sectionHead}>
-          <SectionTitle>家里的奶粉</SectionTitle>
+          <SectionTitle>{t().nutritionUi.familyFormulas}</SectionTitle>
           <Pressable
             testID="nutrition-add-formula"
             accessibilityRole="button"
-            accessibilityLabel="添加奶粉"
+            accessibilityLabel={t().records.addFormula}
             hitSlop={8}
             onPress={() =>
-              sheet.open('添加奶粉', () => <AddFormulaFlow onDone={() => sheet.close()} />)
+              sheet.open(t().records.addFormula, () => (
+                <AddFormulaFlow onDone={() => sheet.close()} />
+              ))
             }
           >
-            <Text style={s.add}>＋ 添加</Text>
+            <Text style={s.add}>{t().nutritionUi.addLink}</Text>
           </Pressable>
         </View>
         {formulas.length === 0 ? (
-          <Muted style={s.note}>还没有配置奶粉。添加后，记喂奶时选上，这里就能估算。</Muted>
+          <Muted style={s.note}>{t().nutritionUi.noFormula}</Muted>
         ) : (
           <ListCard>
             {formulas.map((formula, index) => {
               const gaps = formulaDataGaps(formula.data);
               const allMissing = gaps.missing.length === Object.keys(nutrientMeta).length;
               const sub = gaps.needsRatio
-                ? '还缺冲调比例，算不出来'
+                ? t().nutritionUi.missingRatio
                 : allMissing
-                  ? '还没有营养数据，请对照罐身录入'
+                  ? t().nutritionUi.noData
                   : gaps.missing.length > 0
-                    ? `还缺 ${gaps.missing.map((key) => nutrientMeta[key].label).join('、')}`
-                    : '以罐身标签为准';
+                    ? t().nutritionUi.missing(
+                        gaps.missing
+                          .map((key) => nutrientMeta[key].label)
+                          .join(t().nutritionUi.listSep),
+                      )
+                    : t().nutritionUi.labelPrecedence;
               return (
                 <Pressable
                   key={formula.id}
                   testID={`formula-row-${formula.data.name}`}
                   accessibilityRole="button"
-                  accessibilityLabel={`修改 ${formula.data.name}`}
+                  accessibilityLabel={t().nutritionUi.editNamed(formula.data.name)}
                   onPress={() =>
-                    sheet.open('修改奶粉', () => (
+                    sheet.open(t().nutritionUi.editFormula, () => (
                       <FormulaEditor
                         id={formula.id}
                         existing={formula.data}

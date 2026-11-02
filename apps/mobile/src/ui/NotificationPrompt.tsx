@@ -1,3 +1,4 @@
+import { t } from '@xiaodouya/shared';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -36,28 +37,28 @@ export function NotificationPrompt() {
   };
   return (
     <View style={s.card} testID="notification-prompt">
-      <Text style={s.text}>打开通知，差不多该喂奶时提醒你。</Text>
+      <Text style={s.text}>{t().ui.notifPrompt}</Text>
       <View style={s.actions}>
         <Pressable
           testID="notification-dismiss"
           accessibilityRole="button"
-          accessibilityLabel="不用了"
+          accessibilityLabel={t().ui.notifNo}
           hitSlop={8}
           onPress={dismiss}
         >
-          <Text style={s.later}>不用了</Text>
+          <Text style={s.later}>{t().ui.notifNo}</Text>
         </Pressable>
         <Pressable
           testID="notification-enable"
           accessibilityRole="button"
-          accessibilityLabel="打开通知"
+          accessibilityLabel={t().ui.notifOpen}
           hitSlop={8}
           onPress={() => {
             dismiss();
             void ensureNotificationPermission().catch(() => {});
           }}
         >
-          <Text style={s.enable}>打开</Text>
+          <Text style={s.enable}>{t().ui.notifOpenShort}</Text>
         </Pressable>
       </View>
     </View>

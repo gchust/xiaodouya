@@ -7,6 +7,7 @@ import {
   isCustomVaccineId,
   planFor,
   planSchedule,
+  t,
   type VaccineDose,
   type VaccinePlanData,
   vaccineStatuses,
@@ -60,7 +61,7 @@ function useVaccinePlans() {
       if (!current) return;
       await app.remove(current.id);
       sheet.close();
-      toast(`已从计划里移除 · ${dose.name}`, {
+      toast(t().records.removedFromPlan(dose.name), {
         undo: () => void app.write('event', current.data, current.id),
       });
     },
@@ -82,7 +83,7 @@ export function DosePlanBar({ dose }: { dose: VaccineDose }) {
       <Pressable
         testID="vaccine-plan-time"
         accessibilityRole="button"
-        accessibilityLabel={`改${dose.name}的计划时间`}
+        accessibilityLabel={t().records.changeTimeOf(dose.name)}
         hitSlop={LINK_HIT_SLOP}
         onPress={() =>
           sheet.replace(dose.name, () =>
@@ -90,20 +91,22 @@ export function DosePlanBar({ dose }: { dose: VaccineDose }) {
           )
         }
       >
-        <Text style={s.link}>{custom ? '修改' : '改时间'}</Text>
+        <Text style={s.link}>{custom ? t().records.edit : t().records.changeTime}</Text>
       </Pressable>
       <Pressable
         testID="vaccine-plan-hide"
         accessibilityRole="button"
-        accessibilityLabel={custom ? `从计划里移除${dose.name}` : `隐藏${dose.name}`}
+        accessibilityLabel={
+          custom ? t().records.removeFromPlanA11y(dose.name) : t().records.hideA11y(dose.name)
+        }
         hitSlop={LINK_HIT_SLOP}
         onPress={() =>
           custom
             ? void removeCustom(dose)
-            : void change(dose.id, { hidden: true }, `已隐藏 · ${dose.name}`)
+            : void change(dose.id, { hidden: true }, t().records.hidden(dose.name))
         }
       >
-        <Text style={s.link}>{custom ? '移除' : '隐藏这一剂'}</Text>
+        <Text style={s.link}>{custom ? t().common.remove : t().records.hideDose}</Text>
       </Pressable>
     </View>
   );
@@ -132,19 +135,19 @@ function PlanDateField({
       <View style={s.chips}>
         <Chip
           testID="vaccine-plan-week"
-          label="下周"
+          label={t().records.nextWeek}
           selected={same(week)}
           onPress={() => onChange(week)}
         />
         <Chip
           testID="vaccine-plan-month"
-          label="下个月"
+          label={t().records.nextMonth}
           selected={same(month)}
           onPress={() => onChange(month)}
         />
         <Chip
           testID="vaccine-plan-pick"
-          label="选日期"
+          label={t().records.pickDate}
           selected={value !== null && !same(week) && !same(month)}
           onPress={() => setOpen(true)}
         />
@@ -173,7 +176,7 @@ function PlanDateField({
 function PlanNote() {
   return (
     <Muted testID="vaccine-plan-note" style={{ fontSize: 11, lineHeight: 18 }}>
-      这是你们家的安排，App 不判断时间是否合适，以诊所安排和健康手册为准。
+      {t().records.yourPlanNote}
     </Muted>
   );
 }
@@ -186,19 +189,21 @@ function DoseTimeSheet({ dose }: { dose: VaccineDose }) {
   const [date, setDate] = useState(existing === undefined ? null : new Date(existing));
   return (
     <>
-      <Muted style={{ fontSize: 13, lineHeight: 20 }}>表上的时间：{dose.ageLabel}</Muted>
+      <Muted style={{ fontSize: 13, lineHeight: 20 }}>
+        {t().records.scheduleTime(dose.ageLabel)}
+      </Muted>
       <PlanDateField value={date} onChange={setDate} />
       <PlanNote />
       <Button
         testID="vaccine-plan-save"
-        label="保存"
+        label={t().common.save}
         disabled={date === null}
         onPress={() => {
           if (date) {
             void change(
               dose.id,
               { plannedAt: plannedDayTimestamp(date) },
-              `已改时间 · ${dose.name}`,
+              t().records.timeChanged(dose.name),
             );
           }
         }}
@@ -207,9 +212,9 @@ function DoseTimeSheet({ dose }: { dose: VaccineDose }) {
         <Button
           testID="vaccine-plan-reset"
           tone="ghost"
-          label="恢复表上的时间"
+          label={t().records.restoreTime}
           onPress={() =>
-            void change(dose.id, { plannedAt: undefined }, `已恢复表上的时间 · ${dose.name}`)
+            void change(dose.id, { plannedAt: undefined }, t().records.timeRestored(dose.name))
           }
         />
       ) : null}
@@ -265,7 +270,7 @@ export function VaccinePlanForm({
       id,
     );
     sheet.close();
-    toast(`${before ? '已保存' : '已加进计划'} · ${name.trim()}`, {
+    toast(`${before ? t().records.saved : t().records.addedToPlan} · ${name.trim()}`, {
       undo: before ? () => void app.write('event', before, id) : () => void app.remove(id),
     });
   };
@@ -276,7 +281,7 @@ export function VaccinePlanForm({
         testID="vaccine-plan-name"
         value={name}
         onChangeText={setName}
-        placeholder="疫苗名称"
+        placeholder={t().records.vaccineName}
         maxLength={100}
       />
       <PlanDateField
@@ -285,7 +290,7 @@ export function VaccinePlanForm({
         extra={
           <Chip
             testID="vaccine-plan-age"
-            label="按月龄"
+            label={t().records.byAge}
             selected={time.kind === 'months'}
             onPress={() =>
               setTime(time.kind === 'months' ? { kind: 'none' } : { kind: 'months', text: '' })
@@ -299,17 +304,17 @@ export function VaccinePlanForm({
           value={time.text}
           onChangeText={(text) => setTime({ kind: 'months', text })}
           keyboardType="number-pad"
-          placeholder="满几个月，比如 6"
+          placeholder={t().records.monthsPlaceholder}
           maxLength={3}
         />
       ) : null}
       {time.kind === 'none' ? (
-        <Muted style={{ fontSize: 12 }}>时间还没定也可以先加上，之后点它再改。</Muted>
+        <Muted style={{ fontSize: 12 }}>{t().records.addLaterHint}</Muted>
       ) : null}
       <PlanNote />
       <Button
         testID="vaccine-plan-save"
-        label={existing ? '保存' : '加进计划'}
+        label={existing ? t().common.save : t().records.addToPlan}
         disabled={invalid}
         onPress={() => void save()}
       />
@@ -317,7 +322,7 @@ export function VaccinePlanForm({
         <Button
           testID="vaccine-plan-remove"
           tone="ghost"
-          label="从计划里移除"
+          label={t().records.removeFromPlan}
           onPress={() => void removeCustom(dose)}
         />
       ) : null}
@@ -338,9 +343,7 @@ export function HiddenDosesSheet({ birthAt }: { birthAt: number }) {
   );
   return (
     <>
-      <Muted style={{ fontSize: 13, lineHeight: 20 }}>
-        隐藏只是不显示、不提醒，已经记下的接种不受影响。以诊所安排和健康手册为准。
-      </Muted>
+      <Muted style={{ fontSize: 13, lineHeight: 20 }}>{t().records.hideNote}</Muted>
       <View>
         {hidden.map((dose, i) => (
           <View key={dose.id} style={[s.hiddenRow, i < hidden.length - 1 ? s.divider : null]}>
@@ -350,9 +353,11 @@ export function HiddenDosesSheet({ birthAt }: { birthAt: number }) {
             </View>
             <Chip
               testID={`vaccine-restore-${dose.localId}`}
-              label="恢复"
+              label={t().records.restore}
               selected={false}
-              onPress={() => void change(dose.id, { hidden: false }, `已恢复 · ${dose.name}`)}
+              onPress={() =>
+                void change(dose.id, { hidden: false }, t().records.restored(dose.name))
+              }
             />
           </View>
         ))}
@@ -402,14 +407,14 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
           type: 'vaccine',
           at: doseTimestamp(dateOf(dose.id), at),
           vaccineId: dose.id,
-          name: dose.name,
+          name: dose.recordName,
           byName: app.label,
         }),
       );
     }
     sheet.close();
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    toast(`已记录 ${ids.length} 剂`, {
+    toast(t().records.dosesLogged(ids.length), {
       undo: () => {
         for (const id of ids) void app.remove(id);
       },
@@ -418,16 +423,19 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
 
   return (
     <>
-      <PastDatePicker label="接种日期" testID="backfill-date" value={date} onChange={setDate} />
+      <PastDatePicker
+        label={t().records.doseDate}
+        testID="backfill-date"
+        value={date}
+        onChange={setDate}
+      />
       <DayChips
         testID="backfill-date"
         value={date.getTime()}
         onChange={(at) => setDate(new Date(at))}
       />
       <TimeCheckText check={check} />
-      <Muted style={{ fontSize: 12, lineHeight: 19 }}>
-        勾上打过的。哪一剂日期不一样，点它右边的日期单独改。
-      </Muted>
+      <Muted style={{ fontSize: 12, lineHeight: 19 }}>{t().records.checkHint}</Muted>
       <View>
         {doses.map((dose, i) => {
           const on = selected.has(dose.id);
@@ -452,7 +460,10 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
                 <Pressable
                   testID={`backfill-date-${dose.localId}`}
                   accessibilityRole="button"
-                  accessibilityLabel={`单独选择${dose.name}的接种日期，现在是 ${formatFullDate(dateOf(dose.id).getTime())}`}
+                  accessibilityLabel={t().records.pickDoseDate(
+                    dose.name,
+                    formatFullDate(dateOf(dose.id).getTime()),
+                  )}
                   hitSlop={LINK_HIT_SLOP}
                   onPress={() => setPicking(dose.id)}
                 >
@@ -483,7 +494,9 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
       <Button
         testID="backfill-save"
         tone="green"
-        label={chosen.length > 0 ? `记下 ${chosen.length} 剂` : '记下'}
+        label={
+          chosen.length > 0 ? t().records.recordDoses(chosen.length) : t().records.recordDosesNone
+        }
         disabled={chosen.length === 0}
         onPress={() => void save()}
       />

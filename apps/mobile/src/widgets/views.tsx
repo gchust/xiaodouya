@@ -1,8 +1,10 @@
 import {
   formatClock,
+  formatShortDate,
   formatSyncedAt,
   formatVolume,
   shortBabyName,
+  t,
   type WidgetAction,
   type WidgetView,
 } from '@xiaodouya/shared';
@@ -30,8 +32,7 @@ const RECORD_ACTION = 'RECORD';
 
 function clockWithDay(ms: number, dayStart: number): string {
   if (ms >= dayStart) return formatClock(ms);
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${formatClock(ms)}`;
+  return `${formatShortDate(ms)} ${formatClock(ms)}`;
 }
 
 function Card({
@@ -155,14 +156,17 @@ function Status({ title, detail, color }: { title: string; detail: string; color
 /** 未登录、没有宝宝、只看回忆：不写数据也不显示记录，温和地请人点开 App。 */
 function Blocked({ message }: { message: string }) {
   return (
-    <Card link={null} label={`小豆芽，${message}`}>
-      <TextWidget text="小豆芽" style={{ fontSize: 15, fontFamily: SERIF, color: c.ink }} />
+    <Card link={null} label={t().widgetUi.a11yApp(message)}>
+      <TextWidget
+        text={t().common.appName}
+        style={{ fontSize: 15, fontFamily: SERIF, color: c.ink }}
+      />
       <TextWidget
         text={message}
         maxLines={3}
         style={{ fontSize: 12, color: c.inkSoft, lineHeight: 18 }}
       />
-      <TextWidget text="点开 App ›" style={{ fontSize: 12, color: c.accent }} />
+      <TextWidget text={t().widgetUi.openApp} style={{ fontSize: 12, color: c.accent }} />
     </Card>
   );
 }
@@ -174,15 +178,15 @@ function FeedCard({ view, newId, shown }: { view: Ready; newId: string; shown?: 
   const header = <Header title={shortBabyName(view.babyName, 11)} syncText={sync} dot={c.accent} />;
   if (shown) {
     return (
-      <Card link={eventLink(shown.eventId)} label={`${shown.title}，点这里修改或撤销`}>
+      <Card link={eventLink(shown.eventId)} label={t().widgetUi.tapToEdit(shown.title)}>
         {header}
-        <Status title="记好了" detail="点这里修改或撤销" color={c.green} />
+        <Status title={t().widgetUi.done} detail={t().widgetUi.tapHint} color={c.green} />
         <Button
           text={shown.title}
           background={c.green}
           color={c.white}
           link={eventLink(shown.eventId)}
-          label={`${shown.title}，点这里修改或撤销`}
+          label={t().widgetUi.tapToEdit(shown.title)}
         />
       </Card>
     );
@@ -190,27 +194,27 @@ function FeedCard({ view, newId, shown }: { view: Ready; newId: string; shown?: 
   const { lastFeed } = view;
   const detail = lastFeed
     ? `${clockWithDay(lastFeed.at, view.dayStart)} · ${view.lastFeedAmount}`
-    : '还没有喂奶记录';
+    : t().widgetUi.noFeed;
   const link = lastFeed ? eventLink(lastFeed.id) : FEED_LINK;
   return (
-    <Card link={link} label={`上次喂奶 ${detail}`}>
+    <Card link={link} label={t().widgetUi.lastFeedA11y(detail)}>
       {header}
-      <Status title="上次喂奶" detail={detail} />
+      <Status title={t().widgetUi.lastFeed} detail={detail} />
       {view.canQuickFeed && lastFeed ? (
         <Button
-          text={`喂奶 ${formatVolume(lastFeed.ml, view.units.volume)}`}
+          text={t().widgetUi.feedAmount(formatVolume(lastFeed.ml, view.units.volume))}
           background={c.accent}
           color={c.white}
           action={{ type: 'feed', id: newId }}
-          label={`记一次喂奶 ${formatVolume(lastFeed.ml, view.units.volume)}`}
+          label={t().widgetUi.logFeed(formatVolume(lastFeed.ml, view.units.volume))}
         />
       ) : (
         <Button
-          text="选奶量"
+          text={t().widgetUi.pickAmount}
           background={c.accent}
           color={c.white}
           link={FEED_LINK}
-          label="打开 App 选奶量"
+          label={t().widgetUi.pickAmountA11y}
         />
       )}
     </Card>
@@ -229,11 +233,11 @@ function SleepCard({ view, newId, shown }: { view: Ready; newId: string; shown?:
   );
   if (shown) {
     return (
-      <Card link={eventLink(shown.eventId)} label={`${shown.title}，点这里修改或撤销`}>
+      <Card link={eventLink(shown.eventId)} label={t().widgetUi.tapToEdit(shown.title)}>
         {header}
         <Status
-          title={sleep.status === 'asleep' ? '睡觉中' : '醒了'}
-          detail="点这里修改或撤销"
+          title={sleep.status === 'asleep' ? t().widgetUi.sleeping : t().widgetUi.awake}
+          detail={t().widgetUi.tapHint}
           color={c.sleep}
         />
         <Button
@@ -241,57 +245,57 @@ function SleepCard({ view, newId, shown }: { view: Ready; newId: string; shown?:
           background={c.green}
           color={c.white}
           link={eventLink(shown.eventId)}
-          label={`${shown.title}，点这里修改或撤销`}
+          label={t().widgetUi.tapToEdit(shown.title)}
         />
       </Card>
     );
   }
   if (sleep.status === 'asleep') {
-    const detail = `${clockWithDay(sleep.since, view.dayStart)} 睡着`;
+    const detail = t().widgetUi.fellAsleepAt(clockWithDay(sleep.since, view.dayStart));
     return (
-      <Card link={eventLink(sleep.id)} label={`睡觉中，${detail}`}>
+      <Card link={eventLink(sleep.id)} label={t().widgetUi.sleepingA11y(detail)}>
         {header}
-        <Status title="睡觉中" detail={detail} color={c.sleep} />
+        <Status title={t().widgetUi.sleeping} detail={detail} color={c.sleep} />
         <Button
-          text="醒了"
+          text={t().widgetUi.awake}
           background={c.sleep}
           color={c.white}
           action={{ type: 'sleepEnd', sleepId: sleep.id }}
-          label="记录醒了"
+          label={t().widgetUi.logAwake}
         />
       </Card>
     );
   }
   if (sleep.status === 'forgotten') {
     // 开着的睡眠超过 12 小时多半是忘了点“醒了”，不能显示成“睡觉中”，也不能一点就结束。
-    const detail = `${clockWithDay(sleep.since, view.dayStart)} 开始，忘了点醒了？`;
+    const detail = t().widgetUi.forgotWake(clockWithDay(sleep.since, view.dayStart));
     return (
-      <Card link={eventLink(sleep.id)} label={`睡眠计时还开着，${detail}`}>
+      <Card link={eventLink(sleep.id)} label={t().widgetUi.timerOnA11y(detail)}>
         {header}
-        <Status title="计时还开着" detail={detail} />
+        <Status title={t().widgetUi.timerOn} detail={detail} />
         <Button
-          text="去确认"
+          text={t().widgetUi.confirm}
           background={c.ink}
           color={c.paper}
           link={eventLink(sleep.id)}
-          label="到 App 里确认这次睡眠"
+          label={t().widgetUi.confirmA11y}
         />
       </Card>
     );
   }
   const detail = sleep.lastEnd
-    ? `${clockWithDay(sleep.lastEnd, view.dayStart)} 醒来`
-    : '还没有睡眠记录';
+    ? t().widgetUi.wokeAt(clockWithDay(sleep.lastEnd, view.dayStart))
+    : t().widgetUi.noSleep;
   return (
-    <Card link={TODAY_LINK} label={`没在睡，${detail}`}>
+    <Card link={TODAY_LINK} label={t().widgetUi.notAsleepA11y(detail)}>
       {header}
-      <Status title="没在睡" detail={detail} />
+      <Status title={t().widgetUi.notAsleep} detail={detail} />
       <Button
-        text="开始睡觉"
+        text={t().widgetUi.startSleep}
         background={c.sand}
         color={c.ink}
         action={{ type: 'sleepStart', id: newId }}
-        label="开始记录睡眠"
+        label={t().widgetUi.startSleepA11y}
       />
     </Card>
   );
@@ -330,7 +334,13 @@ function SummaryCard({ view }: { view: Ready }) {
   const { today } = view;
   const date = new Date(view.dayStart);
   const hours = (today.sleepMs / 3_600_000).toFixed(1);
-  const label = `${view.babyName} 今天，喂奶 ${today.feeds} 次 ${view.todayAmount}，尿布 ${today.diapers} 片，睡了 ${hours} 小时`;
+  const label = t().widgetUi.todayA11y(
+    view.babyName,
+    today.feeds,
+    view.todayAmount,
+    today.diapers,
+    hours,
+  );
   return (
     <Card link={TODAY_LINK} label={label}>
       <FlexWidget
@@ -342,14 +352,14 @@ function SummaryCard({ view }: { view: Ready }) {
         }}
       >
         <TextWidget
-          text={`${shortBabyName(view.babyName, 16)}的今天`}
+          text={t().widgetUi.todayOf(shortBabyName(view.babyName, 16))}
           maxLines={1}
           truncate="END"
           style={{ fontSize: 15, fontFamily: SERIF, color: c.ink }}
         />
         <TextWidget
           // 系统定时刷新可能晚于 0 点，写明日期，显示的永远是这一天的真实数字。
-          text={`${date.getMonth() + 1}月${date.getDate()}日 · ${formatSyncedAt(view.syncedAt, view.dayStart)}`}
+          text={`${formatShortDate(date.getTime())} · ${formatSyncedAt(view.syncedAt, view.dayStart)}`}
           maxLines={1}
           style={{ fontSize: 10, color: c.muted, marginLeft: 6 }}
         />
@@ -357,12 +367,17 @@ function SummaryCard({ view }: { view: Ready }) {
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>
         <Stat
           color={c.accent}
-          label="喂奶"
+          label={t().today.feed}
           value={`${today.feeds}`}
-          unit={`次 · ${view.todayAmount}`}
+          unit={t().widgetUi.feedsUnit(today.feeds, view.todayAmount)}
         />
-        <Stat color={c.diaper} label="尿布" value={`${today.diapers}`} unit="片" />
-        <Stat color={c.sleep} label="睡眠" value={hours} unit="小时" />
+        <Stat
+          color={c.diaper}
+          label={t().today.diaper}
+          value={`${today.diapers}`}
+          unit={t().widgetUi.diapersUnit(today.diapers)}
+        />
+        <Stat color={c.sleep} label={t().today.sleep} value={hours} unit={t().widgetUi.hoursUnit} />
       </FlexWidget>
     </Card>
   );

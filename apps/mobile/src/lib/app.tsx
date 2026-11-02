@@ -10,12 +10,14 @@ import {
   type Role,
   regionFor,
   type ServerRecord,
+  t,
   type Units,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import {
   createContext,
+  Fragment,
   type ReactNode,
   useCallback,
   useContext,
@@ -34,11 +36,11 @@ import { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
 import { scheduleWidgetRefresh } from '../widgets/controller';
 import { shouldOfferVerifyStep } from './accountLogic';
-import { accountText } from './accountText';
 import { type Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
+import { applyLocale, deviceLanguageTag } from './locale';
 import { clearLocalMedia, createUploadTransport } from './media';
 import { scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { summarizeRemote } from './remoteSummary';
@@ -92,7 +94,7 @@ const AppContext = createContext<AppApi | null>(null);
 
 export function useApp(): AppApi {
   const app = useContext(AppContext);
-  if (!app) throw new Error('useApp 必须在 AppProvider 内使用');
+  if (!app) throw new Error('useApp must be used inside AppProvider');
   return app;
 }
 
@@ -176,8 +178,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
           });
           if (summary) feedbackRef.current.banner(summary.initial, summary.message);
         },
-        onRejected: (count: number) =>
-          feedbackRef.current.toast(`有 ${count} 条内容服务器没有接受，只保存在这台手机上`),
+        onRejected: (count: number) => feedbackRef.current.toast(t().ui.rejectedRecords(count)),
         onSynced: () => {
           setHasSynced(true);
           void db.setMeta(SYNCED_KEY, '1');
@@ -302,7 +303,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       await persistMe(await services.api.me());
     } catch (error) {
       if (!(error instanceof ApiFailure) || error.status !== 0) {
-        console.warn('刷新账号信息失败');
+        console.warn('refreshing account info failed');
       }
     }
   }, [services, persistMe]);
@@ -312,6 +313,21 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   }, [booted, refreshMe]);
 
   const prefs = me?.prefs ?? defaultPrefs;
+
+  // 用户可能在 App 开着时改系统语言，回到前台时重新读一次。
+  const [deviceTag, setDeviceTag] = useState(deviceLanguageTag);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setDeviceTag(deviceLanguageTag());
+    });
+    return () => sub.remove();
+  }, []);
+  // 必须在渲染子组件之前定下来：下面所有组件渲染时都直接读当前语言。
+  const locale = applyLocale(prefs.locale, deviceTag);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 语言变了要刷新小工具上的文字。
+  useEffect(() => {
+    if (booted) scheduleWidgetRefresh();
+  }, [booted, locale]);
 
   // 夜间安静在服务端按这个时区判断。失败了也没关系，下次刷新发现不一样会再写一次。
   useEffect(() => {
@@ -324,6 +340,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   }, [services, me, persistMe]);
 
   // 记录或设置变化后，重新安排本机的喂奶提醒。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 提醒文字是预先排好的，换语言后要重排。
   useEffect(() => {
     if (!services || me?.role === 'viewer' || !hasFamily) return;
     const reschedule = () => {
@@ -332,7 +349,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     };
     reschedule();
     return services.store.subscribe(reschedule);
-  }, [services, me?.role, hasFamily, prefs.feedReminder]);
+  }, [services, me?.role, hasFamily, prefs.feedReminder, locale]);
 
   const value = useMemo<Omit<AppApi, 'sessionState'> | null>(() => {
     if (!services) return null;
@@ -405,7 +422,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         } catch (error) {
           // 比如邀请码过期了。接下来是建家庭的页面，那里可以重新填。
           feedbackRef.current.toast(
-            error instanceof Error ? error.message : accountText.joinFailed,
+            error instanceof Error ? error.message : t().account.joinFailed,
           );
         }
       },
@@ -470,5 +487,11 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     // 会覆盖全家的出生时间。所以必须等第一次同步成功。
     else sessionState = hasSynced ? 'noBaby' : 'syncing';
   }
-  return <AppContext.Provider value={{ ...value, sessionState }}>{children}</AppContext.Provider>;
+  // 换语言时整棵界面重新挂载：文字都是渲染时读的，有的还在 useMemo 里，逐个找容易漏。
+  // 导航状态在容器里，重新挂载后还在原来的页面。
+  return (
+    <AppContext.Provider value={{ ...value, sessionState }}>
+      <Fragment key={locale}>{children}</Fragment>
+    </AppContext.Provider>
+  );
 }

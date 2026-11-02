@@ -13,6 +13,7 @@ import {
   nutrientMeta,
   presetsForRegion,
   presetToForm,
+  t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -21,12 +22,14 @@ import { colors } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Button, Chip, Field, Muted, SectionTitle } from '../ui/primitives';
 
-const MILK_LABELS: Record<MilkType, string> = { formula: '奶粉', breast: '母乳', mixed: '混合' };
+const milkLabel = (type: MilkType): string => t().nutritionUi[type];
 
 function milkSummary(milk: FeedMilk): string {
-  if (!milk.milkType) return '奶类型（可选）';
-  if (milk.milkType !== 'formula') return MILK_LABELS[milk.milkType];
-  return milk.formula ? `奶粉 · ${milk.formula.name}` : '奶粉 · 还没选是哪一款';
+  if (!milk.milkType) return t().nutritionUi.milkTypeOptional;
+  if (milk.milkType !== 'formula') return milkLabel(milk.milkType);
+  return milk.formula
+    ? t().nutritionUi.formulaNamed(milk.formula.name)
+    : t().nutritionUi.formulaUnchosen;
 }
 
 /**
@@ -60,7 +63,10 @@ export function MilkChooser({
       <Pressable
         testID="feed-milk-toggle"
         accessibilityRole="button"
-        accessibilityLabel={`奶类型：${milkSummary(value)}，点一下${open ? '收起' : '更改'}`}
+        accessibilityLabel={t().nutritionUi.milkToggleA11y(
+          milkSummary(value),
+          open ? t().nutritionUi.collapse : t().nutritionUi.change,
+        )}
         accessibilityState={{ expanded: open }}
         hitSlop={{ top: 8, bottom: 8 }}
         onPress={() => setOpen((v) => !v)}
@@ -69,7 +75,7 @@ export function MilkChooser({
         <Text style={s.milkText} numberOfLines={1} testID="feed-milk-summary">
           {milkSummary(value)}
         </Text>
-        <Muted>{open ? '收起' : '更改'}</Muted>
+        <Muted>{open ? t().nutritionUi.collapseLink : t().nutritionUi.changeLink}</Muted>
       </Pressable>
       {open ? (
         <View style={s.milkPanel}>
@@ -78,7 +84,7 @@ export function MilkChooser({
               <Chip
                 key={type}
                 testID={`milk-${type}`}
-                label={MILK_LABELS[type]}
+                label={milkLabel(type)}
                 selected={value.milkType === type}
                 onPress={() => pickType(type)}
               />
@@ -103,7 +109,7 @@ export function MilkChooser({
               ))}
               <Chip
                 testID="formula-add"
-                label="＋ 添加奶粉"
+                label={t().nutritionUi.addFormulaChip}
                 selected={false}
                 onPress={onAddFormula}
               />
@@ -146,10 +152,10 @@ export function AddFormulaFlow({
       <Button
         testID="formula-manual"
         tone="outline"
-        label="手动填写"
+        label={t().nutritionUi.manual}
         onPress={() => setPicked({ preset: null })}
       />
-      <Muted>或者从常见的奶粉开始。这里只是列出来，不代表推荐。</Muted>
+      <Muted>{t().nutritionUi.presetHint}</Muted>
       <View>
         {presetsForRegion(region.id).map((preset) => (
           <Pressable
@@ -161,14 +167,12 @@ export function AddFormulaFlow({
             style={s.presetRow}
           >
             <Text style={s.presetName}>{preset.name}</Text>
-            <Muted>
-              {preset.label ? '带标签数值，请对照罐身核对' : '只有名字，请对照罐身录入'}
-            </Muted>
+            <Muted>{preset.label ? t().nutritionUi.hasLabel : t().nutritionUi.nameOnly}</Muted>
           </Pressable>
         ))}
       </View>
       {onCancel ? (
-        <Button testID="formula-back" tone="ghost" label="返回" onPress={onCancel} />
+        <Button testID="formula-back" tone="ghost" label={t().common.back} onPress={onCancel} />
       ) : null}
     </>
   );
@@ -214,7 +218,7 @@ export function FormulaEditor({
     if (!id || !existing) return;
     await app.remove(id);
     onDone(id);
-    toast('已删除这款奶粉，已经记下的喂奶不受影响', {
+    toast(t().nutritionUi.formulaDeleted, {
       undo: () => void app.write('event', existing, id),
     });
   };
@@ -223,32 +227,31 @@ export function FormulaEditor({
     <>
       {preset?.label ? (
         <Muted style={s.hint}>
-          数值来自{preset.label.source.label}（{preset.label.source.version}
-          ）。配方会换版，请对照罐身核对，以罐身标签为准。
+          {t().nutritionUi.presetSource(preset.label.source.label, preset.label.source.version)}
         </Muted>
       ) : preset ? (
         <Muted style={s.hint} testID="formula-name-only">
-          这款还没有核实过的数据，请对照罐身的营养成分表录入。不填也能保存，算的时候会显示数据不足。
+          {t().nutritionUi.presetNoData}
         </Muted>
       ) : null}
       <Field
         testID="formula-name"
-        label="名称"
+        label={t().nutritionUi.name}
         value={form.name}
         onChangeText={(name) => setForm((f) => ({ ...f, name }))}
-        placeholder="比如：牌子和段数"
+        placeholder={t().nutritionUi.namePlaceholder}
         maxLength={60}
       />
       <View style={s.chips}>
         <Chip
           testID="formula-basis-100ml"
-          label="每 100 ml 冲好的奶"
+          label={t().nutritionUi.per100ml}
           selected={form.basis === 'per100ml'}
           onPress={() => setForm((f) => ({ ...f, basis: 'per100ml' }))}
         />
         <Chip
           testID="formula-basis-100g"
-          label="每 100 g 奶粉"
+          label={t().nutritionUi.per100g}
           selected={form.basis === 'per100g'}
           onPress={() => setForm((f) => ({ ...f, basis: 'per100g' }))}
         />
@@ -257,15 +260,13 @@ export function FormulaEditor({
         <>
           <Field
             testID="formula-ratio"
-            label="每 100 ml 冲好的奶用多少克粉"
+            label={t().nutritionUi.powderPer100ml}
             value={form.powderGPer100ml}
             onChangeText={(powderGPer100ml) => setForm((f) => ({ ...f, powderGPer100ml }))}
             keyboardType="decimal-pad"
             mono
           />
-          <Muted style={s.hint}>
-            标签按每 100 g 给的，要靠罐身的冲调比例才能换算。没填就算不出来，不会猜。
-          </Muted>
+          <Muted style={s.hint}>{t().nutritionUi.per100gHint}</Muted>
         </>
       ) : null}
       <NutrientField
@@ -303,20 +304,19 @@ export function FormulaEditor({
         onUnit={(unit) => setForm((f) => changeFormUnit(f, 'vitaminD', unit as 'ug' | 'iu'))}
       />
       <Muted style={s.hint}>
-        没填的营养素会显示数据不足，不会当 0 算。
-        {id ? '改动只影响之后的喂奶，已经记下的不变。' : ''}
+        {t().nutritionUi.blankNote(id ? t().nutritionUi.editOnlyFuture : '')}
       </Muted>
       {error ? (
         <Text style={s.error} testID="formula-error">
           {error}
         </Text>
       ) : null}
-      <Button testID="formula-save" label="保存" onPress={() => void save()} />
+      <Button testID="formula-save" label={t().common.save} onPress={() => void save()} />
       {id ? (
         <Button
           testID="formula-delete"
           tone="ghost"
-          label="删除这款奶粉"
+          label={t().nutritionUi.deleteFormula}
           onPress={() => void remove()}
         />
       ) : null}
@@ -344,7 +344,7 @@ function NutrientField({
       <View style={{ flex: 1 }}>
         <Field
           testID={`formula-field-${name}`}
-          label={`${nutrientMeta[name].label}（${unitLabel}）`}
+          label={t().nutritionUi.nutrientField(nutrientMeta[name].label, unitLabel)}
           value={value}
           onChangeText={(text) => onChange(name, text)}
           keyboardType="decimal-pad"

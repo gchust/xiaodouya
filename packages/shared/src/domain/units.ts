@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 /**
  * 单位只影响显示和输入。记录里永远存公制（毫升、摄氏度、公斤、厘米），
  * 这样换单位、换地区、家人用不同单位都不用迁移数据，健康规则也只有一套。
@@ -26,7 +28,7 @@ export const metricUnits: Units = { volume: 'ml', temperature: 'c', weight: 'kg'
 
 export interface UnitScale {
   label: string;
-  /** 提示文字里用的中文名。 */
+  /** 提示文字里用的名称，跟随当前语言。 */
   name: string;
   step: number;
   min: number;
@@ -39,34 +41,38 @@ export interface UnitScale {
  * 范围要落在 `EventData` 的校验之内，否则记录会被服务端拒绝。
  * °F 用 0.2 而不是 0.1：0.2°F 约等于原来的 0.1℃，常见阈值 96.8、100.4、102.2 都在网格上。
  */
-const scales: Record<Dimension, Record<string, UnitScale>> = {
+type ScaleData = Omit<UnitScale, 'name'>;
+
+const scales: Record<Dimension, Record<string, ScaleData>> = {
   volume: {
-    ml: { label: 'ml', name: '毫升', step: 10, min: 10, max: 1000, decimals: 0 },
-    oz: { label: 'oz', name: '盎司', step: 0.5, min: 0.5, max: 33.5, decimals: 1 },
+    ml: { label: 'ml', step: 10, min: 10, max: 1000, decimals: 0 },
+    oz: { label: 'oz', step: 0.5, min: 0.5, max: 33.5, decimals: 1 },
   },
   temperature: {
-    c: { label: '℃', name: '摄氏度', step: 0.1, min: 30, max: 45, decimals: 1 },
-    f: { label: '°F', name: '华氏度', step: 0.2, min: 86, max: 113, decimals: 1 },
+    c: { label: '℃', step: 0.1, min: 30, max: 45, decimals: 1 },
+    f: { label: '°F', step: 0.2, min: 86, max: 113, decimals: 1 },
   },
   weight: {
-    kg: { label: 'kg', name: '公斤', step: 0.1, min: 0.5, max: 100, decimals: 1 },
-    lb: { label: 'lb', name: '磅', step: 0.2, min: 1.2, max: 220, decimals: 1 },
+    kg: { label: 'kg', step: 0.1, min: 0.5, max: 100, decimals: 1 },
+    lb: { label: 'lb', step: 0.2, min: 1.2, max: 220, decimals: 1 },
   },
   length: {
-    cm: { label: 'cm', name: '厘米', step: 0.5, min: 25, max: 250, decimals: 1 },
-    in: { label: 'in', name: '英寸', step: 0.5, min: 10, max: 98, decimals: 1 },
+    cm: { label: 'cm', step: 0.5, min: 25, max: 250, decimals: 1 },
+    in: { label: 'in', step: 0.5, min: 10, max: 98, decimals: 1 },
   },
 };
 
-const fallback: Record<Dimension, UnitScale> = {
-  volume: scales.volume.ml as UnitScale,
-  temperature: scales.temperature.c as UnitScale,
-  weight: scales.weight.kg as UnitScale,
-  length: scales.length.cm as UnitScale,
-};
+const fallbackUnit: Units = metricUnits;
 
 export function scaleFor(dimension: Dimension, unit: string): UnitScale {
-  return scales[dimension][unit] ?? fallback[dimension];
+  const known = scales[dimension][unit];
+  const id = (known ? unit : fallbackUnit[dimension]) as keyof ReturnType<typeof unitNames>;
+  return { ...(known ?? (scales[dimension][id] as ScaleData)), name: unitNames()[id] };
+}
+
+function unitNames() {
+  const { ml, oz, c, f, kg, lb, cm, in: inch } = t().domain.units;
+  return { ml, oz, c, f, kg, lb, cm, in: inch };
 }
 
 const ML_PER_OZ = 29.5735;
@@ -253,11 +259,11 @@ export function birthMeasuresFromInput(
   };
   const weightKg = parse('weight', weightText, units.weight, original.birthWeightKg);
   if (weightKg === null || (weightKg !== undefined && !(weightKg >= 0.3 && weightKg <= 10))) {
-    return { ok: false, error: `体重看起来不太对，单位是${scaleFor('weight', units.weight).name}` };
+    return { ok: false, error: t().domain.units.badWeight(scaleFor('weight', units.weight).name) };
   }
   const lengthCm = parse('length', lengthText, units.length, original.birthLengthCm);
   if (lengthCm === null || (lengthCm !== undefined && !(lengthCm >= 20 && lengthCm <= 80))) {
-    return { ok: false, error: `身长看起来不太对，单位是${scaleFor('length', units.length).name}` };
+    return { ok: false, error: t().domain.units.badLength(scaleFor('length', units.length).name) };
   }
   return { ok: true, weightKg, lengthCm };
 }

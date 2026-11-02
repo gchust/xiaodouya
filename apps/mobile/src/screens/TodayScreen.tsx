@@ -18,6 +18,7 @@ import {
   planSchedule,
   summarize24h,
   summaryText,
+  t,
   timelineEntries,
   todayInsight,
   type Units,
@@ -90,7 +91,7 @@ export function TodayScreen() {
         <EventActionsSheet id={entry.id} event={entry.data} />
       ));
     },
-    openFeed: () => sheet.open('喂奶', () => <FeedSheet />),
+    openFeed: () => sheet.open(t().today.feed, () => <FeedSheet />),
   });
 
   if (!baby) return <SyncingPlaceholder />;
@@ -120,10 +121,10 @@ export function TodayScreen() {
   const feedHint = !estimate.last
     ? ''
     : !estimate.isLearned
-      ? '记录几次后会估算下次时间'
+      ? t().today.estimateLater
       : estimate.remainingMs > 0
-        ? `约 ${formatDuration(estimate.remainingMs)}后该喂了`
-        : '已到平时的喂奶间隔';
+        ? t().today.nextFeedIn(formatDuration(estimate.remainingMs))
+        : t().today.feedDue;
   const feedHintNear = estimate.isLearned && estimate.remainingMs < 30 * 60_000;
 
   const toggleSleep = async () => {
@@ -131,10 +132,10 @@ export function TodayScreen() {
     if (sleeping && sleepingEntry) {
       const end = Date.now();
       await app.write('event', { ...sleeping, endAt: end }, sleepingEntry.id);
-      toast(`醒了 · 这次睡了 ${formatDuration(end - sleeping.at)}`);
+      toast(t().today.wokeUp(formatDuration(end - sleeping.at)));
     } else {
       const id = await app.write('event', { type: 'sleep', at: Date.now(), byName: app.label });
-      toast('开始记录睡眠，醒了再点一下', { undo: () => void app.remove(id) });
+      toast(t().today.sleepStarted, { undo: () => void app.remove(id) });
     }
   };
 
@@ -144,24 +145,24 @@ export function TodayScreen() {
       const [file] = await pickFromLibrary({ singleImage: true });
       if (!file) return;
       await saveAvatar(app, file);
-      toast('头像换好了');
+      toast(t().ui.avatarDone);
     } catch (error) {
-      toast(error instanceof Error ? error.message : '头像没有换成，请再试一次');
+      toast(error instanceof Error ? error.message : t().today.avatarFailed);
     } finally {
       setChangingAvatar(false);
     }
   };
 
-  const openFeed = () => sheet.open('喂奶', () => <FeedSheet />);
+  const openFeed = () => sheet.open(t().today.feed, () => <FeedSheet />);
   const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
   const syncLine =
     app.syncStatus === 'offline'
       ? pendingCount > 0
-        ? `离线中 · ${pendingCount} 条待同步，已安全保存在手机上`
-        : '离线中 · 记录照常保存'
+        ? t().today.offlinePending(pendingCount)
+        : t().today.offline
       : pendingCount > 0
-        ? `正在同步 ${pendingCount} 条记录`
+        ? t().today.syncing(pendingCount)
         : null;
 
   return (
@@ -187,7 +188,7 @@ export function TodayScreen() {
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={s.date}>{formatDateHeader(now)}</Text>
           <Text accessibilityRole="header" style={s.title} testID="today-title" numberOfLines={2}>
-            {baby.data.name}的第 {dayNumber(birthAt, now)} 天
+            {t().today.title(baby.data.name, dayNumber(birthAt, now))}
           </Text>
           <Muted>{ageText(birthAt, now)}</Muted>
           {syncLine ? (
@@ -198,7 +199,7 @@ export function TodayScreen() {
         </View>
         <PressScale
           testID="baby-avatar"
-          accessibilityLabel={avatar ? '查看宝宝的头像' : '添加宝宝的头像'}
+          accessibilityLabel={avatar ? t().today.viewAvatar : t().today.addAvatar}
           accessibilityState={{ busy: changingAvatar, disabled: !avatar && !canChangeAvatar }}
           disabled={changingAvatar || (!avatar && !canChangeAvatar)}
           style={s.avatar}
@@ -219,13 +220,13 @@ export function TodayScreen() {
 
       <PressScale
         testID="feed-card"
-        accessibilityLabel="距上次喂奶，点击记录喂奶"
+        accessibilityLabel={t().today.sinceLastFeedA11y}
         scaleTo={0.98}
         onPress={openFeed}
         style={s.feedCard}
       >
         <View style={s.feedTop}>
-          <Text style={s.feedLabel}>距上次喂奶</Text>
+          <Text style={s.feedLabel}>{t().today.sinceLastFeed}</Text>
           <Text style={[s.feedHint, { color: feedHintNear ? colors.accent : colors.muted }]}>
             {feedHint}
           </Text>
@@ -235,48 +236,52 @@ export function TodayScreen() {
         </Mono>
         <Muted testID="last-feed">
           {estimate.last
-            ? `${formatClock(estimate.last.at)} 喂奶 ${formatVolume(estimate.last.ml, units.volume)}${
-                estimate.last.byName ? ` · ${estimate.last.byName}记录` : ''
-              }`
-            : '还没有喂奶记录，点这里记第一次'}
+            ? t().today.lastFeed(
+                formatClock(estimate.last.at),
+                formatVolume(estimate.last.ml, units.volume),
+                estimate.last.byName ? t().today.lastFeedBy(estimate.last.byName) : '',
+              )
+            : t().today.noFeedYet}
         </Muted>
       </PressScale>
 
       <View style={s.actions}>
         <PressScale
           testID="action-feed"
-          accessibilityLabel="喂奶"
+          accessibilityLabel={t().today.feed}
           style={[s.action, s.actionPrimary]}
           onPress={openFeed}
         >
           <Dot color={colors.white} />
-          <Text style={[s.actionLabel, { color: colors.white, fontWeight: '500' }]}>喂奶</Text>
+          <Text style={[s.actionLabel, { color: colors.white, fontWeight: '500' }]}>
+            {t().today.feed}
+          </Text>
         </PressScale>
         <PressScale
           testID="action-diaper"
-          accessibilityLabel="尿布"
+          accessibilityLabel={t().today.diaper}
           style={s.action}
-          onPress={() => sheet.open('换尿布', () => <DiaperSheet />)}
+          onPress={() => sheet.open(t().today.changeDiaper, () => <DiaperSheet />)}
         >
           <Dot color={colors.diaper} />
-          <Text style={s.actionLabel}>尿布</Text>
+          <Text style={s.actionLabel}>{t().today.diaper}</Text>
         </PressScale>
         <SleepAction sleeping={Boolean(sleeping)} onPress={() => void toggleSleep()} />
         <PressScale
           testID="action-more"
-          accessibilityLabel="更多"
+          accessibilityLabel={t().today.more}
           style={s.action}
-          onPress={() => sheet.open('记录其他', () => <MoreSheet birthAt={birthAt} />)}
+          onPress={() => sheet.open(t().today.recordOther, () => <MoreSheet birthAt={birthAt} />)}
         >
           <Dot color={colors.muted} hollow />
-          <Text style={s.actionLabel}>更多</Text>
+          <Text style={s.actionLabel}>{t().today.more}</Text>
         </PressScale>
       </View>
 
       {insight ? (
         <View testID="insight" style={s.insight}>
           <Text style={s.insightLabel}>
-            {insight.tone === 'attention' ? '留意一下' : '根据记录'}
+            {insight.tone === 'attention' ? t().today.heedThis : t().today.fromRecords}
           </Text>
           <Text style={s.insightText}>{insight.text}</Text>
         </View>
@@ -288,11 +293,11 @@ export function TodayScreen() {
         <Pressable
           testID="nutrition-entry"
           accessibilityRole="button"
-          accessibilityLabel={`今天的奶粉营养：${nutritionText}`}
+          accessibilityLabel={t().today.nutritionA11y(nutritionText)}
           onPress={() => router.push('/nutrition')}
           style={s.nutritionEntry}
         >
-          <Text style={s.nutritionLabel}>奶粉营养</Text>
+          <Text style={s.nutritionLabel}>{t().today.nutrition}</Text>
           <Muted style={s.nutritionText} numberOfLines={1} testID="nutrition-entry-text">
             {nutritionText} ›
           </Muted>
@@ -300,7 +305,7 @@ export function TodayScreen() {
       ) : null}
 
       <View style={s.listHeader}>
-        <Text style={s.listTitle}>过去 24 小时</Text>
+        <Text style={s.listTitle}>{t().today.past24h}</Text>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
           {summaryText(summary, units)}
         </Muted>
@@ -308,9 +313,7 @@ export function TodayScreen() {
       <View style={s.list}>
         {recent.length === 0 ? (
           <View style={{ paddingVertical: 20 }}>
-            <Muted style={{ fontSize: 13, lineHeight: 20 }}>
-              这里会按时间列出每一次喂奶、换尿布和睡眠。点上面的按钮开始吧。
-            </Muted>
+            <Muted style={{ fontSize: 13, lineHeight: 20 }}>{t().today.emptyTimeline}</Muted>
           </View>
         ) : (
           recent.map((entry) => (
@@ -334,20 +337,22 @@ export function TodayScreen() {
         <Pressable
           testID="records-open"
           accessibilityRole="button"
-          accessibilityLabel="查看全部记录"
+          accessibilityLabel={t().today.viewAll}
           hitSlop={LINK_HIT_SLOP}
           onPress={() => router.push('/records')}
         >
-          <Text style={s.listLink}>全部记录 ›</Text>
+          <Text style={s.listLink}>{t().today.allRecords}</Text>
         </Pressable>
         <Pressable
           testID="backfill-open"
           accessibilityRole="button"
-          accessibilityLabel="补记以前的记录"
+          accessibilityLabel={t().today.backfillA11y}
           hitSlop={LINK_HIT_SLOP}
-          onPress={() => sheet.open('补记', () => <MoreSheet birthAt={birthAt} backfill />)}
+          onPress={() =>
+            sheet.open(t().today.backfill, () => <MoreSheet birthAt={birthAt} backfill />)
+          }
         >
-          <Text style={s.listLink}>＋ 补记</Text>
+          <Text style={s.listLink}>{t().today.backfillLink}</Text>
         </Pressable>
       </View>
 
@@ -355,14 +360,16 @@ export function TodayScreen() {
         <Pressable
           testID="vaccine-reminder"
           accessibilityRole="button"
-          accessibilityLabel="疫苗提醒"
+          accessibilityLabel={t().today.vaccineReminderA11y}
           onPress={() =>
-            sheet.open('疫苗接种', () => <VaccineSheet birthAt={birthAt} preselect={vaccine.id} />)
+            sheet.open(t().today.vaccination, () => (
+              <VaccineSheet birthAt={birthAt} preselect={vaccine.id} />
+            ))
           }
           style={s.vaccineWrap}
         >
           <Card style={s.vaccineCard}>
-            <Text style={s.vaccineLabel}>疫苗提醒</Text>
+            <Text style={s.vaccineLabel}>{t().today.vaccineReminder}</Text>
             <Text style={s.vaccineText}>{vaccineReminderText(vaccine)}</Text>
           </Card>
         </Pressable>
@@ -383,13 +390,13 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   return (
     <PressScale
       testID="action-sleep"
-      accessibilityLabel={sleeping ? '醒了' : '睡眠'}
+      accessibilityLabel={sleeping ? t().today.awake : t().today.sleep}
       style={[s.action, tint]}
       onPress={onPress}
     >
       <Dot color={sleeping ? colors.white : colors.sleep} />
       <Text style={[s.actionLabel, sleeping ? { color: colors.white } : null]}>
-        {sleeping ? '醒了' : '睡眠'}
+        {sleeping ? t().today.awake : t().today.sleep}
       </Text>
     </PressScale>
   );

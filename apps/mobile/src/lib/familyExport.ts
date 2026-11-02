@@ -1,7 +1,7 @@
+import { t } from '@xiaodouya/shared';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { exportFileName } from './accountLogic';
-import { accountText } from './accountText';
 import type { Api } from './api';
 
 /**
@@ -17,6 +17,6 @@ export async function exportFamilyData(api: Api): Promise<void> {
   await Sharing.shareAsync(file.uri, {
     mimeType: 'application/json',
     UTI: 'public.json',
-    dialogTitle: accountText.exportDialog,
+    dialogTitle: t().account.exportDialog,
   });
 }

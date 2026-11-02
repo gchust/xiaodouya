@@ -309,21 +309,40 @@ export async function testStorage(s: ResolvedStorage): Promise<StorageTestResult
     const text = await read.Body?.transformToString();
     await c.send(new DeleteObjectCommand({ Bucket: s.bucket, Key: key }));
     if (text !== body) throw new Error('读回的内容不一致');
-    return { ok: true, latencyMs: Date.now() - started, message: '读写正常' };
+    return { ok: true, latencyMs: Date.now() - started, message: '读写正常', reason: 'ok' };
   } catch (error) {
-    return { ok: false, latencyMs: Date.now() - started, message: describeStorageError(error) };
+    return {
+      ok: false,
+      latencyMs: Date.now() - started,
+      message: describeStorageError(error),
+      reason: storageErrorReason(error),
+    };
   }
 }
 
-export function describeStorageError(error: unknown): string {
+/** 新版 App 按原因显示当前语言的文字，见 shared 的 storageTestMessage。 */
+export function storageErrorReason(
+  error: unknown,
+): 'noBucket' | 'badKey' | 'unreachable' | 'unknown' {
   const e = error as { name?: string; $metadata?: { httpStatusCode?: number }; code?: string };
   const status = e.$metadata?.httpStatusCode;
-  if (e.name === 'NoSuchBucket' || status === 404) return '找不到这个 Bucket，请检查名称和区域';
-  if (status === 401 || status === 403 || e.name === 'SignatureDoesNotMatch') {
-    return '密钥不正确，或没有这个 Bucket 的读写权限';
-  }
+  if (e.name === 'NoSuchBucket' || status === 404) return 'noBucket';
+  if (status === 401 || status === 403 || e.name === 'SignatureDoesNotMatch') return 'badKey';
   if (e.code === 'ENOTFOUND' || e.code === 'ECONNREFUSED' || e.code === 'ETIMEDOUT') {
-    return '连接不上存储地址，请检查 Endpoint 或 Account ID';
+    return 'unreachable';
   }
-  return '连接失败，请检查配置是否填写完整';
+  return 'unknown';
+}
+
+export function describeStorageError(error: unknown): string {
+  switch (storageErrorReason(error)) {
+    case 'noBucket':
+      return '找不到这个 Bucket，请检查名称和区域';
+    case 'badKey':
+      return '密钥不正确，或没有这个 Bucket 的读写权限';
+    case 'unreachable':
+      return '连接不上存储地址，请检查 Endpoint 或 Account ID';
+    default:
+      return '连接失败，请检查配置是否填写完整';
+  }
 }

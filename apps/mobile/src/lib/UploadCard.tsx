@@ -1,4 +1,4 @@
-import { quotaStatus } from '@xiaodouya/shared';
+import { quotaStatus, t } from '@xiaodouya/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -47,7 +47,7 @@ export function UploadCard() {
     if (progress.total > 0) wasActive.current = true;
     if (wasActive.current && progress.total === 0 && progress.failedCount === 0) {
       wasActive.current = false;
-      toast('文件都上传好了');
+      toast(t().ui.allUploaded);
       // 这时候提醒快满了最有用：用户刚传完，知道是什么占了空间。读不到就算了，下次再说。
       void api
         .storageUsage()
@@ -86,17 +86,17 @@ export function UploadCard() {
           <Pressable
             testID="upload-retry"
             accessibilityRole="button"
-            accessibilityLabel="重试上传"
+            accessibilityLabel={t().ui.retryUpload}
             hitSlop={14}
             onPress={() => void uploads.retryFailed()}
           >
-            <Text style={{ fontSize: 12, color: colors.accent }}>重试</Text>
+            <Text style={{ fontSize: 12, color: colors.accent }}>{t().common.retry}</Text>
           </Pressable>
         ) : null}
         <Pressable
           testID="upload-dismiss"
           accessibilityRole="button"
-          accessibilityLabel="先收起上传提示"
+          accessibilityLabel={t().ui.hideUploadNotice}
           hitSlop={14}
           onPress={() => setDismissedKey(status.key)}
         >

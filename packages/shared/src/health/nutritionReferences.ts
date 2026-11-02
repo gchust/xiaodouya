@@ -1,3 +1,4 @@
+import { getLocale, L, type Localized, localized, t } from '../i18n';
 import type { ReviewStatus } from '../regions/types';
 import type { NutrientValues } from '../schemas';
 
@@ -46,14 +47,20 @@ export interface NutritionReferenceTable {
  * - 上限（UL）：不做“超过上限”的判断。配方奶的铁远高于母乳的 AI，这本身不是问题。
  * - 12 个月以上：奶不再是主要来源，比较没有意义。
  */
-const iomDri: NutritionReferenceTable = {
+const iomDri: NutritionReferenceTable = localized({
   id: 'iom-dri',
-  name: '美国 IOM / NIH 的膳食参考摄入量',
-  source: {
-    label: 'NIH Office of Dietary Supplements；Health Canada 转载的 IOM 2005 宏量营养素表',
+  name: L('美国 IOM / NIH 的膳食参考摄入量', 'US IOM / NIH dietary reference intakes'),
+  source: localized({
+    label: L(
+      'NIH Office of Dietary Supplements；Health Canada 转载的 IOM 2005 宏量营养素表',
+      'NIH Office of Dietary Supplements; IOM 2005 macronutrient table as reproduced by Health Canada',
+    ),
     url: 'https://ods.od.nih.gov/factsheets/list-all/',
-    version: '钙 2025-07-11、铁 2025-09-04、维生素 D 2025-06-27（NIH ODS）；宏量营养素 IOM 2005',
-  },
+    version: L(
+      '钙 2025-07-11、铁 2025-09-04、维生素 D 2025-06-27（NIH ODS）；宏量营养素 IOM 2005',
+      'Calcium 2025-07-11, iron 2025-09-04, vitamin D 2025-06-27 (NIH ODS); macronutrients IOM 2005',
+    ),
+  }),
   bands: [
     {
       fromMonths: 0,
@@ -80,7 +87,7 @@ const iomDri: NutritionReferenceTable = {
       },
     },
   ],
-};
+});
 
 export interface NutritionReferenceUse {
   table: NutritionReferenceTable;
@@ -101,11 +108,13 @@ export const nutritionReferenceIom: NutritionReferenceUse = {
  * 的 PDF 在开发环境连不上（TLS 被断开），搜索也只找到书目和摘要，所以没有一个数字是读到的，
  * 不能凭记忆写。读到后加一张表，再把对应地区指过去就行，页面不用改。见 PROGRESS F-113。
  */
-export function nutritionReferenceFallback(reason: string): NutritionReferenceUse {
+export function nutritionReferenceFallback(reason: Localized): NutritionReferenceUse {
   return {
     table: iomDri,
     reviewStatus: 'needs-review',
-    note: `${reason}，这里暂时用美国 IOM / NIH 的参考量`,
+    get note() {
+      return t().domain.nutrition.fallbackNote(reason[getLocale()]);
+    },
   };
 }
 

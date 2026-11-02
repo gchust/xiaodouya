@@ -4,6 +4,7 @@ import type {
   UploadUrlRequest,
   UploadUrlResponse,
 } from '@xiaodouya/shared';
+import { t } from '@xiaodouya/shared';
 
 export interface UploadJob {
   /** `${id}/${variant}` */
@@ -254,7 +255,7 @@ export class UploadQueue {
         this.publish(true);
       });
       if (status < 200 || status >= 300)
-        throw new UploadHttpError(status, 'put_failed', '上传失败');
+        throw new UploadHttpError(status, 'put_failed', t().ui.uploadFailed);
       await this.transport.complete(job.id, job.variant);
       await this.finish(job);
       return true;
@@ -271,7 +272,7 @@ export class UploadQueue {
         if (isPermanent(error)) job.failed = error.message;
         // 存储持续报错（配额满、配置错）时重试没有意义，交给用户处理。
         else if (error.code === 'put_failed' && job.attempts >= MAX_PUT_ATTEMPTS) {
-          job.failed = '存储一直返回错误，请检查存储设置后重试';
+          job.failed = t().ui.storageKeepsFailing;
         }
       }
       await this.db.saveJob(job);

@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import type { EventData, VaccinePlanData } from '../schemas';
 import { formatMonthDay } from './age';
 import {
@@ -40,14 +41,18 @@ export function planFor(
 function customDose(id: string, plan: VaccinePlanData): VaccineDose | null {
   if (!plan.name) return null;
   const { months, plannedAt } = plan;
+  const text = t().domain.vaccine;
   return {
     id,
     localId: id.slice(id.indexOf(':') + 1),
     name: plan.name,
+    recordName: plan.name,
     // 没填时间的排在最后，也不会到期。
     months: months ?? Number.POSITIVE_INFINITY,
     ageLabel:
-      months === undefined ? '自己加的' : `${months === 0 ? '出生' : `${months} 个月`} · 自己加的`,
+      months === undefined
+        ? text.selfAdded
+        : text.selfAddedAt(months === 0 ? text.birth : text.months(months)),
     kind: 'routine',
     ...(plannedAt === undefined ? {} : { plannedAt }),
   };
@@ -120,33 +125,37 @@ export type DoseTone = 'done' | 'due' | 'idle';
 
 /** 疫苗本右边的状态文字和颜色。 */
 export function doseStatus(dose: VaccineStatus): { text: string; tone: DoseTone } {
+  const text = t().domain.vaccine;
   if (dose.state === 'done' && dose.doneAt !== null) {
-    return { text: `已接种 ${formatMonthDay(dose.doneAt)}`, tone: 'done' };
+    return { text: text.doneOn(formatMonthDay(dose.doneAt)), tone: 'done' };
   }
   // 日期是家里和诊所定的，不写“可以预约了”，过了也只是继续显示，不评价。
   if (dose.plannedAt !== undefined) {
     return {
-      text: `计划 ${formatMonthDay(dose.plannedAt)}`,
+      text: text.plannedOn(formatMonthDay(dose.plannedAt)),
       tone: dose.state === 'due' ? 'due' : 'idle',
     };
   }
   // 看情况或和医生商量的剂次不能写成“可以预约了”，那等于建议每个孩子都打。
-  if (dose.kind === 'shared-decision') return { text: '和医生商量', tone: 'idle' };
-  if (dose.kind === 'conditional') return { text: '看情况', tone: 'idle' };
-  if (dose.state === 'due') return { text: '可以预约了', tone: 'due' };
-  if (dose.months === Number.POSITIVE_INFINITY) return { text: '时间待定', tone: 'idle' };
-  return { text: '未到时间', tone: 'idle' };
+  if (dose.kind === 'shared-decision') return { text: text.askDoctor, tone: 'idle' };
+  if (dose.kind === 'conditional') return { text: text.depends, tone: 'idle' };
+  if (dose.state === 'due') return { text: text.canBook, tone: 'due' };
+  if (dose.months === Number.POSITIVE_INFINITY) return { text: text.timeTbd, tone: 'idle' };
+  return { text: text.notYet, tone: 'idle' };
 }
 
 /** 什么时候打：有计划日期说日期，否则是表上的月龄。 */
 export function doseTimeText(dose: VaccineDose): string {
-  return dose.plannedAt === undefined ? dose.ageLabel : `计划 ${formatMonthDay(dose.plannedAt)}`;
+  return dose.plannedAt === undefined
+    ? dose.ageLabel
+    : t().domain.vaccine.plannedOn(formatMonthDay(dose.plannedAt));
 }
 
 /** 今天页的疫苗提醒。 */
 export function vaccineReminderText(dose: VaccineDose): string {
-  const when = dose.plannedAt === undefined ? `${dose.ageLabel}可接种` : doseTimeText(dose);
-  return `${dose.name}，${when}。打完点这里在疫苗本里记一笔。`;
+  const text = t().domain.vaccine;
+  const when = dose.plannedAt === undefined ? text.reminderWhen(dose.ageLabel) : doseTimeText(dose);
+  return text.reminder(dose.name, when);
 }
 
 /** 一次补记时能选的：所有没记的，包括看情况的剂次，孩子可能已经打过。 */

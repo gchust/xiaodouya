@@ -1,5 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { formatClock, formatFullDate } from '@xiaodouya/shared';
+import { formatClock, formatFullDate, t } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '../theme';
@@ -11,12 +11,12 @@ export function BirthPicker({ value, onChange }: { value: Date; onChange: (next:
   return (
     <>
       <View style={{ gap: 5 }}>
-        <Muted style={{ fontSize: 12 }}>出生时间</Muted>
+        <Muted style={{ fontSize: 12 }}>{t().ui.birthTime}</Muted>
         <View style={s.row}>
           <Pressable
             testID="birth-date"
             accessibilityRole="button"
-            accessibilityLabel="选择出生日期"
+            accessibilityLabel={t().ui.pickBirthDate}
             onPress={() => setPicker('date')}
             style={s.button}
           >
@@ -25,7 +25,7 @@ export function BirthPicker({ value, onChange }: { value: Date; onChange: (next:
           <Pressable
             testID="birth-time"
             accessibilityRole="button"
-            accessibilityLabel="选择出生时刻"
+            accessibilityLabel={t().ui.pickBirthClock}
             onPress={() => setPicker('time')}
             style={s.button}
           >
@@ -69,7 +69,7 @@ export function PastDatePicker({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`选择${label}`}
+          accessibilityLabel={t().ui.pickNamed(label)}
           onPress={() => setOpen(true)}
           style={s.button}
         >

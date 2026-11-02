@@ -1,7 +1,11 @@
-import { accountDeletionOutcome, type MeResponse } from '@xiaodouya/shared';
+import {
+  accountDeletionOutcome,
+  EMAIL_CODE_TTL_MINUTES,
+  type MeResponse,
+  t,
+} from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { accountText } from '../lib/accountText';
 import { useApp, useRecords, useUploadProgress } from '../lib/app';
 import { colors } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -27,7 +31,7 @@ export function ResendButton({
   left: number;
   onPress: () => void;
 }) {
-  const label = left > 0 ? accountText.verifyResendWait(left) : accountText.verifyResend;
+  const label = left > 0 ? t().account.verifyResendWait(left) : t().account.verifyResend;
   return (
     <Pressable
       testID={testID}
@@ -73,7 +77,7 @@ export function VerifyEmailForm({ onVerified }: { onVerified: (me: MeResponse) =
       const result = await app.api.sendEmailCode();
       setLeft(result.retryAfterSeconds);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '发送失败，请稍后再试');
+      setError(e instanceof Error ? e.message : t().ui.sendFailed);
     }
   };
 
@@ -83,7 +87,7 @@ export function VerifyEmailForm({ onVerified }: { onVerified: (me: MeResponse) =
     try {
       onVerified(await app.api.verifyEmail(code.trim()));
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setError(e instanceof Error ? e.message : t().ui.somethingWrong);
     } finally {
       setBusy(false);
     }
@@ -92,11 +96,11 @@ export function VerifyEmailForm({ onVerified }: { onVerified: (me: MeResponse) =
   return (
     <View style={{ gap: 12 }}>
       <Muted style={{ fontSize: 13, lineHeight: 21 }}>
-        {accountText.verifyHint(app.me?.user.email ?? '')}
+        {t().account.verifyHint(app.me?.user.email ?? '', EMAIL_CODE_TTL_MINUTES)}
       </Muted>
       <Field
         testID="field-email-code"
-        label={accountText.resetCode}
+        label={t().account.resetCode}
         mono
         keyboardType="number-pad"
         autoComplete="one-time-code"
@@ -107,7 +111,7 @@ export function VerifyEmailForm({ onVerified }: { onVerified: (me: MeResponse) =
       <FormError message={error} />
       <Button
         testID="email-verify-submit"
-        label={accountText.verifySubmit}
+        label={t().account.verifySubmit}
         disabled={code.trim().length !== 6}
         busy={busy}
         onPress={() => void submit()}
@@ -126,7 +130,7 @@ export function VerifyEmailSheet() {
       onVerified={(me) => {
         void app.setMe(me);
         sheet.close();
-        toast(accountText.verifyDone);
+        toast(t().account.verifyDone);
       }}
     />
   );
@@ -147,15 +151,15 @@ export function DeleteAccountSheet() {
   if (outcome === 'blocked_only_admin') {
     return (
       <Muted testID="delete-blocked" style={{ fontSize: 13, lineHeight: 21 }}>
-        {accountText.deleteBlocked}
+        {t().account.deleteBlocked}
       </Muted>
     );
   }
 
   const explanation = {
-    no_family: accountText.deleteNoFamily,
-    delete_family: accountText.deleteLastMember,
-    leave_family: accountText.deleteLeave,
+    no_family: t().account.deleteNoFamily,
+    delete_family: t().account.deleteLastMember,
+    leave_family: t().account.deleteLeave,
   }[outcome];
   const unsynced = pendingCount > 0 || uploads.total + uploads.failedCount > 0;
 
@@ -165,9 +169,9 @@ export function DeleteAccountSheet() {
     try {
       const result = await app.deleteAccount(password);
       sheet.close();
-      toast(result === 'deleted' ? accountText.deleteDone : accountText.deleteSessionGone);
+      toast(result === 'deleted' ? t().account.deleteDone : t().account.deleteSessionGone);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '出错了，请再试一次');
+      setError(e instanceof Error ? e.message : t().ui.somethingWrong);
       setBusy(false);
     }
   };
@@ -179,12 +183,12 @@ export function DeleteAccountSheet() {
       </Muted>
       {unsynced ? (
         <Muted style={{ fontSize: 13, lineHeight: 21, color: colors.danger }}>
-          {accountText.deleteUnsynced}
+          {t().account.deleteUnsynced}
         </Muted>
       ) : null}
       <Field
         testID="delete-password"
-        label={accountText.deletePassword}
+        label={t().account.deletePassword}
         secureTextEntry
         autoCapitalize="none"
         autoCorrect={false}
@@ -194,7 +198,7 @@ export function DeleteAccountSheet() {
       <FormError message={error} />
       <Button
         testID="delete-confirm"
-        label={accountText.deleteConfirm}
+        label={t().account.deleteConfirm}
         disabled={!password}
         busy={busy}
         onPress={() => void submit()}

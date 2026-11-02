@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 import {
   type BabyData,
   canReadCollection,
@@ -39,12 +40,9 @@ export interface WidgetSession {
 
 export type WidgetBlockReason = 'signedOut' | 'noFamily' | 'noAccess' | 'noBaby';
 
-export const widgetBlockMessages: Record<WidgetBlockReason, string> = {
-  signedOut: '登录后可以在这里记录',
-  noFamily: '加入家庭后可以在这里记录',
-  noAccess: '这个账号看不了记录，可以到 App 里看回忆',
-  noBaby: '还没有宝宝的资料，到 App 里看看',
-};
+export function widgetBlockMessage(reason: WidgetBlockReason): string {
+  return t().domain.widget[reason];
+}
 
 function blockReason(session: WidgetSession, hasBaby: boolean): WidgetBlockReason | null {
   if (!session.signedIn) return 'signedOut';
@@ -180,7 +178,7 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
   const reason = blockReason(session, Boolean(baby));
   if (reason || !baby) {
     const blocked = reason ?? 'noBaby';
-    return { kind: 'blocked', reason: blocked, message: widgetBlockMessages[blocked] };
+    return { kind: 'blocked', reason: blocked, message: widgetBlockMessage(blocked) };
   }
   const last = feedsNewestFirst(events(entries), now)[0];
   const lastEntry = last ? entries.find((e) => e.data === last) : undefined;
@@ -219,8 +217,8 @@ export function shortBabyName(name: string, maxWidth: number): string {
 }
 
 export function formatSyncedAt(syncedAt: number | null, dayStart: number): string {
-  if (syncedAt === null) return '未同步';
-  if (syncedAt >= dayStart) return `${formatClock(syncedAt)} 同步`;
-  const d = new Date(syncedAt);
-  return `${d.getMonth() + 1}月${d.getDate()}日同步`;
+  const text = t().domain.widget;
+  if (syncedAt === null) return text.notSynced;
+  if (syncedAt >= dayStart) return text.syncedAt(formatClock(syncedAt));
+  return text.syncedOn(new Date(syncedAt));
 }

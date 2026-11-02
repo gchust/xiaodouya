@@ -4,6 +4,7 @@ import {
   type Prefs,
   type Role,
   startOfLocalDay,
+  t,
   type WidgetAction,
   type WidgetSession,
   type WidgetView,
@@ -14,6 +15,7 @@ import { requestWidgetUpdate, type WidgetTaskHandlerProps } from 'react-native-a
 import { type CoreServices, getCoreServices } from '../data/services';
 import { LAST_SYNC_KEY, ROLE_KEY } from '../data/syncEngine';
 import { DEFAULT_API_URL } from '../lib/config';
+import { applyLocale } from '../lib/locale';
 import { readStoredSession } from '../lib/storedSession';
 import { runWidgetAction } from './actions';
 import { renderWidgetFor, type WidgetFeedback, type WidgetName, widgetNames } from './views';
@@ -35,6 +37,8 @@ const delay = (ms: number) =>
 
 async function readSession(core: CoreServices) {
   const { token, serverUrl, me } = await readStoredSession();
+  // 可能是系统在 App 没开时拉起的，这时还没有 AppProvider 定下语言。
+  applyLocale((me?.prefs as Prefs | undefined)?.locale);
   // 同步时发现角色变了会先写到本地，比缓存的账号信息新。任何一边说不能看，就不能看。
   const syncedRole = (await core.db.getMeta(ROLE_KEY)) as Role | null;
   const role = syncedRole === 'viewer' ? 'viewer' : (me?.role ?? null);
@@ -113,9 +117,11 @@ async function syncInBackground(core: CoreServices): Promise<void> {
 }
 
 function feedbackTitle(action: WidgetAction, view: WidgetView): string {
-  if (action.type === 'sleepStart') return '已开始记录';
-  if (action.type === 'sleepEnd') return '已记录醒来';
-  return view.kind === 'ready' && view.lastFeedAmount ? `已记录 ${view.lastFeedAmount}` : '已记录';
+  if (action.type === 'sleepStart') return t().widgetUi.sleepStarted;
+  if (action.type === 'sleepEnd') return t().widgetUi.wokeLogged;
+  return view.kind === 'ready' && view.lastFeedAmount
+    ? t().widgetUi.feedLogged(view.lastFeedAmount)
+    : t().records.logged;
 }
 
 export async function handleWidgetClick(

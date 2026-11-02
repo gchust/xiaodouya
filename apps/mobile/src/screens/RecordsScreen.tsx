@@ -4,6 +4,7 @@ import {
   eventsByDay,
   formatDateHeader,
   formatFullDate,
+  t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
@@ -18,17 +19,17 @@ import { TimelineRow } from './TodayScreen';
 
 type Filter = 'all' | EventData['type'];
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'feed', label: '喂奶' },
-  { key: 'diaper', label: '尿布' },
-  { key: 'sleep', label: '睡眠' },
-  { key: 'temp', label: '体温' },
-  { key: 'med', label: '吃药' },
-  { key: 'bath', label: '洗澡' },
-  { key: 'solids', label: '辅食' },
-  { key: 'growth', label: '身高体重' },
-  { key: 'vaccine', label: '疫苗' },
+const filters = (): { key: Filter; label: string }[] => [
+  { key: 'all', label: t().today.filterAll },
+  { key: 'feed', label: t().today.feed },
+  { key: 'diaper', label: t().today.diaper },
+  { key: 'sleep', label: t().today.sleep },
+  { key: 'temp', label: t().today.filterTemp },
+  { key: 'med', label: t().today.filterMed },
+  { key: 'bath', label: t().today.filterBath },
+  { key: 'solids', label: t().today.filterSolids },
+  { key: 'growth', label: t().today.filterGrowth },
+  { key: 'vaccine', label: t().today.filterVaccine },
 ];
 
 function dayTitle(dayStart: number, now: number): string {
@@ -63,27 +64,29 @@ export function RecordsScreen() {
           <Pressable
             testID="records-back"
             accessibilityRole="button"
-            accessibilityLabel="返回今天"
+            accessibilityLabel={t().today.backToToday}
             hitSlop={12}
             onPress={() => router.back()}
           >
-            <Text style={s.back}>‹ 今天</Text>
+            <Text style={s.back}>{t().today.backTodayLink}</Text>
           </Pressable>
           {canWrite ? (
             <Pressable
               testID="records-backfill"
               accessibilityRole="button"
-              accessibilityLabel="补记以前的记录"
+              accessibilityLabel={t().today.backfillA11y}
               hitSlop={12}
-              onPress={() => sheet.open('补记', () => <MoreSheet birthAt={birthAt} backfill />)}
+              onPress={() =>
+                sheet.open(t().today.backfill, () => <MoreSheet birthAt={birthAt} backfill />)
+              }
             >
-              <Text style={s.link}>＋ 补记</Text>
+              <Text style={s.link}>{t().today.backfillLink}</Text>
             </Pressable>
           ) : null}
         </View>
-        <PageTitle>全部记录</PageTitle>
+        <PageTitle>{t().today.allRecordsTitle}</PageTitle>
         <View style={s.filters}>
-          {FILTERS.map((f) => (
+          {filters().map((f) => (
             <Chip
               key={f.key}
               testID={`records-filter-${f.key}`}
@@ -104,8 +107,8 @@ export function RecordsScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         ListEmptyComponent={
           <Empty
-            title={filter === 'all' ? '还没有记录' : '这一类还没有记录'}
-            sub={canWrite ? '以前的也可以补记，点右上角就行。' : undefined}
+            title={filter === 'all' ? t().today.noRecords : t().today.noRecordsFilter}
+            sub={canWrite ? t().today.addOlderHint : undefined}
           />
         }
         renderSectionHeader={({ section }) => (
