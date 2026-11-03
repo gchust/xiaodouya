@@ -598,9 +598,9 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 
 对方不用装 App 打开的网页。**没有配置时什么都不影响：** App 没有 `EXPO_PUBLIC_SHARE_BASE_URL` 就不显示入口，发布流程没有 `SHARE_PAGE_ENABLED=true` 就什么都不做。
 
-Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），不跑代码、不代理 API，也收不到令牌：令牌在 URL 片段里，浏览器不会发给托管网页的服务器。响应头（`X-Robots-Tag`、`Referrer-Policy`、CSP 等）在构建时生成的 `dist/_headers` 里，页面的 meta 标签是兜底。**2026-11-03 已部署到 [Cloudflare Worker](https://xiaodouya-share.nfvd.workers.dev/)**，线上首页返回 200，CSP、`Referrer-Policy`、`X-Robots-Tag` 响应头已核对。无令牌时，真实浏览器显示“这个链接已失效或已撤销”。
+Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），不跑代码、不代理 API，也收不到令牌：令牌在 URL 片段里，浏览器不会发给托管网页的服务器。响应头（`X-Robots-Tag`、`Referrer-Policy`、CSP 等）在构建时生成的 `dist/_headers` 里，页面的 meta 标签是兜底。**2026-11-03 已绑定自定义域名 [xdy.nfvd.net](https://xdy.nfvd.net/)**，原来的 [workers.dev 地址](https://xiaodouya-share.nfvd.workers.dev/)保留供旧版 APK 的分享链接使用。两个地址的线上首页都返回 200；自定义域名的证书、CSP、`Referrer-Policy`、`X-Robots-Tag` 响应头已核对。无令牌时页面显示“这个链接已失效或已撤销”。
 
-当前项目的 GitHub Actions 已设置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`SHARE_PAGE_ENABLED=true` 和 `EXPO_PUBLIC_SHARE_BASE_URL=https://xiaodouya-share.nfvd.workers.dev`。手动运行的[分享页发布流程](https://github.com/gchust/xiaodouya/actions/runs/41582161693)已通过；以后 `apps/share-web/**` 变化会自动发布。后端仍在 Supabase 新加坡项目，网页通过 HTTPS 调用它。真实 Supabase 网关从该网页 Origin 发出的 OPTIONS 预检已返回 204，并允许 `content-type,x-region`。
+当前项目的 GitHub Actions 已设置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 和 `SHARE_PAGE_ENABLED=true`。自定义域名部署时仓库变量 `SHARE_PAGE_DOMAIN` 应为 `xdy.nfvd.net`；新 APK 的 `EXPO_PUBLIC_SHARE_BASE_URL` 应为 `https://xdy.nfvd.net`。首次手动运行的[分享页发布流程](https://github.com/gchust/xiaodouya/actions/runs/41582161693)已通过；以后 `apps/share-web/**` 变化会自动发布。后端仍在 Supabase 新加坡项目，网页通过 HTTPS 调用它。真实 Supabase 网关从该网页 Origin 发出的 OPTIONS 预检已返回 204，并允许 `content-type,x-region`。
 
 ### 发布顺序
 
@@ -628,7 +628,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 
 4. **第一次运行“发布分享页”**，Worker（名字 `xiaodouya-share`）会自动创建。
 5. **绑定域名：** Workers & Pages → `xiaodouya-share` → Settings → Domains & Routes → Add → Custom Domain。域名要已经托管在这个 Cloudflare 账号（[文档](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)写明了不能用别人的域名，也不能用已有 CNAME 记录的主机名），DNS 和证书由 Cloudflare 创建。不想绑域名时用 `https://xiaodouya-share.<账号子域>.workers.dev`。
-6. **`workers.dev` 地址默认一直开着**（配置里没有路由时默认开启，[文档](https://developers.cloudflare.com/workers/wrangler/configuration/)）。两个地址打开的是同一个页面，对方要有令牌才看得到内容，所以留着也没有内容风险。想关掉要在 `wrangler.toml` 写 `workers_dev = false`。`wrangler deploy` 在配置里没写路由时，会不会动控制台绑的域名，**我们没有实际验证**：第一次重复发布后要看一眼域名还在不在，有问题就改用 `SHARE_PAGE_DOMAIN`。
+6. **保留 `workers.dev` 地址：** 带 `--domain` 发布时，Wrangler 在没有明确配置 `workers_dev` 的情况下会关闭原地址。`apps/share-web/wrangler.toml` 明确写了 `workers_dev = true`，以便旧 APK 已生成的分享链接继续打开。设置 `SHARE_PAGE_DOMAIN=xdy.nfvd.net`，让后续 CI 发布始终带上自定义域名。
 
 ### 价格（2026-11-02 读 Cloudflare 文档）
 
@@ -638,7 +638,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 
 ### 还没有验证的
 
-- 自定义域名没有配置；当前使用 `workers.dev` 地址。
+- 已绑定自定义域名；旧版 APK 仍生成 `workers.dev` 链接，新版要在构建前设置 `EXPO_PUBLIC_SHARE_BASE_URL` 并重新发布 APK。
 - 已验证真实 Supabase 网关的 OPTIONS 预检，但还没有用有效分享令牌在真实浏览器里走完整链路；`x-region` 对公开接口的实际执行区域、R2 签名文件加载也待核对。注册并创建家庭后，用 App 创建一个真实链接再检查。
 - **中国大陆能否打开没有验证**，`workers.dev`、自定义域名、Supabase、R2 哪一段都可能不通。
 - `x-forwarded-for` 在 Supabase 上是不是客户端地址（F-97）。不是的话按来源的限流不生效，按令牌的还在。

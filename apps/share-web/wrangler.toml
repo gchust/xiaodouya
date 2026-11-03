@@ -2,6 +2,8 @@
 # 响应头在构建时生成的 dist/_headers 里。这里不写账号 ID 和域名，都在部署时配置，见 docs/DEPLOYMENT.md。
 name = "xiaodouya-share"
 compatibility_date = "2026-10-01"
+# 保留旧 APK 生成的 workers.dev 分享链接；--domain 部署时 Wrangler 默认会关闭它。
+workers_dev = true
 
 [assets]
 directory = "./dist"
