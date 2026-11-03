@@ -23,7 +23,8 @@ appId: com.gchust.xiaodouya
 - assertVisible: 这些信息也会一起公开
 - assertVisible: SG
 - tapOn: { id: feedback-text }
-- inputText: E2E-${RUN_ID} @octocat #1 crash after saving a photo
+# Maestro 的 inputText 遇到 # 就停了，引用和图片语法的转义由服务端测试覆盖。
+- inputText: E2E-${RUN_ID} @octocat crash after saving a photo
 - hideKeyboard
 # E2E 构建的选择器给一张内置样例图。
 - tapOn: { id: feedback-pick }
@@ -37,9 +38,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: 已发送，谢谢你的反馈
     timeout: 30000
-- extendedWaitUntil:
-    visible: { id: feedback-item-sent }
-    timeout: 10000
+# 列表在页面下面，要滚过去。
+- scrollUntilVisible:
+    element: { id: feedback-item-sent }
+    timeout: 15000
 - takeScreenshot: .artifacts/e2e-24-feedback-sent
 - runScript:
     file: ../helpers/feedback-github.js
