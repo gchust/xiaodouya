@@ -17,7 +17,10 @@ if (ACTION === 'fail') {
   const fence = lines[open].replace('text', '');
   const close = lines.indexOf(fence, open + 1);
   const inside = lines.slice(open + 1, close).join('\n');
-  const outside = lines.slice(0, open).concat(lines.slice(close + 1)).join('\n');
+  const outside = lines
+    .slice(0, open)
+    .concat(lines.slice(close + 1))
+    .join('\n');
   if (inside.indexOf('@octocat') < 0) throw new Error('代码块里应该有用户写的 @octocat');
   if (outside.indexOf('@octocat') >= 0 || /#1\b/.test(outside)) {
     throw new Error('@提及或 #引用跑到了代码块外面');
