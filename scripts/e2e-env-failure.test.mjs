@@ -54,6 +54,14 @@ java.io.IOException: Command failed (host:transport:emulator-5554): device offli
   assert.equal(classifyFailure(log).env, false);
 });
 
+test('断言失败的下一行紧跟着断开的异常，也还是断言失败', () => {
+  const log = `00:33:40.310 [ERROR] maestro.orchestra.Orchestra.executeCommands: [Command execution] CommandFailed: Assertion is false: "Control 1793665645" is not visible
+maestro.android.DeviceServerDiedException: Device server died during 'screenshot' on emulator-5554
+java.io.IOException: Command failed (host:transport:emulator-5554): device offline
+`;
+  assert.equal(classifyFailure(log).env, false);
+});
+
 test('找不到元素不算', () => {
   const log = `10:00:00.000 [ERROR] maestro.orchestra.Orchestra.executeCommands: [Command execution] CommandFailed: Element not found: Id matching regex: tab-recall\n`;
   assert.equal(classifyFailure(log).env, false);

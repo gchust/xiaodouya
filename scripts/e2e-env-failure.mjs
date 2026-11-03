@@ -22,14 +22,18 @@ const ENV_SIGNATURES = [
 
 const LOG_LINE = /^\d\d:\d\d:\d\d\.\d{3} \[/;
 
-/** 第一条 [ERROR] 和它下面属于同一条日志的行（异常类名常在第二行）。 */
+// 只有这句笼统的错误要看下一行的异常类名；其他错误（断言失败等）的原因就写在这一行里。
+const GENERIC_ERROR = /\[ERROR\] maestro\.cli\.runner\.TestRunner\S*: Failed to run flow$/;
+
+/** 第一条 [ERROR]，是“Failed to run flow”时连同下一行的异常类名。 */
 function firstError(log) {
   const lines = log.split('\n');
   const start = lines.findIndex((line) => LOG_LINE.test(line) && line.includes('[ERROR]'));
   if (start === -1) return null;
-  const rest = lines.slice(start + 1);
-  const next = rest.findIndex((line) => LOG_LINE.test(line));
-  return [lines[start], ...(next === -1 ? rest : rest.slice(0, next))].join('\n');
+  const next = lines[start + 1] ?? '';
+  return GENERIC_ERROR.test(lines[start]) && !LOG_LINE.test(next)
+    ? `${lines[start]}\n${next}`
+    : lines[start];
 }
 
 /** logcat 里有 App 自己的崩溃就不算环境问题，哪怕同时断开了。 */

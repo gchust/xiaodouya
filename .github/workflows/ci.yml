@@ -283,6 +283,8 @@ jobs:
         if: always()
         with:
           name: e2e-stats-${{ matrix.group }}
+          # 重跑 job 时新的一份要替换旧的，否则汇总可能读到上一次的数字。
+          overwrite: true
           path: |
             .artifacts/e2e-env-reruns.log
             .artifacts/adb-track.log

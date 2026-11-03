@@ -82,39 +82,13 @@ run_flow() {
   local flow="$1" run_id="$2" log="$DEBUG_DIR/maestro.log" offset status reason logcat
   wait_for_device 2 || return 1
   offset=$(stat -c %s "$log" 2>/dev/null || echo 0)
-  maestro test --env "RUN_ID=$run_id" --debug-output "$DEBUG_DIR" --flatten-debug-output ${E2E_MAESTRO_ARGS:-} "$flow" && return 0
+  maestro test --env "RUN_ID=$run_id" --debug-output "$DEBUG_DIR" --flatten-debug-output "$flow" && return 0
   status=$?
   # 同名流程第二次跑时目录带 -2 后缀，取最新的那个。
   logcat="$(ls -td "$DEBUG_DIR/$(basename "$flow" .yaml)"*/logs/device-logcat.txt 2>/dev/null | head -1 || true)"
   if reason="$(node scripts/e2e-env-failure.mjs "$log" "$offset" "$logcat")"; then
     echo "模拟器断开了（$reason），流程 $flow 没跑完，不是断言失败"
     LAST_ENV_FLOW="$flow"
-    LAST_ENV_REASON="$reason"
-    return "$ENV_FAILURE"
-  fi
-  return "$status"
-}
-
-# 一个 Maestro 进程按顺序跑完所有流程：只装一次驱动、只建一次连接。第一条失败就停。
-run_in_one_process() {
-  local run_id="$1" log="$DEBUG_DIR/maestro.log" offset status reason config name
-  shift
-  wait_for_device 2 || return 1
-  config="$ART/maestro-order.yaml"
-  {
-    echo "executionOrder:"
-    echo "  continueOnFailure: false"
-    echo "  flowsOrder:"
-    for name in "$@"; do echo "    - $(basename "$name" .yaml)"; done
-  } > "$config"
-  echo "▶ $(for name in "$@"; do basename "$name" .yaml; done | tr '\n' ' ')"
-  offset=$(stat -c %s "$log" 2>/dev/null || echo 0)
-  maestro test --config "$config" --env "RUN_ID=$run_id" --debug-output "$DEBUG_DIR" --flatten-debug-output \
-    ${E2E_MAESTRO_ARGS:-} "$@" && return 0
-  status=$?
-  if reason="$(node scripts/e2e-env-failure.mjs "$log" "$offset")"; then
-    echo "模拟器断开了（$reason），不是断言失败"
-    LAST_ENV_FLOW="$(grep -o 'Running flow [^ ]*' "$log" | tail -1 | cut -d' ' -f3)"
     LAST_ENV_REASON="$reason"
     return "$ENV_FAILURE"
   fi
@@ -143,18 +117,12 @@ run_attempt() {
   # 相册里的照片不随卸载消失。按张数比较，否则重跑或本地第二次跑时，上一次留下的照片会让检查直接通过。
   media_before="$(media_count)"
   [ -n "$media_before" ] || { echo "查不了系统媒体库" >&2; return 1; }
-  if [ "${E2E_MAESTRO_MODE:-per-flow}" = single ]; then
+  for flow in "${flows[@]}"; do
+    echo "▶ $flow"
     status=0
-    run_in_one_process "$run_id" "${flows[@]}" || status=$?
+    run_flow "$flow" "$run_id" || status=$?
     [ "$status" -eq 0 ] || return "$status"
-  else
-    for flow in "${flows[@]}"; do
-      echo "▶ $flow"
-      status=0
-      run_flow "$flow" "$run_id" || status=$?
-      [ "$status" -eq 0 ] || return "$status"
-    done
-  fi
+  done
   node e2e/verify-uploads.mjs "$run_id" "${flows[@]}" || return 1
   # 流程 14b 存到相册的照片：不信界面提示，直接查系统媒体库。
   if printf '%s\n' "${flows[@]}" | grep -q '14b_'; then
