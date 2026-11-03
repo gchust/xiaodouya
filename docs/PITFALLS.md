@@ -145,6 +145,10 @@
 - **不要给小工具里的文字容器 `flex: 1`。** react-native-android-widget 量出来的宽度偏大，旁边定宽的文字也会被挤出卡片。要截短就在 JS 里截（`shortBabyName`）。
 - **模拟器锁不会提醒你到期。** `flock ... sleep 900` 一到时间别的会话马上拿到锁，并且 `e2e.sh` 会卸载 App，桌面上的小工具随之消失。要跨多次命令用模拟器时，把整段写成脚本交给 `flock` 跑，不要自己估时间：这个 PR 走查时就有一次命令落在锁到期之后，差点盖掉别人刚装的 APK。
 - **改写 JSX 文字时不要用 `node.getText()`。** TypeScript 的 `getText` 跳过前导空白，`{n} 项` 后面那段就变成 `项`，迁移后是 `共 100项`，单元测试不管这个，流程 03a 才发现。要用 `src.slice(node.pos, node.end)`，改完和原文比一遍。
+- **`expo-intent-launcher` 的 `startActivityAsync` 要等打开的界面关掉才返回。** 系统安装界面开着时再调一次会抛 `ActivityAlreadyStartedException`，当成“打不开”就会在安装界面还在屏幕上时报错。应用内更新用一个标记挡住重复点击（`UpdateController.install`）。
+- **更新已装的 App 时，系统确认按钮写的是“更新”（Update），不是“安装”。** 第一次写的提示是“再点一次安装”，在 API 35 上对不上。文案写成“更新或安装”。
+- **`adb emu network speed` 限不住模拟器走 Wi-Fi 的下载。** 设成 `edge` 后 44 MB 还是几秒下完，看不到进度，也来不及点取消。要慢下来就在宿主机开一个限速的 TCP 转发，让服务端的 `S3_PUBLIC_ENDPOINT` 指向它：SigV4 签的是 Host，转发不改 Host 就能过签名。
+- **界面一直在刷新时 `uiautomator dump` 会卡住。** 下载进度每次回调都重画，`scripts/adb-ui.py` 的 `ids`、`tap=` 等不到空闲就超时。这时用截图加坐标点。
 
 ## 依赖和环境
 
@@ -244,6 +248,7 @@
 - **滚动区里只露一点的元素，Maestro 也算 100% 可见。** 系统给的坐标是裁剪后的：流程 16 失败时 `vaccine-row-bcg` 报的是 `[103,2081][979,2137]`（标签栏从 2140 开始），截图里只看得到文字的上半截，里面的状态还不在层级里。`visibility percentage 100%` 是对裁剪后的框算的，所以 `scrollUntilVisible` 不继续滚。
 - **保存后的 Toast 会盖住列表最下面那一行。** 流程 02a 改完 90ml 马上点 130ml，那一行正好在 Toast 下面，点到的是 Toast，详情没打开，下一步找不到 `event-edit`（soak run 41565539665，日志里这次点击后没有“Something has changed”）。点靠近底部的行之前先等 `toast` 消失。
 - **系统相册里的照片不随卸载消失。** 只查“有没有那张照片”的话，重跑或本地第二次跑时，上一次存的照片会让流程 14b 的检查直接通过。`e2e.sh` 比较这一次前后的张数。
+- **开发用的 S3 是大家共用的，发布清单放在默认前缀会互相挡住。** 发布脚本不把清单覆盖成更低的 versionCode，E2E 的假版本（versionCode 2000000000、APK 被换过）要是写进默认的 `releases/android/`，之后谁在本机手动发布都会被拒，连到这个前缀的 App 也只会看到坏版本。`e2e.sh` 用 `releases-e2e/android/`，手动测试另起一个前缀（服务端和发布脚本都设 `APP_RELEASE_PREFIX`）。
 
 ## 并行开发
 
@@ -255,3 +260,4 @@
 - **`/tmp` 是按用户限额的内存盘，几个会话共用。** 写满后连命令输出都会丢。大文件（测试图片、APK）放 worktree 的 `.artifacts`。
 - **子 Agent 的 scratchpad 和主会话是同一个目录。** 目录名里是会话 id，不是 Agent 自己的。`/tmp` 配额满时不要清 `scratchpad/*`：里面有别的 Agent 和主会话的文件。自己的临时文件放 worktree 的 `.artifacts/`。
 - **`flock` 排队不等于拿到锁。** 后台挂着 `flock ... sleep` 时要确认它下面已经有 `sleep` 子进程，别的会话可能抢在前面。长任务要算好时间，不要跑到锁到期之后；收尾的命令直接用 `flock` 包住。
+- **杀掉 `flock` 进程不会释放模拟器锁。** `flock 锁文件 sleep 3600` 里的 `sleep` 继承了锁的文件描述符，只杀 `flock` 锁还在，别人一直排队。要杀 `sleep`（或整个进程组），再用 `stat -c %i 锁文件` 得到 inode，`grep :<inode> /proc/locks` 确认已经放掉。

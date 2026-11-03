@@ -29,6 +29,8 @@ import type {
 import {
   type ApiError,
   type ApiErrorParams,
+  type AppUpdateInfo,
+  AppUpdateResponse,
   apiErrorMessage,
   getLocale,
   t,
@@ -142,6 +144,16 @@ export class Api {
   }
   me() {
     return this.request<MeResponse>('GET', '/v1/me');
+  }
+  /** 响应里的链接和哈希要交给下载和校验，先过 zod。格式不对和查不到一样当失败。 */
+  async appUpdate(versionCode: number): Promise<AppUpdateInfo | null> {
+    const json = await this.request<unknown>(
+      'GET',
+      `/v1/app/update?platform=android&versionCode=${versionCode}`,
+    );
+    const parsed = AppUpdateResponse.safeParse(json);
+    if (!parsed.success) throw new ApiFailure(502, 'invalid_response', t().update.failedCheck);
+    return parsed.data.update;
   }
   updatePrefs(prefs: Prefs) {
     return this.request<Prefs>('PUT', '/v1/me/prefs', prefs);

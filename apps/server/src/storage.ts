@@ -97,6 +97,11 @@ function fromEnv(config: Config): ResolvedStorage | null {
   };
 }
 
+/** 环境变量里的默认存储（平台存储），没配时是 null。发布清单和 APK 也放在这里。 */
+export function platformStorage(config: Config): ResolvedStorage | null {
+  return fromEnv(config);
+}
+
 /** 待删除队列里记下的存储配置。null 表示服务端默认存储。 */
 export function storageFromSnapshot(
   snapshot: StorageRow | null,
@@ -453,6 +458,25 @@ export async function headObject(
   } catch (error) {
     const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
     if (status === 404) return null;
+    throw error;
+  }
+}
+
+/** 读一个小文件（发布清单）。不存在返回 null；其他错误照常抛出，不能当成“没有”。 */
+export async function readSmallObject(
+  s: ResolvedStorage,
+  key: string,
+  maxBytes: number,
+): Promise<string | null> {
+  try {
+    const r = await client(s, s.endpoint).send(
+      new GetObjectCommand({ Bucket: s.bucket, Key: key }),
+    );
+    if ((r.ContentLength ?? 0) > maxBytes) throw new Error('文件太大');
+    return (await r.Body?.transformToString()) ?? '';
+  } catch (error) {
+    const e = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404) return null;
     throw error;
   }
 }

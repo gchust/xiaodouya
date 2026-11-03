@@ -528,7 +528,45 @@ pnpm android:build release --clean
 
 构建时设置了 `EXPO_PUBLIC_API_URL` 的话，家人不需要手动填服务器地址。
 
-> 现在没有自动更新，有新版本时再发一次 APK，覆盖安装即可，数据不会丢。
+> 装了带应用内更新的版本之后，新版本在 App 里就能更新，见下面的“应用内更新”。`v0.3.2` 及更早的 APK 没有这个功能，要像第一次一样再手动装一次，覆盖安装，数据不会丢。
+
+### 应用内更新（旁加载的 APK）
+
+打 `v*` 标签发布时，`release.yml` 把签名 APK 和一个清单传到存储（和备份同一个 R2 Bucket，前缀 `releases/android/`）。App 每天第一次打开时、以及「家人 → 设置 → 检查更新」时问服务端；服务端读清单，签一个 15 分钟的下载链接，Bucket 保持私有。App 下载、核对大小和 sha256，再调起系统安装界面。设计见 [ARCHITECTURE.md](ARCHITECTURE.md#应用内更新android-旁加载)。
+
+**用户要做的：** 不用打开浏览器下载。有新版本时 App 底部提示一句，点「看看」或在设置里点「检查更新」→「更新」，下载完点「安装」，**系统还会弹一个确认窗口，要再点一次「更新」（有的手机写「安装」）**：没有 root 或设备所有者权限的 App 不能跳过这一步。第一次更新时系统还要求允许小豆芽“安装未知应用”，App 里有「去设置」。Android 会核对新 APK 的签名和已经装的一致，**签名密钥丢了或换了，新版本就装不上**，只能卸载重装（服务器上的数据还在，手机上没同步的会丢）。
+
+**配置：** 复用备份已有的 Secret `S3_ENDPOINT`、`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`，不用新加。服务端（Supabase 函数的 `S3_*`）读的必须是同一个 Bucket，按上面第 6 步配置的就是。
+
+| 类型     | 名称                         | 说明 |
+| -------- | ---------------------------- | ---- |
+| Variable | `EXPO_PUBLIC_SELF_UPDATE`    | 不设置等于 `1`：APK 带应用内更新，发布时必须传到存储，缺少上面的 Secret 时发布流程在第一步就失败。`0`：没有入口，清单里没有 `REQUEST_INSTALL_PACKAGES`，也不上传。**上架 Google Play 的构建必须是 `0`**：Play 不允许 App 自己下载安装更新 |
+| Variable | `APP_RELEASE_PREFIX`         | 可选，默认 `releases/android/`。改了的话服务端要一起改（`supabase secrets set APP_RELEASE_PREFIX=...`） |
+| Variable | `RELEASE_MIN_SUPPORTED_CODE` | 可选。低于这个 versionCode 的 App 每次检查都提示“已经停止支持，请尽快更新”。只是提示，不拦着用。服务端不再兼容旧版本时才设 |
+
+versionCode 是发布流程的运行编号（`GITHUB_RUN_NUMBER`），只增不减；`v0.3.2` 之前的发布已经用过的编号都比它小。发布脚本先用 `aapt2` 核对 APK 里的版本号和清单一致，不会把清单换成更低的 versionCode，APK 传完并下载回来核对 sha256 之后才写清单，所以 App 不会看到一个还没传完的版本。
+
+**发布后核对：**
+
+1. Actions 里“上传到存储（应用内更新）”这一步的日志有 `已发布：releases/android/xiaodouya-<版本>-<编号>.apk（N 字节，sha256 …）` 和 `清单：releases/android/latest.json → <版本>（<编号>）`。sha256 应该和 GitHub Release 上那个 APK 的 `sha256sum` 一样。
+2. 在装着上一个带应用内更新版本的手机上：「家人 → 检查更新」看到新版本，更新、安装，打开后同一行写着新的版本号。
+
+Bucket 是私有的，不能用浏览器直接打开这些对象。
+
+**不要给 `releases/` 加生命周期过期规则：** 当前版本的 APK 也会被删掉，清单还指着它，所有人都下载失败。旧版本每个几十 MB，要清理就在 R2 控制台手动删，**不要删 `latest.json` 指向的那个**。`cli maintenance` 只删 `media` 表里登记过的对象，不碰 `releases/`。
+
+**发布说明：** 清单支持中英文的 `notes`，发布脚本读 `RELEASE_NOTES_ZH`、`RELEASE_NOTES_EN`。发布流程现在没有传，App 里就没有“这次更新”这一块。
+
+**不经过 Actions 发布：**
+
+```bash
+S3_ENDPOINT=... S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... \
+  bash scripts/publish-apk.sh .artifacts/xiaodouya-release.apk 0.4.0 <构建时的 APP_VERSION_CODE>
+```
+
+需要 `curl`（7.75 以上）、`node` 和 Android SDK 的 `aapt2`（`ANDROID_HOME`）。
+
+**自建服务器：** 没有配置默认存储（`S3_*`）的服务器不提供更新，App 里显示已经是最新版本。
 
 **iPhone**
 
@@ -700,6 +738,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `S3_FORCE_PATH_STYLE`  | R2 和大多数兼容存储用 `true`，AWS S3 用 `false`                                                  |
 | `S3_BIND_UPLOAD_SIZE`  | 默认 `true`，把声明的大小签进上传链接。`cli check-upload-size` 不通过时才关掉，文件大小仍会在上传完成时校验 |
 | `S3_MULTIPART_ENABLED` | 默认 `true`，大文件用分片上传，能断点续传。`cli check-multipart` 不通过时关掉，App 自动退回单个 PUT，大文件断了就要从头传 |
+| `APP_RELEASE_PREFIX`   | 默认 `releases/android/`，应用内更新的清单和 APK 在这个存储里的位置，要和发布流程的同名变量一样。见“应用内更新” |
 
 各服务商怎么填：
 
@@ -749,6 +788,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `EXPO_PUBLIC_TERMS_URL`            | 否         | 用户协议的网址，注册页的同意说明链接到这里。发布流程从同名的仓库变量读取。没有设置时不提这份文件 |
 | `EXPO_PUBLIC_PRIVACY_URL`          | 否         | 隐私政策的网址，同上。两个都没有设置时不显示同意说明。公开发布前必须设置      |
 | `EXPO_PUBLIC_SHARE_BASE_URL`       | 否         | 分享页的地址，见“分享页”一节。发布流程从同名的仓库变量读取。没有设置时 App 不显示分享入口 |
+| `EXPO_PUBLIC_SELF_UPDATE`          | 否         | `1` 打开应用内更新（加 `REQUEST_INSTALL_PACKAGES`），其他值关闭。本地构建默认关闭；发布流程默认 `1`，仓库变量设成 `0` 关闭。上架应用商店的构建必须关闭，见“应用内更新” |
 | `ANDROID_PACKAGE`                  | 否         | 包名，默认 `com.gchust.xiaodouya`                                             |
 | `ANDROID_ALLOW_HTTP`               | 否         | 正式版默认 `0`，只允许 https。自建 http 服务器才设为 `1`                      |
 | `ANDROID_ARCHS`                    | 否         | 正式版默认 `arm64-v8a`，覆盖几乎所有现役手机                                  |

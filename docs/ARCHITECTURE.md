@@ -163,6 +163,27 @@ POST /v1/media/:id/cancel                    取消：删 pending 记录，存�
 - **数据新到什么时候要如实显示。** 没有远程推送，家人的记录只在 App 同步时才到：App 在前台时、点击小工具之后、系统定时刷新时（约 30 分钟，厂商可能更久）。小工具上显示最后一次同步的时间。
 - **显示的是位图，不能走字。** 只写绝对时间（`22:10 睡着`），不写“已睡 1 小时”。
 
+## 应用内更新（Android 旁加载）
+
+APK 不走应用商店，新版本由 App 自己下载，交给系统安装。配置和发布后的核对见 [DEPLOYMENT.md](DEPLOYMENT.md#应用内更新旁加载的-apk)。
+
+```
+release.yml ── scripts/publish-apk.sh ──> R2 releases/android/xiaodouya-<版本>-<编号>.apk
+                                     └──> R2 releases/android/latest.json（最后写）
+App ──GET /v1/app/update?platform=android&versionCode=N──> 服务端读清单，比 versionCode，签 15 分钟的链接
+App ──下载到 cache/updates──> 核对大小和 sha256 ──> ACTION_VIEW（FileProvider content URI）──> 系统安装界面
+```
+
+- **清单最后写。** 发布脚本先传 APK，下载回来核对 sha256，再写 `latest.json`。传到一半时 App 看到的还是上一版。清单不会被换成更低的 versionCode（Android 不允许降级安装），也会先用 `aapt2` 核对 APK 里的版本号：清单写错的话，装完 App 还会一直提示更新。
+- **契约在 shared（`appUpdate.ts`）**：清单和接口的 zod 定义、只按 versionCode 比较、`minSupportedVersionCode`（必须更新）、自动检查的间隔、同一版本只提示一次。App 收到的响应也过 zod，链接和哈希格式不对就当没查到。
+- **服务端只签发布前缀下的对象**（`isReleaseKey`）：清单和家庭的文件在同一个 Bucket，清单被写坏也不能借它签出别人的照片。清单不存在是“没有更新”，读不了或格式不对是 503，不能说成“已经是最新”。要登录（链接是 Bucket 的流量），不要求加入家庭。只读默认存储（`S3_*`），没配的自建服务器没有更新。
+- **不弹窗。** 半夜单手记录时不能被更新对话框挡住：每天第一次打开（`UpdateWatcher`，状态是 `ready` 才查）有新版本时用 Toast 提一句，同一个版本只提一次，必须更新的每次都提；设置里的「检查更新」一直在。自动检查失败什么都不说，也不算查过。
+- **状态机（`lib/appUpdate.ts`）不依赖 React Native**，平台的事从 `appUpdateRuntime.ts` 注入，单例：关掉弹层不停下载，再打开接着看进度。下载用 `File.downloadFileAsync`（非 2xx 会抛错），可取消；失败后重试是从头下，链接剩不到 2 分钟就重新取一个。同一版本下好没装的，下次先核对再用，不重新下。
+- **sha256 在原生算**（`modules/app-update`，流式读文件），不把几十 MB 读进 JS。这个模块还提供系统记录的 versionCode（不信构建配置）、“安装未知应用”的授权状态和设置页入口。
+- **安装：** `expo-intent-launcher` 发 `ACTION_VIEW`，`application/vnd.android.package-archive`，用 expo-file-system 自己的 FileProvider 给一次性读取授权，文件不出 App 的缓存目录。安装界面开着时这个调用一直不返回，期间再点不再开一个。没有授权时不调起，先引导去设置。系统的“安装”确认不能跳过，签名不一致系统会拒绝。装上的版本和更旧的安装包下次启动时删掉。
+- **Google Play 构建要关掉**（`EXPO_PUBLIC_SELF_UPDATE` 不是 `1`）：没有入口，`app.config.ts` 不加 `REQUEST_INSTALL_PACKAGES`，还把它放进 `blockedPermissions`，哪个依赖带进来都会被去掉。原生模块还在包里，但没有权限、也没人调用。
+- **E2E：** `scripts/e2e.sh` 用 `e2e/helpers/fake-release.sh` 在单独的前缀（`releases-e2e/android/`）发布一个假版本，再把存储里的 APK 换成别的字节。流程 23 测检查、以后再说、下载后校验不通过不给安装。E2E 构建不自动检查，否则每条流程开头都多一个 Toast。
+
 ## 权限
 
 权限在服务端判断，规则在 `packages/shared/src/schemas.ts`：

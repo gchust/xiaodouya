@@ -6,3 +6,5 @@ export EXPO_PUBLIC_API_URL="${EXPO_PUBLIC_API_URL:-http://10.0.2.2:8787}"
 # 假地址：没有它分享入口不出现。流程 11b 只检查链接，不会真的打开。
 export EXPO_PUBLIC_SHARE_BASE_URL="${EXPO_PUBLIC_SHARE_BASE_URL:-https://share.example.test}"
 export ANDROID_ARCHS="${ANDROID_ARCHS:-x86_64}"
+# 应用内更新的入口（流程 23）。E2E 构建不自动检查，见 UpdateWatcher。
+export EXPO_PUBLIC_SELF_UPDATE="${EXPO_PUBLIC_SELF_UPDATE:-1}"

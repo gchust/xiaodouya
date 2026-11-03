@@ -2,6 +2,8 @@ import { Buffer } from 'node:buffer';
 import {
   AcceptInviteRequest,
   type ApiError,
+  AppUpdateQuery,
+  type AppUpdateResponse,
   type AuthResponse,
   accountDeletionOutcome,
   type BabyData,
@@ -26,6 +28,7 @@ import {
   formatBytes,
   isAllowedMime,
   isFormulaData,
+  isReleaseKey,
   isVaccinePlanData,
   type Locale,
   LoginRequest,
@@ -53,7 +56,9 @@ import {
   type PublicShareResponse,
   PushTokenRequest,
   parseCollectionData,
+  RELEASE_MANIFEST_NAME,
   RegisterRequest,
+  ReleaseManifest,
   ResetPasswordRequest,
   type Role,
   type SendEmailCodeResponse,
@@ -68,6 +73,7 @@ import {
   UpdateMemberRequest,
   UploadUrlRequest,
   type UploadUrlResponse,
+  updateDecision,
   VerifyEmailRequest,
   validParts,
 } from '@xiaodouya/shared';
@@ -124,10 +130,12 @@ import {
   isNoSuchUpload,
   listMultipartParts,
   multipartUnsupported,
+  platformStorage,
   presignDownload,
   presignPart,
   presignUpload,
   type ResolvedStorage,
+  readSmallObject,
   resolvedFromInput,
   type StorageRow,
   storageById,
@@ -141,6 +149,8 @@ const UPLOAD_URL_TTL = 3600;
 const MEMORY_URL_TTL = 3600;
 /** AGENTS.md 硬性要求：证件链接不超过 10 分钟。 */
 const DOCUMENT_URL_TTL = 600;
+/** 比证件的长一点：慢速网络上开始下载要一会儿。下载开始后链接过期不影响这次下载，断了重试时 App 会重新取。 */
+const APP_UPDATE_URL_TTL = 900;
 const LOGIN_WINDOW_MS = 15 * 60_000;
 const INVITE_WINDOW_MS = 15 * 60_000;
 const REGISTER_WINDOW_MS = 3_600_000;
@@ -704,6 +714,67 @@ export function createApp({
   }
 
   v1.get('/me', async (c) => c.json(await buildMe(c.get('user'), c.get('membership'))));
+
+  // ─── 应用内更新 ────────────────────────────────────────
+
+  /**
+   * 清单由发布流程写进默认存储（scripts/publish-apk.sh）。Bucket 是私有的，这里只签一个短时效的下载链接。
+   * 要登录：链接是 Bucket 的流量，不给陌生人随便取。不要求家庭，换手机后还没加入家庭的人也能更新。
+   */
+  v1.get('/app/update', async (c) => {
+    const query = AppUpdateQuery.safeParse(c.req.query());
+    if (!query.success) {
+      fail(400, 'invalid_input', '输入有误：platform 或 versionCode 不对', {
+        field: 'query',
+        detail: query.error.issues[0]?.message ?? '',
+      });
+    }
+    const storage = platformStorage(config);
+    if (!storage) return c.json<AppUpdateResponse>({ update: null });
+    const unavailable = (): never =>
+      fail(503, 'update_unavailable', '暂时查不到新版本，请稍后再试');
+    let text: string | null;
+    try {
+      text = await readSmallObject(
+        storage,
+        `${config.releasePrefix}${RELEASE_MANIFEST_NAME}`,
+        64 * 1024,
+      );
+    } catch (error) {
+      console.warn('读取发布清单失败', error instanceof Error ? error.name : 'unknown');
+      return unavailable();
+    }
+    if (text === null) return c.json<AppUpdateResponse>({ update: null });
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      raw = null;
+    }
+    const parsed = ReleaseManifest.safeParse(raw);
+    if (!parsed.success || !isReleaseKey(parsed.data.apk.key, config.releasePrefix)) {
+      // 清单只有发布流程会写。坏了要让人知道，不能当成“已经是最新”。
+      console.warn('发布清单格式不对');
+      return unavailable();
+    }
+    const manifest = parsed.data;
+    const decision = updateDecision(manifest, query.data.versionCode);
+    if (!decision.available) return c.json<AppUpdateResponse>({ update: null });
+    // 签名链接不进日志。
+    const url = await presignDownload(storage, manifest.apk.key, APP_UPDATE_URL_TTL);
+    return c.json<AppUpdateResponse>({
+      update: {
+        versionCode: manifest.versionCode,
+        versionName: manifest.versionName,
+        size: manifest.apk.size,
+        sha256: manifest.apk.sha256,
+        url,
+        expiresIn: APP_UPDATE_URL_TTL,
+        required: decision.required,
+        notes: manifest.notes ?? null,
+      },
+    });
+  });
 
   v1.post('/me/email/send-code', async (c) => {
     const user = c.get('user');
