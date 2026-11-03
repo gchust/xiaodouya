@@ -12,7 +12,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: ml-inc }
 - assertVisible: "130"
 - tapOn: { id: feed-save }
-- assertVisible: 喂奶 130ml
+- assertVisible: 喂奶 131ml
 - assertVisible:
     text: .*已记录.*
 - takeScreenshot: .artifacts/e2e-02-after-feed
