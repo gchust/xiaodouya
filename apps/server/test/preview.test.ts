@@ -181,7 +181,9 @@ describe('申请、完成和取链接', () => {
   });
 
   it('迁移追加在末尾，重复执行没有副作用', async () => {
-    expect(migrations.at(-1)).toContain("'preview'");
+    // 预览的迁移排在分片之后；之后的功能（比如反馈）还会继续往后追加。
+    const preview = migrations.findIndex((m) => m.includes("'preview'"));
+    expect(preview).toBeGreaterThan(migrations.findIndex((m) => m.includes('upload_part_size')));
     await migrate(db.sql);
   });
 });

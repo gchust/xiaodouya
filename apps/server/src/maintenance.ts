@@ -1,5 +1,6 @@
 import type { Config } from './config';
 import type { Sql } from './db';
+import { cleanupFeedback, deliverDueFeedback } from './feedback';
 import { processPendingDeletions } from './objectDeletions';
 import { liveReferences } from './quota';
 import { abortMultipart, deleteObject, type ResolvedStorage, storageById } from './storage';
@@ -15,6 +16,8 @@ const UNATTACHED_DAYS = 30;
 const BATCH = 50;
 /** 失效的分享链接不再有用，留一段时间方便排查“为什么打不开”。 */
 const SHARE_KEEP_DAYS = 30;
+/** 和 app.ts 的上传链接有效期一致：还没传完的反馈附件，过了这个时间再删一次。 */
+const UPLOAD_URL_TTL = 3600;
 
 export interface MaintenanceReport {
   /** 放弃的上传：记录和可能传了一半的对象都删了。 */
@@ -37,6 +40,16 @@ export interface MaintenanceReport {
   deletionsRemaining: number;
   /** 在家庭自带的存储里、因为没有 APP_SECRET 这次没处理的。不算失败。 */
   deletionsWaitingForSecret: number;
+  /** 补发成功的反馈。 */
+  feedbackSent: number;
+  /** 这次还是没能建 issue 的反馈，留在队列里。令牌过期时会一直不是 0。 */
+  feedbackFailed: number;
+  /** 这个环境没有配置 GitHub，排队中的反馈这次没处理。不算失败。 */
+  feedbackWaitingForConfig: number;
+  /** 一天还没提交的草稿，连附件一起删了。 */
+  feedbackDraftsRemoved: number;
+  /** 过了保留期删掉的反馈附件。 */
+  feedbackAttachmentsExpired: number;
 }
 
 interface MediaRow {
@@ -74,9 +87,27 @@ export async function runMaintenance(
     deletionsFailed: 0,
     deletionsRemaining: 0,
     deletionsWaitingForSecret: 0,
+    feedbackSent: 0,
+    feedbackFailed: 0,
+    feedbackWaitingForConfig: 0,
+    feedbackDraftsRemoved: 0,
+    feedbackAttachmentsExpired: 0,
   };
   const storage = await storageById(sql, config, '', null);
   if (storage) report.failed = await purgeObjects(sql, storage, config.mediaTrashDays, report);
+  if (config.feedback) {
+    const delivered = await deliverDueFeedback(sql, config, { maxMs: 60_000 });
+    report.feedbackSent = delivered.sent;
+    report.feedbackFailed = delivered.failed;
+  } else {
+    const [waiting] = await sql<{ count: string }[]>`
+      SELECT count(*) AS count FROM feedback WHERE status = 'queued'`;
+    report.feedbackWaitingForConfig = Number(waiting?.count ?? 0);
+  }
+  // 放在待删除队列之前：这里进队列的附件这一次就删掉。
+  const cleaned = await cleanupFeedback(sql, config, UPLOAD_URL_TTL);
+  report.feedbackDraftsRemoved = cleaned.draftsRemoved;
+  report.feedbackAttachmentsExpired = cleaned.attachmentsExpired;
   const queue = await processPendingDeletions(sql, config, {
     customStorage,
     maxMs: Number.POSITIVE_INFINITY,
