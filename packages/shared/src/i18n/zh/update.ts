@@ -21,7 +21,7 @@ export const update = {
   verifying: '正在核对下载的文件…',
   readyTitle: '下载好了',
   install: '安装',
-  installHint: '点“安装”后，在系统弹出的窗口里再点一次“安装”。',
+  installHint: '点“安装”后，系统会弹出确认窗口，在那里再点一次“更新”或“安装”。',
   needPermission:
     '还需要允许小豆芽安装应用。在设置里打开“允许来自此来源的应用”，回到这里再点安装。',
   openSettings: '去设置',
