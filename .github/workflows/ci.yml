@@ -67,6 +67,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: 保留开发服务的端口
+        # 55432、59000 在 Linux 的临时端口范围里，别的连接正好用着时 docker 绑不上，报 address already in use（run 41572950825）。要在别的步骤联网之前做。
+        run: |
+          echo "临时端口范围：$(cat /proc/sys/net/ipv4/ip_local_port_range)"
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=55432,59000
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
@@ -204,6 +209,11 @@ jobs:
       E2E_GROUP: ${{ matrix.group }}
     steps:
       - uses: actions/checkout@v4
+      - name: 保留开发服务的端口
+        # 55432、59000 在 Linux 的临时端口范围里，别的连接正好用着时 docker 绑不上，报 address already in use（run 41572950825）。
+        run: |
+          echo "临时端口范围：$(cat /proc/sys/net/ipv4/ip_local_port_range)"
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports=55432,59000
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@v4
         with:
