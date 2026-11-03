@@ -19,6 +19,7 @@ import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
+import { currentAppVersion, getUpdateController, useUpdatePhase } from '../lib/appUpdateRuntime';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { exportFamilyData } from '../lib/familyExport';
@@ -26,6 +27,7 @@ import { ensureNotificationPermission } from '../lib/notifications';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
+import { UpdateSheet, updateRowSub } from '../sheets/updateSheet';
 import { colors, fonts, spacing } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
@@ -61,6 +63,10 @@ export function FamilyScreen() {
   const isAdmin = role === 'admin';
   const canRecord = role !== 'viewer';
   const showStorage = canOpenStorage(role);
+  // 只有打开了应用内更新的 Android 构建才有这一行。
+  const updates = getUpdateController(app.api, app.db);
+  const updatePhase = useUpdatePhase(updates);
+  const appVersion = currentAppVersion();
 
   const loadStorage = useCallback(async () => {
     if (!showStorage) return;
@@ -287,6 +293,14 @@ export function FamilyScreen() {
               label={t().account.verifyRow}
               sub={t().account.verifyRowSub}
               onPress={() => sheet.open(t().account.verifyTitle, () => <VerifyEmailSheet />)}
+            />
+          ) : null}
+          {updates && appVersion ? (
+            <NavRow
+              testID="check-update"
+              label={t().update.row}
+              sub={updateRowSub(updatePhase, appVersion.name)}
+              onPress={() => sheet.open(t().update.title, () => <UpdateSheet />)}
             />
           ) : null}
           <NavRow

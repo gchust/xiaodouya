@@ -13,3 +13,9 @@ export const SHARE_BASE_URL = process.env.EXPO_PUBLIC_SHARE_BASE_URL || null;
 
 /** E2E 构建里用内置样例代替系统相册，见 e2e/README.md。 */
 export const IS_E2E = process.env.EXPO_PUBLIC_E2E === '1';
+
+/**
+ * 应用内更新（旁加载的 APK 自己下载新版本、交给系统安装）。上架 Google Play 的构建不能打开：
+ * Play 不允许 App 自己安装更新。关闭时没有入口，清单里也没有 REQUEST_INSTALL_PACKAGES（见 app.config.ts）。
+ */
+export const SELF_UPDATE_ENABLED = process.env.EXPO_PUBLIC_SELF_UPDATE === '1';

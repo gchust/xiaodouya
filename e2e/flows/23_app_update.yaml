@@ -1,0 +1,49 @@
+# 应用内更新：设置里检查更新、看到新版本、以后再说；点更新后下载，文件和清单的 sha256 对不上时拒绝安装，能重试。
+# 存储里的假版本由 e2e/helpers/fake-release.sh 发布（scripts/e2e.sh 跑流程之前调用），APK 的字节被换过。
+# 系统安装界面 Maestro 管不到：真的装上新版本在模拟器上手动验证（docs/PROGRESS.md 的 F-120）。
+# E2E 构建不自动检查（会挡住别的流程），自动检查的节流和提示只有单元测试。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: check-update }
+- assertVisible: 当前版本 .*
+- tapOn: { id: check-update }
+- extendedWaitUntil:
+    visible: { id: update-available }
+    timeout: 15000
+- assertVisible: 99.0.0-e2e
+- assertVisible: 现在是 .* · 下载约 .*
+- takeScreenshot: .artifacts/e2e-23-update-available
+# 以后再说：弹层关掉，设置里这一行写着有新版本
+- tapOn: { id: update-later }
+- extendedWaitUntil:
+    notVisible: { id: update-available }
+    timeout: 10000
+- assertVisible: 有新版本 99.0.0-e2e
+# 再打开，开始下载。存储里的文件被换过，校验不通过，不能出现安装按钮
+- tapOn: { id: check-update }
+- extendedWaitUntil:
+    visible: { id: update-start }
+    timeout: 10000
+- tapOn: { id: update-start }
+- extendedWaitUntil:
+    visible: { id: update-error }
+    timeout: 60000
+- assertVisible: 下载的文件和发布的不一致，已经删掉了，请再试一次。
+- assertNotVisible: { id: update-install }
+- takeScreenshot: .artifacts/e2e-23-checksum-failed
+# 重试还是同一个坏文件：仍然拒绝
+- tapOn: { id: update-retry }
+- extendedWaitUntil:
+    visible: { id: update-error }
+    timeout: 60000
+- assertNotVisible: { id: update-install }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: update-error }
+    timeout: 10000

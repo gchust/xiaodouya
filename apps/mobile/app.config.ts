@@ -3,6 +3,12 @@ import { AndroidConfig, withStringsXml } from 'expo/config-plugins';
 
 const version = process.env.APP_VERSION ?? '0.1.0';
 const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
+/**
+ * 应用内更新：旁加载的 APK 自己下载新版本，交给系统安装，要 REQUEST_INSTALL_PACKAGES。
+ * Google Play 不允许 App 自己安装更新，上架的构建不设这个变量。见 docs/DEPLOYMENT.md 的“应用内更新”。
+ */
+const SELF_UPDATE = process.env.EXPO_PUBLIC_SELF_UPDATE === '1';
+const INSTALL_PACKAGES = 'android.permission.REQUEST_INSTALL_PACKAGES';
 // 小工具上有宝宝的名字和记录。Android 16 QPR2 起第三方小工具默认可以放到锁屏，这里明确不要。
 const WIDGET_CATEGORY = 'home_screen|not_keyguard';
 
@@ -95,9 +101,14 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
       'android.permission.RECORD_AUDIO',
       'android.permission.CAMERA',
       'android.permission.USE_BIOMETRIC',
+      ...(SELF_UPDATE ? [INSTALL_PACKAGES] : []),
     ],
     // expo-media-library 的清单自带这条。只往相册里写，用不到读取权限。
-    blockedPermissions: ['android.permission.READ_MEDIA_VISUAL_USER_SELECTED'],
+    // 应用内更新关闭时（上架 Google Play 的构建）也明确去掉安装权限，哪个依赖带进来都不行。
+    blockedPermissions: [
+      'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
+      ...(SELF_UPDATE ? [] : [INSTALL_PACKAGES]),
+    ],
   },
   ios: {
     bundleIdentifier: process.env.IOS_BUNDLE_ID ?? 'com.gchust.xiaodouya',

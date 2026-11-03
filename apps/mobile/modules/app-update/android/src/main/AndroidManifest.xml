@@ -1,0 +1,6 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    REQUEST_INSTALL_PACKAGES 不放在这里：上架 Google Play 的构建不能有它。
+    app.config.ts 按 EXPO_PUBLIC_SELF_UPDATE 决定加不加。没有这个权限时 canRequestPackageInstalls 一直是 false。
+  -->
+</manifest>

@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from '../src/lib/app';
+import { UpdateWatcher } from '../src/lib/UpdateWatcher';
 import { UploadCard } from '../src/lib/UploadCard';
 import { colors, fonts } from '../src/theme';
 import { FeedbackProvider, SheetProvider } from '../src/ui/overlays';
@@ -53,6 +54,7 @@ export default function RootLayout() {
                 <Stack.Screen name="index" options={{ animation: 'none' }} />
               </Stack>
               <UploadCard />
+              <UpdateWatcher />
             </SheetProvider>
           </AppProvider>
         </FeedbackProvider>

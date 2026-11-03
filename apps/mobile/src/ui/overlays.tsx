@@ -211,8 +211,18 @@ function SheetLayer({
 
 interface ToastOptions {
   undo?: () => void;
+  /** 按钮默认写“撤销”。别的动作（比如“看看”新版本）换成自己的文字和 testID。 */
+  actionLabel?: string;
+  actionTestID?: string;
   durationMs?: number;
 }
+
+type ToastState = {
+  message: string;
+  undo?: () => void;
+  actionLabel?: string;
+  actionTestID?: string;
+};
 
 interface FeedbackApi {
   toast(message: string, options?: ToastOptions): void;
@@ -229,13 +239,7 @@ export function useFeedback(): FeedbackApi {
   return api;
 }
 
-function ToastLayer({
-  toast,
-  onUndo,
-}: {
-  toast: { message: string; undo?: () => void } | null;
-  onUndo: () => void;
-}) {
+function ToastLayer({ toast, onUndo }: { toast: ToastState | null; onUndo: () => void }) {
   const insets = useSafeAreaInsets();
   // 回忆页右下角有深色悬浮按钮，Toast 要让开，否则两块深色叠在一起看不清。
   const onRecall = usePathname() === '/recall';
@@ -263,11 +267,11 @@ function ToastLayer({
         <Pressable
           onPress={onUndo}
           hitSlop={10}
-          testID="toast-undo"
+          testID={shown.actionTestID ?? 'toast-undo'}
           accessibilityRole="button"
-          accessibilityLabel={t().common.undo}
+          accessibilityLabel={shown.actionLabel ?? t().common.undo}
         >
-          <Text style={s.toastUndo}>{t().common.undo}</Text>
+          <Text style={s.toastUndo}>{shown.actionLabel ?? t().common.undo}</Text>
         </Pressable>
       ) : null}
     </Animated.View>
@@ -307,7 +311,7 @@ function BannerLayer({ banner }: { banner: { initial: string; message: string } 
 
 /** Toast 和横幅：包在最外层，任何地方都能用，也始终显示在弹层之上。 */
 export function FeedbackProvider({ children }: { children: ReactNode }) {
-  const [toast, setToast] = useState<{ message: string; undo?: () => void } | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const [banner, setBanner] = useState<{ initial: string; message: string } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -316,7 +320,12 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
     () => ({
       toast(message, options) {
         if (toastTimer.current) clearTimeout(toastTimer.current);
-        setToast({ message, undo: options?.undo });
+        setToast({
+          message,
+          undo: options?.undo,
+          actionLabel: options?.actionLabel,
+          actionTestID: options?.actionTestID,
+        });
         toastTimer.current = setTimeout(() => setToast(null), options?.durationMs ?? TOAST_MS);
       },
       dismissToast() {

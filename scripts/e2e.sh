@@ -51,6 +51,9 @@ else
   curl -fs http://localhost:8787/healthz >/dev/null || { echo "服务端没有启动" >&2; exit 1; }
 fi
 
+# 流程 23（应用内更新）要存储里有一个新版本。
+bash e2e/helpers/fake-release.sh 9>&-
+
 # 系统桌面偶尔会卡住并弹窗挡住 App，全程在后台清掉。
 bash scripts/dismiss-anr.sh 9>&- &
 ANR_PID=$!

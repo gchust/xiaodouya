@@ -41,12 +41,23 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          SELF_UPDATE: ${{ vars.EXPO_PUBLIC_SELF_UPDATE || '1' }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
         run: |
           [ -n "$API_URL" ] || { echo "::error::请在仓库变量里设置 EXPO_PUBLIC_API_URL"; exit 1; }
           # 这里先查齐，否则要等 Gradle 跑到签名那一步才失败。
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             [ -n "${!name}" ] || { echo "::error::请在仓库 Secrets 里设置 $name"; exit 1; }
           done
+          # 应用内更新要把 APK 传到存储（和备份同一组 Secret）。不用这个功能就把仓库变量 EXPO_PUBLIC_SELF_UPDATE 设成 0。
+          if [ "$SELF_UPDATE" = 1 ]; then
+            for name in S3_ENDPOINT S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY; do
+              [ -n "${!name}" ] || { echo "::error::应用内更新需要仓库 Secret $name，或者把仓库变量 EXPO_PUBLIC_SELF_UPDATE 设成 0"; exit 1; }
+            done
+          fi
       - name: 释放磁盘空间
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
       - uses: pnpm/action-setup@v4
@@ -85,6 +96,8 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+          # 旁加载的 APK 带应用内更新，默认打开。上架 Google Play 的构建要设成 0：Play 不允许 App 自己安装更新。
+          EXPO_PUBLIC_SELF_UPDATE: ${{ vars.EXPO_PUBLIC_SELF_UPDATE || '1' }}
           GRADLE_WORKERS: "4"
           GRADLE_HEAP: 6g
         run: |
@@ -97,3 +110,21 @@ jobs:
         with:
           files: xiaodouya-*.apk
           generate_release_notes: true
+      # 打开了应用内更新的 APK 会去存储里找新版本，所以它自己也必须传上去：缺 Secret 时失败，不跳过。
+      # 放在 GitHub Release 之后：存储出问题时，下载页照样有这个版本。说明见 docs/DEPLOYMENT.md 的“应用内更新”。
+      - name: 上传到存储（应用内更新）
+        if: (vars.EXPO_PUBLIC_SELF_UPDATE || '1') == '1'
+        env:
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          S3_REGION: auto
+          APP_RELEASE_PREFIX: ${{ vars.APP_RELEASE_PREFIX }}
+          RELEASE_MIN_SUPPORTED_CODE: ${{ vars.RELEASE_MIN_SUPPORTED_CODE }}
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          bash scripts/publish-apk.sh "xiaodouya-$TAG.apk" "$TAG" "$GITHUB_RUN_NUMBER"
+      - name: 应用内更新已关闭
+        if: (vars.EXPO_PUBLIC_SELF_UPDATE || '1') != '1'
+        run: echo "::notice::EXPO_PUBLIC_SELF_UPDATE 不是 1，这个 APK 没有应用内更新，也没有传到存储"

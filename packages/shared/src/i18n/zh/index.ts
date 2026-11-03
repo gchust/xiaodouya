@@ -12,6 +12,7 @@ import { share } from './share';
 import { storageUi } from './storageUi';
 import { today } from './today';
 import { ui } from './ui';
+import { update } from './update';
 import { widgetUi } from './widgetUi';
 
 /** 中文是基准：英文目录的类型就是这个对象的类型，缺键或参数不一样都编译不过。 */
@@ -29,6 +30,7 @@ export const zh = {
   today,
   account,
   ui,
+  update,
   domain,
   health,
 };
