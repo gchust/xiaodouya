@@ -28,7 +28,8 @@
         "16_region_us",
         "17_custom_dose",
         "18_other_region",
-        "23_app_update"
+        "23_app_update",
+        "24_feedback"
       ]
     },
     "daily": {

@@ -9,12 +9,15 @@ import {
   type BabyData,
   CompleteUploadRequest,
   CreateFamilyRequest,
+  CreateFeedbackRequest,
+  type CreateFeedbackResponse,
   CreateInviteRequest,
   CreateShareRequest,
   type CreateShareResponse,
   canReadCollection,
   canReadMediaScope,
   canWriteCollection,
+  cleanFeedbackText,
   collections,
   DeleteAccountRequest,
   defaultPrefs,
@@ -24,7 +27,10 @@ import {
   effectiveUnits,
   type FamilyExport,
   type FamilyMember,
+  type FeedbackListResponse,
+  type FeedbackStatus,
   ForgotPasswordRequest,
+  feedbackAttachmentLimit,
   formatBytes,
   isAllowedMime,
   isFormulaData,
@@ -101,6 +107,13 @@ import {
   issueEmailCode,
   matchEmailCode,
 } from './emailCodes';
+import {
+  deliverDueFeedback,
+  deliverInBackground,
+  enqueueRemovedAttachments,
+  enqueueUserFeedbackObjects,
+  feedbackObjectKey,
+} from './feedback';
 import type { Mailer } from './mailer';
 import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
 import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './notifier';
@@ -367,6 +380,13 @@ export function createApp({
       allowCustomStorage: config.allowCustomStorage,
       passwordReset: Boolean(mailer),
       emailVerification: Boolean(mailer),
+      // 只说能不能用，仓库名和令牌都不出现在这里。
+      feedback: {
+        enabled: Boolean(config.feedback),
+        public: config.feedback?.public ?? true,
+        attachments: Boolean(config.feedback && config.serverStorage),
+        attachmentDays: config.feedback ? config.feedbackAttachmentDays : null,
+      },
     }),
   );
 
@@ -880,6 +900,8 @@ export function createApp({
           await tx`DELETE FROM families WHERE id = ${mine.family_id}`;
         }
       }
+      // 反馈随账号级联删除，附件要先进队列。已经发到 GitHub 的文字留在那里，提交时说明过会公开。
+      await enqueueUserFeedbackObjects(tx, user.id, UPLOAD_URL_TTL);
       // 登录、推送令牌、成员关系、验证码随账号级联删除，记录的 created_by 置空后留给家庭。
       await tx`DELETE FROM users WHERE id = ${user.id}`;
       return 'deleted' as const;
@@ -900,6 +922,199 @@ export function createApp({
         }),
     );
     return c.json({ ok: true });
+  });
+
+  // ─── 反馈 ─────────────────────────────────────────────
+  // 账号级的：没有家庭、只看回忆的家人都能提交。不读写任何家庭数据，所以不用家庭权限。
+
+  const requireFeedback = () => {
+    if (!config.feedback) fail(503, 'feedback_disabled', '这台服务器没有开启反馈');
+    return config.feedback;
+  };
+  const feedbackIdParam = (c: Context<Env>): string => {
+    const parsed = z.uuid().safeParse(c.req.param('id'));
+    if (!parsed.success) fail(404, 'not_found', '找不到这条反馈');
+    return parsed.data;
+  };
+  /** 附件只放平台存储，永远不写进家庭自带的 Bucket：反馈不属于家庭，维护者也读不了那里。 */
+  const feedbackStorage = async () => {
+    const storage = await storageById(sql, config, '', null);
+    if (!storage) {
+      fail(503, 'feedback_attachments_unavailable', '这台服务器不能收附件，只能发文字');
+    }
+    return storage;
+  };
+  const retryOtherFeedback = () => background(deliverInBackground(sql, config));
+
+  v1.post('/feedback', bodyLimit({ maxSize: 64 * 1024 }), async (c) => {
+    const user = c.get('user');
+    const settings = requireFeedback();
+    const body = await parseBody(c, CreateFeedbackRequest);
+    const ids = body.attachments.map((a) => a.id);
+    if (new Set(ids).size !== ids.length) {
+      fail(400, 'invalid_input', '输入有误：attachments 有重复', {
+        field: 'attachments',
+        detail: 'duplicate',
+      });
+    }
+    for (const a of body.attachments) {
+      const limit = feedbackAttachmentLimit(a.mime);
+      if (limit === null) fail(400, 'bad_type', '不支持这种文件类型');
+      if (a.size > limit) {
+        fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(limit)}`, {
+          maxBytes: limit,
+        });
+      }
+    }
+    const storage = body.attachments.length > 0 ? await feedbackStorage() : null;
+    const [existing] = await sql<{ user_id: string; status: FeedbackStatus }[]>`
+      SELECT user_id, status FROM feedback WHERE id = ${body.id}`;
+    // 别人的 id 和不存在一样处理，不透露它存在。
+    if (existing && existing.user_id !== user.id) fail(404, 'not_found', '找不到这条反馈');
+    if (existing && existing.status !== 'draft') {
+      return c.json<CreateFeedbackResponse>({ id: body.id, status: existing.status, uploads: [] });
+    }
+    if (!existing) {
+      // 每人每天、全站每小时：令牌是部署者的，被刷爆了所有人都发不出去。重试同一条不算。
+      if (
+        (settings.perUserDay > 0 &&
+          !(await allowAttempt(sql, `feedback:${user.id}`, settings.perUserDay, DAY_MS))) ||
+        (settings.globalHour > 0 &&
+          !(await allowAttempt(sql, 'feedback', settings.globalHour, HOUR_MS)))
+      ) {
+        fail(429, 'too_many_attempts', '反馈有点多了，请稍后再试', { reason: 'feedback' });
+      }
+    } else if (!(await allowAttempt(sql, `feedback-edit:${user.id}`, 100, DAY_MS))) {
+      fail(429, 'too_many_attempts', '反馈有点多了，请稍后再试', { reason: 'feedback' });
+    }
+    const text = cleanFeedbackText(body.text);
+    const saved = await sql.begin(async (tx) => {
+      const [row] = await tx<{ inserted: boolean }[]>`
+        INSERT INTO feedback (id, user_id, text, diagnostics)
+        VALUES (${body.id}, ${user.id}, ${text}, ${tx.json(body.diagnostics)})
+        ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, diagnostics = EXCLUDED.diagnostics, updated_at = now()
+          WHERE feedback.user_id = EXCLUDED.user_id AND feedback.status = 'draft'
+        RETURNING (xmax = 0) AS inserted`;
+      // 同时有别的请求把它提交了，或者 id 被别人抢先用了。
+      if (!row) return null;
+      await enqueueRemovedAttachments(tx, body.id, ids, UPLOAD_URL_TTL);
+      await tx`DELETE FROM feedback_attachments
+               WHERE feedback_id = ${body.id} AND NOT (id = ANY(${ids}::uuid[]))`;
+      const pending: { id: string; mime: string; size: number }[] = [];
+      for (const a of body.attachments) {
+        const [att] = await tx<{ status: string }[]>`
+          INSERT INTO feedback_attachments (id, feedback_id, mime, size, object_key)
+          VALUES (${a.id}, ${body.id}, ${a.mime}, ${a.size}, ${feedbackObjectKey(body.id, a.id)})
+          ON CONFLICT (id) DO UPDATE SET
+            mime = EXCLUDED.mime,
+            size = EXCLUDED.size,
+            status = CASE
+              WHEN feedback_attachments.mime = EXCLUDED.mime AND feedback_attachments.size = EXCLUDED.size
+              THEN feedback_attachments.status ELSE 'pending' END
+            WHERE feedback_attachments.feedback_id = EXCLUDED.feedback_id
+          RETURNING status`;
+        if (!att) fail(409, 'already_uploaded', '文件已经上传过了');
+        if (att.status === 'pending') pending.push(a);
+      }
+      // 同一个 key 以前可能进过待删除队列（草稿被清理后又用同一个 id 回来）。没传完的对象在队列里
+      // 还有一条一小时后才删的，不撤掉的话会把这次新传的删掉。key 由这个人的反馈 id 拼成，碰不到别人的。
+      if (ids.length > 0) {
+        await tx`DELETE FROM pending_object_deletions WHERE storage IS NULL
+                 AND object_key = ANY(${ids.map((a) => feedbackObjectKey(body.id, a))})`;
+      }
+      return { inserted: row.inserted, pending };
+    });
+    if (!saved) {
+      const [now] = await sql<{ user_id: string; status: FeedbackStatus }[]>`
+        SELECT user_id, status FROM feedback WHERE id = ${body.id}`;
+      if (!now || now.user_id !== user.id) fail(404, 'not_found', '找不到这条反馈');
+      return c.json<CreateFeedbackResponse>({ id: body.id, status: now.status, uploads: [] });
+    }
+    const uploads = storage
+      ? await Promise.all(
+          saved.pending.map(async (a) => ({
+            id: a.id,
+            url: await presignUpload(
+              storage,
+              feedbackObjectKey(body.id, a.id),
+              a.mime,
+              a.size,
+              UPLOAD_URL_TTL,
+              config.bindUploadSize,
+            ),
+            headers: { 'Content-Type': a.mime },
+            expiresIn: UPLOAD_URL_TTL,
+          })),
+        )
+      : [];
+    retryOtherFeedback();
+    return c.json<CreateFeedbackResponse>(
+      { id: body.id, status: 'draft', uploads },
+      saved.inserted ? 201 : 200,
+    );
+  });
+
+  v1.post('/feedback/:id/submit', async (c) => {
+    const user = c.get('user');
+    requireFeedback();
+    const id = feedbackIdParam(c);
+    const [row] = await sql<{ user_id: string; status: FeedbackStatus }[]>`
+      SELECT user_id, status FROM feedback WHERE id = ${id}`;
+    if (!row || row.user_id !== user.id) fail(404, 'not_found', '找不到这条反馈');
+    if (row.status === 'draft') {
+      const files = await sql<{ id: string; size: string; object_key: string; status: string }[]>`
+        SELECT id, size, object_key, status FROM feedback_attachments WHERE feedback_id = ${id}`;
+      const pending = files.filter((f) => f.status === 'pending');
+      if (pending.length > 0) {
+        const storage = await feedbackStorage();
+        for (const f of pending) {
+          const head = await headObject(storage, f.object_key);
+          if (!head) fail(409, 'not_uploaded', '文件还没有上传完成');
+          if (head.size !== Number(f.size)) {
+            await deleteObject(storage, f.object_key);
+            fail(409, 'size_mismatch', '文件大小不一致，请重新上传');
+          }
+        }
+      }
+      await sql.begin(async (tx) => {
+        await tx`UPDATE feedback_attachments SET status = 'ready'
+                 WHERE feedback_id = ${id} AND id = ANY(${pending.map((f) => f.id)}::uuid[])`;
+        await tx`UPDATE feedback SET status = 'queued', submitted_at = now(), next_attempt_at = now(),
+                   attachment_count = ${files.length}
+                 WHERE id = ${id} AND status = 'draft'`;
+      });
+    }
+    // 当场发一次。失败也是 200：反馈已经存下了，之后会自动重试。
+    await deliverDueFeedback(sql, config, { id });
+    retryOtherFeedback();
+    const [after] = await sql<{ status: FeedbackStatus }[]>`
+      SELECT status FROM feedback WHERE id = ${id}`;
+    return c.json({ id, status: after?.status ?? row.status });
+  });
+
+  v1.get('/feedback', async (c) => {
+    const rows = await sql<
+      {
+        id: string;
+        status: FeedbackStatus;
+        created_at: Date;
+        text: string;
+        attachments: number;
+      }[]
+    >`SELECT f.id, f.status, f.created_at, f.text,
+             GREATEST(f.attachment_count,
+               (SELECT count(*) FROM feedback_attachments a WHERE a.feedback_id = f.id))::int AS attachments
+      FROM feedback f WHERE f.user_id = ${c.get('user').id}
+      ORDER BY f.created_at DESC LIMIT 20`;
+    return c.json<FeedbackListResponse>({
+      items: rows.map((r) => ({
+        id: r.id,
+        status: r.status,
+        createdAt: r.created_at.getTime(),
+        excerpt: r.text.slice(0, 80),
+        attachments: r.attachments,
+      })),
+    });
   });
 
   // ─── 家庭和邀请 ─────────────────────────────────────────

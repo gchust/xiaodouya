@@ -19,6 +19,10 @@
  *
  * 再确认一次它支持分片上传（不通过时设置 S3_MULTIPART_ENABLED=false，App 退回单个 PUT）：
  *   pnpm --filter @xiaodouya/server cli check-multipart
+ *
+ * 用户反馈：不带 id 列出最近的反馈和状态；带 id 显示文字、诊断信息和附件的 10 分钟签名链接。
+ * 附件不在公开的 issue 里，只能这样看。要 S3_*，不需要 APP_SECRET 和 GitHub 的配置。
+ *   pnpm --filter @xiaodouya/server cli feedback [反馈 id]
  */
 
 import { Buffer } from 'node:buffer';
@@ -44,6 +48,7 @@ async function resetPassword(sql: Sql, email: string): Promise<boolean> {
 }
 
 const [command, email] = process.argv.slice(2);
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 if (
   command !== 'migrate' &&
@@ -51,10 +56,11 @@ if (
   command !== 'purge-objects' &&
   command !== 'check-upload-size' &&
   command !== 'check-multipart' &&
+  !(command === 'feedback' && (email === undefined || UUID.test(email))) &&
   !(command === 'reset-password' && email)
 ) {
   console.error(
-    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli reset-password <邮箱>',
+    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli feedback [反馈 id] | cli reset-password <邮箱>',
   );
   process.exit(1);
 }
@@ -92,7 +98,8 @@ try {
     console.log(JSON.stringify(report));
     reportWaiting(report.deletionsWaitingForSecret);
     // 让定时任务看得出失败。记录还在，下次会重试。等 APP_SECRET 的不算失败。
-    ok = report.failed === 0 && report.deletionsFailed === 0;
+    // 反馈建不了 issue 也算：多半是令牌过期了，要让部署者看得到。反馈本身留在队列里。
+    ok = report.failed === 0 && report.deletionsFailed === 0 && report.feedbackFailed === 0;
   } else if (command === 'purge-objects') {
     const { processPendingDeletions } = await import('./objectDeletions');
     await migrate(sql);
@@ -124,6 +131,31 @@ try {
       result.ok ? result.message : `不通过，请设置 S3_MULTIPART_ENABLED=false：${result.message}`,
     );
     ok = result.ok;
+  } else if (command === 'feedback') {
+    const { feedbackDetails, recentFeedback } = await import('./feedback');
+    if (email) {
+      const details = await feedbackDetails(sql, storageConfig(), email);
+      if (!details) {
+        console.error('找不到这条反馈');
+        ok = false;
+      } else {
+        // 链接 10 分钟内有效，不要转发，也不要贴进 issue。
+        console.log(JSON.stringify(details, null, 2));
+      }
+    } else {
+      for (const row of await recentFeedback(sql)) {
+        console.log(
+          [
+            row.id,
+            row.status,
+            row.created_at.toISOString(),
+            `附件 ${row.attachment_count}`,
+            `尝试 ${row.attempts}`,
+            row.issue_url ?? row.last_error ?? '',
+          ].join('  '),
+        );
+      }
+    }
   } else {
     ok = await resetPassword(sql, email!);
   }

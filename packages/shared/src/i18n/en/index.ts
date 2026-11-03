@@ -4,6 +4,7 @@ import { auth } from './auth';
 import { common } from './common';
 import { domain } from './domain';
 import { family } from './family';
+import { feedback } from './feedback';
 import { health } from './health';
 import { info } from './info';
 import { nutritionUi } from './nutritionUi';
@@ -21,6 +22,7 @@ export const en: Catalog = {
   widgetUi,
   storageUi,
   family,
+  feedback,
   info,
   recall,
   auth,

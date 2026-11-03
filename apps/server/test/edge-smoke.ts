@@ -19,6 +19,7 @@ import { loadConfig } from '../src/config';
 import { hashPassword, verifyPassword } from '../src/crypto';
 import { connect, migrate } from '../src/db';
 import { ensureBucket } from '../src/dev-bucket';
+import { type FakeGithub, startFakeGithub } from './fake-github';
 
 const repo = resolve(import.meta.dirname, '../../..');
 const mode = process.env.EDGE_SMOKE_RUNTIME ?? 'deno';
@@ -764,6 +765,75 @@ async function accountLifecycle(base: string) {
   check(status === 404, '响应之后文件从存储里删掉了');
 }
 
+const FAKE_GITHUB_TOKEN = 'github_pat_FICTIONAL_edge_smoke';
+
+/** 反馈：附件签名直传，函数里用 fetch 连（假的）GitHub，失败时留在队列里，日志里没有令牌。 */
+async function feedback(runtime: Runtime, github: FakeGithub) {
+  const { base } = runtime;
+  console.log('反馈：附件直传、建 issue、GitHub 失败时留在队列');
+  const config = await request<{ feedback: { enabled: boolean; attachments: boolean } }>(
+    base,
+    'GET',
+    '/v1/config',
+  );
+  check(config.json.feedback.enabled && config.json.feedback.attachments, '/v1/config 说开了反馈');
+  const email = `edge-fb-${randomUUID().slice(0, 8)}@example.test`;
+  const { json: auth } = await request<{ token: string }>(base, 'POST', '/v1/auth/register', {
+    body: { email, password: 'correct horse', displayName: '虚构用户' },
+  });
+  const diagnostics = { appVersion: '0.3.3', os: 'android', osVersion: '15', locale: 'zh' };
+  const bytes = Buffer.from('xiaodouya-fictional-feedback');
+  const id = randomUUID();
+  const attachment = randomUUID();
+  const created = await request<{ uploads: { url: string; headers: Record<string, string> }[] }>(
+    base,
+    'POST',
+    '/v1/feedback',
+    {
+      token: auth.token,
+      body: {
+        id,
+        text: '@octocat 闪退了 #1',
+        diagnostics,
+        attachments: [{ id: attachment, mime: 'image/jpeg', size: bytes.length }],
+      },
+    },
+  );
+  check(created.status === 201 && created.json.uploads.length === 1, '建草稿，拿到附件的上传链接');
+  const put = await fetch(created.json.uploads[0]?.url ?? '', {
+    method: 'PUT',
+    headers: created.json.uploads[0]?.headers,
+    body: bytes,
+  });
+  check(put.status === 200, '附件直传到存储');
+  const submitted = await request<{ status: string }>(base, 'POST', `/v1/feedback/${id}/submit`, {
+    token: auth.token,
+  });
+  check(submitted.json.status === 'sent', `提交并建 issue（${submitted.ms} ms）`);
+  const issue = github.issues.at(-1);
+  check(issue?.authorization === `Bearer ${FAKE_GITHUB_TOKEN}`, 'GitHub 收到带令牌的请求');
+  check(
+    Boolean(issue && !issue.body.includes(email) && !issue.body.includes(attachment)),
+    'issue 里没有邮箱和附件',
+  );
+  check(
+    Boolean(issue?.body.includes('````text') || issue?.body.includes('```text')),
+    '文字在代码块里',
+  );
+
+  github.failNext(1, 502);
+  const second = randomUUID();
+  await request(base, 'POST', '/v1/feedback', {
+    token: auth.token,
+    body: { id: second, text: 'GitHub 挂了', diagnostics, attachments: [] },
+  });
+  const queued = await request<{ status: string }>(base, 'POST', `/v1/feedback/${second}/submit`, {
+    token: auth.token,
+  });
+  check(queued.json.status === 'queued', 'GitHub 失败时留在队列里，请求本身成功');
+  check(!runtime.output().includes(FAKE_GITHUB_TOKEN), '函数的日志里没有令牌');
+}
+
 async function ssrf(base: string, token: string) {
   console.log('SSRF 检查：node:net 和 node:dns 在函数里生效');
   for (const endpoint of [
@@ -793,8 +863,15 @@ try {
   await ensureBucket(config);
   const port = 18_900 + (process.pid % 90);
 
+  const github = await startFakeGithub(FAKE_GITHUB_TOKEN);
   const permissive = await startRuntime(
-    { ...functionEnv, ALLOW_PRIVATE_STORAGE_ENDPOINTS: 'true' },
+    {
+      ...functionEnv,
+      ALLOW_PRIVATE_STORAGE_ENDPOINTS: 'true',
+      FEEDBACK_GITHUB_REPO: 'fictional-owner/fictional-repo',
+      FEEDBACK_GITHUB_TOKEN: FAKE_GITHUB_TOKEN,
+      FEEDBACK_GITHUB_API_URL: github.url,
+    },
     port,
   );
   let owner = '';
@@ -804,11 +881,13 @@ try {
     await publicShare(permissive.base);
     await customStorage(permissive.base, owner);
     await accountLifecycle(permissive.base);
+    await feedback(permissive, github);
   } catch (error) {
     console.error(permissive.output());
     throw error;
   } finally {
     await permissive.stop();
+    await github.close();
   }
 
   const strict = await startRuntime(functionEnv, port + 1);

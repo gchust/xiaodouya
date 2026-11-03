@@ -48,4 +48,10 @@ jobs:
           # 可选，和函数里的相同。只有删除家庭自带存储里的文件时才用到，
           # 没设置时那部分留在队列里（日志写明条数），平台存储照常清理。
           APP_SECRET: ${{ secrets.APP_SECRET }}
+          # 可选，和函数里的相同。有了才补发 GitHub 暂时不可用时排队的反馈；没有时它们等下一次有人提交时补发。
+          # 只设一项会让这一步失败（配错拒绝启动），要么两项都设，要么都不设。
+          FEEDBACK_GITHUB_REPO: ${{ secrets.FEEDBACK_GITHUB_REPO }}
+          FEEDBACK_GITHUB_TOKEN: ${{ secrets.FEEDBACK_GITHUB_TOKEN }}
+          # 反馈附件的保留期，要和函数的设置一致。
+          FEEDBACK_ATTACHMENT_DAYS: ${{ vars.FEEDBACK_ATTACHMENT_DAYS || '90' }}
         run: pnpm --filter @xiaodouya/server cli maintenance

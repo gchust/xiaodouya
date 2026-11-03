@@ -40,6 +40,7 @@ import { type Api, ApiFailure } from './api';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
+import { clearFeedbackDraft } from './feedbackDraft';
 import { applyLocale, deviceLanguageTag } from './locale';
 import { clearLocalMedia } from './media';
 import { scheduleFeedReminder, unregisterPushToken } from './notifications';
@@ -232,6 +233,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     await services.store.clear();
     clearDownloads();
     await clearLocalMedia();
+    // 反馈的草稿和附件副本也是这个人的，可能拍到孩子。
+    clearFeedbackDraft();
     // 已经排好的本机提醒不随数据消失，账号没了之后还会响。
     await scheduleFeedReminder([], false);
     setHasSynced(false);

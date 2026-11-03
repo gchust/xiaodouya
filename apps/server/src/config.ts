@@ -65,6 +65,17 @@ const EnvSchema = DbEnvSchema.extend({
   MAIL_PROVIDER: z.enum(['', 'none', 'resend', 'log']).optional(),
   RESEND_API_KEY: optionalText,
   MAIL_FROM: optionalText,
+  FEEDBACK_GITHUB_REPO: optionalText,
+  FEEDBACK_GITHUB_TOKEN: optionalText,
+  // 只给测试和 E2E 连假的 GitHub 用。空字符串当作没设：Supabase 上设成空的 Secret 就是空字符串。
+  FEEDBACK_GITHUB_API_URL: optionalText.pipe(z.url().optional()),
+  FEEDBACK_GITHUB_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  // 不确定时按公开提醒用户：说成公开而其实是私有，只是多提醒了一句；反过来就是泄露。
+  FEEDBACK_REPO_PUBLIC: bool(true),
+  /** issue 建好后附件保留多少天，0 表示一直保留。附件里可能拍到孩子，不该无限期留着。 */
+  FEEDBACK_ATTACHMENT_DAYS: z.coerce.number().int().nonnegative().default(90),
+  RATE_FEEDBACK_PER_DAY: z.coerce.number().int().nonnegative().default(10),
+  RATE_FEEDBACK_GLOBAL_HOUR: z.coerce.number().int().nonnegative().default(200),
   NODE_ENV: optionalText,
 });
 
@@ -108,6 +119,18 @@ export interface RateLimits {
   sharePublicMedia: number;
 }
 
+export interface FeedbackServerConfig {
+  /** owner/name */
+  repo: string;
+  token: string;
+  apiUrl: string;
+  timeoutMs: number;
+  public: boolean;
+  /** 0 表示不限，下同。 */
+  perUserDay: number;
+  globalHour: number;
+}
+
 export interface Config {
   databaseUrl: string;
   db: DbConfig;
@@ -135,6 +158,38 @@ export interface Config {
   expoAccessToken: string | undefined;
   /** null 表示不发邮件：跳过邮箱验证，找回密码由部署者处理。 */
   mail: { provider: 'resend'; apiKey: string; from: string } | { provider: 'log' } | null;
+  /** null 表示没有配置反馈：App 显示暂不可用，接口返回 feedback_disabled。 */
+  feedback: FeedbackServerConfig | null;
+  /**
+   * 反馈附件在 issue 建好后保留多少天，null 表示一直保留。不放进 feedback 里：
+   * 定时清理的环境可能没有 GitHub 的配置，保留期也要照样生效。
+   */
+  feedbackAttachmentDays: number | null;
+}
+
+const GITHUB_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+
+/** 和邮件一样，配了一半就拒绝启动：悄悄关掉的话，部署者要等有人说“反馈发不出去”才发现。 */
+function toFeedbackConfig(e: z.infer<typeof EnvSchema>): Config['feedback'] {
+  const { FEEDBACK_GITHUB_REPO: repo, FEEDBACK_GITHUB_TOKEN: token } = e;
+  if (!repo && !token) return null;
+  if (!token) {
+    throw new Error(
+      '环境变量配置有误：\n  FEEDBACK_GITHUB_TOKEN: 配了 FEEDBACK_GITHUB_REPO 时必填',
+    );
+  }
+  if (!repo || !GITHUB_REPO.test(repo)) {
+    throw new Error('环境变量配置有误：\n  FEEDBACK_GITHUB_REPO: 要写成 owner/name');
+  }
+  return {
+    repo,
+    token,
+    apiUrl: (e.FEEDBACK_GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
+    timeoutMs: e.FEEDBACK_GITHUB_TIMEOUT_MS,
+    public: e.FEEDBACK_REPO_PUBLIC,
+    perUserDay: e.RATE_FEEDBACK_PER_DAY,
+    globalHour: e.RATE_FEEDBACK_GLOBAL_HOUR,
+  };
 }
 
 /** 配错时拒绝启动：悄悄退回“不发邮件”的话，部署者要到有人找回不了密码才发现。 */
@@ -234,5 +289,7 @@ export function loadConfig(env: Env = process.env): Config {
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,
     mail: toMailConfig(e),
+    feedback: toFeedbackConfig(e),
+    feedbackAttachmentDays: e.FEEDBACK_ATTACHMENT_DAYS > 0 ? e.FEEDBACK_ATTACHMENT_DAYS : null,
   };
 }

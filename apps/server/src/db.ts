@@ -233,6 +233,43 @@ export const migrations: readonly string[] = [
   ALTER TABLE media DROP CONSTRAINT media_variant_check;
   ALTER TABLE media ADD CONSTRAINT media_variant_check CHECK (variant IN ('original', 'thumb', 'preview'));
   `,
+  // 用户反馈。账号级，不属于家庭，所以附件不进 media 表、不算家庭配额（每人限流和附件上限兜底）。
+  // 先存库再建 issue：GitHub 不可用时停在 queued，按 next_attempt_at 退避重试，和待删除队列一样用租约防重复。
+  // attachment_count：附件过了保留期会删掉，列表和 cli 还要知道当初有几个。
+  `
+  CREATE TABLE feedback (
+    id UUID PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    diagnostics JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'queued', 'sent')),
+    attachment_count INT NOT NULL DEFAULT 0,
+    attempts INT NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_error TEXT,
+    issue_number INT,
+    issue_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    submitted_at TIMESTAMPTZ,
+    sent_at TIMESTAMPTZ
+  );
+  CREATE INDEX feedback_user ON feedback(user_id, created_at);
+  CREATE INDEX feedback_due ON feedback(next_attempt_at) WHERE status = 'queued';
+  CREATE INDEX feedback_drafts ON feedback(updated_at) WHERE status = 'draft';
+  CREATE TABLE feedback_attachments (
+    id UUID PRIMARY KEY,
+    feedback_id UUID NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+    mime TEXT NOT NULL,
+    size BIGINT NOT NULL,
+    object_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX feedback_attachments_feedback ON feedback_attachments(feedback_id);
+  ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE feedback_attachments ENABLE ROW LEVEL SECURITY;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

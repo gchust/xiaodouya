@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MULTIPART_URL_BATCH } from './domain/multipart';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
+import type { FeedbackConfig } from './feedback';
 import { t } from './i18n';
 import { locales } from './i18n/locale';
 
@@ -565,6 +566,8 @@ export interface PublicConfig {
   passwordReset: boolean;
   /** 配置了邮件：注册后引导验证邮箱。 */
   emailVerification: boolean;
+  /** 反馈问题。旧服务器没有这个字段，App 当作不可用。 */
+  feedback?: FeedbackConfig;
 }
 
 export interface ApiError {

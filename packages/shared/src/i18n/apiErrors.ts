@@ -34,6 +34,8 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
       if (p.reason === 'signup') return 'Too many sign-ups right now. Please try again in a while.';
       if (p.reason === 'send') return 'Too many codes sent. Please try again later.';
       if (p.reason === 'export') return 'Exporting too often. Please try again later.';
+      if (p.reason === 'feedback')
+        return 'Quite a lot of feedback right now. Please try again later.';
       return typeof p.minutes === 'number'
         ? `Too many attempts. Please try again in ${p.minutes} minutes.`
         : 'Too many attempts. Please try again later.';
@@ -75,6 +77,9 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
     update_unavailable: () => "Couldn't check for a new version right now. Please try again later.",
     size_mismatch: () => "The file size doesn't match. Please upload it again.",
     custom_storage_disabled: () => "This server doesn't allow custom storage.",
+    feedback_disabled: () => "Feedback isn't turned on for this server.",
+    feedback_attachments_unavailable: () =>
+      "This server can't take attachments. You can still send the text.",
     bad_endpoint: () => "This storage address can't be used.",
     storage_test_failed: (p: ApiErrorParams) =>
       storageTestReasonText(typeof p.reason === 'string' ? p.reason : undefined),

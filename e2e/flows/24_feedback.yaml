@@ -1,0 +1,83 @@
+# 反馈问题：文字加一张图，服务端连 e2e.sh 启动的假 GitHub（不连真实的 GitHub）。
+# 看得到公开提醒和会公开的诊断信息；发出去后 issue 里只有代码块里的文字、诊断信息和附件个数。
+# 假 GitHub 失败时反馈留在服务端的队列里，界面写“已收到”，列表里是“等待发送”。
+# 没有配置 GitHub 时的“暂不可用”要换服务端配置，由服务端测试和手动走查覆盖。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-feedback }
+- assertVisible: 遇到问题或有想法，告诉开发者
+- tapOn: { id: open-feedback }
+- extendedWaitUntil:
+    visible: { id: feedback-privacy }
+    timeout: 15000
+- assertVisible:
+    text: .*公开的网页.*
+- assertVisible:
+    text: .*只有开发者能看.*
+- assertVisible: 这些信息也会一起公开
+- assertVisible: SG
+- tapOn: { id: feedback-text }
+# Maestro 的 inputText 遇到 # 就停了，引用和图片语法的转义由服务端测试覆盖。
+- inputText: E2E-${RUN_ID} @octocat crash after saving a photo
+- hideKeyboard
+# E2E 构建的选择器给一张内置样例图。
+- tapOn: { id: feedback-pick }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-24-feedback-form
+- scrollUntilVisible:
+    element: { id: feedback-send }
+- tapOn: { id: feedback-send }
+- extendedWaitUntil:
+    visible: 已发送，谢谢你的反馈
+    timeout: 30000
+# 列表在页面下面，要滚过去。
+- scrollUntilVisible:
+    element: { id: feedback-item-sent }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-24-feedback-sent
+- runScript:
+    file: ../helpers/feedback-github.js
+    env:
+      ACTION: check
+      RUN_ID: ${RUN_ID}
+      EMAIL: admin-${RUN_ID}@example.test
+# Toast 在 E2E 构建里停 8 秒，正好盖在底部的发送按钮上，等它走了再点。
+- extendedWaitUntil:
+    notVisible: 已发送，谢谢你的反馈
+    timeout: 15000
+# GitHub 失败：服务端先存下，稍后自己重试。
+- runScript:
+    file: ../helpers/feedback-github.js
+    env:
+      ACTION: fail
+- scrollUntilVisible:
+    element: { id: feedback-text }
+    direction: UP
+- tapOn: { id: feedback-text }
+- inputText: Queued-${RUN_ID}
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: feedback-send }
+- tapOn: { id: feedback-send }
+- extendedWaitUntil:
+    visible: 已收到，稍后会自动发出
+    timeout: 30000
+- scrollUntilVisible:
+    element: { id: feedback-item-queued }
+- assertVisible: 等待发送
+- takeScreenshot: .artifacts/e2e-24-feedback-queued
+- scrollUntilVisible:
+    element: { id: feedback-back }
+    direction: UP
+- tapOn: { id: feedback-back }
+- extendedWaitUntil:
+    visible: { id: family-screen }
+    timeout: 10000

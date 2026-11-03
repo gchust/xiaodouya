@@ -77,10 +77,13 @@ describe('邮件配置', () => {
   it('公开的 /v1/config 不需要登录，只说开了什么', async () => {
     const on = await call<PublicConfig>(app, 'GET', '/v1/config');
     expect(on.status).toBe(200);
+    // 测试环境没有配置反馈，见 feedback.test.ts。
+    const feedback = { enabled: false, public: true, attachments: false, attachmentDays: null };
     expect(on.json).toEqual({
       allowCustomStorage: db.config.allowCustomStorage,
       passwordReset: true,
       emailVerification: true,
+      feedback,
     });
     const off = await call<PublicConfig>(plainApp, 'GET', '/v1/config');
     expect(off.status).toBe(200);
@@ -88,6 +91,7 @@ describe('邮件配置', () => {
       allowCustomStorage: db.config.allowCustomStorage,
       passwordReset: false,
       emailVerification: false,
+      feedback,
     });
   });
 

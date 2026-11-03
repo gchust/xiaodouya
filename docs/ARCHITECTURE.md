@@ -281,6 +281,22 @@ App ──POST /v1/shares──> 服务端（只存令牌的 SHA-256）──> �
 
 **限流：** 按来源（`RATE_PUBLIC_SHARE_PER_IP_15MIN`，取不到来源时跳过）和按令牌（`RATE_PUBLIC_SHARE_PER_TOKEN_HOUR`）。在查库之前计数，所以链接存不存在表现一样。
 
+## 反馈问题
+
+```
+App ──POST /v1/feedback {id, text, diagnostics, attachments}──> 服务端：存草稿（draft），给附件预签名 PUT
+ │   PUT 直传到平台存储 feedback/<反馈 id>/<附件 id>
+ └─POST /v1/feedback/:id/submit──> HEAD 核对附件 → queued → 当场建一次 issue → sent
+                                       失败：留在 queued，退避重试（之后任何人提交时、每天的 cli maintenance）
+```
+
+- **账号级，不是家庭的：** 没有家庭、只看回忆的家人都能提交，接口不读写任何家庭数据，所以不看家庭角色。附件不进 `media` 表（它要 `family_id`），也就不算家庭配额；靠每人每天的条数、附件个数和大小兜底。只放平台存储，永远不写进家庭自带的 Bucket。
+- **issue 正文在 `packages/shared/src/feedback.ts` 生成（`renderFeedbackIssue`）：** 输入里只有文字、反馈 id、诊断信息和附件的类型大小，邮箱、账号、家庭、附件地址都不在输入里，也就写不进去。文字整段放进代码块，围栏比文字里最长的一串反引号还长，用户写什么都关不上它，块里的 `@` 提及不通知人，`#123` 不变成引用，图片和链接不加载。诊断信息每个字段都用正则卡死格式，手机读不懂的写成 `unknown`。标题不放用户的文字。App 把同一份诊断信息列在“会一起公开”下面。
+- **先存库再建 issue：** 建 issue 用和待删除队列一样的租约（一条 `UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)` 推后下次时间），Edge Function 多个实例同时补发也不会建重复的。GitHub 的报错只记状态码：它的错误响应会回显请求的一部分，令牌只在请求头里。不加 labels 和 assignees，标签不存在、权限不够时 GitHub 的处理不一致。
+- **幂等：** 反馈 id 由手机生成。草稿状态下同一个 id 再调可以改文字和附件（去掉的附件进待删除队列），已经提交的原样返回状态。手机上草稿和附件副本存在 `Paths.document/feedback/`，每传好一个附件记一次，断网、被杀后重发只传剩下的；服务端说附件没到（`not_uploaded`、`size_mismatch`）就全部重传一次。退出登录、换账号时随本地数据一起清除。
+- **清理（`cli maintenance`）：** 一天还没提交的草稿连附件删掉；issue 建好 `FEEDBACK_ATTACHMENT_DAYS` 天后删附件，反馈行留着（`attachment_count` 记着当初有几个）；删除账号时反馈随账号级联删除，附件在同一个事务里进待删除队列。
+- **维护者看附件：** `cli feedback <id>`，10 分钟的签名链接，和证件一样。
+
 ## 角色变化
 
 同步响应里带当前角色，客户端保存上次的角色。升级后游标归零重新拉历史；降级后删除本地无权查看的集合。
