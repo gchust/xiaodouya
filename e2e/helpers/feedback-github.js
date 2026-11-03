@@ -1,5 +1,6 @@
 // Maestro 的 JS 环境：操作 e2e.sh 启动的假 GitHub（apps/server/test/fake-github.ts），绝不连真实的 GitHub。
 // ACTION=fail：下一次建 issue 返回 502。ACTION=check：核对刚收到的 issue。
+// 环境断开整组重跑时假 GitHub 不重启，上一次的 issue 还在，但 RUN_ID 换了，按 RUN_ID 找不会多算。
 const base = 'http://localhost:8790';
 
 if (ACTION === 'fail') {

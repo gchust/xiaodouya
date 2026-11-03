@@ -20,6 +20,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   Text,
   TextInput,
@@ -61,6 +62,13 @@ import {
 /** null：还在问服务器；undefined：问不到（离线），先让人写，发的时候再说。 */
 type ServerFeedback = FeedbackConfig | null | undefined;
 
+const DISABLED: FeedbackConfig = {
+  enabled: false,
+  public: true,
+  attachments: false,
+  attachmentDays: null,
+};
+
 const statusText = (status: FeedbackStatus) =>
   status === 'sent'
     ? t().feedback.statusSent
@@ -94,6 +102,7 @@ export function FeedbackScreen() {
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<FeedbackView[]>([]);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
 
   const loadHistory = useCallback(async () => {
     try {
@@ -229,6 +238,7 @@ export function FeedbackScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={[
           s.content,
           { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 32 },
@@ -363,7 +373,14 @@ export function FeedbackScreen() {
             </View>
 
             {error ? (
-              <Text style={s.error} testID="feedback-error">
+              <Text
+                style={s.error}
+                testID="feedback-error"
+                // 失败时人在页面底部，提示刚好出现在屏幕下沿，只露半句。滚到它上方一点，连按钮一起看得到。
+                onLayout={(e) =>
+                  scrollRef.current?.scrollTo({ y: Math.max(0, e.nativeEvent.layout.y - 160) })
+                }
+              >
                 {error}
               </Text>
             ) : null}
@@ -419,13 +436,6 @@ export function FeedbackScreen() {
     </KeyboardAvoidingView>
   );
 }
-
-const DISABLED: FeedbackConfig = {
-  enabled: false,
-  public: true,
-  attachments: false,
-  attachmentDays: null,
-};
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
