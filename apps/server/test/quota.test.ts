@@ -319,9 +319,9 @@ describe('配额', () => {
     expect((await usage(token)).quota).toBeNull();
   });
 
-  it('FAMILY_QUOTA_MB=0 不限；默认值是 5 GB', () => {
+  it('FAMILY_QUOTA_MB=0 不限；默认值是 100 GB', () => {
     const env = testEnv();
-    expect(loadConfig(env).familyQuotaBytes).toBe(5120 * 1024 * 1024);
+    expect(loadConfig(env).familyQuotaBytes).toBe(102400 * 1024 * 1024);
     expect(loadConfig({ ...env, FAMILY_QUOTA_MB: '0' }).familyQuotaBytes).toBeNull();
     expect(loadConfig({ ...env, FAMILY_QUOTA_MB: '100' }).familyQuotaBytes).toBe(100 * 1024 * 1024);
   });
