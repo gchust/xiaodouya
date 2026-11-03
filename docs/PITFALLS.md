@@ -213,6 +213,8 @@
 - **上传中 `uiautomator dump` 要等很久。** 进度条一直在动，实测 32 秒，界面已经变了。手动走查时用截图加坐标点击。
 - **`uiautomator dump` 在界面一直有动画时会卡住。** 输入框光标闪烁、录音计时都会让它等不到空闲，`adb-ui.py` 看起来像挂了。这时用坐标点击和 `screencap`，或者先让输入框失去焦点。
 - **E2E 构建走不到系统选择器，但不用为此重新编译。** 没动原生代码时，用 `expo export:embed` 打一个不带 `EXPO_PUBLIC_E2E` 的 JS 包，`hermesc` 编译后替换 CI APK 里的 `assets/index.android.bundle`，再 `zipalign`、`apksigner` 重新签名，几分钟就能走查真实的系统界面。
+- **E2E 构建里同一个弹层点两次 `pick-media`，保存后只有一个文件。** 样例每次都写到同一个缓存路径，界面上有两个缩略图，保存时第一个把文件挪走，第二个就没了，时间线不显示 `共 2 项`（流程 14e 第一次在 CI 上这样失败）。要两个文件就先保存一个，再在修改里加一个，和流程 11a4 一样。
+- **模拟器上全屏查看的快速滑动可能翻不过去。** `adb shell input swipe` 300 ms 的一次没翻页，600 ms 的在图片上和图片下方的黑底上都翻了（只试了这几次，原因没查）。Maestro 流程里翻页写明 `start`、`end` 和 `duration: 800`，再等页码变化。
 - **测试整体没有输出时，先怀疑死循环。** 紧循环占满事件循环时，vitest 不会打印任何东西，只会超时。
 - **测事务模式连接池要加反向对照。** 本地用 PgBouncer（`pool_mode=transaction`、`max_prepared_statements=0`）跑全部测试，再打开 `DB_PREPARE` 跑一次，要看到 `prepared statement does not exist`，才说明这个环境真的能发现问题。
 - **底部标签页切走后不卸载，`useEffect` 只跑一次。** 家人页的用量因此一直是打开时的值，存储满了还写着“已用 0”。要在回到页面时刷新的数据用 `useFocusEffect`。
