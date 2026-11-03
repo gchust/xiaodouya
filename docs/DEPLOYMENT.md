@@ -118,6 +118,7 @@ supabase secrets set --env-file supabase/.env
 | `MAIL_PROVIDER` | 可选。`resend` 打开找回密码和邮箱验证；不设置就不发邮件，见[邮件和验证码](#邮件和验证码) |
 | `RESEND_API_KEY` | `MAIL_PROVIDER=resend` 时必填，Resend 控制台生成的 API Key |
 | `MAIL_FROM` | `MAIL_PROVIDER=resend` 时必填，比如 `小豆芽 <no-reply@baby.example.com>`，域名要先在 Resend 验证 |
+| `FEEDBACK_GITHUB_REPO`、`FEEDBACK_GITHUB_TOKEN` | 可选，两项一起设才打开反馈问题，见[用户反馈](#用户反馈) |
 
 函数上不能用 `MAIL_PROVIDER=log`，设了函数会启动失败：日志在云端，验证码不能进去。
 
@@ -632,6 +633,35 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 
 已经进入加密备份的数据要等备份过期才消失，公开的 CDN 域名也可能缓存文件一段时间。
 
+## 用户反馈
+
+App 的「家人 → 设置 → 反馈问题」：用户写文字、加最多 5 个照片或视频，服务端在配置的 GitHub 仓库建一个 issue。**不配置时什么都不影响：** 那一行写着“这台服务器暂不支持”，点进去是一句说明，接口返回 503 `feedback_disabled`。
+
+**隐私：** 仓库通常是公开的，而截图可能拍到别人家的孩子。
+
+- issue 里只有用户写的文字（整段放在代码块里，`@某人`、`#123`、图片和链接都不生效）、反馈 id、App 版本、系统和版本、语言、家庭的地区、附件的个数类型和大小。没有邮箱、账号、家庭、宝宝的信息，也没有附件的地址。标题是 `App 反馈 <id 前 8 位> · android 0.3.3`，不含用户的文字。
+- 附件只放平台存储（`S3_*`）的 `feedback/<反馈 id>/<附件 id>`，不进家庭自带的 Bucket，不算家庭配额（反馈是账号的事，没有家庭的人也能提），靠每人每天的条数和附件个数、大小兜底。服务器没有平台存储时只收文字。
+- 维护者用 `cli feedback <id>` 看附件（10 分钟的签名链接，不要贴进 issue）。反馈 id 和账号的对应在 `feedback.user_id`，只在数据库里。
+- 附件在 issue 建好后 `FEEDBACK_ATTACHMENT_DAYS` 天（默认 90）由 `cli maintenance` 删除；一天没提交的草稿连附件一起删；用户删除账号时反馈和附件立即删除，已经发到 GitHub 的文字留在那里（提交前 App 说明过会公开）。
+
+**开启步骤：**
+
+1. 在 GitHub 建 fine-grained personal access token（Settings → Developer settings → Fine-grained tokens）：Repository access 选 **Only select repositories**，只选反馈要去的这一个仓库；Repository permissions 只给 **Issues: Read and write**（Metadata: Read-only 会自动带上），其他都不给。有效期最长一年，到期前要换，换了要重新设置下面的 Secret。仓库是组织的话，组织可能要先批准这个令牌。
+2. 设置 `FEEDBACK_GITHUB_REPO=owner/name` 和 `FEEDBACK_GITHUB_TOKEN`（Supabase 用 `supabase secrets set`，Docker 写进 `deploy/.env`），重新部署。只设一项会拒绝启动。仓库是私有的，再设 `FEEDBACK_REPO_PUBLIC=false`，App 就不说“文字会公开”。
+3. 每天的维护任务（`maintenance.yml`）也设同样的两个 Secret，它才会补发排队的反馈；`FEEDBACK_ATTACHMENT_DAYS` 要和函数一样。
+4. 用 App 提交一条测试反馈，确认仓库里出现了 issue，再 `cli feedback` 看一眼状态是 `sent`。
+
+**GitHub 不可用时不丢：** 先存库，再建 issue。失败（GitHub 挂了、令牌失效、被限流、10 秒没响应）时状态是 `queued`，App 写“已收到，稍后会自动发出”；按 1 分钟起翻倍、最长约 17 小时退避重试，触发点是之后任何人提交反馈、每天的 `cli maintenance`。令牌失效时维护任务每天都会失败（退出码非 0），看 `cli feedback` 的最后一列。已知：GitHub 建好了 issue 但响应没回来（比如函数刚好被回收）时，重试会多建一个，正文里的反馈 id 一样。
+
+```bash
+pnpm --filter @xiaodouya/server cli feedback          # 最近 20 条：id、状态、时间、附件数、尝试次数、issue 地址或最后的错误
+pnpm --filter @xiaodouya/server cli feedback <反馈 id> # 文字、诊断信息、附件的 10 分钟签名链接
+```
+
+`cli feedback` 只要 `DATABASE_URL` 和 `S3_*`，不要 `APP_SECRET` 和 GitHub 的配置。日志和数据库里都没有令牌，失败原因只记状态码（`GitHub 返回 HTTP 401`）。
+
+**限流：** 每个账号每天 `RATE_FEEDBACK_PER_DAY`（默认 10）条，全站每小时 `RATE_FEEDBACK_GLOBAL_HOUR`（默认 200）条，重试同一条不算。文字最多 4000 字，附件最多 5 个，照片 20 MB、视频 100 MB（单个 PUT，不分片）。
+
 ## 分享页（Cloudflare Worker 静态资源）
 
 对方不用装 App 打开的网页。**没有配置时什么都不影响：** App 没有 `EXPO_PUBLIC_SHARE_BASE_URL` 就不显示入口，发布流程没有 `SHARE_PAGE_ENABLED=true` 就什么都不做。
@@ -719,6 +749,13 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `MAIL_PROVIDER`                   | 否   | 不发邮件                                 | `resend`、`none` 或 `log`。`log` 把验证码打到终端，只能本地开发用，`NODE_ENV=production`（镜像里已设置）和 Edge Function 上会拒绝启动。拼错也拒绝启动 |
 | `RESEND_API_KEY`                  | resend 时必填 | —                               | Resend 的 API Key。是密钥，不要提交                                                                       |
 | `MAIL_FROM`                       | resend 时必填 | —                               | 发件人，比如 `小豆芽 <no-reply@baby.example.com>`，域名要先在 Resend 验证                                  |
+| `FEEDBACK_GITHUB_REPO`            | 否   | 不开反馈                                 | 反馈建 issue 的仓库，`owner/name`。和下一项一起设，只设一项拒绝启动，见[用户反馈](#用户反馈)             |
+| `FEEDBACK_GITHUB_TOKEN`           | 和上一项一起 | —                                | fine-grained token，只选这一个仓库，只给 Issues 读写。是密钥，不要提交，永远不下发给 App                 |
+| `FEEDBACK_REPO_PUBLIC`            | 否   | `true`                                   | 仓库是私有的才设 `false`。App 据此决定要不要提醒“文字会公开”                                             |
+| `FEEDBACK_ATTACHMENT_DAYS`        | 否   | `90`                                     | 反馈附件在 issue 建好后保留几天，`0` 一直保留。**函数和定时任务要设成一样**                               |
+| `RATE_FEEDBACK_PER_DAY`           | 否   | `10`                                     | 每个账号每天几条反馈，`0` 不限。重试同一条不算                                                           |
+| `RATE_FEEDBACK_GLOBAL_HOUR`       | 否   | `200`                                    | 全站每小时几条反馈，`0` 不限。令牌是部署者的，被刷爆了所有人都发不出去                                   |
+| `FEEDBACK_GITHUB_API_URL`         | 否   | `https://api.github.com`                 | 只给测试和 E2E 连假的 GitHub 用，线上不要设                                                              |
 | `DB_POOL_MAX`                     | 否   | `10`（Edge Function 是 `1`）             | 数据库连接池大小                                                                                          |
 | `DB_PREPARE`                      | 否   | `true`（Edge Function 是 `false`）       | 是否用命名预处理语句。事务模式的连接池不支持，必须是 `false`                                              |
 | `DB_SSL`                          | 否   | 不设置（Edge Function 是 `require`）     | `require` 或 `verify-full`。不设置时遵守连接串里的 `sslmode`                                              |
