@@ -4,7 +4,7 @@ import { AppState } from 'react-native';
 import { UpdateSheet } from '../sheets/updateSheet';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { useApp } from './app';
-import { getUpdateController } from './appUpdateRuntime';
+import { getUpdateController, removeInstalledApks } from './appUpdateRuntime';
 import { IS_E2E } from './config';
 
 /**
@@ -19,6 +19,8 @@ export function UpdateWatcher() {
   const { toast } = useFeedback();
   const updates = getUpdateController(app.api, app.db);
   const ready = app.sessionState === 'ready';
+
+  useEffect(removeInstalledApks, []);
 
   useEffect(() => {
     if (!updates || !ready || IS_E2E) return;

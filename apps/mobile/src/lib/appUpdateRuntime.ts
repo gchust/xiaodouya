@@ -61,12 +61,13 @@ export function getUpdateController(api: Api, db: SqliteDb): UpdateController | 
     setMeta: (key, value) => db.setMeta(key, value),
     now: () => Date.now(),
   });
-  removeInstalledApks(native.currentVersion().code);
   return controller;
 }
 
-/** 已经装上的（和更旧的）安装包没用了，几十 MB，不留着。 */
-function removeInstalledApks(currentCode: number): void {
+/** 已经装上的（和更旧的）安装包没用了，几十 MB，不留着。启动时调一次，不放在渲染里。 */
+export function removeInstalledApks(): void {
+  const currentCode = AppUpdateNative?.currentVersion().code;
+  if (!SELF_UPDATE_ENABLED || !currentCode) return;
   try {
     const dir = updatesDir();
     if (!dir.exists) return;

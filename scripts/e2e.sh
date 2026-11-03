@@ -13,6 +13,8 @@ cd "$ROOT"
 exec 9>"${TMPDIR:-/tmp}/xiaodouya-emulator.lock"
 flock 9
 
+export APP_RELEASE_PREFIX="${APP_RELEASE_PREFIX:-releases-e2e/android/}"
+
 APK="$ROOT/.artifacts/xiaodouya-e2e.apk"
 [ -f "$APK" ] || { echo "找不到 $APK，先运行 pnpm android:build e2e" >&2; exit 1; }
 
@@ -51,7 +53,8 @@ else
   curl -fs http://localhost:8787/healthz >/dev/null || { echo "服务端没有启动" >&2; exit 1; }
 fi
 
-# 流程 23（应用内更新）要存储里有一个新版本。
+# 流程 23（应用内更新）要存储里有一个新版本。开发存储是大家共用的，假版本放在单独的前缀下，
+# 不挡住手动发布到默认前缀的版本。上面启动的服务端继承了这个变量；8787 上已有的服务端读不到它，流程 23 会失败。
 bash e2e/helpers/fake-release.sh 9>&-
 
 # 系统桌面偶尔会卡住并弹窗挡住 App，全程在后台清掉。

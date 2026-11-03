@@ -72,6 +72,8 @@ function publish(
       S3_ACCESS_KEY_ID: s.accessKeyId,
       S3_SECRET_ACCESS_KEY: s.secretAccessKey,
       APP_RELEASE_PREFIX: prefix,
+      // 随机字节不是 APK，读不出版本号。核对本身在下面单独测。
+      RELEASE_APK_CHECK: '0',
       ...extra,
     },
   });
@@ -211,6 +213,18 @@ describe('检查更新', () => {
 });
 
 describe('发布脚本', () => {
+  it('默认核对 APK 里的版本号：读不出来（不是 APK，或者没有 aapt2）就失败，不发布', async () => {
+    const { prefix, app } = fixture();
+    const failed = await publish(prefix, fakeApk(1000).path, '0.4.0', 120, {
+      RELEASE_APK_CHECK: undefined,
+      ANDROID_HOME: process.env.ANDROID_HOME,
+    }).catch((error: { code: number; stderr: string }) => error);
+    expect(failed).toMatchObject({ code: 1 });
+    expect((failed as { stderr: string }).stderr).toMatch(/aapt2|不是一个有效的 APK/);
+    const user = await newUser(app);
+    expect((await check(app, user.token, 1)).json).toEqual({ update: null });
+  });
+
   it('缺少存储的 Secret 时直接失败，什么都不写', async () => {
     const { prefix, app } = fixture();
     const failed = await publish(prefix, fakeApk(1000).path, '0.4.0', 120, {

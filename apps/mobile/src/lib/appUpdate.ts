@@ -226,13 +226,22 @@ export class UpdateController {
     this.abort?.abort();
   }
 
+  /**
+   * 安装界面开着时 install 一直不返回（用户取消后才返回，装上了进程就被换掉）。
+   * 这期间再点一次不能再开一个：expo-intent-launcher 会报“已经开着”，不能当成打不开。
+   */
+  private installing = false;
+
   async install(): Promise<void> {
     const current = this.state;
-    if (current.kind !== 'ready') return;
+    if (current.kind !== 'ready' || this.installing) return;
+    this.installing = true;
     try {
       await this.deps.install(current.file);
     } catch {
       this.set({ kind: 'failed', reason: 'install', update: current.update });
+    } finally {
+      this.installing = false;
     }
   }
 }

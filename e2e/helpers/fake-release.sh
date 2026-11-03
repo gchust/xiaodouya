@@ -22,8 +22,8 @@ trap 'rm -rf "$WORK"' EXIT
 head -c 2000000 /dev/urandom > "$WORK/release.apk"
 head -c 2000000 /dev/urandom > "$WORK/tampered.apk"
 
-# versionCode 用到 Android 允许的上限附近，本机已经手动发布过的版本也不会挡住它（发布脚本不覆盖更新的版本）。
-bash scripts/publish-apk.sh "$WORK/release.apk" 99.0.0-e2e 2000000000 >/dev/null
+# 不是真的 APK，跳过版本号核对。versionCode 用到 Android 允许的上限附近，本机已经手动发布过的版本也不会挡住它（发布脚本不覆盖更新的版本）。
+RELEASE_APK_CHECK=0 bash scripts/publish-apk.sh "$WORK/release.apk" 99.0.0-e2e 2000000000 >/dev/null
 
 printf 'user = "%s:%s"\n' "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" |
   curl --config - --fail --silent --show-error \

@@ -277,6 +277,30 @@ describe('下载和校验', () => {
     expect(h.controller.getState().kind).toBe('upToDate');
   });
 
+  it('安装界面开着时再点安装不会再开一个，也不算失败', async () => {
+    const h = harness();
+    let close: () => void = () => {};
+    const opened: string[] = [];
+    const controller = new UpdateController({
+      ...h.controller.deps,
+      install: (file) =>
+        new Promise<void>((resolve, reject) => {
+          if (opened.length > 0) reject(new Error('ActivityAlreadyStartedException'));
+          opened.push(file);
+          close = resolve;
+        }),
+    });
+    await controller.check();
+    await controller.download();
+    const first = controller.install();
+    await controller.install();
+    expect(opened).toHaveLength(1);
+    expect(controller.getState().kind).toBe('ready');
+    close();
+    await first;
+    expect(controller.getState().kind).toBe('ready');
+  });
+
   it('安装界面打不开时说清楚，可以再试', async () => {
     const h = harness();
     await h.controller.check();

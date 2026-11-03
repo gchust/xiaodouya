@@ -452,6 +452,7 @@ async function appUpdate(base: string, token: string) {
           S3_ACCESS_KEY_ID: functionEnv.S3_ACCESS_KEY_ID,
           S3_SECRET_ACCESS_KEY: functionEnv.S3_SECRET_ACCESS_KEY,
           APP_RELEASE_PREFIX: functionEnv.APP_RELEASE_PREFIX,
+          RELEASE_APK_CHECK: '0',
         },
       },
     );

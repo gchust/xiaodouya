@@ -9,6 +9,7 @@
 #   APP_RELEASE_PREFIX            默认 releases/android/，要和服务端的同名变量一样
 #   RELEASE_MIN_SUPPORTED_CODE    可选，低于这个 versionCode 的 App 会被要求更新
 #   RELEASE_NOTES_ZH RELEASE_NOTES_EN  可选，发布说明
+#   ANDROID_HOME                  用里面的 aapt2 核对 APK 的版本号，默认 ~/Android/Sdk
 #
 # 顺序不能反：先传 APK，下载回来核对 sha256，最后才写清单。清单写好之前 App 看到的还是上一版，
 # 不会拿到一个还没传完的 APK。不会覆盖成更低的 versionCode：Android 不允许降级安装。
@@ -48,6 +49,20 @@ MIN_CODE="${RELEASE_MIN_SUPPORTED_CODE:-}"
 sha256_of() {
   if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
 }
+
+# 清单里的版本号必须就是 APK 里的：versionCode 对不上的话，装完新版本 App 还会一直提示更新，或者永远看不到更新。
+# 找不到 aapt2 时失败，不悄悄跳过。RELEASE_APK_CHECK=0 只给用假 APK 的测试用。
+if [ "${RELEASE_APK_CHECK:-1}" != 0 ]; then
+  AAPT2="$(ls "${ANDROID_HOME:-$HOME/Android/Sdk}"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -n 1 || true)"
+  [ -n "$AAPT2" ] && [ -x "$AAPT2" ] \
+    || die "找不到 aapt2（Android SDK 的 build-tools），核对不了 APK 里的版本号。请设置 ANDROID_HOME"
+  badging="$("$AAPT2" dump badging "$APK" 2>/dev/null)" || die "读不出 APK 的版本号，这不是一个有效的 APK：$APK"
+  badging="${badging%%$'\n'*}"
+  [[ "$badging" =~ versionCode=\'([0-9]+)\'\ versionName=\'([^\']*)\' ]] \
+    || die "读不出 APK 的版本号：$APK"
+  [ "${BASH_REMATCH[1]}" = "$CODE" ] || die "APK 里的 versionCode 是 ${BASH_REMATCH[1]}，不是 $CODE"
+  [ "${BASH_REMATCH[2]}" = "$NAME" ] || die "APK 里的 versionName 是 ${BASH_REMATCH[2]}，不是 $NAME"
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
