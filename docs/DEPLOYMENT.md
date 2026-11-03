@@ -588,7 +588,9 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 
 对方不用装 App 打开的网页。**没有配置时什么都不影响：** App 没有 `EXPO_PUBLIC_SHARE_BASE_URL` 就不显示入口，发布流程没有 `SHARE_PAGE_ENABLED=true` 就什么都不做。
 
-Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），不跑代码、不代理 API，也收不到令牌：令牌在 URL 片段里，浏览器不会发给托管网页的服务器。响应头（`X-Robots-Tag`、`Referrer-Policy`、CSP 等）在构建时生成的 `dist/_headers` 里，页面的 meta 标签是兜底。**这些都只在 `wrangler dev` 上看过响应头，没有发布到真实的 Cloudflare 账号过。**
+Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），不跑代码、不代理 API，也收不到令牌：令牌在 URL 片段里，浏览器不会发给托管网页的服务器。响应头（`X-Robots-Tag`、`Referrer-Policy`、CSP 等）在构建时生成的 `dist/_headers` 里，页面的 meta 标签是兜底。**2026-11-03 已部署到 [Cloudflare Worker](https://xiaodouya-share.nfvd.workers.dev/)**，线上首页返回 200，CSP、`Referrer-Policy`、`X-Robots-Tag` 响应头已核对。无令牌时，真实浏览器显示“这个链接已失效或已撤销”。
+
+当前项目的 GitHub Actions 已设置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`SHARE_PAGE_ENABLED=true` 和 `EXPO_PUBLIC_SHARE_BASE_URL=https://xiaodouya-share.nfvd.workers.dev`。手动运行的[分享页发布流程](https://github.com/gchust/xiaodouya/actions/runs/41582161693)已通过；以后 `apps/share-web/**` 变化会自动发布。后端仍在 Supabase 新加坡项目，网页通过 HTTPS 调用它。真实 Supabase 网关从该网页 Origin 发出的 OPTIONS 预检已返回 204，并允许 `content-type,x-region`。
 
 ### 发布顺序
 
@@ -626,8 +628,8 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 
 ### 还没有验证的
 
-- 真实的 Cloudflare 发布、`_headers` 线上是否生效、自定义域名。本地只跑过 `wrangler dev` 和 `wrangler deploy --dry-run`。
-- 真实 Supabase 网关上的 OPTIONS 预检和 `x-region` 头：`pnpm test:edge` 跑的是 Deno，没有经过网关。上线后用浏览器打开一个真实链接，看开发者工具里有没有跨域错误。
+- 自定义域名没有配置；当前使用 `workers.dev` 地址。
+- 已验证真实 Supabase 网关的 OPTIONS 预检，但还没有用有效分享令牌在真实浏览器里走完整链路；`x-region` 对公开接口的实际执行区域、R2 签名文件加载也待核对。注册并创建家庭后，用 App 创建一个真实链接再检查。
 - **中国大陆能否打开没有验证**，`workers.dev`、自定义域名、Supabase、R2 哪一段都可能不通。
 - `x-forwarded-for` 在 Supabase 上是不是客户端地址（F-97）。不是的话按来源的限流不生效，按令牌的还在。
 

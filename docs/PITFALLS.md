@@ -170,6 +170,7 @@
 
 ## CI
 
+- **Wrangler 的本机 OAuth 能发布 Worker，不代表能创建 CI 用的长期令牌。** 这次本机凭 OAuth 成功发布 `xiaodouya-share`，但管理 Cloudflare API Token 的调用返回 403；需要在控制台创建限定到当前账号的 `Edit Cloudflare Workers` 令牌，并存入 GitHub Actions Secret。账号级令牌对 `/user/tokens/verify` 返回 401，不能用这个端点判断令牌失效；用目标账号的 Workers API 或带令牌的 `wrangler deployments list` 验证，再跑一次真实 CI 发布。
 - **CI 模拟器的系统桌面可能卡住，弹“isn't responding”挡住 App。** 现象是流程 01 失败、截图里 App 其实已经渲染。Pixel Launcher 和 AOSP 的 Quickstep 都发生过，换镜像解决不了。`scripts/dismiss-anr.sh` 全程在后台清掉系统组件的 ANR；卡住的是我们自己的 App 时不处理，让测试失败。验证方法：`adb root` 后 `kill -STOP` 桌面进程，再点屏幕。
 - **`upload-artifact` 默认跳过隐藏目录。** 上传 `.artifacts` 要加 `include-hidden-files: true`，否则失败时什么现场都没有。
 - **`setup-android` 默认安装已不存在的 `tools` 包。** 要写 `packages: platform-tools`。
