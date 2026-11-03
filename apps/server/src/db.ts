@@ -250,12 +250,13 @@ export const migrations: readonly string[] = [
     issue_number INT,
     issue_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     submitted_at TIMESTAMPTZ,
     sent_at TIMESTAMPTZ
   );
   CREATE INDEX feedback_user ON feedback(user_id, created_at);
   CREATE INDEX feedback_due ON feedback(next_attempt_at) WHERE status = 'queued';
-  CREATE INDEX feedback_drafts ON feedback(created_at) WHERE status = 'draft';
+  CREATE INDEX feedback_drafts ON feedback(updated_at) WHERE status = 'draft';
   CREATE TABLE feedback_attachments (
     id UUID PRIMARY KEY,
     feedback_id UUID NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,

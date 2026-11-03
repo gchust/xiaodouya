@@ -67,7 +67,8 @@ const EnvSchema = DbEnvSchema.extend({
   MAIL_FROM: optionalText,
   FEEDBACK_GITHUB_REPO: optionalText,
   FEEDBACK_GITHUB_TOKEN: optionalText,
-  FEEDBACK_GITHUB_API_URL: z.url().default('https://api.github.com'),
+  // 只给测试和 E2E 连假的 GitHub 用。空字符串当作没设：Supabase 上设成空的 Secret 就是空字符串。
+  FEEDBACK_GITHUB_API_URL: optionalText.pipe(z.url().optional()),
   FEEDBACK_GITHUB_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   // 不确定时按公开提醒用户：说成公开而其实是私有，只是多提醒了一句；反过来就是泄露。
   FEEDBACK_REPO_PUBLIC: bool(true),
@@ -183,7 +184,7 @@ function toFeedbackConfig(e: z.infer<typeof EnvSchema>): Config['feedback'] {
   return {
     repo,
     token,
-    apiUrl: e.FEEDBACK_GITHUB_API_URL.replace(/\/$/, ''),
+    apiUrl: (e.FEEDBACK_GITHUB_API_URL ?? 'https://api.github.com').replace(/\/$/, ''),
     timeoutMs: e.FEEDBACK_GITHUB_TIMEOUT_MS,
     public: e.FEEDBACK_REPO_PUBLIC,
     perUserDay: e.RATE_FEEDBACK_PER_DAY,

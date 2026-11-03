@@ -992,7 +992,7 @@ export function createApp({
       const [row] = await tx<{ inserted: boolean }[]>`
         INSERT INTO feedback (id, user_id, text, diagnostics)
         VALUES (${body.id}, ${user.id}, ${text}, ${tx.json(body.diagnostics)})
-        ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, diagnostics = EXCLUDED.diagnostics
+        ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, diagnostics = EXCLUDED.diagnostics, updated_at = now()
           WHERE feedback.user_id = EXCLUDED.user_id AND feedback.status = 'draft'
         RETURNING (xmax = 0) AS inserted`;
       // 同时有别的请求把它提交了，或者 id 被别人抢先用了。
@@ -1015,6 +1015,12 @@ export function createApp({
           RETURNING status`;
         if (!att) fail(409, 'already_uploaded', '文件已经上传过了');
         if (att.status === 'pending') pending.push(a);
+      }
+      // 同一个 key 以前可能进过待删除队列（草稿被清理后又用同一个 id 回来）。没传完的对象在队列里
+      // 还有一条一小时后才删的，不撤掉的话会把这次新传的删掉。key 由这个人的反馈 id 拼成，碰不到别人的。
+      if (ids.length > 0) {
+        await tx`DELETE FROM pending_object_deletions WHERE storage IS NULL
+                 AND object_key = ANY(${ids.map((a) => feedbackObjectKey(body.id, a))})`;
       }
       return { inserted: row.inserted, pending };
     });

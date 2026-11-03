@@ -47,6 +47,10 @@ appId: com.gchust.xiaodouya
       ACTION: check
       RUN_ID: ${RUN_ID}
       EMAIL: admin-${RUN_ID}@example.test
+# Toast 在 E2E 构建里停 8 秒，正好盖在底部的发送按钮上，等它走了再点。
+- extendedWaitUntil:
+    notVisible: 已发送，谢谢你的反馈
+    timeout: 15000
 # GitHub 失败：服务端先存下，稍后自己重试。
 - runScript:
     file: ../helpers/feedback-github.js

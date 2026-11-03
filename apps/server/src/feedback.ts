@@ -203,7 +203,7 @@ export async function cleanupFeedback(
   const draftsRemoved = await sql.begin(async (tx) => {
     const drafts = await tx<{ id: string }[]>`
       SELECT id FROM feedback
-      WHERE status = 'draft' AND created_at < now() - interval '1 hour' * ${DRAFT_HOURS}
+      WHERE status = 'draft' AND updated_at < now() - interval '1 hour' * ${DRAFT_HOURS}
       FOR UPDATE SKIP LOCKED`;
     if (drafts.length === 0) return 0;
     const ids = drafts.map((d) => d.id);

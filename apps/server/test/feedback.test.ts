@@ -10,6 +10,7 @@ import { createApp } from '../src/app';
 import { type Config, loadConfig } from '../src/config';
 import { feedbackDetails } from '../src/feedback';
 import { runMaintenance } from '../src/maintenance';
+import { processPendingDeletions } from '../src/objectDeletions';
 import { headObject, type ResolvedStorage, storageById } from '../src/storage';
 import { type FakeGithub, startFakeGithub } from './fake-github';
 import {
@@ -538,11 +539,47 @@ describe('维护者查看和清理', () => {
     });
     await put(created.json.uploads[0]!);
     const [key] = await attachmentKeys(id);
-    await db.sql`UPDATE feedback SET created_at = now() - interval '25 hours' WHERE id = ${id}`;
+    await db.sql`UPDATE feedback SET updated_at = now() - interval '25 hours' WHERE id = ${id}`;
     const report = await runMaintenance(db.sql, config);
     expect(report.feedbackDraftsRemoved).toBe(1);
     expect(await headObject(storage, key!)).toBeNull();
     expect((await list(user.token)).json.items).toEqual([]);
+  });
+
+  it('一直在改的草稿不算放弃：按最后一次修改算一天', async () => {
+    const user = await newUser(app);
+    const id = randomUUID();
+    await create(user.token, { id });
+    await db.sql`UPDATE feedback SET created_at = now() - interval '3 days',
+                 updated_at = now() - interval '3 days' WHERE id = ${id}`;
+    await create(user.token, { id, text: '昨天写到一半，今天接着写' });
+    const report = await runMaintenance(db.sql, config);
+    expect(report.feedbackDraftsRemoved).toBe(0);
+    expect((await submit(user.token, id)).json.status).toBe('sent');
+  });
+
+  it('草稿被清掉后用同一个 id 回来重传，队列里延后的那次删除不会删掉新传的附件', async () => {
+    const user = await newUser(app);
+    const id = randomUUID();
+    const file = { id: randomUUID(), mime: 'image/jpeg', size: IMAGE.length };
+    // 附件还没传完（pending）时草稿被清掉：队列里有一条现在删、一条一小时后再删。
+    await create(user.token, { id, attachments: [file] });
+    await db.sql`UPDATE feedback SET updated_at = now() - interval '25 hours' WHERE id = ${id}`;
+    expect((await runMaintenance(db.sql, config)).feedbackDraftsRemoved).toBe(1);
+    const key = `feedback/${id}/${file.id}`;
+    const queued = await db.sql`SELECT 1 FROM pending_object_deletions WHERE object_key = ${key}`;
+    expect(queued.length).toBeGreaterThan(0);
+
+    // 手机上的草稿还在，过一会儿用同一个 id 重新发。
+    const again = await create(user.token, { id, attachments: [file] });
+    expect(again.status).toBe(201);
+    await put(again.json.uploads[0]!);
+    expect((await submit(user.token, id)).json.status).toBe('sent');
+
+    // 延后的那次删除到期了。
+    await db.sql`UPDATE pending_object_deletions SET next_attempt_at = now()`;
+    await processPendingDeletions(db.sql, config);
+    expect((await headObject(storage, key))?.size).toBe(IMAGE.length);
   });
 
   it('issue 建好后过了保留期，附件删掉，反馈还在', async () => {
