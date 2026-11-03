@@ -16,7 +16,7 @@ import {
 } from '@xiaodouya/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import { currentAppVersion, getUpdateController, useUpdatePhase } from '../lib/appUpdateRuntime';
@@ -250,6 +250,14 @@ export function FamilyScreen() {
               sub={t().family.docLockSub}
               value={prefs.documentLock}
               onChange={(v) => void app.updatePrefs({ documentLock: v })}
+            />
+          ) : null}
+          {canRecord && Platform.OS === 'android' ? (
+            <NavRow
+              testID="open-widgets"
+              label={t().widgetUi.galleryRow}
+              sub={t().widgetUi.galleryRowSub}
+              onPress={() => router.push('/widgets')}
             />
           ) : null}
           <NavRow
