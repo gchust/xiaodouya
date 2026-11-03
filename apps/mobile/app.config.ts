@@ -22,6 +22,8 @@ const ANDROID_DEFAULT_STRINGS: Record<string, string> = {
   widget_feed_label: 'Log feed',
   widget_sleep_label: 'Sleep',
   widget_summary_label: 'Today',
+  widget_diaper_label: 'Diapers',
+  widget_quick_label: 'Quick log',
 };
 
 const withEnglishAndroidDefaults = (expo: ExpoConfig): ExpoConfig =>
@@ -53,7 +55,11 @@ const zhStrings = {
     widget_sleep_label: '睡眠',
     widget_sleepwidget_description: '看宝宝是不是在睡，点一下开始或结束睡眠',
     widget_summary_label: '今日汇总',
-    widget_summarywidget_description: '今天喂奶、尿布和睡眠的合计',
+    widget_summarywidget_description: '一天的节奏，喂奶、尿布、睡眠合计',
+    widget_diaper_label: '尿布',
+    widget_diaperwidget_description: '尿尿、便便、都有，点一下就记',
+    widget_quick_label: '快捷记录',
+    widget_quickwidget_description: '喂奶、尿布、睡眠都在一排，各点一下',
   },
 };
 
@@ -194,8 +200,34 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
           {
             name: 'SummaryWidget',
             label: '@string/widget_summary_label',
-            description: "Today's total feeds, diapers and sleep",
+            description: "The day's rhythm and totals",
             previewImage: './assets/widgets/summary-preview.png',
+            minWidth: '250dp',
+            minHeight: '110dp',
+            targetCellWidth: 4,
+            targetCellHeight: 2,
+            resizeMode: 'horizontal|vertical',
+            updatePeriodMillis: 1_800_000,
+            widgetCategory: WIDGET_CATEGORY,
+          },
+          {
+            name: 'DiaperWidget',
+            label: '@string/widget_diaper_label',
+            description: 'Wet, dirty or both, one tap each',
+            previewImage: './assets/widgets/diaper-preview.png',
+            minWidth: '110dp',
+            minHeight: '110dp',
+            targetCellWidth: 2,
+            targetCellHeight: 2,
+            resizeMode: 'horizontal|vertical',
+            updatePeriodMillis: 1_800_000,
+            widgetCategory: WIDGET_CATEGORY,
+          },
+          {
+            name: 'QuickWidget',
+            label: '@string/widget_quick_label',
+            description: 'Feeds, diapers and sleep in one row',
+            previewImage: './assets/widgets/quick-preview.png',
             minWidth: '250dp',
             minHeight: '110dp',
             targetCellWidth: 4,
