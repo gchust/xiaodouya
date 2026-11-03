@@ -189,7 +189,7 @@ jobs:
           compression-level: 0
 
   e2e:
-    name: 端到端 ${{ matrix.group }}
+    name: 端到端 ${{ matrix.group }} ${{ matrix.arm }} ${{ matrix.rep }}
     needs: [changes, apk]
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
@@ -200,8 +200,12 @@ jobs:
       fail-fast: false
       matrix:
         group: ${{ fromJSON(needs.changes.outputs.groups) }}
+        arm: [baseline, noreinstall, single]
+        rep: [1, 2]
     env:
       E2E_GROUP: ${{ matrix.group }}
+      E2E_MAESTRO_MODE: ${{ matrix.arm == 'single' && 'single' || 'per-flow' }}
+      E2E_MAESTRO_ARGS: ${{ matrix.arm == 'noreinstall' && '--no-reinstall-driver' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -264,7 +268,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-screenshots-${{ matrix.group }}
+          name: e2e-screenshots-${{ matrix.group }}-${{ matrix.arm }}-${{ matrix.rep }}
           path: |
             .artifacts/*.png
             .artifacts/maestro
@@ -282,7 +286,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-stats-${{ matrix.group }}
+          name: e2e-stats-${{ matrix.group }}-${{ matrix.arm }}-${{ matrix.rep }}
           path: |
             .artifacts/e2e-env-reruns.log
             .artifacts/adb-track.log
