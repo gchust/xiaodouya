@@ -1,8 +1,12 @@
 import type {
   AuthResponse,
+  CreateFeedbackRequest,
+  CreateFeedbackResponse,
   CreateShareRequest,
   CreateShareResponse,
   FamilyExport,
+  FeedbackListResponse,
+  FeedbackStatus,
   MediaUrlsResponse,
   MediaVariant,
   MeResponse,
@@ -244,6 +248,19 @@ export class Api {
   }
   publicConfig() {
     return this.request<PublicConfig>('GET', '/v1/config');
+  }
+  createFeedback(body: CreateFeedbackRequest) {
+    return this.request<CreateFeedbackResponse>('POST', '/v1/feedback', body);
+  }
+  submitFeedback(id: string) {
+    return this.request<{ id: string; status: FeedbackStatus }>(
+      'POST',
+      `/v1/feedback/${id}/submit`,
+      {},
+    );
+  }
+  listFeedback() {
+    return this.request<FeedbackListResponse>('GET', '/v1/feedback');
   }
   /**
    * 连不上时抛错，不猜：猜“允许”会给普通用户看 S3 表单，猜“不允许”会让自建的管理员改不了配置。

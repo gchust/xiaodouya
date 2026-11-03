@@ -15,7 +15,7 @@ import {
   weightUnits,
 } from '@xiaodouya/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
@@ -81,6 +81,15 @@ export function FamilyScreen() {
       setStorageSummary(t().family.cantRead);
     }
   }, [app.api, isAdmin, showStorage]);
+
+  // 问不到（离线）时是 null，按可用显示：反馈页可以先写，草稿会留着。
+  const [feedbackOn, setFeedbackOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    app.api
+      .publicConfig()
+      .then((config) => setFeedbackOn(config.feedback?.enabled === true))
+      .catch(() => setFeedbackOn(null));
+  }, [app.api]);
 
   // 底部标签切走后页面不会卸载，只读一次的话，传完文件回来用量还是旧的。
   useFocusEffect(
@@ -303,6 +312,13 @@ export function FamilyScreen() {
               onPress={() => sheet.open(t().update.title, () => <UpdateSheet />)}
             />
           ) : null}
+          {/* 没开反馈的服务器也显示这一行，写明暂不可用：藏起来的话用户会以为 App 没有这个功能。 */}
+          <NavRow
+            testID="open-feedback"
+            label={t().feedback.row}
+            sub={feedbackOn === false ? t().feedback.rowUnavailable : t().feedback.rowSub}
+            onPress={() => router.push('/feedback')}
+          />
           <NavRow
             testID="sign-out"
             label={t().auth.signOut}
