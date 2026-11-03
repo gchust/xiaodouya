@@ -29,21 +29,36 @@ LAST_ENV_FLOW=""
 LAST_ENV_REASON=""
 
 SERVER_PID=""
+GITHUB_PID=""
 ANR_PID=""
 MONITOR_PID=""
 cleanup() {
   # 负号是杀整个进程组：npx 下面还有 node，只杀 npx 的话服务端会留下来。
   [ -n "$SERVER_PID" ] && kill -- "-$SERVER_PID" 2>/dev/null || true
+  [ -n "$GITHUB_PID" ] && kill -- "-$GITHUB_PID" 2>/dev/null || true
   [ -n "$ANR_PID" ] && kill "$ANR_PID" 2>/dev/null || true
   [ -n "$MONITOR_PID" ] && kill -- "-$MONITOR_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 
+# 反馈（流程 24）连假的 GitHub，绝不连真实的。端口写死在 e2e/helpers/feedback-github.js 里。
+FAKE_GITHUB_PORT=8790
+if ! curl -fs "http://localhost:$FAKE_GITHUB_PORT/__issues" >/dev/null 2>&1; then
+  setsid bash -c "cd apps/server && exec npx tsx test/fake-github.ts $FAKE_GITHUB_PORT fictional-e2e-token" \
+    > "$ART/fake-github.log" 2>&1 9>&- &
+  GITHUB_PID=$!
+fi
+
 if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
   echo "警告：8787 端口已有服务端在运行，将直接使用它。它可能是别的分支的代码。" >&2
+  echo "警告：它没有连假的 GitHub 的话，流程 24（反馈）会失败。" >&2
 else
   # 后台进程不能带着锁（9>&-）：否则这次跑完锁还在，下一次调用会一直排队。
-  setsid bash -c 'cd apps/server && exec npx tsx --env-file-if-exists=.env src/index.ts' \
+  # 进程环境优先于 .env，所以这几项不用写进 .env.example。
+  FEEDBACK_GITHUB_REPO=fictional-owner/fictional-repo \
+    FEEDBACK_GITHUB_TOKEN=fictional-e2e-token \
+    FEEDBACK_GITHUB_API_URL="http://localhost:$FAKE_GITHUB_PORT" \
+    setsid bash -c 'cd apps/server && exec npx tsx --env-file-if-exists=.env src/index.ts' \
     > "$ART/server.log" 2>&1 9>&- &
   SERVER_PID=$!
   for _ in $(seq 1 60); do
@@ -52,6 +67,11 @@ else
   done
   curl -fs http://localhost:8787/healthz >/dev/null || { echo "服务端没有启动" >&2; exit 1; }
 fi
+for _ in $(seq 1 30); do
+  curl -fs "http://localhost:$FAKE_GITHUB_PORT/__issues" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fs "http://localhost:$FAKE_GITHUB_PORT/__issues" >/dev/null || { echo "假的 GitHub 没有启动" >&2; exit 1; }
 
 # 流程 23（应用内更新）要存储里有一个新版本。开发存储是大家共用的，假版本放在单独的前缀下，
 # 不挡住手动发布到默认前缀的版本。上面启动的服务端继承了这个变量；8787 上已有的服务端读不到它，流程 23 会失败。
