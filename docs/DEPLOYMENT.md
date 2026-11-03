@@ -271,8 +271,18 @@ S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCE
 **给单个家庭调配额**（默认值见下面的参数表）：
 
 ```sql
-UPDATE families SET quota_mb = 20480 WHERE id = '<家庭 id>';  -- 20 GB；0 表示不限；NULL 恢复默认
+UPDATE families SET quota_mb = 204800 WHERE id = '<家庭 id>';  -- 200 GB；0 表示不限；NULL 恢复默认
 ```
+
+单家设置了 `quota_mb` 时优先于默认值，改默认值不影响这些家庭。
+
+**调所有家庭的默认配额：** 线上的值是 Supabase 的 Secret，不是代码里的默认值。按 `supabase/.env.example` 设置过的项目写死了当时的数字，改代码不会生效，要单独设置：
+
+```bash
+supabase secrets set FAMILY_QUOTA_MB=102400 --project-ref <项目 ID>   # 100 GB
+```
+
+设置后在家人页确认显示“共 100.0 GB”。
 
 **升级到带配额的版本（已上线的项目，只需要做一次）：** v0.1.0 的 APK 不用更新也能继续用：空间满时它显示服务端的那句话，有重试按钮。S3 表单还在它的界面上，保存时显示“这台服务器不允许自定义存储”。
 
@@ -652,7 +662,7 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `MAX_UPLOAD_MB`                   | 否   | `4096`                                   | 单个文件的总上限。R2 和 S3 单次上传上限都是 5 GB，不要超过                                                |
 | `MAX_IMAGE_MB`、`MAX_AUDIO_MB`、`MAX_DOCUMENT_MB` | 否 | `50`、`200`、`50`                   | 各类文件的上限，同时受 `MAX_UPLOAD_MB` 限制。证件不管是照片还是 PDF 都算证件                              |
 | `MAX_VIDEO_MB`                    | 否   | `1024`（Compose 是 `4096`）              | 视频的上限                                                                                                |
-| `FAMILY_QUOTA_MB`                 | 否   | `5120`（Compose 是 `0`）                 | 每个家庭在默认存储上的配额，`0` 不限。依据见 [CAPACITY.md](CAPACITY.md)。单个家庭可以单独设置，见上文     |
+| `FAMILY_QUOTA_MB`                 | 否   | `102400`（Compose 是 `0`）               | 每个家庭在默认存储上的配额，`0` 不限。依据见 [CAPACITY.md](CAPACITY.md)。单个家庭可以单独设置，见上文     |
 | `FAMILY_RECORDS_MB`               | 否   | `100`                                    | 每个家庭的记录总量，`0` 不限。正常家庭每年约 0.7 MB，防的是有人把数据库写满                               |
 | `MEDIA_TRASH_DAYS`                | 否   | `30`                                     | 记录删除后文件保留多少天。**函数和定时任务要设成一样**                                                    |
 | `CLIENT_IP_HEADER`                | 否   | `x-forwarded-for`                        | 从哪个请求头取客户端地址。Caddy 覆盖了这个头，是可信的；Supabase 要按上文确认                             |

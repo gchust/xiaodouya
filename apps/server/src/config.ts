@@ -32,7 +32,7 @@ const EnvSchema = DbEnvSchema.extend({
   MAX_AUDIO_MB: z.coerce.number().int().positive().default(200),
   MAX_DOCUMENT_MB: z.coerce.number().int().positive().default(50),
   /** 依据见 docs/CAPACITY.md。0 表示不限。 */
-  FAMILY_QUOTA_MB: z.coerce.number().int().nonnegative().default(5120),
+  FAMILY_QUOTA_MB: z.coerce.number().int().nonnegative().default(102400),
   FAMILY_RECORDS_MB: z.coerce.number().int().nonnegative().default(100),
   MEDIA_TRASH_DAYS: z.coerce.number().int().positive().default(30),
   CLIENT_IP_HEADER: z.string().default('x-forwarded-for'),
