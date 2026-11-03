@@ -803,12 +803,11 @@ describe('防滥用：注册', () => {
 });
 
 describe('防滥用：请求频率', () => {
-  it('一次传 100 张照片（原图加缩略图 200 个文件）不会被限流（默认限额）', async () => {
+  it('一次传 100 张照片（原图、预览、缩略图 300 个文件）不会被限流（默认限额）', async () => {
     const { token } = await newFamily();
+    const variants = ['original', 'thumb', 'preview'];
     const results = await Promise.all(
-      Array.from({ length: 200 }, (_, i) =>
-        requestUrl(token, { variant: i % 2 ? 'thumb' : 'original' }),
-      ),
+      Array.from({ length: 300 }, (_, i) => requestUrl(token, { variant: variants[i % 3] })),
     );
     expect(results.every((r) => r.status === 200)).toBe(true);
   });

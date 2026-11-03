@@ -460,6 +460,34 @@ async function publicShare(base: string) {
     token: owner,
     body: { variant: 'original' },
   });
+  // 照片的预览：分享页要发它，不发原图。内容不一样才分得清。
+  const previewBytes = Buffer.from('xiaodouya-fictional-preview');
+  const previewUpload = await request<{ url: string; headers: Record<string, string> }>(
+    base,
+    'POST',
+    '/v1/media/upload-url',
+    {
+      token: owner,
+      body: {
+        id: mediaId,
+        scope: 'memory',
+        variant: 'preview',
+        mime: 'image/jpeg',
+        size: previewBytes.length,
+      },
+    },
+  );
+  check(previewUpload.status === 200, '预览能申请上传链接');
+  await fetch(previewUpload.json.url, {
+    method: 'PUT',
+    headers: previewUpload.json.headers,
+    body: previewBytes,
+  });
+  const previewDone = await request(base, 'POST', `/v1/media/${mediaId}/complete`, {
+    token: owner,
+    body: { variant: 'preview' },
+  });
+  check(previewDone.status === 200, '预览能完成');
   await request(base, 'POST', '/v1/sync', {
     token: owner,
     body: {
@@ -539,7 +567,11 @@ async function publicShare(base: string) {
   };
   check(parsed.events.length === 1 && parsed.baby.dayNumber === 31, '内容和第几天');
   const download = await fetch(parsed.moments[0]?.media[0]?.url ?? '');
-  check(Buffer.from(await download.arrayBuffer()).equals(bytes), '签名链接能下载');
+  check(
+    Buffer.from(await download.arrayBuffer()).equals(previewBytes),
+    '签名链接能下载，照片给的是预览',
+  );
+  check(!page.text.includes(`${mediaId}/original`), '有预览时响应里没有原图');
 
   const miss = await open('A'.repeat(43));
   check(

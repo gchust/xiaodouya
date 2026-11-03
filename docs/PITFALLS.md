@@ -87,6 +87,8 @@
 - **模拟器的 `network speed` 对到宿主机 S3 的流量不起作用。** 想慢下来要在宿主机上放一个限速的 TCP 转发，`S3_PUBLIC_ENDPOINT` 指向它（SigV4 看 Host 头，转发不改它）。
 - **会一起看的几个状态不要隔着 await 改。** 任务从队列拿掉和“传完数加一”中间隔着写 SQLite，每秒一次的刷新正好落在中间时，界面看到任务没了、传完数是 0，就当成全取消了，不说“文件都上传好了”。CI 上慢才碰到，流程 14a 等满 60 秒失败。
 - **取消上传时的响应可能晚于取消。** `finish` 和 catch 都要先确认任务还在队列里，否则取消后完成的响应会通知“传好了”，失败的响应会把任务写回数据库，重试时复活。
+- **系统选择器给的照片可能还带着 GPS。** 模拟器（API 35）上用真实的系统照片选择器，App 没有 `ACCESS_MEDIA_LOCATION`，传上去的原图 EXIF 和 GPS 都还在。不能指望系统抹掉，发给外人的只能是重新编码过的文件。真机没有验证。
+- **Android 重新编码的 JPEG 里也有 APP 段，但不是元数据。** Skia 会写一段 `ICC_PROFILE`（APP2）。查“有没有元数据”时要放过它，否则所有预览都被判成带元数据。
 
 ## 健康内容
 
@@ -114,6 +116,7 @@
 - **RN 的定时器在 App 暂停后不走，而 fetch 要靠它。** `JavaTimerManager` 在 `onHostPause` 后停掉，只有 Headless JS 任务在跑时例外；whatwg-fetch 收到响应后 `setTimeout(0)` 才 resolve，所以后台的 fetch 请求发得出去、响应也到了，Promise 却一直不结束，没有任何报错。后台要继续跑 JS 就要挂一个 Headless 任务。
 - **Activity 销毁时 React 界面会卸载，JS 和进程还在。** `ReactDelegate.onHostDestroy` 调 `unloadApp`，所有 effect 的清理都会跑，再打开时重新挂载。放在 `useEffect` 或 `useState` 里的单例（队列、监听）会变成两份。要活得比界面长的放模块级。
 - **`startForegroundService` 之后没进前台就 `stopService` 会崩。** 系统报 `did not then call startForeground`，小文件传得快就可能碰上。要等 `onStartCommand` 进了前台再停。
+- **expo-image 默认按屏幕大小解码，放大看不到更多细节。** 不关掉 `allowDownscaling` 的话，“查看原图”点了也和预览一样糊。关掉要限制像素：Android 画超过 100 MB 的位图直接闪退（`Canvas: trying to draw too large bitmap`，这是读文档的结论，没有实际触发），2400 万像素是 96 MB。
 - **Biome 的 `noReactNativeRawText` 认不出包了 Text 的组件。** 已关闭，不要重新打开。
 - **弹层不能假设键盘有没有把窗口顶起来。** `softwareKeyboardLayoutMode: 'resize'` 在 edge-to-edge 下不一定缩小窗口，假设错了要么被键盘挡住，要么抬高两次。`overlays.tsx` 用量到的层高算差额（`keyboardLift`）。还没在设备上看过，改这里要在模拟器上打开喂奶弹层点备注确认。
 - **`hitSlop` 只在父视图没有裁剪时才生效，后面的兄弟视图还会抢走重叠区域。** `overflow: hidden` 的卡片里，× 的热区要向卡片内部扩。紧贴滚动区的控件（回忆页子标签）用内边距加负外边距，再给头部 `zIndex`。
@@ -136,6 +139,7 @@
 - **键盘没开时按返回键会退出页面。** 用 `adb-ui.py hide`，它会先判断键盘状态。
 - **本机不能直接下载运行 Maestro。** 权限系统会拦下外部代码。本地用 `adb-ui.py` 做探索性测试，Maestro 流程在 CI 上跑。
 - **改 `build.gradle` 不能用跨块的正则。** 旧脚本在 release 排在 debug 前面时，会把正式密钥配给 debug，自己还正常退出。要先按花括号找到 release 块，只在块内替换，找不到就报错。
+- **`uiautomator` 报 `null root node`，`adb-ui.py` 说“读不到界面结构”时，先看屏幕是不是灭了。** 截图一片黑，`dumpsys window` 的 `mCurrentFocus=null`。模拟器睡着了（`mWakefulness=Asleep`），不是 App 的问题。先 `adb shell input keyevent KEYCODE_WAKEUP`。
 - **把小工具放到模拟器桌面：** 长按桌面空白处 → Widgets → 点小豆芽 → 点预览 → Add。`input swipe x y x y 2000` 能当长按，时间短了不行。
 - **`am kill` 只杀得掉已经进入缓存状态的进程。** 刚跑完后台任务时它静默什么都不做，要等几秒再试并用 `pidof` 确认。不确认的话，“App 被杀”的测试其实是在进程活着时跑的。
 - **不要给小工具里的文字容器 `flex: 1`。** react-native-android-widget 量出来的宽度偏大，旁边定宽的文字也会被挤出卡片。要截短就在 JS 里截（`shortBabyName`）。
@@ -223,6 +227,7 @@
 - **API 35 上 `legacy: true` 走不到全屏选择器。** `ACTION_GET_CONTENT` 被系统接管，打开的还是同一个 PhotoPicker，上限也还是 100。Android 12 及以下的 DocumentsUI 回退在这台模拟器上测不了。
 - **长时间等待之后，`extendedWaitUntil notVisible` 可能不等够超时就失败。** 流程 03a 等完上传再等 Toast 消失，超时写的 15 秒，1.4 秒就报错；同一条命令紧跟在点击后面时能正常等。这时距上次交互已经约 28 秒，原因没有查证。先看失败现场的 App 是否正常，再看这一步是否真的需要。
 - **单元测试绿了，原生行为不一定对。** 找回选择结果的重试逻辑测试全绿，模拟器上一跑就发现原生层根本不给结果。涉及系统界面和进程生死的修复，要看到模拟器上真的生效。
+- **`adb input swipe` 太快时查看器不一定翻页。** 150 ms 的滑动在 main 和新分支上都有丢，400 ms 的不丢。看模拟器走查的结果时先看滑动是不是真的到位，别把这当成翻页的 Bug。
 - **响应之后才写库的内容，测试里要先 `bg.flush()` 再做下一步。** “重发次数有上限”曾偶发失败（期望 429，实际 200）：验证码在响应后才写，写入如果落在下一轮的 `skipCooldown` 和请求之间，这次请求就在冷却期里，不计数也返回 200。平时失败率低，多跑几次未必看得到；要在写入前等 30ms、`skipCooldown` 后等 100ms 才能稳定复现。
 - **页面的日期和钟点要写明按谁的时区算。** shared 里的格式化函数都读运行环境的时区，服务端和对方的浏览器都不是分享者的时区。本机时区和分享者相同时什么都看不出来，走查要把浏览器设成另一个时区（`timezoneId`）。
 - **`testID` 不能用翻译后的文字生成。** `self-妈妈`、`milestone-第一次抬头` 都是从文字来的，英文下就变了。固定用中文原文（`messagesFor('zh')` 或数据里的 `id`）。

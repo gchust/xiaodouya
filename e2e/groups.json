@@ -10,6 +10,7 @@
         "14_media_viewer",
         "14a_avatar",
         "14b_media_download",
+        "14d_photo_preview",
         "19_sign_out",
         "20_viewer_role",
         "21_caregiver_usage"
@@ -82,6 +83,7 @@
   "uploadChecks": {
     "memory": ["03_moment_upload"],
     "multipart": ["03a_bulk_moment", "03b_upload_control"],
+    "preview": ["03a_bulk_moment"],
     "document": ["04_documents"],
     "avatar": ["14a_avatar"]
   }

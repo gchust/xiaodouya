@@ -1,7 +1,8 @@
-import { formatMonthDay, type MediaRef, t } from '@xiaodouya/shared';
+import { formatBytes, formatMonthDay, type MediaRef, t } from '@xiaodouya/shared';
+import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -25,9 +26,11 @@ import { useApp, useRecords } from '../lib/app';
 import { DownloadButton } from '../lib/DownloadButton';
 import { downloadFileNames } from '../lib/downloadCore';
 import { clampPan, containedSize } from '../lib/layout';
-import { MediaImage, useMediaSource } from '../lib/mediaViews';
+import { MediaImage, type MediaSource, useMediaSource, usePhotoSources } from '../lib/mediaViews';
+import { canDecodeFull, type OriginalControl, photoPlan } from '../lib/photoPreview';
 import { colors } from '../theme';
 import { AvatarEditor } from '../ui/AvatarEditor';
+import { Stripes } from '../ui/primitives';
 
 /** 全屏查看回忆里的照片和视频（左右滑动切换）、单个证件图片（可缩放）或宝宝的头像（可编辑）。 */
 export function ViewerScreen() {
@@ -44,6 +47,8 @@ export function ViewerScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
+  // 只有回忆里的照片有预览。头像和证件要原图：编辑头像要原图，证件要看清小字。
+  const hasPreviews = !params.avatar && !params.document;
   const { items, title, fileNames } = useMemo(() => {
     if (params.avatar) {
       return {
@@ -83,7 +88,7 @@ export function ViewerScreen() {
   const [zoomed, setZoomed] = useState(false);
   const list = useRef<FlatList<MediaRef>>(null);
 
-  const onScrollEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     setIndex(Math.round(e.nativeEvent.contentOffset.x / width));
   };
   const current = items[index];
@@ -99,9 +104,15 @@ export function ViewerScreen() {
       scrollEnabled={!zoomed}
       initialScrollIndex={initial}
       getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+      // 预览不缩小解码，一张约 12 MB。默认前后各留 10 屏，翻过的 20 张都在内存里。
+      initialNumToRender={1}
+      maxToRenderPerBatch={1}
+      windowSize={3}
       keyExtractor={(item) => item.id}
       showsHorizontalScrollIndicator={false}
-      onMomentumScrollEnd={onScrollEnd}
+      // 跟着实际位置走，不等惯性结束：页码和“查看原图”要和眼前这张对得上。
+      onScroll={onScroll}
+      scrollEventThrottle={32}
       renderItem={({ item, index: i }) => (
         <View style={{ width, flex: 1 }}>
           {item.kind === 'video' ? (
@@ -116,8 +127,23 @@ export function ViewerScreen() {
                 style={StyleSheet.absoluteFill}
               />
             )
+          ) : hasPreviews ? (
+            <PreviewPhoto
+              media={item}
+              // 前后各一页提前准备好，再远的只留位置：一条回忆可能有 100 张。
+              active={Math.abs(i - index) <= 1}
+              current={i === index}
+              onZoomChange={setZoomed}
+            />
           ) : (
-            <ZoomableImage media={item} onZoomChange={setZoomed} />
+            <ZoomableImage media={item} onZoomChange={setZoomed}>
+              <MediaImage
+                media={item}
+                variant="original"
+                contentFit="contain"
+                style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}
+              />
+            </ZoomableImage>
           )}
         </View>
       )}
@@ -166,9 +192,11 @@ const ZOOMED_ABOVE = 1.01;
 function ZoomableImage({
   media,
   onZoomChange,
+  children,
 }: {
   media: MediaRef;
   onZoomChange: (zoomed: boolean) => void;
+  children: ReactNode;
 }) {
   const window = useWindowDimensions();
   const [box, setBox] = useState({ width: window.width, height: window.height });
@@ -243,14 +271,176 @@ function ZoomableImage({
           setBox({ width, height });
         }}
       >
-        <MediaImage
-          media={media}
-          variant="original"
-          contentFit="contain"
-          style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}
-        />
+        {children}
       </Animated.View>
     </GestureDetector>
+  );
+}
+
+function PhotoLayer({
+  source,
+  testID,
+  label,
+  fullDecode,
+  onLoad,
+  onError,
+  onProgress,
+}: {
+  source: MediaSource;
+  testID?: string;
+  label: string;
+  /** 放大时才看得出区别。默认按屏幕大小解码，点了“查看原图”也不会更清楚。 */
+  fullDecode?: boolean;
+  onLoad?: () => void;
+  onError?: () => void;
+  onProgress?: (percent: number) => void;
+}) {
+  return (
+    <Image
+      testID={testID}
+      source={source}
+      style={StyleSheet.absoluteFill}
+      contentFit="contain"
+      transition={200}
+      cachePolicy="disk"
+      allowDownscaling={!fullDecode}
+      accessibilityLabel={label}
+      onLoad={onLoad}
+      onError={onError}
+      onProgress={
+        onProgress &&
+        (({ loaded, total }) => {
+          if (total > 0) onProgress((loaded / total) * 100);
+        })
+      }
+    />
+  );
+}
+
+/** 默认显示预览，加载时先有缩略图。“查看原图”点了才下载，原图盖在预览上，好了才看得出变化。 */
+function PreviewPhoto({
+  media,
+  active,
+  current,
+  onZoomChange,
+}: {
+  media: MediaRef;
+  active: boolean;
+  current: boolean;
+  onZoomChange: (zoomed: boolean) => void;
+}) {
+  const sources = usePhotoSources(media, active);
+  const [wantOriginal, setWantOriginal] = useState(false);
+  const [originalLoaded, setOriginalLoaded] = useState(false);
+  const [originalFailed, setOriginalFailed] = useState(false);
+  const [percent, setPercent] = useState<number | null>(null);
+  const plan = photoPlan({
+    answered: sources.answered,
+    localOriginal: sources.localOriginal,
+    preview: sources.preview !== null,
+    original: sources.original !== null,
+    wantOriginal,
+    originalLoaded,
+    originalFailed,
+  });
+  const label = media.name ?? t().ui.photo;
+  const base =
+    plan.base === 'preview' ? sources.preview : plan.base === 'original' ? sources.original : null;
+  const load = () => {
+    setOriginalFailed(false);
+    setPercent(null);
+    setWantOriginal(true);
+  };
+  return (
+    <>
+      <ZoomableImage media={media} onZoomChange={onZoomChange}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}>
+          {!sources.thumb && !base ? <Stripes style={StyleSheet.absoluteFill} /> : null}
+          {sources.thumb ? <PhotoLayer source={sources.thumb} label={label} /> : null}
+          {base ? (
+            <PhotoLayer
+              key={plan.base}
+              testID={`viewer-image-${plan.base}`}
+              source={base}
+              label={label}
+              fullDecode={plan.base === 'preview' || canDecodeFull(media)}
+            />
+          ) : null}
+          {plan.overlayOriginal && sources.original ? (
+            <PhotoLayer
+              testID="viewer-image-original"
+              source={sources.original}
+              label={label}
+              fullDecode={canDecodeFull(media)}
+              onLoad={() => setOriginalLoaded(true)}
+              onError={() => setOriginalFailed(true)}
+              onProgress={setPercent}
+            />
+          ) : null}
+        </View>
+      </ZoomableImage>
+      {current ? (
+        <OriginalButton control={plan.control} size={media.size} percent={percent} onLoad={load} />
+      ) : null}
+    </>
+  );
+}
+
+function OriginalButton({
+  control,
+  size,
+  percent,
+  onLoad,
+}: {
+  control: OriginalControl;
+  size: number;
+  percent: number | null;
+  onLoad: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  if (control === 'none') return null;
+  const ui = t().ui;
+  const sized = formatBytes(size);
+  const text = {
+    view: ui.viewOriginal(sized),
+    loading: ui.loadingOriginal(percent === null ? null : Math.round(percent)),
+    shown: ui.showingOriginal(sized),
+    failed: ui.originalLoadFailed,
+    uploading: ui.originalNotUploaded,
+  }[control];
+  const testID = `viewer-original-${control}`;
+  const inner = (
+    <>
+      {control === 'loading' ? <ActivityIndicator size="small" color={colors.white} /> : null}
+      <Text style={s.originalText}>{text}</Text>
+    </>
+  );
+  return (
+    <View style={[s.originalBar, { bottom: insets.bottom + 20 }]} pointerEvents="box-none">
+      {control === 'view' || control === 'failed' ? (
+        <Pressable
+          testID={testID}
+          accessibilityRole="button"
+          accessibilityLabel={text}
+          hitSlop={8}
+          onPress={onLoad}
+          style={[s.originalPill, s.originalPillActive]}
+        >
+          {inner}
+        </Pressable>
+      ) : (
+        // 不是按钮：只说状态，读屏也念得到。
+        <View
+          testID={testID}
+          accessible
+          accessibilityLabel={text}
+          accessibilityState={{ disabled: true, busy: control === 'loading' }}
+          style={s.originalPill}
+        >
+          {inner}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -309,4 +499,21 @@ const s = StyleSheet.create({
     gap: 10,
   },
   loading: { color: colors.paper, fontSize: 13 },
+  originalBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    alignItems: 'center',
+  },
+  originalPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 40,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  originalPillActive: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.white },
+  originalText: { flexShrink: 1, color: colors.white, fontSize: 13, textAlign: 'center' },
 });

@@ -1,5 +1,4 @@
 import { Directory, File, Paths } from 'expo-file-system';
-import { Image } from 'expo-image';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import * as Sharing from 'expo-sharing';
 import { useCallback, useSyncExternalStore } from 'react';
@@ -15,7 +14,7 @@ import {
   FolderNameTakenError,
   galleryUri,
 } from './downloadCore';
-import { localUriFor } from './media';
+import { localOriginalCopy } from './media';
 
 /** 这个目录随时可以整个删掉：放的都是下载途中的临时文件，用完就清。 */
 function tempRoot(): Directory {
@@ -58,23 +57,11 @@ function ports(getApi: () => Api | null): DownloadPorts {
         throw error;
       }
     },
-    async findLocalCopy(media) {
-      const pending = localUriFor(media.id, 'original');
-      if (pending) return pending;
-      if (media.kind !== 'image') return null;
-      // 看过的原图还在 expo-image 的磁盘缓存里。缓存键见 useMediaSource。大小对得上才算原件。
-      try {
-        const path = await Image.getCachePathAsync(`${media.id}/original`);
-        if (!path) return null;
-        const file = new File(path.startsWith('file:') ? path : `file://${path}`);
-        return file.exists && file.size === media.size ? file.uri : null;
-      } catch {
-        return null;
-      }
-    },
+    findLocalCopy: localOriginalCopy,
     async signedUrl(media) {
       const api = getApi();
       if (!api) return null;
+      // 下载永远是原图，不是预览。
       // 不用 mediaUrlBatcher 的缓存：要一条刚签发的，下载大文件时不会差一点就过期。
       const { urls } = await api.mediaUrls([{ id: media.id, variant: 'original' }]);
       return urls[0]?.url ?? null;

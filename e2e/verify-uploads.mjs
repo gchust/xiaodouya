@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, resolve } from 'node:path';
+import { FICTIONAL_DESCRIPTION, jpegMetadata } from './helpers/jpeg-exif.mjs';
 
 const require = createRequire(resolve(import.meta.dirname, '../apps/server/package.json'));
 const postgres = require('postgres');
@@ -77,6 +78,19 @@ if (expected('multipart')) {
     '没有超过分片阈值的文件，分片上传没有被走到',
   );
 }
+if (expected('preview')) {
+  need(
+    rows.some((r) => r.scope === 'memory' && r.variant === 'preview'),
+    '没有回忆预览',
+  );
+}
+// 这组有多少预览就查多少：证件和头像不做预览，视频也不做。
+for (const row of rows.filter((r) => r.variant === 'preview')) {
+  need(row.scope === 'memory', `${row.object_key} 不该有预览`);
+  need(row.mime === 'image/jpeg', `${row.object_key} 预览不是 JPEG`);
+  const original = rows.find((r) => r.id === row.id && r.variant === 'original');
+  need(original?.mime.startsWith('image/'), `${row.object_key} 不是照片的预览`);
+}
 if (expected('document')) {
   need(
     rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
@@ -101,6 +115,7 @@ const [babyRow] = await sql`
 const avatar = babyRow?.data?.avatar;
 if (expected('avatar')) need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
 const avatarSizes = new Map();
+const metadata = new Map();
 
 for (const row of rows) {
   need(row.status === 'ready', `${row.object_key} 状态是 ${row.status}`);
@@ -114,6 +129,19 @@ for (const row of rows) {
   }
   if (row.variant === 'thumb') {
     need(bytes[0] === 0xff && bytes[1] === 0xd8, `${row.object_key} 不是 JPEG 缩略图`);
+  }
+  if (row.mime === 'image/jpeg') {
+    metadata.set(`${row.id}/${row.variant}`, {
+      ...jpegMetadata(bytes),
+      fictional: Buffer.from(bytes).includes(FICTIONAL_DESCRIPTION),
+    });
+  }
+  // 分享页发给陌生人的就是这两个变体。不只查 GPS：任何 APP 段都可能带着元数据。
+  if (row.variant === 'thumb' || row.variant === 'preview') {
+    const found = jpegMetadata(bytes);
+    need(found.isJpeg, `${row.object_key} 不是 JPEG`);
+    need(!found.exif && !found.gps && !found.xmp, `${row.object_key} 带着元数据`);
+    need(found.appSegments === 0, `${row.object_key} 还有 ${found.appSegments} 个 APP 段`);
   }
   if (row.scope === 'avatar' && row.variant === 'original' && row.mime === 'image/jpeg') {
     avatarSizes.set(row.id, jpegSize(bytes));
@@ -135,8 +163,31 @@ if (expected('avatar')) {
   );
   need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
 }
+// 流程 03a 的样例：原图带 GPS，所以“预览和缩略图没有元数据”才算数，查的方法也是灵的。
+if (expected('preview')) {
+  const gpsOriginals = rows.filter(
+    (r) => r.variant === 'original' && metadata.get(`${r.id}/original`)?.gps,
+  );
+  need(gpsOriginals.length > 0, '没有带 GPS 的原图，预览里没有 EXIF 这件事没有被验证到');
+  for (const { id } of gpsOriginals) {
+    const original = metadata.get(`${id}/original`);
+    need(original.orientation === 6 && original.fictional, '原图被改过：应该原样保存');
+    const preview = metadata.get(`${id}/preview`);
+    need(preview, `带 GPS 的照片 ${id} 没有预览`);
+    need(preview && !preview.fictional, `预览 ${id} 带着原图的 EXIF 内容`);
+    // 64×48 加 Orientation=6：EXIF 去掉之后，方向只能靠像素本身。也不能放大。
+    need(
+      preview?.width === 48 && preview?.height === 64,
+      `预览 ${id} 的尺寸不对：${preview?.width}×${preview?.height}`,
+    );
+    const thumb = metadata.get(`${id}/thumb`);
+    need(thumb && !thumb.fictional, `缩略图 ${id} 带着原图的 EXIF 内容`);
+    need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
+  }
+}
+const previews = rows.filter((r) => r.variant === 'preview').length;
 console.log(
-  `校验了 ${rows.length} 个对象${skipped.length > 0 ? `（这组不涉及：${skipped.join('、')}）` : ''}`,
+  `校验了 ${rows.length} 个对象，其中预览 ${previews} 个${skipped.length > 0 ? `（这组不涉及：${skipped.join('、')}）` : ''}`,
 );
 if (failures.length > 0) {
   console.error(failures.join('\n'));

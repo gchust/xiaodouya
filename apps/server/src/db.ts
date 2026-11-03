@@ -228,6 +228,11 @@ export const migrations: readonly string[] = [
   ALTER TABLE media ADD COLUMN upload_part_size INT;
   ALTER TABLE pending_object_deletions ADD COLUMN upload_id TEXT;
   `,
+  // 照片预览。只放开取值，旧行都符合新约束。
+  `
+  ALTER TABLE media DROP CONSTRAINT media_variant_check;
+  ALTER TABLE media ADD CONSTRAINT media_variant_check CHECK (variant IN ('original', 'thumb', 'preview'));
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

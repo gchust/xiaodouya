@@ -26,7 +26,7 @@ import type { Api } from './api';
 import { useApp } from './app';
 import { DownloadButton } from './DownloadButton';
 import type { PickedFile } from './media';
-import { localUriFor } from './media';
+import { localOriginalCopy, localUriFor } from './media';
 import {
   type CachedUrl,
   createExclusivePlayback,
@@ -39,12 +39,17 @@ import {
 /** 把同一帧里请求的链接合并成一次接口调用：回忆页一屏可能有几十张图。 */
 class UrlBatcher {
   private cache = new Map<string, CachedUrl>();
-  private waiting = new Map<string, ((url: string | null) => void)[]>();
+  private waiting = new Map<string, ((url: string | null | undefined) => void)[]>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private api: Api) {}
 
-  get(id: string, variant: MediaVariant): Promise<string | null> {
+  async get(id: string, variant: MediaVariant): Promise<string | null> {
+    return (await this.lookup(id, variant)) ?? null;
+  }
+
+  /** undefined 表示没问到（断网），null 表示服务端说没有。离线时不能告诉用户“还没传完”。 */
+  lookup(id: string, variant: MediaVariant): Promise<string | null | undefined> {
     const key = `${id}/${variant}`;
     const cached = this.cache.get(key);
     if (isUrlFresh(cached, Date.now())) return Promise.resolve(cached.url);
@@ -65,7 +70,7 @@ class UrlBatcher {
       const [id, variant] = key.split('/') as [string, MediaVariant];
       return { id, variant };
     });
-    let results = new Map<string, string | null>();
+    let results: Map<string, string | null> | null = null;
     try {
       const { urls } = await this.api.mediaUrls(items);
       results = new Map(urls.map((u) => [`${u.id}/${u.variant}`, u.url]));
@@ -81,9 +86,14 @@ class UrlBatcher {
       // 离线时拿不到链接：expo-image 的磁盘缓存仍可能显示已看过的图。
     }
     for (const [key, resolvers] of batch) {
-      for (const resolve of resolvers) resolve(results.get(key) ?? null);
+      for (const resolve of resolvers) resolve(results ? (results.get(key) ?? null) : undefined);
     }
   }
+}
+
+export interface MediaSource {
+  uri: string;
+  cacheKey: string;
 }
 
 let batcher: { api: Api; instance: UrlBatcher } | null = null;
@@ -93,29 +103,45 @@ export function mediaUrlBatcher(api: Api): UrlBatcher {
   return batcher.instance;
 }
 
-/** 解析一个文件的显示地址：先用本地副本，否则取签名链接。 */
-export function useMediaSource(media: MediaRef, variant: MediaVariant) {
-  const { api, uploads, syncStatus } = useApp();
-  const [source, setSource] = useState<{ uri: string; cacheKey: string } | null>(null);
+/**
+ * 链接取不到时什么时候再取。离线时不空转，靠这里在同步结束后补一次。只看回到 idle：
+ * 恢复联网或刚同步到新数据时才可能拿到链接，每次状态变化都取的话，家人频繁同步时退避的定时器会一直被清掉。
+ * 恢复联网后重新从最短的间隔开始。
+ */
+function useUrlRetry(settled: boolean) {
+  const { syncStatus } = useApp();
   const [retry, setRetry] = useState(0);
   const failures = useRef(0);
   const offline = useRef(syncStatus === 'offline');
-  const effective = variant === 'thumb' && !media.hasThumb ? 'original' : variant;
-  const pendingUpload = uploads.pendingIds().has(media.id);
-  const hasSource = source !== null;
-
-  // 离线时不空转，靠这里在同步结束后补一次。只看回到 idle：恢复联网或刚同步到新数据时才可能拿到链接，
-  // 每次状态变化都取的话，家人频繁同步时退避的定时器会一直被清掉。恢复联网后重新从最短的间隔开始。
   const lastStatus = useRef(syncStatus);
   useEffect(() => {
     const wasOffline = lastStatus.current === 'offline';
     const changed = lastStatus.current !== syncStatus;
     lastStatus.current = syncStatus;
     offline.current = syncStatus === 'offline';
-    if (!changed || hasSource || syncStatus !== 'idle') return;
+    if (!changed || settled || syncStatus !== 'idle') return;
     if (wasOffline) failures.current = 0;
     setRetry((n) => n + 1);
-  }, [syncStatus, hasSource]);
+  }, [syncStatus, settled]);
+  const schedule = useCallback((): ReturnType<typeof setTimeout> | null => {
+    if (offline.current) return null;
+    const delay = mediaRetryDelayMs(failures.current);
+    failures.current += 1;
+    return setTimeout(() => setRetry((n) => n + 1), delay);
+  }, []);
+  const succeeded = useCallback(() => {
+    failures.current = 0;
+  }, []);
+  return { retry, schedule, succeeded };
+}
+
+/** 解析一个文件的显示地址：先用本地副本，否则取签名链接。 */
+export function useMediaSource(media: MediaRef, variant: MediaVariant) {
+  const { api, uploads } = useApp();
+  const [source, setSource] = useState<MediaSource | null>(null);
+  const effective = variant === 'thumb' && !media.hasThumb ? 'original' : variant;
+  const pendingUpload = uploads.pendingIds().has(media.id);
+  const { retry, schedule, succeeded } = useUrlRetry(source !== null);
 
   // pendingUpload 变化时要重新解析：本地副本在上传完成后会被删掉。
   // retry 变化时再取一次：链接是空的（离线，或家人还没传完），之后才可能拿到。
@@ -141,7 +167,7 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
       if (!alive) return;
       if (url) {
         // 签名链接每次都变，用文件 id 做缓存键，否则同一张图会反复下载。
-        failures.current = 0;
+        succeeded();
         setSource({ uri: url, cacheKey: `${media.id}/${effective}` });
         return;
       }
@@ -150,15 +176,12 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
         const original = await batcher.get(media.id, 'original');
         if (!alive) return;
         if (original) {
-          failures.current = 0;
+          succeeded();
           setSource({ uri: original, cacheKey: `${media.id}/original` });
           return;
         }
       }
-      if (offline.current) return;
-      const delay = mediaRetryDelayMs(failures.current);
-      failures.current += 1;
-      timer = setTimeout(() => setRetry((n) => n + 1), delay);
+      timer = schedule();
     };
     void resolve();
     return () => {
@@ -167,6 +190,86 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
     };
   }, [api, media.id, effective, pendingUpload, retry]);
   return source;
+}
+
+export interface PhotoSources {
+  answered: boolean;
+  localOriginal: boolean;
+  thumb: MediaSource | null;
+  preview: MediaSource | null;
+  original: MediaSource | null;
+}
+
+const NO_SOURCES: PhotoSources = {
+  answered: false,
+  localOriginal: false,
+  thumb: null,
+  preview: null,
+  original: null,
+};
+
+/**
+ * 查看器一张照片的所有来源。三个变体在同一批里问，打开一张照片只多签两个名字，不多一次请求。
+ * 不退回原图：useMediaSource 取不到缩略图时会下载原图，这里不能让占位图花掉原图的流量。
+ * active 为 false 时不取：列表会提前挂载前后很多页，不能一打开就下载十几张预览。
+ */
+export function usePhotoSources(media: MediaRef, active: boolean): PhotoSources {
+  const { api, uploads } = useApp();
+  const [sources, setSources] = useState<PhotoSources>(NO_SOURCES);
+  const pendingUpload = uploads.pendingIds().has(media.id);
+  const settled = sources.localOriginal || sources.original !== null;
+  const { retry, schedule, succeeded } = useUrlRetry(settled);
+
+  // pendingUpload 变化时要重新解析：原图传完后本地副本就删了。
+  // retry 变化时再取一次：家人可能还没传完，要等原图好了才能打开“查看原图”。
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 见上
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const sourceOf = (variant: MediaVariant, uri: string | null | undefined) =>
+      uri ? { uri, cacheKey: `${media.id}/${variant}` } : null;
+    const resolve = async () => {
+      const local = await localOriginalCopy(media);
+      if (!alive) return;
+      if (local) {
+        setSources({
+          ...NO_SOURCES,
+          localOriginal: true,
+          original: sourceOf('original', local),
+        });
+        return;
+      }
+      const batcher = mediaUrlBatcher(api);
+      const remote = (variant: MediaVariant) => {
+        const copy = localUriFor(media.id, variant);
+        return copy ? Promise.resolve(copy) : batcher.lookup(media.id, variant);
+      };
+      const [thumb, preview, original] = await Promise.all([
+        media.hasThumb ? remote('thumb') : null,
+        remote('preview'),
+        batcher.lookup(media.id, 'original'),
+      ]);
+      if (!alive) return;
+      const answered = original !== undefined;
+      // 断网时别的都没问到：已经拿到的链接还能用，不能因为这一轮没问到就清掉。
+      setSources((before) => ({
+        answered: answered || before.answered,
+        localOriginal: false,
+        thumb: sourceOf('thumb', thumb) ?? before.thumb,
+        preview: sourceOf('preview', preview) ?? before.preview,
+        original: sourceOf('original', original) ?? before.original,
+      }));
+      if (original) succeeded();
+      else timer = schedule();
+    };
+    void resolve();
+    return () => {
+      alive = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [api, media.id, media.hasThumb, media.size, media.kind, active, pendingUpload, retry]);
+  return sources;
 }
 
 export function MediaImage({

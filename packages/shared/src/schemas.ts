@@ -412,7 +412,11 @@ export const PushTokenRequest = z.object({
 
 // ─── 文件 ───────────────────────────────────────────────────
 
-export const mediaVariants = ['original', 'thumb'] as const;
+/**
+ * original 永远不压缩。preview 是重新编码的 JPEG（长边约 2048），查看器和分享页默认用它。
+ * 旧版 App 只请求自己认识的变体，服务端按请求回答，所以它收不到 preview。
+ */
+export const mediaVariants = ['original', 'thumb', 'preview'] as const;
 export const MediaVariant = z.enum(mediaVariants);
 export type MediaVariant = z.infer<typeof MediaVariant>;
 

@@ -33,6 +33,7 @@ import {
   MAX_ACTIVE_SHARES,
   MediaUrlsRequest,
   type MediaUrlsResponse,
+  type MediaVariant,
   type MeResponse,
   type MultipartPartsResponse,
   MultipartPartUrlsRequest,
@@ -1350,6 +1351,10 @@ export function createApp({
   /** 单个 PUT 和分片上传共用的准入检查。 */
   const admitUpload = async (m: { familyId: string }, body: UploadUrlRequest) => {
     if (!isAllowedMime(body.mime, body.scope)) fail(400, 'bad_type', '不支持这种文件类型');
+    // 分享页拿预览顶替原图发给陌生人，它只能是图片。
+    if (body.variant === 'preview' && !body.mime.toLowerCase().startsWith('image/')) {
+      fail(400, 'bad_type', '不支持这种文件类型');
+    }
     const maxBytes = Math.min(
       config.maxUploadBytes,
       config.maxFileBytes[mediaCategory(body.mime, body.scope)],
@@ -1780,7 +1785,7 @@ export function createApp({
     const rows = await sql<
       {
         id: string;
-        variant: 'original' | 'thumb';
+        variant: MediaVariant;
         scope: 'memory' | 'document' | 'avatar';
         object_key: string;
         storage_config_id: string | null;

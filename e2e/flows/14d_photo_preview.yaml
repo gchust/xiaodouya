@@ -1,0 +1,72 @@
+# 照片预览：传一张照片，点开默认是预览，“查看原图”点了才加载。
+# 传上去的预览和缩略图里有没有 EXIF，由 verify-uploads 直接查存储，见流程 03a 的样例。
+# 用完就删：后面的流程默认时间线最上面是流程 03 的回忆。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- tapOn: { id: recall-fab }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Preview ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Preview ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+# “文件都上传好了”的 Toast 在屏幕下方，不等它消失可能盖住“查看原图”。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn:
+    id: moment-cover-.*
+    index: 0
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: Preview ${RUN_ID} · .*
+- extendedWaitUntil:
+    visible: { id: viewer-original-view }
+    timeout: 20000
+- assertVisible: { id: viewer-image-preview }
+- takeScreenshot: .artifacts/e2e-14d-preview
+- tapOn: { id: viewer-original-view }
+- extendedWaitUntil:
+    visible: { id: viewer-original-shown }
+    timeout: 30000
+- takeScreenshot: .artifacts/e2e-14d-original
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+# 再打开：看过的原图已经在本机，直接显示，不用再点。
+- tapOn:
+    id: moment-cover-.*
+    index: 0
+- extendedWaitUntil:
+    visible: { id: viewer-original-shown }
+    timeout: 20000
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+- tapOn:
+    id: moment-more-.*
+    index: 0
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Preview ${RUN_ID}
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
