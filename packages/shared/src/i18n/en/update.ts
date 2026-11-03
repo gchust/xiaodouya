@@ -22,7 +22,8 @@ export const update: Catalog['update'] = {
   verifying: 'Checking the downloaded file…',
   readyTitle: 'Ready to install',
   install: 'Install',
-  installHint: 'After tapping Install, your phone asks you to confirm. Tap Update or Install there.',
+  installHint:
+    'After tapping Install, your phone asks you to confirm. Tap Update or Install there.',
   needPermission:
     'Xiaodouya needs permission to install apps. Turn on "Allow from this source" in Settings, then come back and tap Install.',
   openSettings: 'Open Settings',
