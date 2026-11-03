@@ -4,7 +4,9 @@ import {
   formatMonthDay,
   type MediaRef,
   milestoneTemplates,
+  momentCover,
   t,
+  visualMedia,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -164,9 +166,9 @@ function Timeline({ birthAt }: { birthAt: number }) {
   return (
     <View style={s.timeline}>
       {moments.map((m) => {
-        const visual = m.data.media.filter((x) => x.kind === 'image' || x.kind === 'video');
         const audios = m.data.media.filter((x) => x.kind === 'audio');
-        const cover = visual[0];
+        const found = momentCover(m.data.media, m.data.coverMediaId);
+        const cover = found?.media;
         const fileNames = downloadFileNames(m.data.media, {
           title: m.data.title || t().ui.thisMoment,
           at: m.data.at,
@@ -203,7 +205,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
                 </Pressable>
               ) : null}
             </View>
-            {cover ? (
+            {found && cover ? (
               <Pressable
                 testID={`moment-cover-${m.id}`}
                 accessibilityRole="imagebutton"
@@ -211,7 +213,10 @@ function Timeline({ birthAt }: { birthAt: number }) {
                   cover.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
                 }
                 onPress={() =>
-                  router.push({ pathname: '/viewer', params: { moment: m.id, index: 0 } })
+                  router.push({
+                    pathname: '/viewer',
+                    params: { moment: m.id, index: found.index },
+                  })
                 }
                 style={s.cover}
               >
@@ -222,10 +227,10 @@ function Timeline({ birthAt }: { birthAt: number }) {
                   style={StyleSheet.absoluteFill}
                 />
                 {cover.kind === 'video' ? <PlayBadge /> : null}
-                {visual.length > 1 ? (
+                {found.count > 1 ? (
                   <View style={s.morePill}>
                     <Text style={{ fontSize: 11, color: colors.ink }}>
-                      {t().recall.itemsTotal(visual.length)}
+                      {t().recall.itemsTotal(found.count)}
                     </Text>
                   </View>
                 ) : null}
@@ -255,7 +260,7 @@ function Photos() {
   const groups = moments
     .map((m) => ({
       moment: m,
-      cells: m.data.media.filter((x) => x.kind === 'image' || x.kind === 'video'),
+      cells: visualMedia(m.data.media),
     }))
     .filter((g) => g.cells.length > 0);
   if (groups.length === 0) {

@@ -34,3 +34,23 @@ export function withoutMedia<D>(
   const { avatar: _avatar, ...rest } = record;
   return rest as D;
 }
+
+/** 回忆里能当封面、能全屏翻看的文件：照片和视频，顺序和记录里一样。 */
+export function visualMedia(media: readonly MediaRef[]): MediaRef[] {
+  return media.filter((m) => m.kind === 'image' || m.kind === 'video');
+}
+
+/**
+ * 时间线上这条回忆的封面。`index` 是它在照片和视频里的位置，全屏查看从这一张开始。
+ * 设置的封面被移除了、找不到或者不是照片和视频时，回到第一个：封面只是显示偏好，不能让回忆没有图。
+ */
+export function momentCover(
+  media: readonly MediaRef[],
+  coverMediaId?: string,
+): { media: MediaRef; index: number; count: number } | null {
+  const visual = visualMedia(media);
+  const chosen = coverMediaId ? visual.findIndex((m) => m.id === coverMediaId) : -1;
+  const index = Math.max(0, chosen);
+  const cover = visual[index];
+  return cover ? { media: cover, index, count: visual.length } : null;
+}

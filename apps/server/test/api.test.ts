@@ -375,6 +375,52 @@ describe('同步', () => {
     const write = await sync(grandma.token, 0, [feedChange()]);
     expect(write.json.rejected[0]?.reason).toBe('forbidden');
   });
+  it('回忆的封面能同步给家人，格式不对只丢这一项，viewer 能看到但改不了', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const photo = (id: string) => ({ id, kind: 'image', mime: 'image/jpeg', size: 1 });
+    const first = randomUUID();
+    const second = randomUUID();
+    const id = randomUUID();
+    const moment = (coverMediaId: unknown, updatedAt: number) => ({
+      id,
+      collection: 'moment' as const,
+      data: {
+        title: '虚构的一刻',
+        text: '',
+        at: 1,
+        milestone: false,
+        media: [photo(first), photo(second)],
+        coverMediaId,
+      },
+      deleted: false,
+      updatedAt,
+    });
+    const coverOf = async (token: string) =>
+      (
+        (await sync(token, 0)).json.records.find((r) => r.id === id)?.data as {
+          coverMediaId?: unknown;
+        }
+      )?.coverMediaId;
+
+    expect((await sync(admin.token, 0, [moment(second, 1000)])).json.rejected).toEqual([]);
+    expect(await coverOf(mom.token)).toBe(second);
+    expect(await coverOf(grandma.token)).toBe(second);
+
+    // 一起记录的家人能改封面，和改这条回忆的其他内容一样。
+    expect((await sync(mom.token, 0, [moment(first, 2000)])).json.rejected).toEqual([]);
+    expect(await coverOf(admin.token)).toBe(first);
+
+    const forbidden = await sync(grandma.token, 0, [moment(second, 3000)]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+    expect(await coverOf(admin.token)).toBe(first);
+
+    // 坏数据不能让整条回忆被拒，也不能原样存下来再同步给别的设备。
+    const junk = await sync(admin.token, 0, [moment('not-a-uuid', 4000)]);
+    expect(junk.json.rejected).toEqual([]);
+    expect(await coverOf(mom.token)).toBeUndefined();
+  });
   it('奶粉配置和喂奶上的奶粉字段能同步，viewer 读不到也不能写', async () => {
     const { admin } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');

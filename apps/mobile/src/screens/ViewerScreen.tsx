@@ -1,4 +1,11 @@
-import { formatBytes, formatMonthDay, type MediaRef, t } from '@xiaodouya/shared';
+import {
+  formatBytes,
+  formatMonthDay,
+  type MediaRef,
+  momentCover,
+  t,
+  visualMedia,
+} from '@xiaodouya/shared';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -30,6 +37,7 @@ import { MediaImage, type MediaSource, useMediaSource, usePhotoSources } from '.
 import { canDecodeFull, type OriginalControl, photoPlan } from '../lib/photoPreview';
 import { colors } from '../theme';
 import { AvatarEditor } from '../ui/AvatarEditor';
+import { useFeedback } from '../ui/overlays';
 import { Stripes } from '../ui/primitives';
 
 /** 全屏查看回忆里的照片和视频（左右滑动切换）、单个证件图片（可缩放）或宝宝的头像（可编辑）。 */
@@ -42,13 +50,17 @@ export function ViewerScreen() {
     avatar?: string;
   }>();
   const { moments, documents, baby } = useRecords();
-  const { role } = useApp();
+  const app = useApp();
+  const { role } = app;
+  const { toast } = useFeedback();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
 
   // 只有回忆里的照片有预览。头像和证件要原图：编辑头像要原图，证件要看清小字。
   const hasPreviews = !params.avatar && !params.document;
+  const moment =
+    params.avatar || params.document ? undefined : moments.find((m) => m.id === params.moment);
   const { items, title, fileNames } = useMemo(() => {
     if (params.avatar) {
       return {
@@ -68,9 +80,9 @@ export function ViewerScreen() {
         fileNames: null,
       };
     }
-    const moment = moments.find((m) => m.id === params.moment);
     return {
-      items: (moment?.data.media ?? []).filter((x) => x.kind === 'image' || x.kind === 'video'),
+      // 和时间线封面的序号用同一个筛选，点封面才会打开到同一张。
+      items: visualMedia(moment?.data.media ?? []),
       title: moment
         ? `${moment.data.title || t().ui.thisMoment} · ${formatMonthDay(moment.data.at)}`
         : '',
@@ -81,7 +93,7 @@ export function ViewerScreen() {
           })
         : null,
     };
-  }, [params.avatar, params.document, params.moment, params.media, baby, documents, moments]);
+  }, [params.avatar, params.document, params.media, baby, documents, moment]);
 
   const initial = Math.min(Number(params.index ?? 0), Math.max(0, items.length - 1));
   const [index, setIndex] = useState(initial);
@@ -93,6 +105,20 @@ export function ViewerScreen() {
   };
   const current = items[index];
   const currentName = current && fileNames?.get(current.id);
+  // 只有一个文件时它就是封面，不用选。真正的权限在服务端：viewer 写回忆会被拒绝。
+  const coverId =
+    moment && items.length > 1 && role !== 'viewer'
+      ? momentCover(moment.data.media, moment.data.coverMediaId)?.media.id
+      : undefined;
+
+  const setCover = (media: MediaRef) => {
+    if (!moment) return;
+    const { id } = moment;
+    // 查看器可能开了一会儿，在最新版本上只改封面，不盖掉家人刚改的内容。
+    const latest = app.store.getSnapshot().moments.find((m) => m.id === id)?.data ?? moment.data;
+    void app.write('moment', { ...latest, coverMediaId: media.id }, id);
+    toast(t().recall.coverSet, { undo: () => void app.write('moment', latest, id) });
+  };
 
   const pages = (
     <FlatList
@@ -171,7 +197,34 @@ export function ViewerScreen() {
         <Text style={s.title} numberOfLines={1}>
           {title}
         </Text>
-        <Text style={s.count}>{items.length > 1 ? `${index + 1} / ${items.length}` : ''}</Text>
+        <Text style={s.count} testID="viewer-count">
+          {items.length > 1 ? `${index + 1} / ${items.length}` : ''}
+        </Text>
+        {current && coverId ? (
+          current.id === coverId ? (
+            // 只说状态，不是按钮：已经是封面了。
+            <View
+              testID="viewer-cover-current"
+              accessible
+              accessibilityLabel={t().recall.isCover}
+              style={s.coverState}
+            >
+              <View style={s.coverDot} />
+              <Text style={s.coverText}>{t().recall.isCover}</Text>
+            </View>
+          ) : (
+            <Pressable
+              testID="viewer-set-cover"
+              accessibilityRole="button"
+              accessibilityLabel={t().recall.setCover}
+              hitSlop={12}
+              onPress={() => setCover(current)}
+              style={s.coverButton}
+            >
+              <Text style={s.coverText}>{t().recall.setCover}</Text>
+            </Pressable>
+          )
+        ) : null}
         {current && currentName ? (
           <DownloadButton
             key={current.id}
@@ -488,6 +541,18 @@ const s = StyleSheet.create({
   close: { color: colors.white, fontSize: 28, lineHeight: 30, paddingHorizontal: 6 },
   title: { flex: 1, color: colors.white, fontSize: 14 },
   count: { color: colors.white, fontSize: 12 },
+  // 能点的有白色细边，只说状态的没有，和底部“查看原图”的胶囊一样。
+  coverButton: {
+    minHeight: 26,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.white,
+    justifyContent: 'center',
+  },
+  coverState: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  coverDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentLight },
+  coverText: { color: colors.white, fontSize: 12 },
   center: {
     position: 'absolute',
     left: 0,

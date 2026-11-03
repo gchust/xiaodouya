@@ -165,6 +165,11 @@ export const MomentData = z.looseObject({
   milestone: z.boolean(),
   media: z.array(MediaRef).max(MAX_MEDIA_PER_RECORD),
   byName: shortText.optional(),
+  /**
+   * 时间线上当封面的照片或视频，指向 `media` 里的一个 id。没有、找不到或者指向录音时用第一个（见 momentCover）。
+   * 格式不对只丢掉这一项，不能让整条回忆校验失败；旧版 App 不认识它，按第一个显示。
+   */
+  coverMediaId: z.uuid().optional().catch(undefined),
 });
 export type MomentData = z.infer<typeof MomentData>;
 

@@ -62,4 +62,7 @@ export const recall: Catalog['recall'] = {
   markMilestone: 'Mark as milestone',
   needContent: 'Write something, or choose a photo.',
   itemsCount: (n) => `${n} ${n === 1 ? 'item' : 'items'}`,
+  setCover: 'Set as cover',
+  isCover: 'Cover',
+  coverSet: 'Cover updated',
 };
