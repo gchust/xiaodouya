@@ -9,10 +9,12 @@
  *
  * 这里证明的是代码能在这些运行环境里工作，不等于在 Supabase 线上验证过。
  */
-import { type ChildProcess, spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { loadConfig } from '../src/config';
 import { hashPassword, verifyPassword } from '../src/crypto';
 import { connect, migrate } from '../src/db';
@@ -167,6 +169,8 @@ const functionEnv: Record<string, string> = {
   S3_FORCE_PATH_STYLE: 'true',
   // 配了 S3 默认就是托管模式。这里要测存储测试接口和 SSRF 拒绝，所以显式打开。
   ALLOW_CUSTOM_STORAGE: 'true',
+  // 每次用自己的前缀，不碰开发时手动发布的版本。
+  APP_RELEASE_PREFIX: `releases-edge-${process.pid}-${Date.now()}/android/`,
 };
 
 async function request<T>(
@@ -421,6 +425,54 @@ async function mainFlow(runtime: Runtime) {
 }
 
 /** 分享页的公开接口：不登录、跨域、令牌在请求体里；再看一天有很多文件时要签多久。 */
+/** 应用内更新：发布脚本写清单，函数读清单（SDK 的 GetObject）并签下载链接。 */
+async function appUpdate(base: string, token: string) {
+  console.log('应用内更新：读清单、签下载链接');
+  const none = await request<{ update: unknown }>(
+    base,
+    'GET',
+    '/v1/app/update?platform=android&versionCode=1',
+    { token },
+  );
+  check(none.status === 200 && none.json.update === null, '还没发布时没有更新');
+  const dir = mkdtempSync(join(tmpdir(), 'xiaodouya-edge-release-'));
+  try {
+    const apk = randomBytes(50_000);
+    writeFileSync(join(dir, 'fake.apk'), apk);
+    await promisify(execFile)(
+      'bash',
+      [resolve(repo, 'scripts/publish-apk.sh'), join(dir, 'fake.apk'), '0.9.0', '90'],
+      {
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          S3_ENDPOINT: functionEnv.S3_ENDPOINT,
+          S3_REGION: functionEnv.S3_REGION,
+          S3_BUCKET: functionEnv.S3_BUCKET,
+          S3_ACCESS_KEY_ID: functionEnv.S3_ACCESS_KEY_ID,
+          S3_SECRET_ACCESS_KEY: functionEnv.S3_SECRET_ACCESS_KEY,
+          APP_RELEASE_PREFIX: functionEnv.APP_RELEASE_PREFIX,
+        },
+      },
+    );
+    const found = await request<{ update: { versionCode: number; sha256: string; url: string } }>(
+      base,
+      'GET',
+      '/v1/app/update?platform=android&versionCode=89',
+      { token },
+    );
+    check(found.status === 200 && found.json.update.versionCode === 90, '发布后查到新版本');
+    const downloaded = Buffer.from(await (await fetch(found.json.update.url)).arrayBuffer());
+    check(
+      createHash('sha256').update(downloaded).digest('hex') === found.json.update.sha256 &&
+        downloaded.equals(apk),
+      '签名链接下载回来的和发布的一致',
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function publicShare(base: string) {
   console.log('分享一天：公开接口');
   type Auth = { token: string };
@@ -747,6 +799,7 @@ try {
   let owner = '';
   try {
     owner = await mainFlow(permissive);
+    await appUpdate(permissive.base, owner);
     await publicShare(permissive.base);
     await customStorage(permissive.base, owner);
     await accountLifecycle(permissive.base);

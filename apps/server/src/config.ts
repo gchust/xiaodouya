@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { MAX_PUBLIC_MEDIA } from '@xiaodouya/shared';
+import { DEFAULT_RELEASE_PREFIX, MAX_PUBLIC_MEDIA } from '@xiaodouya/shared';
 import { z } from 'zod';
 
 const bool = (fallback: boolean) =>
@@ -53,6 +53,11 @@ const EnvSchema = DbEnvSchema.extend({
   S3_FORCE_PATH_STYLE: bool(false),
   S3_BIND_UPLOAD_SIZE: bool(true),
   S3_MULTIPART_ENABLED: bool(true),
+  /** 应用内更新的清单和 APK 在默认存储里的位置，要和发布脚本 scripts/publish-apk.sh 一样。 */
+  APP_RELEASE_PREFIX: z
+    .string()
+    .regex(/^[A-Za-z0-9._/-]+\/$/, { message: '要以 / 结尾，比如 releases/android/' })
+    .default(DEFAULT_RELEASE_PREFIX),
   ALLOW_CUSTOM_STORAGE: optionalText,
   ALLOW_PRIVATE_STORAGE_ENDPOINTS: bool(false),
   PUSH_ENABLED: bool(false),
@@ -122,6 +127,8 @@ export interface Config {
   bindUploadSize: boolean;
   /** 大文件分片上传。存储不支持时（`cli check-multipart` 不通过）关掉，App 会退回单个 PUT。 */
   multipartEnabled: boolean;
+  /** 应用内更新读默认存储的这个前缀。没有默认存储时不提供更新。 */
+  releasePrefix: string;
   allowCustomStorage: boolean;
   allowPrivateEndpoints: boolean;
   pushEnabled: boolean;
@@ -222,6 +229,7 @@ export function loadConfig(env: Env = process.env): Config {
         : e.ALLOW_CUSTOM_STORAGE === 'true' || e.ALLOW_CUSTOM_STORAGE === '1',
     bindUploadSize: e.S3_BIND_UPLOAD_SIZE,
     multipartEnabled: e.S3_MULTIPART_ENABLED,
+    releasePrefix: e.APP_RELEASE_PREFIX,
     allowPrivateEndpoints: e.ALLOW_PRIVATE_STORAGE_ENDPOINTS,
     pushEnabled: e.PUSH_ENABLED,
     expoAccessToken: e.EXPO_ACCESS_TOKEN,

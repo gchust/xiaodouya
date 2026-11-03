@@ -72,6 +72,7 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
     parts_incomplete: () => "Some parts of this file haven't been uploaded yet.",
     bad_part: () => 'That part of the file is out of range.',
     storage_unavailable: () => "Storage isn't responding right now. Please try again later.",
+    update_unavailable: () => "Couldn't check for a new version right now. Please try again later.",
     size_mismatch: () => "The file size doesn't match. Please upload it again.",
     custom_storage_disabled: () => "This server doesn't allow custom storage.",
     bad_endpoint: () => "This storage address can't be used.",
