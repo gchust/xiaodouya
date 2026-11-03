@@ -6,7 +6,9 @@ import {
   type MomentData,
   mergeEdit,
   mergeMediaEdit,
+  momentCover,
   t,
+  visualMedia,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -81,6 +83,13 @@ export function MomentSheet({
     : // 只录音也能保存：保存时会自动停止录音。
       Boolean(title.trim() || text.trim() || kept.length || files.length || recorder.recording);
   const canSave = hasContent && !time.check.error;
+  // 新选的文件排在后面，只有已有的能是封面。只剩一个照片或视频时不用标。
+  const visualCount =
+    visualMedia(kept).length + files.filter((f) => f.kind === 'image' || f.kind === 'video').length;
+  const coverId =
+    editMoment && visualCount > 1
+      ? momentCover(kept, editMoment.data.coverMediaId)?.media.id
+      : undefined;
 
   const pick = async (options?: { e2eBulk?: boolean }) => {
     setPicking(true);
@@ -253,6 +262,7 @@ export function MomentSheet({
                 <ExistingThumb
                   key={media.id}
                   media={media}
+                  cover={media.id === coverId}
                   onRemove={() => setKept((prev) => prev.filter((m) => m.id !== media.id))}
                 />
               ))}

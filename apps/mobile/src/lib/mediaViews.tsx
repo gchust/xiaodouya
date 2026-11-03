@@ -526,7 +526,16 @@ export function useRecorder() {
 }
 
 /** 修改回忆时，已经在记录里的文件。样子和刚选的一样，用户不需要区分。 */
-export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: () => void }) {
+export function ExistingThumb({
+  media,
+  cover = false,
+  onRemove,
+}: {
+  media: MediaRef;
+  /** 时间线上用它当封面。移除后封面回到第一个，所以要让人看得到。 */
+  cover?: boolean;
+  onRemove: () => void;
+}) {
   const visual = media.kind === 'image' || media.kind === 'video';
   return (
     <View style={s.localThumb} testID="existing-media">
@@ -550,6 +559,11 @@ export function ExistingThumb({ media, onRemove }: { media: MediaRef; onRemove: 
           <Mono weight="medium" style={{ fontSize: 9, color: colors.white }}>
             ▶ {formatMediaDuration(media.durationMs)}
           </Mono>
+        </View>
+      ) : null}
+      {cover ? (
+        <View style={s.coverTag} testID="existing-media-cover">
+          <Text style={s.coverTagText}>{t().recall.isCover}</Text>
         </View>
       ) : null}
       <Pressable
@@ -679,6 +693,15 @@ const s = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: 'rgba(43,38,34,0.6)',
   },
+  coverTag: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    paddingHorizontal: 5,
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+  },
+  coverTagText: { fontSize: 9, lineHeight: 14, color: colors.white },
   remove: {
     position: 'absolute',
     right: 3,

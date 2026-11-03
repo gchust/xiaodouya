@@ -1,0 +1,132 @@
+# 时间线封面（issue #50）：两张照片的回忆，在全屏查看里把第二张设为封面，
+# 回到时间线点封面会从第二张打开；撤销能回到第一张；修改弹层里标着哪张是封面。
+# 两张照片是同一张样例图，看不出区别，所以用页码判断打开的是哪一张。
+# 第二张要在修改时加：E2E 的样例每次选都是同一个路径，同一个弹层里选两次，保存时只留得下一张（同流程 11a4）。
+# 翻页用慢一点的滑动：模拟器上快速滑动有时翻不过去。
+# 用完就删：后面的流程默认时间线最上面是流程 03 的回忆。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- tapOn: { id: recall-fab }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Cover ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Cover ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+- tapOn: Cover ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: 共 2 项
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+
+# 没设置过：从第一张打开，第一张就是封面
+- tapOn:
+    id: moment-cover-.*
+    index: 0
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible:
+    text: Cover ${RUN_ID} · .*
+- assertVisible: 1 / 2
+- assertVisible: { id: viewer-cover-current }
+- assertNotVisible: { id: viewer-set-cover }
+- swipe:
+    start: 90%, 75%
+    end: 10%, 75%
+    duration: 800
+- extendedWaitUntil:
+    visible: 2 / 2
+    timeout: 5000
+- tapOn: { id: viewer-set-cover }
+- extendedWaitUntil:
+    visible: { id: viewer-cover-current }
+    timeout: 5000
+- assertVisible: 已设为封面
+- takeScreenshot: .artifacts/e2e-14e-cover-set
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+
+# 时间线的封面换成了第二张：点开从第二张开始
+- tapOn:
+    id: moment-cover-.*
+    index: 0
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible: 2 / 2
+- assertVisible: { id: viewer-cover-current }
+- takeScreenshot: .artifacts/e2e-14e-open-at-cover
+# 第一张又能设回封面，撤销后封面还是第二张
+- swipe:
+    start: 10%, 75%
+    end: 90%, 75%
+    duration: 800
+- extendedWaitUntil:
+    visible: 1 / 2
+    timeout: 5000
+- tapOn: { id: viewer-set-cover }
+- extendedWaitUntil:
+    visible: { id: viewer-cover-current }
+    timeout: 5000
+- tapOn: { id: toast-undo }
+- extendedWaitUntil:
+    visible: { id: viewer-set-cover }
+    timeout: 5000
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+- tapOn:
+    id: moment-cover-.*
+    index: 0
+- extendedWaitUntil:
+    visible: 2 / 2
+    timeout: 10000
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+
+# 修改弹层里标着封面
+- tapOn: Cover ${RUN_ID}的更多操作
+- tapOn: { id: moment-edit }
+- assertVisible: 修改这一刻
+- assertVisible: { id: existing-media-cover }
+- takeScreenshot: .artifacts/e2e-14e-edit-sheet
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: 修改这一刻
+    timeout: 10000
+
+- tapOn: Cover ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- extendedWaitUntil:
+    notVisible: Cover ${RUN_ID}
+    timeout: 15000

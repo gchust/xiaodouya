@@ -62,4 +62,7 @@ export const recall = {
   markMilestone: '标为里程碑',
   needContent: '写点什么，或者选一张照片。',
   itemsCount: (n: Text) => `${n} 项`,
+  setCover: '设为封面',
+  isCover: '封面',
+  coverSet: '已设为封面',
 };
