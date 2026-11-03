@@ -256,7 +256,7 @@ jobs:
           disk-size: 4096M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: export PATH="$HOME/.maestro/bin:$PATH"; bash scripts/e2e.sh --group "$E2E_GROUP"
+          script: export PATH="$HOME/.maestro/bin:$PATH"; if [ "$E2E_GROUP" = daily ]; then (until grep -q "Running flow 02_records" .artifacts/maestro/maestro.log 2>/dev/null; do sleep 1; done; sleep 8; echo "CHAOS adb reconnect at $(date -u +%T)"; adb reconnect) & fi; bash scripts/e2e.sh --group "$E2E_GROUP"
       - name: 收集 adb server 的日志
         if: always()
         # 断开时 adb server 一侧的记录（connection terminated 之类）在这里，设备那边只看得到 write failed。
