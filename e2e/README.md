@@ -12,6 +12,17 @@ pnpm e2e e2e/flows/01_onboarding.yaml e2e/flows/02_records.yaml   # 只跑这几
 
 截图在 `.artifacts/maestro/<流程>/takeScreenshot/.artifacts/`，失败现场在同级的 `screenshots/`。CI 上每组一个产物，叫 `e2e-screenshots-<分组>`，路径相同。改 UI 后要逐张看。
 
+## 模拟器断开时整组重跑一次
+
+CI 的模拟器偶尔会和 adb 断开几秒（见 `docs/PITFALLS.md` 的“CI”和“测试方法”）。流程不是幂等的，断在中间再跑同一条会被留下的数据干扰，所以 `e2e.sh` 遇到断开时**整组从头重跑一次**：重装 App、新的 `RUN_ID` 和账号，`verify-uploads.mjs` 只查新账号。
+
+- 只有 Maestro 日志里这条流程的**第一个错误**是 `device offline`、`device '…' not found` 或 `DeviceServerDiedException` 才算断开，判断在 `scripts/e2e-env-failure.mjs`（有单元测试）。断言失败、找不到元素、App 崩溃都不重跑；断言失败之后才断开的，也算断言失败。
+- 每组最多重跑一次，重跑时又断开就是失败。
+- 重跑一定看得见：日志里有 `↻`，Actions 里有 warning，“CI 结果”的摘要列出每组重跑了几次、adb 实际断开了几次。第一次的调试输出在 `.artifacts/maestro-env-rerun-<分组>`。
+- 现场记录：`.artifacts/adb-track.log`（adb 的每次状态变化）、`e2e-monitor.log`（每 20 秒的负载、CPU、内存、模拟器进程）、`adb-server.log`（CI 上收集）、`e2e-env-reruns.log`（每次重跑一行）。
+
+本地 `pnpm e2e` 串行跑多组时，重跑会把整个 `.artifacts/maestro` 挪走，前面几组的截图也在挪走的目录里。
+
 ## 分组
 
 CI 开四台模拟器，每台跑一组，各有自己的 Postgres、S3、服务端和账号，互不影响。**分组写在 [`groups.json`](groups.json)，是 CI 跑哪些流程的唯一依据。**

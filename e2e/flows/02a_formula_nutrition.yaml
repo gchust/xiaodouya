@@ -128,6 +128,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: feed-save }
     timeout: 10000
+# 保存后的 Toast 盖在列表底部，130ml 那一行正好在它下面，点上去会点到 Toast，详情打不开（soak run 41565539665）。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
 - scrollUntilVisible:
     element: { text: 喂奶 130ml }
     timeout: 5000
