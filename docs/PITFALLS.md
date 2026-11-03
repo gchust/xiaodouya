@@ -203,6 +203,7 @@
 - **`pg_dump` 不能比服务器旧，导出的文件也不能恢复到比它旧的 Postgres。** 用 18 导出的备份恢复到 16 报 `unrecognized configuration parameter "transaction_timeout"`。脚本用 `BACKUP_PG_IMAGE` 指定版本，Supabase 升级大版本时要跟着改。
 - **`pg_dump --schema=public` 的结果里有 `CREATE SCHEMA public`。** 恢复前只能 `DROP`，不能再 `CREATE`，否则报已存在。
 - **`age` 的口令模式只能交互输入，不能从环境变量读。** 无人值守的备份用 `openssl enc -pbkdf2 -pass env:`。`openssl enc` 不支持 GCM，没有认证，损坏靠 gzip 校验和和 dump 结尾的标记发现。
+- **改服务端配额默认值后，要核对线上的 Secret 和函数版本。** Supabase 的 Secret 会覆盖代码默认值，而没设 Secret 的项目仍运行旧函数时也会保留旧默认值。`supabase secrets list` 显示的是 SHA-256 摘要，不是明文；本项目 2026-11-03 原先没有 `FAMILY_QUOTA_MB`，设置为 `102400` 后核对了摘要，并部署新版函数。
 
 ## 测试方法
 

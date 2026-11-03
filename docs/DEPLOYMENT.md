@@ -276,13 +276,13 @@ UPDATE families SET quota_mb = 204800 WHERE id = '<家庭 id>';  -- 200 GB；0 �
 
 单家设置了 `quota_mb` 时优先于默认值，改默认值不影响这些家庭。
 
-**调所有家庭的默认配额：** 线上的值是 Supabase 的 Secret，不是代码里的默认值。按 `supabase/.env.example` 设置过的项目写死了当时的数字，改代码不会生效，要单独设置：
+**调所有家庭的默认配额：** Supabase Secret 优先于代码默认值；没有设置 Secret 时，部署新版函数后才会使用新版代码的默认值。按旧 `supabase/.env.example` 设置过 Secret 的项目会继续使用旧值，要单独更新：
 
 ```bash
 supabase secrets set FAMILY_QUOTA_MB=102400 --project-ref <项目 ID>   # 100 GB
 ```
 
-设置后在家人页确认显示“共 100.0 GB”。
+本项目已于 2026-11-03 设置 `FAMILY_QUOTA_MB=102400`，并在[后端部署流程](https://github.com/gchust/xiaodouya/actions/runs/41614313014)中部署了新版函数。CLI 返回的 Secret 摘要与 `102400` 一致；线上现有 1 个家庭，没有单家 `quota_mb` 覆盖。`v0.3.3` 签名 APK 已[发布](https://github.com/gchust/xiaodouya/releases/tag/v0.3.3)。家人页显示“共 100.0 GB”仍待登录 App 实测。
 
 **升级到带配额的版本（已上线的项目，只需要做一次）：** v0.1.0 的 APK 不用更新也能继续用：空间满时它显示服务端的那句话，有重试按钮。S3 表单还在它的界面上，保存时显示“这台服务器不允许自定义存储”。
 
