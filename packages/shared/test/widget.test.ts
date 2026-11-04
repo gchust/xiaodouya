@@ -5,14 +5,19 @@ import { metricUnits } from '../src/domain/units';
 import {
   buildWidgetView,
   formatSyncedAt,
+  normalizeWidgetLabel,
   parseWidgetAction,
+  parseWidgetPrefs,
   planWidgetAction,
   shortBabyName,
+  WIDGET_LABEL_MAX,
   type WidgetEntry,
   type WidgetSession,
+  widgetAvatarKey,
+  widgetLabel,
 } from '../src/domain/widget';
 import { formulaSnapshot } from '../src/health/nutrition';
-import type { BabyData, EventData, FormulaData } from '../src/schemas';
+import type { BabyData, EventData, FormulaData, MediaRef } from '../src/schemas';
 
 const HOUR = 3_600_000;
 const now = new Date(2026, 5, 15, 12, 0, 0).getTime();
@@ -507,5 +512,90 @@ describe('一天的节奏', () => {
     ]);
     expect(line.feeds).toEqual([0.125, 0.375]);
     expect(line.sleeps.map((s) => s.from)).toEqual([1 / 24, 0.25]);
+  });
+});
+
+describe('小工具上的称呼和头像', () => {
+  const avatar: MediaRef = {
+    id: '6f1c2a4e-1111-4c3b-9a55-0d2c7e9b1a01',
+    kind: 'image',
+    mime: 'image/jpeg',
+    size: 2048,
+  };
+  const base = {
+    session: member,
+    baby,
+    entries: [],
+    units: metricUnits,
+    now,
+    dayStart,
+    syncedAt: now,
+  };
+
+  it('没设置、空白时用宝宝的名字', () => {
+    expect(widgetLabel({}, '测试豆')).toBe('测试豆');
+    expect(widgetLabel({ label: '' }, '测试豆')).toBe('测试豆');
+    expect(widgetLabel({ label: '   ' }, '测试豆')).toBe('测试豆');
+  });
+
+  it('设置了就用设置的，去掉首尾空白，中间的空白合成一个', () => {
+    expect(widgetLabel({ label: '  豆豆 ' }, '测试豆')).toBe('豆豆');
+    expect(normalizeWidgetLabel('Little \n  Bean')).toBe('Little Bean');
+    expect(normalizeWidgetLabel('  ')).toBeNull();
+    expect(normalizeWidgetLabel(undefined)).toBeNull();
+  });
+
+  it('超过上限按字截短，不切断表情符号', () => {
+    const long = '🌱'.repeat(WIDGET_LABEL_MAX + 3);
+    expect(normalizeWidgetLabel(long)).toBe('🌱'.repeat(WIDGET_LABEL_MAX));
+  });
+
+  it('小工具显示设置的称呼，没设置时显示名字', () => {
+    const named = buildWidgetView({ ...base, label: '豆豆' });
+    const plain = buildWidgetView({ ...base, label: '  ' });
+    const unset = buildWidgetView(base);
+    expect(named.kind === 'ready' && named.babyName).toBe('豆豆');
+    expect(plain.kind === 'ready' && plain.babyName).toBe('测试豆');
+    expect(unset.kind === 'ready' && unset.babyName).toBe('测试豆');
+  });
+
+  it('看不了记录时也不显示设置的称呼', () => {
+    const view = buildWidgetView({
+      ...base,
+      session: { ...member, role: 'viewer' },
+      label: '豆豆',
+    });
+    expect(view.kind).toBe('blocked');
+    expect(JSON.stringify(view)).not.toContain('豆豆');
+  });
+
+  it('存的设置读不出来时回到默认：用名字，不显示头像', () => {
+    for (const raw of [
+      null,
+      '',
+      'not json',
+      '[]',
+      '"x"',
+      'null',
+      '{"label":5,"showAvatar":"yes"}',
+    ]) {
+      const prefs = parseWidgetPrefs(raw);
+      expect(widgetLabel(prefs, '测试豆')).toBe('测试豆');
+      expect(widgetAvatarKey(prefs, avatar)).toBeNull();
+    }
+    expect(parseWidgetPrefs('{"label":"豆豆","showAvatar":true}')).toEqual({
+      label: '豆豆',
+      showAvatar: true,
+    });
+  });
+
+  it('打开开关、宝宝有图片头像时才显示，缓存按头像的文件 id 区分', () => {
+    expect(widgetAvatarKey({}, avatar)).toBeNull();
+    expect(widgetAvatarKey({ showAvatar: false }, avatar)).toBeNull();
+    expect(widgetAvatarKey({ showAvatar: true }, undefined)).toBeNull();
+    expect(widgetAvatarKey({ showAvatar: true }, { ...avatar, kind: 'video' })).toBeNull();
+    expect(widgetAvatarKey({ showAvatar: true }, avatar)).toBe(avatar.id);
+    const next = { ...avatar, id: '6f1c2a4e-2222-4c3b-9a55-0d2c7e9b1a02' };
+    expect(widgetAvatarKey({ showAvatar: true }, next)).toBe(next.id);
   });
 });

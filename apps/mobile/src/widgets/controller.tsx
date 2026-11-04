@@ -9,6 +9,7 @@ import {
   type WidgetAction,
   type WidgetSession,
   type WidgetView,
+  widgetAvatarKey,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
@@ -23,10 +24,13 @@ import { DEFAULT_API_URL } from '../lib/config';
 import { applyLocale } from '../lib/locale';
 import { readStoredSession } from '../lib/storedSession';
 import { runWidgetAction } from './actions';
+import { readWidgetAvatar, updateWidgetAvatar } from './avatarCache';
+import { readWidgetPrefs } from './prefs';
 import { createQueue } from './queue';
 import {
   buttonOf,
   renderWidgetFor,
+  type ShownWidgetView,
   type WidgetFeedback,
   type WidgetIds,
   type WidgetName,
@@ -67,12 +71,13 @@ async function readSession(core: CoreServices) {
   return { session, token, serverUrl, prefs: me?.prefs as Prefs | undefined };
 }
 
-export async function loadWidgetView(core: CoreServices): Promise<WidgetView> {
+export async function loadWidgetView(core: CoreServices): Promise<ShownWidgetView> {
   const { session, prefs } = await readSession(core);
   const { baby, events } = core.store.getSnapshot();
   const now = Date.now();
   const syncedAt = Number((await core.db.getMeta(LAST_SYNC_KEY)) ?? 0);
-  return buildWidgetView({
+  const display = await readWidgetPrefs(core.db);
+  const view = buildWidgetView({
     session,
     baby: baby?.data ?? null,
     entries: events,
@@ -80,7 +85,13 @@ export async function loadWidgetView(core: CoreServices): Promise<WidgetView> {
     now,
     dayStart: startOfLocalDay(now),
     syncedAt: syncedAt > 0 ? syncedAt : null,
+    label: display.label,
   });
+  if (view.kind !== 'ready') return view;
+  // 只读本机已经准备好的文件，不联网；对不上现在的头像就不显示，见 avatarCache.ts。
+  const key = widgetAvatarKey(display, baby?.data.avatar);
+  const avatar = key ? await readWidgetAvatar(key) : null;
+  return avatar ? { ...view, avatar } : view;
 }
 
 function isWidgetName(name: string): name is WidgetName {
@@ -139,6 +150,11 @@ export function scheduleWidgetRefresh(): void {
   refreshTimer = setTimeout(() => {
     refreshTimer = null;
     void refreshWidgets();
+    // 头像换了、删了或者开关变了：先照旧画，准备好头像文件后再画一次，不让下载拖慢记录的显示。
+    void getCoreServices()
+      .then(updateWidgetAvatar)
+      .then((changed) => (changed ? refreshWidgets() : undefined))
+      .catch(() => {});
   }, REFRESH_DEBOUNCE_MS);
 }
 

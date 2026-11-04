@@ -34,6 +34,7 @@ import type { RecordStore, Snapshot } from '../data/store';
 import type { SyncEngine, SyncEvents, SyncStatus } from '../data/syncEngine';
 import type { UploadQueue } from '../data/uploadQueue';
 import { useFeedback } from '../ui/overlays';
+import { clearWidgetAvatars } from '../widgets/avatarCache';
 import { scheduleWidgetRefresh } from '../widgets/controller';
 import { shouldOfferVerifyStep } from './accountLogic';
 import { type Api, ApiFailure } from './api';
@@ -233,6 +234,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     await services.store.clear();
     clearDownloads();
     await clearLocalMedia();
+    // 小工具的头像缓存是宝宝的脸；小工具的称呼和开关在 meta 表里，上面的 store.clear() 已经清掉。
+    clearWidgetAvatars();
     // 反馈的草稿和附件副本也是这个人的，可能拍到孩子。
     clearFeedbackDraft();
     // 已经排好的本机提醒不随数据消失，账号没了之后还会响。

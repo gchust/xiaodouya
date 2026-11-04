@@ -76,4 +76,11 @@ export const widgetUi = {
   pinUnsupported: '这台手机不能直接添加，请按下面的方法放到桌面',
   manualHint:
     '点了没反应？长按桌面空白处，打开“小部件”，找到“小豆芽”。有的手机把它放在列表最下面的“安卓小部件”里。',
+  displayTitle: '小工具上显示',
+  labelField: '小工具上的称呼',
+  labelHint: (max: number) => `留空就用宝宝的名字。只改这台手机上的小工具，最多 ${max} 个字。`,
+  avatarToggle: '在小工具上显示宝宝头像',
+  avatarSub: '桌面上谁拿起这台手机都能看到，锁屏上不显示。',
+  avatarMissing: '宝宝还没有头像，可以在“今天”页点头像添加。',
+  saveFailed: '没有存好，请再试一次',
 };

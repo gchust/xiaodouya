@@ -9,7 +9,7 @@ import {
   type WidgetView,
 } from '@xiaodouya/shared';
 import type { ReactElement } from 'react';
-import { FlexWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
+import { FlexWidget, ImageWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
 import { DAYLINE_HEIGHT, daylineSvg } from './dayline';
 import { eventLink, FEED_LINK, TODAY_LINK } from './links';
 import { type WidgetPalette, widgetPalettes } from './palette';
@@ -47,7 +47,16 @@ export interface WidgetSize {
 }
 
 type Hex = `#${string}`;
-type Ready = Extract<WidgetView, { kind: 'ready' }>;
+
+/** 缓存好的头像（`avatarCache.ts`）。只能是本机文件读出来的 data URI，小工具里不联网。 */
+export type WidgetAvatarUri = `data:image/${string}`;
+/** 头像只在 App 里有：shared 的 `WidgetView` 不碰文件。没有头像时和原来一样。 */
+export type ShownWidgetView = WidgetView & { avatar?: WidgetAvatarUri };
+type Ready = Extract<WidgetView, { kind: 'ready' }> & { avatar?: WidgetAvatarUri };
+
+/** 2×2 的上排和色点换成小头像；4×2 的标题前面放大一号的。 */
+const AVATAR_SMALL = 16;
+const AVATAR_WIDE = 22;
 
 /** 字体由 app.config.ts 的插件复制进 APK，名字就是文件名（不带扩展名）。只有这两个字重。 */
 const SERIF = 'NotoSerifSC-Bold.subset';
@@ -121,6 +130,19 @@ function Dot({ color, size = 7, gap = 6 }: { color: Hex; size?: number; gap?: nu
   );
 }
 
+/** 圆形头像。原生先把图拉成 size×size 再画，缓存里已经裁成正方形，所以不会变形。 */
+function Avatar({ uri, size, gap }: { uri: WidgetAvatarUri; size: number; gap: number }) {
+  return (
+    <ImageWidget
+      image={uri}
+      imageWidth={size}
+      imageHeight={size}
+      radius={size / 2}
+      style={{ marginRight: gap }}
+    />
+  );
+}
+
 /** 同步时间平时不显示；旧了才出现，提醒家人的记录可能还没到（见 `WIDGET_SYNC_STALE_MS`）。 */
 function SyncPill({ view, p }: { view: Ready; p: WidgetPalette }) {
   return (
@@ -164,10 +186,15 @@ function Header({
       }}
     >
       {/* 不用 flex：1，那样量出来的宽度偏大，会把右边挤出卡片。名字在这里截短。 */}
+      {/* 头像比色点宽 10dp 左右，名字少放两格（约一个汉字）。 */}
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Dot color={dot} />
+        {view.avatar ? (
+          <Avatar uri={view.avatar} size={AVATAR_SMALL} gap={6} />
+        ) : (
+          <Dot color={dot} />
+        )}
         <TextWidget
-          text={shortBabyName(view.babyName, view.showSync ? 8 : 14)}
+          text={shortBabyName(view.babyName, (view.showSync ? 8 : 14) - (view.avatar ? 2 : 0))}
           maxLines={1}
           style={{ fontSize: 12, fontWeight: '700', color: ink }}
         />
@@ -852,11 +879,17 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
           justifyContent: 'space-between',
         }}
       >
-        <TextWidget
-          text={t().widgetUi.quickTitle(shortBabyName(view.babyName, 12), view.dayNumber)}
-          maxLines={1}
-          style={{ fontSize: 14, fontFamily: SERIF, color: p.ink }}
-        />
+        <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {view.avatar ? <Avatar uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
+          <TextWidget
+            text={t().widgetUi.quickTitle(
+              shortBabyName(view.babyName, view.avatar ? 10 : 12),
+              view.dayNumber,
+            )}
+            maxLines={1}
+            style={{ fontSize: 14, fontFamily: SERIF, color: p.ink }}
+          />
+        </FlexWidget>
         {view.showSync ? (
           <SyncPill view={view} p={p} />
         ) : (
@@ -932,11 +965,14 @@ function SummaryCard({ view, p, size }: CardProps) {
           justifyContent: 'space-between',
         }}
       >
-        <TextWidget
-          text={t().widgetUi.todayOf(shortBabyName(view.babyName, 16))}
-          maxLines={1}
-          style={{ fontSize: 15, fontFamily: SERIF, color: p.ink }}
-        />
+        <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {view.avatar ? <Avatar uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
+          <TextWidget
+            text={t().widgetUi.todayOf(shortBabyName(view.babyName, view.avatar ? 14 : 16))}
+            maxLines={1}
+            style={{ fontSize: 15, fontFamily: SERIF, color: p.ink }}
+          />
+        </FlexWidget>
         {view.showSync ? (
           <SyncPill view={view} p={p} />
         ) : (
@@ -1021,7 +1057,7 @@ const DEFAULT_SIZES: Record<WidgetName, WidgetSize> = {
 
 function renderWith(
   name: WidgetName,
-  view: WidgetView,
+  view: ShownWidgetView,
   p: WidgetPalette,
   ids: WidgetIds,
   shown: WidgetFeedback | undefined,
@@ -1046,7 +1082,7 @@ function renderWith(
 /** 同时给出浅色和深色两份，系统按手机的深色模式选，切换时不用等刷新。 */
 export function renderWidgetFor(
   name: WidgetName,
-  view: WidgetView,
+  view: ShownWidgetView,
   ids: WidgetIds,
   shown?: WidgetFeedback,
   size?: WidgetSize,

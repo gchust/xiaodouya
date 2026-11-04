@@ -77,4 +77,12 @@ export const widgetUi: Catalog['widgetUi'] = {
   pinUnsupported: "This phone can't add it directly. Use the steps below.",
   manualHint:
     'Nothing happened? Long-press an empty spot on your home screen, open Widgets and find Xiaodouya. Some phones list it at the bottom under Android widgets.',
+  displayTitle: 'On your widgets',
+  labelField: 'Name on widgets',
+  labelHint: (max: number) =>
+    `Leave empty to use your baby's name. Only changes the widgets on this phone, up to ${max} characters.`,
+  avatarToggle: "Show your baby's photo on widgets",
+  avatarSub: 'Anyone holding this phone can see it on the home screen. Never on the lock screen.',
+  avatarMissing: 'No photo yet. Tap the photo circle on Today to add one.',
+  saveFailed: "Couldn't save. Please try again.",
 };
