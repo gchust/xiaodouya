@@ -270,6 +270,16 @@ export const migrations: readonly string[] = [
   ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
   ALTER TABLE feedback_attachments ENABLE ROW LEVEL SECURITY;
   `,
+  // 反馈附件公开（F-126）。public_attachments：这一条的附件放进了公开的 issue。默认 false，
+  // 改版前的反馈（当时承诺不公开）都是 false，也就不会有令牌。
+  // public_token 存明文，不像分享链接只存哈希：issue 正文在建 issue 时才生成，可能是几天后的重试，
+  // 那时还要拼出同一个链接；它也只能打开已经放在公开 issue 里的那个文件。
+  `
+  ALTER TABLE feedback ADD COLUMN public_attachments BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE feedback_attachments ADD COLUMN public_token TEXT;
+  CREATE UNIQUE INDEX feedback_attachments_public_token ON feedback_attachments(public_token)
+    WHERE public_token IS NOT NULL;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

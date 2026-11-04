@@ -3,7 +3,9 @@ import { formatBytes } from './domain/age';
 import { locales } from './i18n/locale';
 
 /**
- * 用户反馈：App 里写的文字会发到 GitHub 的 issue（通常是公开仓库），附件只放服务端的私有存储。
+ * 用户反馈：App 里写的文字会发到 GitHub 的 issue（通常是公开仓库），附件放服务端的平台存储。
+ * 新版 App 提交时说明用户看过“照片和视频会公开”的提示（publicAttachments），正文才嵌入附件的公开链接
+ * （仓库所有者 2026-11-04 的决定，F-126）；之前的反馈当时承诺过不公开，一律不嵌入。
  * issue 正文由这里生成，App 也用同一份诊断信息给用户看“会公开什么”。
  */
 
@@ -86,6 +88,11 @@ export const CreateFeedbackRequest = z.object({
     .refine((v) => cleanFeedbackText(v).length > 0, { message: 'empty' }),
   diagnostics: FeedbackDiagnostics,
   attachments: z.array(FeedbackAttachmentInput).max(FEEDBACK_MAX_ATTACHMENTS),
+  /**
+   * 用户看到的提示是“照片和视频会和文字一起公开”。旧版 App 不发这个字段，它当时写的是“不公开”，
+   * 所以没有这个字段、或者不是 true，附件一律不公开。草稿每次保存都以最后一次为准。
+   */
+  publicAttachments: z.boolean().optional(),
 });
 export type CreateFeedbackRequest = z.infer<typeof CreateFeedbackRequest>;
 
@@ -129,6 +136,37 @@ export interface FeedbackConfig {
   attachments: boolean;
   /** 附件在 issue 建好后保留多少天，null 表示一直保留。 */
   attachmentDays: number | null;
+  /**
+   * 附件会以公开链接放进 issue（服务器配了 PUBLIC_API_URL 和平台存储）。旧服务器没有这个字段，
+   * App 当作不公开，也不发 publicAttachments。
+   */
+  publicAttachments?: boolean;
+}
+
+/** 附件的公开链接：`<PUBLIC_API_URL>/v1/public/feedback-files/<令牌>`，302 到短时效的签名链接。 */
+export const FEEDBACK_PUBLIC_FILE_PATH = '/v1/public/feedback-files';
+/** 32 字节随机数的 base64url（256 位）。和反馈 id、附件 id、对象路径都没有关系，只能查库对上。 */
+export const FEEDBACK_PUBLIC_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * 能放进公开链接的类型，返回规范的写法；其他的不公开（只在 issue 里写个数）。
+ * 类型是手机报的，服务端不看文件内容：SVG 能带脚本，HEIC 浏览器打不开，都不给公开链接。
+ * 新版 App 把照片都重新编码成 JPEG，正常走不到这些分支。
+ */
+const PUBLIC_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/3gpp',
+]);
+export function publicFeedbackMime(mime: string): string | null {
+  const lower = mime.toLowerCase().split(';')[0]!.trim();
+  const normalized = lower === 'image/jpg' ? 'image/jpeg' : lower;
+  return PUBLIC_MIMES.has(normalized) ? normalized : null;
 }
 
 // ─── 维护者查看收到的反馈 ────────────────────────────────
@@ -170,6 +208,8 @@ export interface FeedbackInboxItem {
   issueUrl: string | null;
   /** 提交时有几个附件。比 attachments 多，说明过了保留期已经删掉了。 */
   attachmentCount: number;
+  /** 附件以公开链接放进了 issue。改版前的反馈（当时承诺不公开）是 false。 */
+  publicAttachments: boolean;
   /** 还在存储里的附件。 */
   attachments: FeedbackInboxAttachment[];
   /** 附件预计什么时候删除。null：一直保留，或者还没建 issue（建好之后才开始算）。 */
@@ -246,27 +286,67 @@ export function fenceFor(text: string): string {
   return '`'.repeat(Math.max(3, longest + 1));
 }
 
-const kindName = (mime: string) => (mime.toLowerCase().startsWith('video/') ? '视频' : '图片');
+const kindName = (mime: string): '图片' | '视频' =>
+  mime.toLowerCase().startsWith('video/') ? '视频' : '图片';
 
-/** 附件只写个数、类型和大小。文件名可能带名字，不写。 */
+export interface FeedbackIssueAttachment {
+  mime: string;
+  size: number;
+  /** 公开链接。null 或没有：不公开，只写个数。 */
+  url?: string | null;
+}
+
+/** 附件写个数、类型和大小。文件名可能带名字，不写。公开的在正文下面另有链接。 */
 export function describeFeedbackAttachments(
-  attachments: readonly { mime: string; size: number }[],
+  attachments: readonly FeedbackIssueAttachment[],
 ): string {
   if (attachments.length === 0) return '没有';
   const parts = attachments.map((a) => `${kindName(a.mime)} ${formatBytes(a.size)}`);
-  return `${attachments.length} 个（${parts.join('，')}），只在服务端的私有存储里，不公开`;
+  const head = `${attachments.length} 个（${parts.join('，')}）`;
+  const shown = attachments.filter((a) => a.url).length;
+  if (shown === 0) return `${head}，只在服务端的私有存储里，不公开`;
+  const hidden = attachments.length - shown;
+  return `${head}，${shown} 个公开在下面${hidden > 0 ? `，${hidden} 个不公开` : ''}`;
+}
+
+/**
+ * 公开的附件：图片用 `![]()` 嵌入（GitHub 经它的图片代理加载），视频写成链接（外链视频不会放进播放器）。
+ * 链接是服务端拼的：PUBLIC_API_URL 加 base64url 的令牌，没有用户能控制的字符。
+ */
+function attachmentSection(
+  attachments: readonly FeedbackIssueAttachment[],
+  days: number | null | undefined,
+): string[] {
+  const shown = attachments.filter((a): a is FeedbackIssueAttachment & { url: string } =>
+    Boolean(a.url),
+  );
+  if (shown.length === 0) return [];
+  const counter = { 图片: 0, 视频: 0 };
+  const lines = shown.map((a) => {
+    const kind = kindName(a.mime);
+    counter[kind] += 1;
+    const label = `${kind} ${counter[kind]}（${formatBytes(a.size)}）`;
+    return kind === '图片' ? `![${label}](${a.url})` : `[${label}](${a.url})`;
+  });
+  const expiry = days
+    ? `附件在 issue 建好 ${days} 天后删除，之后链接打不开；GitHub 的图片缓存可能还会留一段时间。`
+    : '附件一直保留，用户删除账号时删除，之后链接打不开；GitHub 的图片缓存可能还会留一段时间。';
+  return ['### 附件', '', ...lines.flatMap((l) => [l, '']), expiry, ''];
 }
 
 export interface FeedbackIssueInput {
   id: string;
   text: string;
   diagnostics: FeedbackDiagnostics;
-  attachments: readonly { mime: string; size: number }[];
+  attachments: readonly FeedbackIssueAttachment[];
+  /** 附件保留几天，写在公开链接下面。null：一直保留。 */
+  attachmentDays?: number | null;
 }
 
 /**
  * issue 的标题和正文。这里能出现的只有：用户写的文字（在代码块里）、反馈 id、诊断信息（正则校验过）、
- * 附件的类型和大小。邮箱、账号、家庭、宝宝的信息和附件的地址都不在输入里，也就写不进去。
+ * 附件的类型和大小，以及同意公开的附件的公开链接。邮箱、账号、家庭、宝宝的信息、附件 id 和对象路径
+ * 都不在输入里，也就写不进去。
  * 标题不放用户的文字，省得要考虑标题里的提及和引用。
  */
 export function renderFeedbackIssue(input: FeedbackIssueInput): { title: string; body: string } {
@@ -291,6 +371,7 @@ export function renderFeedbackIssue(input: FeedbackIssueInput): { title: string;
     `| 地区 | ${d.region ? `\`${d.region}\`` : '—'} |`,
     `| 附件 | ${describeFeedbackAttachments(input.attachments)} |`,
     '',
+    ...attachmentSection(input.attachments, input.attachmentDays),
     `维护者查看附件：\`cli feedback ${input.id}\`（签名链接 10 分钟有效），或在 App 的「收到的反馈」里查看。`,
     '',
   ].join('\n');

@@ -111,8 +111,24 @@ export async function e2eBulkMoment(): Promise<PickedFile[]> {
 }
 
 export async function e2ePickFiles(
-  purpose: 'moment' | 'avatar' | 'document-photo' | 'document-pdf',
+  purpose: 'moment' | 'avatar' | 'document-photo' | 'document-pdf' | 'feedback',
 ): Promise<PickedFile[]> {
+  if (purpose === 'feedback') {
+    // 带虚构 GPS 的样例：verify-uploads 核对传上去的那份已经没有 EXIF。
+    const name = `e2e-feedback-${++fixtureSerial}.jpg`;
+    const file = await fixture(name, (f) => f.write(EXIF_JPEG_BASE64, { encoding: 'base64' }));
+    return [
+      {
+        uri: file.uri,
+        kind: 'image',
+        mime: 'image/jpeg',
+        size: file.size ?? 0,
+        name,
+        width: 48,
+        height: 64,
+      },
+    ];
+  }
   if (purpose === 'document-pdf') {
     const file = await fixture('e2e-sample.pdf', (f) => f.write(PDF_TEXT));
     return [

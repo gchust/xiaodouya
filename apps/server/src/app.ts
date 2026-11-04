@@ -28,6 +28,7 @@ import {
   type FamilyExport,
   type FamilyMember,
   FEEDBACK_INBOX_PAGE,
+  FEEDBACK_PUBLIC_FILE_PATH,
   type FeedbackAttachmentUrlResponse,
   type FeedbackInboxItem,
   FeedbackInboxQuery,
@@ -121,6 +122,8 @@ import {
   feedbackInbox,
   feedbackInboxItem,
   feedbackObjectKey,
+  publicFeedbackFile,
+  publishAttachments,
 } from './feedback';
 import type { Mailer } from './mailer';
 import { resetPasswordMail, verifyEmailMail } from './mailTemplates';
@@ -357,16 +360,24 @@ export function createApp({
 }: AppContext) {
   const app = new Hono<Env>().basePath(basePath);
 
+  /** 日志里的路径。反馈附件的公开链接整个路径就是令牌，只记前缀。 */
+  const loggedPath = (path: string) => {
+    const at = path.indexOf(`${FEEDBACK_PUBLIC_FILE_PATH}/`);
+    return at < 0 ? path : `${path.slice(0, at)}${FEEDBACK_PUBLIC_FILE_PATH}/…`;
+  };
+
   app.onError((error, c) => {
     if (error instanceof HTTPException) {
       // 只记路径、状态和错误原因，不记请求体，原因文字里也不含用户填写的值。
       if (error.status !== 401)
-        console.warn(`[${c.req.method} ${c.req.path}] ${error.status} ${error.message}`);
+        console.warn(
+          `[${c.req.method} ${loggedPath(c.req.path)}] ${error.status} ${error.message}`,
+        );
       return error.getResponse();
     }
     // 只记录错误名和信息：请求体里可能有证件号，不能进日志。
     console.error(
-      `[${c.req.method} ${c.req.path}]`,
+      `[${c.req.method} ${loggedPath(c.req.path)}]`,
       error instanceof Error ? error.message : 'unknown',
     );
     return c.json<ApiError>(
@@ -394,6 +405,7 @@ export function createApp({
         public: config.feedback?.public ?? true,
         attachments: Boolean(config.feedback && config.serverStorage),
         attachmentDays: config.feedback ? config.feedbackAttachmentDays : null,
+        publicAttachments: Boolean(config.feedback && config.serverStorage && config.publicApiUrl),
       },
     }),
   );
@@ -453,6 +465,56 @@ export function createApp({
     const share = await findActiveShare(sql, token);
     if (!share) return shareMiss(c);
     return c.json<PublicShareResponse>(await buildPublicShare(sql, config, share));
+  });
+
+  // ─── 反馈附件的公开链接 ─────────────────────────────────
+  // issue 正文里嵌的就是它（F-126）。不用登录，GitHub 的图片代理和看 issue 的人直接打开。
+  // 和分享页一样注册在 v1 之前，限流在查库之前。路径就是令牌：这里不调 fail()、不往外抛，
+  // 出错也不进 onError 的日志；也不打任何带路径的日志。
+
+  app.use(`${FEEDBACK_PUBLIC_FILE_PATH}/*`, async (c, next) => {
+    await next();
+    c.header('cache-control', 'no-store');
+    c.header('referrer-policy', 'no-referrer');
+    c.header('x-content-type-options', 'nosniff');
+  });
+
+  const fileMiss = (c: Context) =>
+    c.json<ApiError>({ error: { code: 'not_found', message: '这个附件已删除或链接不对' } }, 404);
+
+  app.get(`${FEEDBACK_PUBLIC_FILE_PATH}/:token`, async (c) => {
+    try {
+      const { feedbackFilePerIp, feedbackFilePerToken } = config.limits;
+      const tooMany = () =>
+        c.json<ApiError>(
+          { error: { code: 'rate_limited', message: '打开的次数有点多，等一会儿再试' } },
+          429,
+        );
+      const ip = clientIp(c);
+      if (
+        ip &&
+        feedbackFilePerIp > 0 &&
+        !(await allowAttempt(sql, `feedback-file-ip:${ip}`, feedbackFilePerIp, 15 * 60_000))
+      ) {
+        return tooMany();
+      }
+      const token = c.req.param('token');
+      // 先计数再查库：不存在的令牌也一样，从 429 看不出它存不存在。allowAttempt 只存键的哈希。
+      if (
+        feedbackFilePerToken > 0 &&
+        !(await allowAttempt(sql, `feedback-file:${token}`, feedbackFilePerToken, HOUR_MS))
+      ) {
+        return tooMany();
+      }
+      const found = await publicFeedbackFile(sql, config, token);
+      if (found.kind !== 'ok') return fileMiss(c);
+      return c.redirect(found.url, 302);
+    } catch {
+      return c.json<ApiError>(
+        { error: { code: 'unavailable', message: '暂时打不开，请稍后再试' } },
+        503,
+      );
+    }
   });
 
   // ─── 账号 ─────────────────────────────────────────────
@@ -1007,9 +1069,11 @@ export function createApp({
     const text = cleanFeedbackText(body.text);
     const saved = await sql.begin(async (tx) => {
       const [row] = await tx<{ inserted: boolean }[]>`
-        INSERT INTO feedback (id, user_id, text, diagnostics)
-        VALUES (${body.id}, ${user.id}, ${text}, ${tx.json(body.diagnostics)})
-        ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, diagnostics = EXCLUDED.diagnostics, updated_at = now()
+        INSERT INTO feedback (id, user_id, text, diagnostics, public_attachments)
+        VALUES (${body.id}, ${user.id}, ${text}, ${tx.json(body.diagnostics)},
+                ${body.publicAttachments === true})
+        ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, diagnostics = EXCLUDED.diagnostics,
+          public_attachments = EXCLUDED.public_attachments, updated_at = now()
           WHERE feedback.user_id = EXCLUDED.user_id AND feedback.status = 'draft'
         RETURNING (xmax = 0) AS inserted`;
       // 同时有别的请求把它提交了，或者 id 被别人抢先用了。
@@ -1096,9 +1160,12 @@ export function createApp({
       await sql.begin(async (tx) => {
         await tx`UPDATE feedback_attachments SET status = 'ready'
                  WHERE feedback_id = ${id} AND id = ANY(${pending.map((f) => f.id)}::uuid[])`;
-        await tx`UPDATE feedback SET status = 'queued', submitted_at = now(), next_attempt_at = now(),
+        const moved =
+          await tx`UPDATE feedback SET status = 'queued', submitted_at = now(), next_attempt_at = now(),
                    attachment_count = ${files.length}
                  WHERE id = ${id} AND status = 'draft'`;
+        // 同时提交两次时只有改成 queued 的那一次发令牌。
+        if (moved.count > 0) await publishAttachments(tx, config, id);
       });
     }
     // 当场发一次。失败也是 200：反馈已经存下了，之后会自动重试。

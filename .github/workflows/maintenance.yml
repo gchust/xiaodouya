@@ -54,4 +54,7 @@ jobs:
           FEEDBACK_GITHUB_TOKEN: ${{ secrets.FEEDBACK_GITHUB_TOKEN }}
           # 反馈附件的保留期，要和函数的设置一致。
           FEEDBACK_ATTACHMENT_DAYS: ${{ vars.FEEDBACK_ATTACHMENT_DAYS || '90' }}
+          # 反馈附件的公开链接要拼服务端的地址（F-126）。没有它，同意公开附件的反馈这一步不补发，
+          # 等函数自己补发。值和 App 的 EXPO_PUBLIC_API_URL 一样，没单独设就用它。
+          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL || vars.EXPO_PUBLIC_API_URL }}
         run: pnpm --filter @xiaodouya/server cli maintenance

@@ -422,10 +422,16 @@ export async function presignDownload(
   s: ResolvedStorage,
   key: string,
   expiresIn: number,
+  /** 覆盖响应的 Content-Type，不看上传时存的那个。 */
+  contentType?: string,
 ): Promise<string> {
   return getSignedUrl(
     client(s, s.publicEndpoint),
-    new GetObjectCommand({ Bucket: s.bucket, Key: key }),
+    new GetObjectCommand({
+      Bucket: s.bucket,
+      Key: key,
+      ...(contentType ? { ResponseContentType: contentType } : {}),
+    }),
     { expiresIn },
   );
 }

@@ -78,7 +78,13 @@ describe('邮件配置', () => {
     const on = await call<PublicConfig>(app, 'GET', '/v1/config');
     expect(on.status).toBe(200);
     // 测试环境没有配置反馈，见 feedback.test.ts。
-    const feedback = { enabled: false, public: true, attachments: false, attachmentDays: null };
+    const feedback = {
+      enabled: false,
+      public: true,
+      attachments: false,
+      attachmentDays: null,
+      publicAttachments: false,
+    };
     expect(on.json).toEqual({
       allowCustomStorage: db.config.allowCustomStorage,
       passwordReset: true,

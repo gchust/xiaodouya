@@ -6,6 +6,7 @@ import {
   expiredAttachmentCount,
   FEEDBACK_MAX_IMAGE_BYTES,
   FEEDBACK_MAX_VIDEO_BYTES,
+  FEEDBACK_PUBLIC_TOKEN,
   FeedbackDiagnostics,
   FeedbackInboxQuery,
   feedbackAttachmentFileName,
@@ -13,6 +14,7 @@ import {
   feedbackAttachmentLimit,
   feedbackDiagnostics,
   fenceFor,
+  publicFeedbackMime,
   renderFeedbackIssue,
 } from '../src/feedback';
 
@@ -104,6 +106,81 @@ describe('反馈的 issue 正文', () => {
     });
     expect(body).toContain('| 地区 | — |');
     expect(body).toContain('| 附件 | 没有 |');
+  });
+});
+
+describe('同意公开的附件（F-126）', () => {
+  const base = 'https://api.fictional.test/functions/v1/api/v1/public/feedback-files';
+  const token = (c: string) => c.repeat(43);
+
+  it('图片嵌入、视频写成链接，各自编号，写明保留期和缓存', () => {
+    const { body } = renderFeedbackIssue({
+      id,
+      text: '保存照片后闪退',
+      diagnostics,
+      attachments: [
+        { mime: 'image/jpeg', size: 1_200_000, url: `${base}/${token('a')}` },
+        { mime: 'video/mp4', size: 8_400_000, url: `${base}/${token('b')}` },
+        { mime: 'image/png', size: 300_000, url: `${base}/${token('c')}` },
+      ],
+      attachmentDays: 90,
+    });
+    expect(body).toContain('3 个（图片 1.1 MB，视频 8.0 MB，图片 293 KB），3 个公开在下面');
+    expect(body).toContain(`![图片 1（1.1 MB）](${base}/${token('a')})`);
+    expect(body).toContain(`![图片 2（293 KB）](${base}/${token('c')})`);
+    const video = body.split('\n').find((l) => l.includes(token('b')));
+    expect(video).toBe(`[视频 1（8.0 MB）](${base}/${token('b')})`);
+    expect(body).toContain('90 天后删除');
+    expect(body).toContain('缓存');
+    // 公开链接都在用户文字的代码块外面，用户写的东西还在代码块里。
+    const fence = fenceFor('保存照片后闪退');
+    expect(outsideFence(body, fence)).toContain('![图片 1');
+  });
+
+  it('没有链接的附件照旧只写个数；部分公开时写清楚几个不公开', () => {
+    const legacy = renderFeedbackIssue({
+      id,
+      text: 'x',
+      diagnostics,
+      attachments: [{ mime: 'image/jpeg', size: 100, url: null }],
+      attachmentDays: 90,
+    }).body;
+    expect(legacy).toContain('只在服务端的私有存储里，不公开');
+    expect(legacy).not.toContain('### 附件');
+    expect(legacy).not.toMatch(/https?:\/\//);
+    const mixed = describeFeedbackAttachments([
+      { mime: 'image/svg+xml', size: 100 },
+      { mime: 'image/jpeg', size: 100, url: `${base}/${token('d')}` },
+    ]);
+    expect(mixed).toBe('2 个（图片 1 KB，图片 1 KB），1 个公开在下面，1 个不公开');
+  });
+
+  it('只有常见的图片和视频格式能公开，类型统一成小写', () => {
+    expect(publicFeedbackMime('IMAGE/JPEG')).toBe('image/jpeg');
+    expect(publicFeedbackMime('image/jpg')).toBe('image/jpeg');
+    expect(publicFeedbackMime('video/mp4; codecs=avc1')).toBe('video/mp4');
+    for (const mime of ['image/svg+xml', 'image/heic', 'text/html', 'video/x-matroska']) {
+      expect(publicFeedbackMime(mime)).toBeNull();
+    }
+  });
+
+  it('同意公开是可选字段：旧版 App 不发，发了只能是布尔值', () => {
+    const body = {
+      id,
+      text: 'x',
+      diagnostics,
+      attachments: [],
+    };
+    expect(CreateFeedbackRequest.parse(body).publicAttachments).toBeUndefined();
+    expect(
+      CreateFeedbackRequest.parse({ ...body, publicAttachments: true }).publicAttachments,
+    ).toBe(true);
+    expect(CreateFeedbackRequest.safeParse({ ...body, publicAttachments: 'yes' }).success).toBe(
+      false,
+    );
+    expect(FEEDBACK_PUBLIC_TOKEN.test(token('A'))).toBe(true);
+    expect(FEEDBACK_PUBLIC_TOKEN.test(`${token('A')}=`)).toBe(false);
+    expect(FEEDBACK_PUBLIC_TOKEN.test(id)).toBe(false);
   });
 });
 

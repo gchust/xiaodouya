@@ -117,8 +117,11 @@ export async function pickFromLibrary(options?: {
   singleImage?: boolean;
   /** 只在 E2E 构建里有效，见 e2eBulkMoment。 */
   e2eBulk?: boolean;
+  /** 只在 E2E 构建里有效：反馈要一张带虚构 GPS 的 JPEG，验证上传前去掉了元数据。 */
+  e2eFeedback?: boolean;
 }): Promise<PickedFile[]> {
   if (IS_E2E && options?.e2eBulk) return e2eBulkMoment();
+  if (IS_E2E && options?.e2eFeedback) return e2ePickFiles('feedback');
   if (IS_E2E) return e2ePickFiles(options?.singleImage ? 'avatar' : 'moment');
   const single = Boolean(options?.singleImage);
   const marker = pendingPickMarker();
@@ -269,6 +272,22 @@ async function makePreview(sourceUri: string, targetUri: string): Promise<{ size
     // 预览失败不阻止上传：这张照片就没有预览，查看器和分享页退回原图。
     return null;
   }
+}
+
+/**
+ * 反馈的照片：和预览一样重新编码（JPEG，长边 2048，质量 0.8），不带原图的 EXIF 和 GPS，方向写进像素里。
+ * 反馈的附件会公开（F-126），所以失败就抛错，调用方不能退回原图。
+ */
+export async function compressFeedbackPhoto(
+  sourceUri: string,
+  targetUri: string,
+): Promise<{ size: number }> {
+  const result = await renderJpeg(sourceUri, targetUri, {
+    decodeMaxSide: PREVIEW_MAX_SIDE,
+    compress: PREVIEW_QUALITY,
+  });
+  if (!result.size) throw new Error('empty jpeg');
+  return result;
 }
 
 /**

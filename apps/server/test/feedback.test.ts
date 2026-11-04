@@ -140,6 +140,7 @@ describe('没有配置时', () => {
       public: true,
       attachments: false,
       attachmentDays: null,
+      publicAttachments: false,
     });
     const user = await newUser(plain);
     const response = await create(user.token, {}, plain);
@@ -171,6 +172,7 @@ describe('没有配置时', () => {
       public: true,
       attachments: true,
       attachmentDays: 90,
+      publicAttachments: true,
     });
     expect(response.text).not.toContain(TOKEN);
     expect(response.text).not.toContain('fictional-repo');

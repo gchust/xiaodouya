@@ -345,6 +345,16 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
                 {t().feedback.detailDeleteAt(formatMonthDay(item.attachmentsDeleteAt))}
               </Muted>
             ) : null}
+            {item.attachmentCount > 0 ? (
+              <Muted
+                style={s.note}
+                testID={
+                  item.publicAttachments ? 'feedback-detail-public' : 'feedback-detail-private'
+                }
+              >
+                {item.publicAttachments ? t().feedback.detailPublic : t().feedback.detailPrivate}
+              </Muted>
+            ) : null}
           </View>
 
           <View style={{ gap: 8 }}>

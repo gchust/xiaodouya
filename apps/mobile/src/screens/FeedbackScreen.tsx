@@ -1,5 +1,6 @@
 import {
   FEEDBACK_MAX_ATTACHMENTS,
+  FEEDBACK_MAX_IMAGE_BYTES,
   FEEDBACK_MAX_TEXT,
   type FeedbackConfig,
   type FeedbackStatus,
@@ -34,13 +35,17 @@ import {
   clearFeedbackDraft,
   loadFeedbackDraft,
   newFeedbackDraft,
+  prepareFeedbackFile,
   putFeedbackFile,
   removeFeedbackFile,
   saveFeedbackDraft,
 } from '../lib/feedbackDraft';
 import {
   admitAttachments,
+  attachmentVisibility,
   type FeedbackDraft,
+  type FeedbackDraftFile,
+  FeedbackPrepareFailed,
   FeedbackUploadFailed,
   sendFeedbackDraft,
 } from '../lib/feedbackSend';
@@ -77,6 +82,7 @@ const statusText = (status: FeedbackStatus) =>
       : t().feedback.statusDraft;
 
 function failureReason(error: unknown): string {
+  if (error instanceof FeedbackPrepareFailed) return t().feedback.photoFailedReason;
   if (error instanceof FeedbackUploadFailed) {
     return error.status === 410 ? t().ui.localFileGone : t().ui.serverError(error.status);
   }
@@ -85,7 +91,9 @@ function failureReason(error: unknown): string {
 }
 
 /**
- * 反馈问题。文字会发到公开的 GitHub issue（服务器说仓库公开时就这么提醒），照片和视频只有开发者能看。
+ * 反馈问题。文字会发到公开的 GitHub issue（服务器说仓库公开时就这么提醒）。照片和视频在服务器配了公开链接时
+ * 和文字一起放进 issue（F-126，提示里写明，提交时告诉服务端用户看到的是这个提示），否则只有开发者能看。
+ * 照片加进来时就压缩、去掉 EXIF 和 GPS，压缩不了的不加，不退回原图。
  * 草稿一直存在手机上：断网、发送失败、App 被杀之后再打开都还在，同一份草稿重发不会多一条。
  */
 export function FeedbackScreen() {
@@ -168,6 +176,8 @@ export function FeedbackScreen() {
   const enabled = server === undefined || Boolean(server?.enabled);
   const isPublic = server?.public ?? true;
   const allowFiles = server === undefined || Boolean(server?.attachments);
+  const visibility = attachmentVisibility(server);
+  const days = server?.attachmentDays ?? null;
   const busy = sending !== null;
   const canSend = Boolean(draft?.text.trim()) && !busy;
 
@@ -175,15 +185,37 @@ export function FeedbackScreen() {
     if (!draft) return;
     setPicking(true);
     try {
-      const picked = await pickFromLibrary();
+      const picked = await pickFromLibrary({ e2eFeedback: true });
       const { accepted, rejection } = admitAttachments(draft.files.length, picked);
       const files = [...draft.files];
-      for (const file of accepted) files.push(await adoptFeedbackFile(file));
+      let photoFailed = false;
+      let photoTooBig = false;
+      for (const file of accepted) {
+        let adopted: FeedbackDraftFile;
+        try {
+          adopted = await adoptFeedbackFile(file);
+        } catch (error) {
+          // 视频只是复制，失败和以前一样报出去。
+          if (file.kind === 'video') throw error;
+          // 压缩不了的照片不加，绝不退回原图：原图可能带着拍摄地点，而附件会公开。
+          photoFailed = true;
+          continue;
+        }
+        if (adopted.kind === 'image' && adopted.size > FEEDBACK_MAX_IMAGE_BYTES) {
+          removeFeedbackFile(adopted);
+          photoTooBig = true;
+          continue;
+        }
+        files.push(adopted);
+      }
       update({ ...draft, files }, true);
-      if (rejection?.reason === 'tooMany') toast(t().feedback.tooMany(FEEDBACK_MAX_ATTACHMENTS));
-      if (rejection?.reason === 'unsupported') toast(t().feedback.unsupported);
-      if (rejection?.reason === 'tooBig')
+      if (photoFailed) toast(t().feedback.photoFailed);
+      else if (rejection?.reason === 'tooMany')
+        toast(t().feedback.tooMany(FEEDBACK_MAX_ATTACHMENTS));
+      else if (rejection?.reason === 'unsupported') toast(t().feedback.unsupported);
+      else if (rejection?.reason === 'tooBig')
         toast(t().feedback.tooBig(formatBytes(rejection.maxBytes)));
+      else if (photoTooBig) toast(t().feedback.tooBig(formatBytes(FEEDBACK_MAX_IMAGE_BYTES)));
     } catch (e) {
       toast(e instanceof Error ? e.message : t().recall.cantOpenGallery);
     } finally {
@@ -207,16 +239,25 @@ export function FeedbackScreen() {
     setError(null);
     setSending(t().feedback.sending);
     try {
-      const status = await sendFeedbackDraft(working, diagnostics, {
-        create: (body) => app.api.createFeedback(body),
-        submit: (id) => app.api.submitFeedback(id),
-        put: putFeedbackFile,
-        save: saveFeedbackDraft,
-        onProgress: (done, total) =>
-          setSending(
-            total > 0 && done < total ? t().feedback.uploading(done, total) : t().feedback.sending,
-          ),
-      });
+      const status = await sendFeedbackDraft(
+        working,
+        diagnostics,
+        {
+          create: (body) => app.api.createFeedback(body),
+          submit: (id) => app.api.submitFeedback(id),
+          put: putFeedbackFile,
+          save: saveFeedbackDraft,
+          prepare: prepareFeedbackFile,
+          onProgress: (done, total) =>
+            setSending(
+              total > 0 && done < total
+                ? t().feedback.uploading(done, total)
+                : t().feedback.sending,
+            ),
+        },
+        // 和页面上的提示一致：说了会公开才告诉服务端同意。
+        { publicAttachments: visibility !== 'private' },
+      );
       clearFeedbackDraft();
       setDraft(newFeedbackDraft());
       setRestored(false);
@@ -272,12 +313,20 @@ export function FeedbackScreen() {
           <>
             <View style={s.hint} testID="feedback-privacy">
               <Text style={s.hintStrong}>
-                {isPublic ? t().feedback.publicNote : t().feedback.privateNote}
+                {allowFiles && visibility === 'public'
+                  ? t().feedback.publicWithFilesNote
+                  : allowFiles && visibility === 'linked'
+                    ? t().feedback.linkedWithFilesNote
+                    : isPublic
+                      ? t().feedback.publicNote
+                      : t().feedback.privateNote}
               </Text>
               <Text style={s.hintText}>
-                {allowFiles
-                  ? t().feedback.attachmentsNote(server?.attachmentDays ?? null)
-                  : t().feedback.textOnlyNote}
+                {!allowFiles
+                  ? t().feedback.textOnlyNote
+                  : visibility === 'private'
+                    ? t().feedback.attachmentsNote(days)
+                    : t().feedback.publicFilesNote(days)}
               </Text>
             </View>
 
@@ -324,7 +373,13 @@ export function FeedbackScreen() {
                   <Text style={s.pickerLabel}>
                     {picking ? t().feedback.picking : t().feedback.pick}
                   </Text>
-                  <Text style={s.pickerSub}>{t().feedback.pickSub(FEEDBACK_MAX_ATTACHMENTS)}</Text>
+                  <Text style={s.pickerSub}>
+                    {visibility === 'public'
+                      ? t().feedback.pickSubPublic(FEEDBACK_MAX_ATTACHMENTS)
+                      : visibility === 'linked'
+                        ? t().feedback.pickSubLinked(FEEDBACK_MAX_ATTACHMENTS)
+                        : t().feedback.pickSub(FEEDBACK_MAX_ATTACHMENTS)}
+                  </Text>
                 </Pressable>
                 {draft.files.length > 0 ? (
                   <ScrollView

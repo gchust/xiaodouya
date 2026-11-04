@@ -5,8 +5,8 @@
  */
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths, UploadType } from 'expo-file-system';
-import { FeedbackDraft, type FeedbackDraftFile } from './feedbackSend';
-import type { PickedFile } from './media';
+import { FeedbackDraft, type FeedbackDraftFile, needsPrepare } from './feedbackSend';
+import { compressFeedbackPhoto, type PickedFile } from './media';
 
 function feedbackDir(): Directory {
   const dir = new Directory(Paths.document, 'feedback');
@@ -39,9 +39,23 @@ export async function saveFeedbackDraft(draft: FeedbackDraft): Promise<void> {
   await file.write(JSON.stringify(draft));
 }
 
-/** 复制，不挪：E2E 的样例和系统选择器的副本可能还有别处在用。 */
+/**
+ * 照片在这里就压缩成 JPEG、去掉元数据（见 compressFeedbackPhoto），失败就抛错，这张不加进来。
+ * 视频复制，不挪：E2E 的样例和系统选择器的副本可能还有别处在用。
+ */
 export async function adoptFeedbackFile(picked: PickedFile): Promise<FeedbackDraftFile> {
   const id = Crypto.randomUUID();
+  const kind = picked.kind === 'video' ? 'video' : 'image';
+  if (kind === 'image') {
+    return prepareFeedbackFile({
+      id,
+      uri: picked.uri,
+      mime: picked.mime,
+      size: picked.size,
+      kind,
+      uploaded: false,
+    });
+  }
   const target = new File(feedbackDir(), id);
   if (target.exists) target.delete();
   await new File(picked.uri).copy(target);
@@ -50,9 +64,23 @@ export async function adoptFeedbackFile(picked: PickedFile): Promise<FeedbackDra
     uri: target.uri,
     mime: picked.mime,
     size: target.size ?? picked.size,
-    kind: picked.kind === 'video' ? 'video' : 'image',
+    kind,
     uploaded: false,
   };
+}
+
+/**
+ * 把照片重新编码进 feedback/ 目录，返回处理后的文件（同一个附件 id）。旧版本存下的草稿发送前也走这里。
+ * 来源在 feedback/ 里（旧草稿的原图副本）的话，处理完删掉它：原图带着拍摄地点，不留在草稿里。
+ */
+export async function prepareFeedbackFile(file: FeedbackDraftFile): Promise<FeedbackDraftFile> {
+  if (!needsPrepare(file)) return file;
+  const target = new File(feedbackDir(), `${file.id}.jpg`);
+  const { size } = await compressFeedbackPhoto(file.uri, target.uri);
+  if (file.uri !== target.uri && file.uri.startsWith(feedbackDir().uri)) {
+    removeFeedbackFile(file);
+  }
+  return { ...file, uri: target.uri, mime: 'image/jpeg', size, prepared: true, uploaded: false };
 }
 
 export function removeFeedbackFile(file: FeedbackDraftFile): void {

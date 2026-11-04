@@ -286,14 +286,19 @@ App ──POST /v1/shares──> 服务端（只存令牌的 SHA-256）──> �
 ## 反馈问题
 
 ```
-App ──POST /v1/feedback {id, text, diagnostics, attachments}──> 服务端：存草稿（draft），给附件预签名 PUT
- │   PUT 直传到平台存储 feedback/<反馈 id>/<附件 id>
- └─POST /v1/feedback/:id/submit──> HEAD 核对附件 → queued → 当场建一次 issue → sent
+App ──POST /v1/feedback {id, text, diagnostics, attachments, publicAttachments?}──> 服务端：存草稿（draft），给附件预签名 PUT
+ │   PUT 直传到平台存储 feedback/<反馈 id>/<附件 id>（照片在手机上已经重新编码成 JPEG）
+ └─POST /v1/feedback/:id/submit──> HEAD 核对附件 → queued（同意公开的：每个附件一个随机令牌）→ 当场建一次 issue → sent
                                        失败：留在 queued，退避重试（之后任何人提交时、每天的 cli maintenance）
+
+GitHub 的图片代理 / 看 issue 的人 ──GET /v1/public/feedback-files/<令牌>──> 302 到 10 分钟的签名链接
 ```
 
 - **账号级，不是家庭的：** 没有家庭、只看回忆的家人都能提交，接口不读写任何家庭数据，所以不看家庭角色。附件不进 `media` 表（它要 `family_id`），也就不算家庭配额；靠每人每天的条数、附件个数和大小兜底。只放平台存储，永远不写进家庭自带的 Bucket。
-- **issue 正文在 `packages/shared/src/feedback.ts` 生成（`renderFeedbackIssue`）：** 输入里只有文字、反馈 id、诊断信息和附件的类型大小，邮箱、账号、家庭、附件地址都不在输入里，也就写不进去。文字整段放进代码块，围栏比文字里最长的一串反引号还长，用户写什么都关不上它，块里的 `@` 提及不通知人，`#123` 不变成引用，图片和链接不加载。诊断信息每个字段都用正则卡死格式，手机读不懂的写成 `unknown`。标题不放用户的文字。App 把同一份诊断信息列在“会一起公开”下面。
+- **附件公开（F-126，仓库所有者 2026-11-04 决定）：** 只公开提交时带了 `publicAttachments: true` 的反馈，App 只在提示写着“照片和视频会和文字一起公开”时带（`attachmentVisibility`，离线时按会公开提醒）。旧版 App 不带，它当时承诺过附件不公开：`feedback.public_attachments` 默认 `false`，这些反馈永远没有令牌。草稿每次保存以最后一次为准，提交后改不了。提交时（改成 `queued` 的同一个事务）才发令牌：`newToken()` 的 32 字节随机数，和 id、对象路径没有关系；服务器没有 `PUBLIC_API_URL`、一个都没公开时把 `public_attachments` 改回 `false`，它表示的是“附件真的公开了”。令牌存明文（分享链接只存哈希）：正文在建 issue 时才生成，可能是几天后的重试，要拼出同一个链接；它也只能打开已经在公开 issue 里的那个文件。没有 `PUBLIC_API_URL` 的进程（维护任务没设）不碰带公开附件的排队反馈，否则会建出没有附件的 issue 并标成已发送。
+- **公开链接 `GET /v1/public/feedback-files/:令牌`：** 和分享页一样注册在 v1 之前、不用登录，按来源和按令牌限流都在查库之前，令牌不对、附件删了（保留期、删除账号）、类型不在白名单、没有平台存储都是同一个 404。302 到 10 分钟的签名链接，`ResponseContentType` 按白名单覆盖（GitHub 的图片代理只转发 `image/*`，SVG 这类能带脚本的不公开）。整个路径就是令牌：这个路由不调 `fail()`、出错返回 503 不往外抛，`onError` 的日志也只记前缀。
+- **照片在手机上先处理：** 加进草稿时就和预览一样重新编码（`compressFeedbackPhoto`，长边 2048、质量 0.8），解码再编码的 JPEG 不带 EXIF 和 GPS，方向写进像素。压缩失败就不加，发送时遇到旧版本草稿里没处理过的照片先处理（`needsPrepare`），失败就不发，不退回原图。视频没有转码能力，原样上传。
+- **issue 正文在 `packages/shared/src/feedback.ts` 生成（`renderFeedbackIssue`）：** 输入里只有文字、反馈 id、诊断信息、附件的类型大小和公开链接，邮箱、账号、家庭、附件 id 和对象路径都不在输入里，也就写不进去。公开的图片用 `![]()` 嵌入、视频写成链接，放在用户文字的代码块外面，下面写明保留期和 GitHub 可能缓存。文字整段放进代码块，围栏比文字里最长的一串反引号还长，用户写什么都关不上它，块里的 `@` 提及不通知人，`#123` 不变成引用，图片和链接不加载。诊断信息每个字段都用正则卡死格式，手机读不懂的写成 `unknown`。标题不放用户的文字。App 把同一份诊断信息列在“会一起公开”下面。
 - **先存库再建 issue：** 建 issue 用和待删除队列一样的租约（一条 `UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)` 推后下次时间），Edge Function 多个实例同时补发也不会建重复的。GitHub 的报错只记状态码：它的错误响应会回显请求的一部分，令牌只在请求头里。不加 labels 和 assignees，标签不存在、权限不够时 GitHub 的处理不一致。
 - **幂等：** 反馈 id 由手机生成。草稿状态下同一个 id 再调可以改文字和附件（去掉的附件进待删除队列），已经提交的原样返回状态。手机上草稿和附件副本存在 `Paths.document/feedback/`，每传好一个附件记一次，断网、被杀后重发只传剩下的；服务端说附件没到（`not_uploaded`、`size_mismatch`）就全部重传一次。退出登录、换账号时随本地数据一起清除。
 - **清理（`cli maintenance`）：** 一天还没提交的草稿连附件删掉；issue 建好 `FEEDBACK_ATTACHMENT_DAYS` 天后删附件，反馈行留着（`attachment_count` 记着当初有几个）；删除账号时反馈随账号级联删除，附件在同一个事务里进待删除队列。
