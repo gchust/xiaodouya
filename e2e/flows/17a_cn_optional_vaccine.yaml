@@ -19,10 +19,21 @@ appId: com.gchust.xiaodouya
     notVisible: { id: region-confirm }
     timeout: 10000
 - assertVisible: 中国大陆
+# Toast 在屏幕底部，滚到底部的链接可能正好在它下面，点到的是 Toast（CI 上这样失败过）
+- extendedWaitUntil:
+    notVisible: 已换成中国大陆
+    timeout: 15000
 - scrollUntilVisible:
     element: { id: vaccine-add-custom }
     timeout: 30000
+- waitForAnimationToEnd
 - tapOn: { id: vaccine-add-custom }
+- extendedWaitUntil:
+    visible: { id: vaccine-date }
+    timeout: 10000
+# 小屏上待接种的几剂会把入口挤到下面
+- scrollUntilVisible:
+    element: { id: vaccine-optional }
 - assertVisible: { id: vaccine-optional }
 - takeScreenshot: .artifacts/e2e-17a-sheet
 - tapOn: { id: vaccine-optional }
