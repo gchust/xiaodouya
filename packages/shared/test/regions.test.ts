@@ -182,7 +182,7 @@ describe('中国：《国家免疫规划疫苗儿童免疫程序及说明（2026
 
 /**
  * 自费疫苗（issue #62）。月龄只是“通常从几月龄开始”的参考，不进疫苗本的状态和提醒。
- * 流感按中国疾控的指南，其余来自接种点的宣传单（待复核），见 cn.ts。
+ * 流感和 EV71 按中国疾控的指南，其余来自接种点的宣传单（待复核），见 cn.ts。
  */
 describe('中国：自费、自愿的非免疫规划疫苗', () => {
   const optional = CN.optionalVaccines;
@@ -227,15 +227,22 @@ describe('中国：自费、自愿的非免疫规划疫苗', () => {
     expect(find('flu')?.basis).toBe('guideline');
     expect(find('flu')?.note).toContain('2 剂');
   });
+  it('EV71 疫苗按中国疾控的指南从 6 月龄开始，不用宣传单上的 6.5 月', () => {
+    expect(find('ev71')?.startMonths).toBe(6);
+    expect(find('ev71')?.basis).toBe('guideline');
+    expect(find('ev71')?.note).toContain('2 剂');
+  });
   it('其余的参考月龄来自宣传单，标着待复核', () => {
-    expect(list.filter((v) => v.basis === 'guideline').map((v) => v.localId)).toEqual(['flu']);
+    expect(list.filter((v) => v.basis === 'guideline').map((v) => v.localId)).toEqual([
+      'flu',
+      'ev71',
+    ]);
     expect(find('rv5')?.startMonths).toBe(1.5);
     expect(find('pcv13')?.startMonths).toBe(1.5);
     expect(find('dtap-ipv-hib')?.startMonths).toBe(2);
     expect(find('rv')?.startMonths).toBe(2.5);
     expect(find('menacyw-conj')?.startMonths).toBe(3);
     expect(find('menac-conj')?.startMonths).toBe(6);
-    expect(find('ev71')?.startMonths).toBe(6.5);
     expect(find('var')?.startMonths).toBe(12);
     expect(find('ppsv23')?.startMonths).toBe(24);
     expect(find('mpsv4')?.startMonths).toBe(36);

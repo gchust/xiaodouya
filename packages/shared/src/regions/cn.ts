@@ -32,7 +32,7 @@ const HPV_WHO = L('适用人群以说明书为准', 'Who it is for depends on th
  * 自费、自愿的非免疫规划疫苗（issue #62）：接种弹层里直接选，不用手填名字。
  *
  * 月龄是“通常从几月龄开始打第一剂”的参考，不是接种程序，不进疫苗本的状态和提醒。
- * 除流感外，月龄来自接种点宣传单（仓库所有者 2026-11-04 提供，未与说明书核对，待复核）。
+ * 流感和 EV71 按中国疾控的指南；其余月龄来自接种点宣传单（仓库所有者 2026-11-04 提供，未与说明书核对，待复核）。
  * 宣传单原文注明“图中标识的年龄表示第一次接种该疫苗的时间”；同一种疫苗画在几个月龄上的，
  * 这里只取最早的一个，其余写在注释里。宣传单上的乙脑灭活疫苗（8 月龄）不列在这里：
  * 2026 年版免疫规划里它和乙脑减毒活疫苗二选一，疫苗本上已经有这几剂。
@@ -130,19 +130,23 @@ const OPTIONAL = defineOptionalVaccines('cn', [
     startMonths: 6,
     startLabel: L('6 月龄', '6 months'),
     note: L(
-      '每个流感季都要打；以前没打过的孩子，第一次通常打 2 剂，间隔至少 4 周',
-      'Given every flu season. Children who have never had it usually get 2 doses the first time, at least 4 weeks apart',
+      '每个流感季接种；9 岁以下、以前没打过的孩子，第一次通常打 2 剂，间隔至少 4 周',
+      'Given each flu season. Children under 9 who have never had it usually get 2 doses the first time, at least 4 weeks apart',
     ),
     basis: 'guideline',
   },
   {
-    // 宣传单：6.5 月“EV71型手足口病疫苗”。中国疾控 2016 年的《肠道病毒71型灭活疫苗使用技术指南》
-    // 原文链接已失效，没有读到，所以没有改。
+    // 《肠道病毒 71 型灭活疫苗使用技术指南》，中国疾病预防控制中心，2016 年 5 月。chinacdc.cn 上的原链接已失效，
+    // 读的是 Internet Archive 的副本：
+    // https://web.archive.org/web/2020/https://www.chinacdc.cn/jkzt/crb/xcrxjb/201801/P020180104569154889446.pdf
+    // 五（一）“建议 EV71 疫苗接种对象为≥6 月龄易感儿童”“不同厂家疫苗的接种年龄范围可参照相应产品疫苗说明书”；
+    // 五（二）“基础免疫程序为 2 剂次，间隔 1 个月”。宣传单写的是 6.5 月，以指南为准。
     id: 'ev71',
     name: L('EV71 手足口病疫苗', 'EV71 vaccine (hand, foot and mouth disease)'),
-    startMonths: 6.5,
-    startLabel: L('6.5 月龄', '6.5 months'),
-    basis: 'leaflet',
+    startMonths: 6,
+    startLabel: L('6 月龄', '6 months'),
+    note: L('基础免疫 2 剂，间隔 1 个月', 'The primary course is 2 doses, 1 month apart'),
+    basis: 'guideline',
   },
   {
     // 宣传单：1 岁“水痘疫苗”。
@@ -462,8 +466,8 @@ export const CN: RegionDefinition = localized({
   optionalVaccines: localized({
     title: L('自费疫苗（非免疫规划）', 'Optional vaccines (outside the national program)'),
     note: L(
-      '自费、自愿接种。月龄是通常开始打第一剂的参考，不是完整的接种程序，App 不会提醒。参考来自接种单位的宣传资料和中国疾控的流感疫苗指南，以接种单位安排和说明书为准。',
-      "Optional and paid for by the family. The age is when the first dose usually starts, not a full schedule, and the app won't send reminders. Based on a vaccination site's leaflet and China CDC's flu vaccine guideline. The vaccination site's plan and the product label take precedence.",
+      '自费、自愿接种。月龄是通常开始打第一剂的参考，不是完整的接种程序，App 不会提醒。参考来自接种单位的宣传资料和中国疾控的疫苗指南，以接种单位安排和说明书为准。',
+      "Optional and paid for by the family. The age is when the first dose usually starts, not a full schedule, and the app won't send reminders. Based on a vaccination site's leaflet and China CDC's vaccine guidelines. The vaccination site's plan and the product label take precedence.",
     ),
     vaccines: OPTIONAL,
   }),
