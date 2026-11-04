@@ -835,6 +835,73 @@ async function feedback(runtime: Runtime, github: FakeGithub) {
   check(queued.json.status === 'queued', 'GitHub 失败时留在队列里，请求本身成功');
   check(!runtime.output().includes(FAKE_GITHUB_TOKEN), '函数的日志里没有令牌');
 
+  console.log('反馈附件的公开链接：同意公开的新反馈嵌进 issue，打开后跳到签名链接');
+  const publicConfig = await request<{ feedback: { publicAttachments?: boolean } }>(
+    base,
+    'GET',
+    '/v1/config',
+  );
+  check(publicConfig.json.feedback.publicAttachments === true, '/v1/config 说附件会公开');
+  const shown = randomUUID();
+  const shownFile = randomUUID();
+  const shownCreated = await request<{
+    uploads: { url: string; headers: Record<string, string> }[];
+  }>(base, 'POST', '/v1/feedback', {
+    token: auth.token,
+    body: {
+      id: shown,
+      text: '公开附件的反馈',
+      diagnostics,
+      attachments: [{ id: shownFile, mime: 'image/jpeg', size: bytes.length }],
+      publicAttachments: true,
+    },
+  });
+  await fetch(shownCreated.json.uploads[0]?.url ?? '', {
+    method: 'PUT',
+    headers: shownCreated.json.uploads[0]?.headers,
+    body: bytes,
+  });
+  const shownSent = await request<{ status: string }>(
+    base,
+    'POST',
+    `/v1/feedback/${shown}/submit`,
+    {
+      token: auth.token,
+    },
+  );
+  check(shownSent.json.status === 'sent', '同意公开的反馈建好了 issue');
+  const shownBody = github.issues.find((i) => i.body.includes(shown))?.body ?? '';
+  const embedded = new RegExp(
+    `!\\[[^\\]]*\\]\\((${base}/v1/public/feedback-files/([A-Za-z0-9_-]{43}))\\)`,
+  ).exec(shownBody);
+  check(Boolean(embedded) && !shownBody.includes(shownFile), 'issue 嵌入了公开链接，没有附件 id');
+  const publicUrl = embedded?.[1] ?? '';
+  const publicToken = embedded?.[2] ?? '';
+  const redirect = await fetch(publicUrl, { redirect: 'manual' });
+  const location = redirect.headers.get('location') ?? '';
+  check(
+    redirect.status === 302 && Number(new URL(location).searchParams.get('X-Amz-Expires')) <= 600,
+    '不用登录打开，302 到不超过 10 分钟的签名链接',
+  );
+  await redirect.body?.cancel();
+  const file = await fetch(location);
+  check(
+    file.headers.get('content-type') === 'image/jpeg' &&
+      Buffer.from(await file.arrayBuffer()).equals(bytes),
+    '签名链接取到的就是传上去的附件，类型是 image/jpeg',
+  );
+  const wrong = await fetch(`${base}/v1/public/feedback-files/${'A'.repeat(43)}`, {
+    redirect: 'manual',
+  });
+  await wrong.body?.cancel();
+  check(wrong.status === 404, '错的令牌 404');
+  const legacyBody = github.issues.find((i) => i.body.includes(id))?.body ?? '';
+  check(!legacyBody.includes('/v1/public/feedback-files/'), '没说同意的反馈没有公开链接');
+  check(
+    !runtime.output().includes(publicToken) && !runtime.output().includes('X-Amz'),
+    '函数的日志里没有附件令牌和签名链接',
+  );
+
   console.log('维护者在 App 里看反馈：名单、列表、附件的签名链接');
   const outsider = await request(base, 'GET', '/v1/feedback-inbox', { token: auth.token });
   check(outsider.status === 403, '不在名单里的账号 403');
@@ -908,6 +975,8 @@ try {
       FEEDBACK_GITHUB_TOKEN: FAKE_GITHUB_TOKEN,
       FEEDBACK_GITHUB_API_URL: github.url,
       FEEDBACK_VIEWER_EMAILS: ` ${FEEDBACK_VIEWER} `,
+      // 反馈附件的公开链接要拼成函数自己的地址，和 startRuntime 里的 base 一样。
+      PUBLIC_API_URL: `http://127.0.0.1:${port}/api`,
     },
     port,
   );

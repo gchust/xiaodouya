@@ -21,6 +21,7 @@ function item(n: number, attachments: FeedbackInboxItem['attachments'] = []): Fe
     issueNumber: n,
     issueUrl: null,
     attachmentCount: attachments.length,
+    publicAttachments: false,
     attachments,
     attachmentsDeleteAt: null,
     lastError: null,

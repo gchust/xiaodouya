@@ -1,8 +1,11 @@
 /**
  * 用户反馈：先存库，再在配置的 GitHub 仓库建 issue。
  *
- * 仓库通常是公开的，而反馈的截图可能拍到别人家的孩子，所以附件只放平台存储（`feedback/` 前缀），
- * issue 正文只有用户写的文字和诊断信息（`renderFeedbackIssue`）。维护者在 App 的「收到的反馈」
+ * 附件放平台存储（`feedback/` 前缀）。仓库通常是公开的，截图可能拍到别人家的孩子：改版前（F-121）
+ * App 承诺过附件不公开，那些反馈的正文里只有个数。仓库所有者 2026-11-04 决定公开附件（F-126）：
+ * 新版 App 提交时说用户看过“会公开”的提示（public_attachments），提交时给每个附件一个随机令牌，
+ * 正文嵌入 `PUBLIC_API_URL/v1/public/feedback-files/<令牌>`，打开时 302 到 10 分钟的签名链接。
+ * 删除账号或过了保留期，附件的行没了，链接就是 404。维护者在 App 的「收到的反馈」
  * （FEEDBACK_VIEWER_EMAILS 里的账号）或用 `cli feedback <id>` 取短时效的链接。
  *
  * 建 issue 的重试和待删除队列（objectDeletions.ts）是同一个写法：一条语句把要处理的行的下次重试时间推后
@@ -12,14 +15,18 @@
 import { Buffer } from 'node:buffer';
 import {
   expiredAttachmentCount,
+  FEEDBACK_PUBLIC_FILE_PATH,
+  FEEDBACK_PUBLIC_TOKEN,
   type FeedbackDiagnostics,
   type FeedbackInboxItem,
   type FeedbackInboxResponse,
   feedbackAttachmentFileName,
   feedbackAttachmentKind,
+  publicFeedbackMime,
   renderFeedbackIssue,
 } from '@xiaodouya/shared';
 import type { Config, FeedbackServerConfig } from './config';
+import { newToken } from './crypto';
 import type { Sql, Tx } from './db';
 import { headObject, presignDownload, storageById } from './storage';
 
@@ -30,6 +37,42 @@ const DRAFT_HOURS = 24;
 
 export const feedbackObjectKey = (feedbackId: string, attachmentId: string) =>
   `feedback/${feedbackId}/${attachmentId}`;
+
+/** 公开链接跳到的签名链接，和证件一样不超过 10 分钟。GitHub 的图片代理每次来取都会现签一个。 */
+const PUBLIC_URL_TTL = 600;
+
+const publicFileUrl = (base: string, token: string) =>
+  `${base}${FEEDBACK_PUBLIC_FILE_PATH}/${token}`;
+
+/**
+ * 提交时调用，在把草稿改成 queued 的同一个事务里。用户同意了、这台服务器也能给公开链接，
+ * 才给附件发令牌；否则把 public_attachments 改回 false，它表示的是“附件真的公开了”。
+ * 类型不在白名单里的附件不发令牌（见 publicFeedbackMime）。
+ */
+export async function publishAttachments(
+  tx: Tx,
+  config: Config,
+  feedbackId: string,
+): Promise<void> {
+  const [row] = await tx<{ public_attachments: boolean }[]>`
+    SELECT public_attachments FROM feedback WHERE id = ${feedbackId} FOR UPDATE`;
+  if (!row?.public_attachments) return;
+  let published = 0;
+  if (config.publicApiUrl) {
+    const files = await tx<{ id: string; mime: string }[]>`
+      SELECT id, mime FROM feedback_attachments WHERE feedback_id = ${feedbackId}`;
+    for (const f of files) {
+      if (!publicFeedbackMime(f.mime)) continue;
+      await tx`UPDATE feedback_attachments SET public_token = ${newToken()} WHERE id = ${f.id}`;
+      published += 1;
+    }
+  }
+  // 一个都没公开（没有附件、都不在白名单里、这台服务器给不了链接）就记成没公开：
+  // 没有 PUBLIC_API_URL 的维护任务按它决定能不能发这一条。
+  if (published === 0) {
+    await tx`UPDATE feedback SET public_attachments = false WHERE id = ${feedbackId}`;
+  }
+}
 
 /**
  * 建一个 issue。报错只带状态码：GitHub 的错误响应会回显请求的一部分，错误信息会进日志和数据库。
@@ -104,6 +147,9 @@ export async function deliverDueFeedback(
   const deadline = Date.now() + maxMs;
   do {
     // 退避从 1 分钟开始翻倍，最多约 17 小时。租约要比一次请求的超时长得多。
+    // 有公开附件的反馈要拼链接：这个进程没有 PUBLIC_API_URL（比如维护任务没设）就不碰它，
+    // 否则会建出一个没有附件的 issue 并且标成已发送。
+    const base = config.publicApiUrl;
     const rows = await sql<DueRow[]>`
       UPDATE feedback SET
         attempts = attempts + 1,
@@ -112,12 +158,15 @@ export async function deliverDueFeedback(
         SELECT id FROM feedback
         WHERE status = 'queued' AND next_attempt_at <= now()
           AND (${id ?? null}::uuid IS NULL OR id = ${id ?? null}::uuid)
+          AND (${base !== null} OR NOT public_attachments)
         ORDER BY next_attempt_at LIMIT ${batchSize} FOR UPDATE SKIP LOCKED
       )
       RETURNING id, text, diagnostics`;
     if (rows.length === 0) break;
-    const attachments = await sql<{ feedback_id: string; mime: string; size: string }[]>`
-      SELECT feedback_id, mime, size FROM feedback_attachments
+    const attachments = await sql<
+      { feedback_id: string; mime: string; size: string; public_token: string | null }[]
+    >`
+      SELECT feedback_id, mime, size, public_token FROM feedback_attachments
       WHERE feedback_id = ANY(${rows.map((r) => r.id)}::uuid[]) ORDER BY created_at, id`;
     // 一个一个发：GitHub 对连续建内容有次级限流，并发只会更快被限。
     for (const row of rows) {
@@ -127,7 +176,12 @@ export async function deliverDueFeedback(
         diagnostics: row.diagnostics,
         attachments: attachments
           .filter((a) => a.feedback_id === row.id)
-          .map((a) => ({ mime: a.mime, size: Number(a.size) })),
+          .map((a) => ({
+            mime: a.mime,
+            size: Number(a.size),
+            url: a.public_token && base ? publicFileUrl(base, a.public_token) : null,
+          })),
+        attachmentDays: config.feedbackAttachmentDays,
       });
       try {
         const created = await createGithubIssue(cfg, issue, fetchImpl);
@@ -332,6 +386,7 @@ interface InboxRow {
   issue_url: string | null;
   attachment_count: number;
   last_error: string | null;
+  public_attachments: boolean;
   /** created_at 的微秒数。Date 只到毫秒，按它翻页会漏掉或重复同一毫秒的几条。 */
   cursor_us: string;
 }
@@ -367,6 +422,7 @@ async function toInboxItems(
       issueNumber: r.issue_number,
       issueUrl: r.issue_url,
       attachmentCount: r.attachment_count,
+      publicAttachments: r.public_attachments,
       attachments,
       attachmentsDeleteAt:
         days !== null && r.sent_at && attachments.length > 0
@@ -386,7 +442,7 @@ export async function feedbackInbox(
   const [us, afterId] = before ? before.split('_') : [null, null];
   const rows = await sql<InboxRow[]>`
     SELECT id, status, created_at, submitted_at, sent_at, text, diagnostics, issue_number, issue_url,
-           attachment_count, last_error,
+           attachment_count, last_error, public_attachments,
            floor(extract(epoch FROM created_at) * 1000000)::bigint::text AS cursor_us
     FROM feedback
     WHERE status <> 'draft'
@@ -409,7 +465,7 @@ export async function feedbackInboxItem(
 ): Promise<FeedbackInboxItem | null> {
   const rows = await sql<InboxRow[]>`
     SELECT id, status, created_at, submitted_at, sent_at, text, diagnostics, issue_number, issue_url,
-           attachment_count, last_error, '' AS cursor_us
+           attachment_count, last_error, public_attachments, '' AS cursor_us
     FROM feedback WHERE id = ${id} AND status <> 'draft'`;
   const [item] = await toInboxItems(sql, config, rows);
   return item ?? null;
@@ -495,6 +551,33 @@ export async function downloadFeedbackAttachments(
   const expired = expiredAttachmentCount(item);
   if (expired > 0) skipped.push({ id: '-', reason: `${expired} 个附件过了保留期，已经删除` });
   return { saved, skipped };
+}
+
+export type PublicFileResult = { kind: 'ok'; url: string } | { kind: 'not_found' };
+
+/**
+ * 公开链接对应的签名链接。令牌格式不对、不存在、附件删了、反馈被删、没有平台存储，都是 not_found，
+ * 不区分：从外面分不出一个令牌是不是曾经有效。不先 HEAD：行在对象就在（删除时先删行再删对象）。
+ * Content-Type 按白名单覆盖，GitHub 的图片代理只转发 image/*，也不让存储按上传时报的类型返回别的东西。
+ */
+export async function publicFeedbackFile(
+  sql: Sql,
+  config: Config,
+  token: string,
+): Promise<PublicFileResult> {
+  if (!FEEDBACK_PUBLIC_TOKEN.test(token)) return { kind: 'not_found' };
+  const [row] = await sql<{ object_key: string; mime: string }[]>`
+    SELECT a.object_key, a.mime FROM feedback_attachments a JOIN feedback f ON f.id = a.feedback_id
+    WHERE a.public_token = ${token} AND a.status = 'ready' AND f.status <> 'draft'
+      AND f.public_attachments`;
+  const mime = row ? publicFeedbackMime(row.mime) : null;
+  if (!row || !mime) return { kind: 'not_found' };
+  const storage = await storageById(sql, config, '', null);
+  if (!storage) return { kind: 'not_found' };
+  return {
+    kind: 'ok',
+    url: await presignDownload(storage, row.object_key, PUBLIC_URL_TTL, mime),
+  };
 }
 
 /** `cli feedback` 不带 id：最近的反馈和状态，看有没有卡在队列里的。 */

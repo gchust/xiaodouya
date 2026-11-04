@@ -44,7 +44,7 @@ export interface MaintenanceReport {
   feedbackSent: number;
   /** 这次还是没能建 issue 的反馈，留在队列里。令牌过期时会一直不是 0。 */
   feedbackFailed: number;
-  /** 这个环境没有配置 GitHub，排队中的反馈这次没处理。不算失败。 */
+  /** 这个环境没有配置 GitHub（或者没有 PUBLIC_API_URL，带公开附件的），排队中的反馈这次没处理。不算失败。 */
   feedbackWaitingForConfig: number;
   /** 一天还没提交的草稿，连附件一起删了。 */
   feedbackDraftsRemoved: number;
@@ -99,6 +99,12 @@ export async function runMaintenance(
     const delivered = await deliverDueFeedback(sql, config, { maxMs: 60_000 });
     report.feedbackSent = delivered.sent;
     report.feedbackFailed = delivered.failed;
+    if (!config.publicApiUrl) {
+      // 带公开附件的反馈要拼链接，这个环境没有 PUBLIC_API_URL，留给配好的进程。
+      const [waiting] = await sql<{ count: string }[]>`
+        SELECT count(*) AS count FROM feedback WHERE status = 'queued' AND public_attachments`;
+      report.feedbackWaitingForConfig = Number(waiting?.count ?? 0);
+    }
   } else {
     const [waiting] = await sql<{ count: string }[]>`
       SELECT count(*) AS count FROM feedback WHERE status = 'queued'`;

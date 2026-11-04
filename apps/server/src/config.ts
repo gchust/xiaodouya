@@ -44,6 +44,15 @@ const EnvSchema = DbEnvSchema.extend({
   // 一个大家庭群里几十个人同时点开、NAT 后面共用一个地址也不该被挡。
   RATE_PUBLIC_SHARE_PER_IP_15MIN: z.coerce.number().int().nonnegative().default(120),
   RATE_PUBLIC_SHARE_PER_TOKEN_HOUR: z.coerce.number().int().nonnegative().default(600),
+  // 反馈附件的公开链接。issue 里的图片由 GitHub 的图片代理去取，它的地址是所有 GitHub 用户共用的，
+  // 按来源不能卡得太紧；代理自己有缓存，同一张图不会每看一次就来一次。
+  RATE_PUBLIC_FEEDBACK_FILE_PER_IP_15MIN: z.coerce.number().int().nonnegative().default(300),
+  RATE_PUBLIC_FEEDBACK_FILE_PER_TOKEN_HOUR: z.coerce.number().int().nonnegative().default(120),
+  /**
+   * 服务端对外的地址，和 App 的 EXPO_PUBLIC_API_URL 一样（Supabase 是 …/functions/v1/api）。
+   * 现在只用来拼反馈附件的公开链接：建 issue 可能在维护任务里，那里没有请求可以参考。不设时附件不公开。
+   */
+  PUBLIC_API_URL: optionalText.pipe(z.url({ protocol: /^https?$/ }).optional()),
   S3_ENDPOINT: optionalText,
   S3_PUBLIC_ENDPOINT: optionalText,
   S3_REGION: optionalText,
@@ -121,6 +130,10 @@ export interface RateLimits {
   sharePublicPerToken: number;
   /** 一次公开响应最多带多少个文件，不是请求频率，也不能是 0。 */
   sharePublicMedia: number;
+  /** 反馈附件的公开链接，15 分钟一个窗口。 */
+  feedbackFilePerIp: number;
+  /** 反馈附件的公开链接，一小时一个窗口。 */
+  feedbackFilePerToken: number;
 }
 
 export interface FeedbackServerConfig {
@@ -175,6 +188,8 @@ export interface Config {
    */
   feedbackViewers: ReadonlySet<string> | null;
   feedbackViewPerHour: number;
+  /** 服务端对外的地址，不带结尾的斜杠。null：反馈附件不公开。 */
+  publicApiUrl: string | null;
 }
 
 const GITHUB_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -294,6 +309,8 @@ export function loadConfig(env: Env = process.env): Config {
       sharePublicPerIp: e.RATE_PUBLIC_SHARE_PER_IP_15MIN,
       sharePublicPerToken: e.RATE_PUBLIC_SHARE_PER_TOKEN_HOUR,
       sharePublicMedia: MAX_PUBLIC_MEDIA,
+      feedbackFilePerIp: e.RATE_PUBLIC_FEEDBACK_FILE_PER_IP_15MIN,
+      feedbackFilePerToken: e.RATE_PUBLIC_FEEDBACK_FILE_PER_TOKEN_HOUR,
     },
     serverStorage: hasStorage
       ? {
@@ -322,5 +339,6 @@ export function loadConfig(env: Env = process.env): Config {
     feedbackAttachmentDays: e.FEEDBACK_ATTACHMENT_DAYS > 0 ? e.FEEDBACK_ATTACHMENT_DAYS : null,
     feedbackViewers: toFeedbackViewers(e.FEEDBACK_VIEWER_EMAILS),
     feedbackViewPerHour: e.RATE_FEEDBACK_VIEW_PER_HOUR,
+    publicApiUrl: e.PUBLIC_API_URL ? e.PUBLIC_API_URL.replace(/\/+$/, '') : null,
   };
 }
