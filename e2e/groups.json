@@ -92,6 +92,7 @@
     "multipart": ["03a_bulk_moment", "03b_upload_control"],
     "preview": ["03a_bulk_moment"],
     "document": ["04_documents"],
-    "avatar": ["14a_avatar"]
+    "avatar": ["14a_avatar"],
+    "feedback": ["24_feedback"]
   }
 }

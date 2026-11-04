@@ -185,6 +185,56 @@ if (expected('preview')) {
     need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
   }
 }
+// 流程 24：反馈的照片会公开（F-126）。样例原图带虚构的 GPS，传上去的必须是重新编码过的 JPEG，
+// 而且公开链接打开后跳到的就是这个对象。
+if (expected('feedback')) {
+  const api = process.env.E2E_API_URL ?? 'http://localhost:8787';
+  const github = process.env.E2E_FAKE_GITHUB_URL ?? 'http://localhost:8790';
+  const files = await sql`
+    SELECT a.mime, a.size, a.object_key, a.public_token, f.public_attachments
+    FROM feedback_attachments a
+    JOIN feedback f ON f.id = a.feedback_id
+    JOIN users u ON u.id = f.user_id
+    WHERE u.email = ${`admin-${runId}@example.test`}`;
+  need(files.length > 0, '没有反馈的附件');
+  const issues = await (await fetch(`${github}/__issues`)).json();
+  for (const file of files) {
+    const object = await s3.send(
+      new GetObjectCommand({ Bucket: 'xiaodouya-dev', Key: file.object_key }),
+    );
+    const bytes = await object.Body.transformToByteArray();
+    need(bytes.length === Number(file.size), `${file.object_key} 大小不符`);
+    need(file.mime === 'image/jpeg', `反馈照片不是 JPEG：${file.mime}`);
+    const found = jpegMetadata(bytes);
+    need(found.isJpeg, `${file.object_key} 不是 JPEG`);
+    need(!found.exif && !found.gps && !found.xmp, `${file.object_key} 带着元数据`);
+    need(found.appSegments === 0, `${file.object_key} 还有 ${found.appSegments} 个 APP 段`);
+    need(
+      !Buffer.from(bytes).includes(FICTIONAL_DESCRIPTION),
+      `${file.object_key} 带着样例的 EXIF 内容`,
+    );
+    // 64×48 加 Orientation=6：方向写进了像素里。
+    need(
+      found.width === 48 && found.height === 64,
+      `反馈照片的尺寸不对：${found.width}×${found.height}`,
+    );
+    need(file.public_attachments === true, '这条反馈应该是同意公开的');
+    need(/^[A-Za-z0-9_-]{43}$/.test(file.public_token ?? ''), '反馈附件没有公开令牌');
+    const link = `${api}/v1/public/feedback-files/${file.public_token}`;
+    need(
+      issues.some((i) => i.body.includes(`](${link})`)),
+      '假 GitHub 收到的正文里没有这个附件的公开链接',
+    );
+    const opened = await fetch(link, { redirect: 'manual' });
+    const location = opened.headers.get('location') ?? '';
+    need(opened.status === 302, `公开链接返回 ${opened.status}`);
+    need(
+      decodeURIComponent(location).includes(file.object_key) &&
+        Number(new URL(location).searchParams.get('X-Amz-Expires')) <= 600,
+      '公开链接没有跳到这个附件 10 分钟内的签名链接',
+    );
+  }
+}
 const previews = rows.filter((r) => r.variant === 'preview').length;
 console.log(
   `校验了 ${rows.length} 个对象，其中预览 ${previews} 个${skipped.length > 0 ? `（这组不涉及：${skipped.join('、')}）` : ''}`,

@@ -60,6 +60,7 @@ else
     FEEDBACK_GITHUB_TOKEN=fictional-e2e-token \
     FEEDBACK_GITHUB_API_URL="http://localhost:$FAKE_GITHUB_PORT" \
     FEEDBACK_VIEWER_EMAILS=feedback-maintainer@example.test \
+    PUBLIC_API_URL=http://localhost:8787 \
     setsid bash -c 'cd apps/server && exec npx tsx --env-file-if-exists=.env src/index.ts' \
     > "$ART/server.log" 2>&1 9>&- &
   SERVER_PID=$!

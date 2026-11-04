@@ -62,6 +62,8 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - assertVisible: 照片 1
 - assertVisible: 已建 issue
+# 流程 24 发的是同意公开的新反馈（F-126），详情里写明附件已经在 issue 里。
+- assertVisible: { id: feedback-detail-public }
 - takeScreenshot: .artifacts/e2e-25-inbox-detail
 - tapOn: { id: feedback-attachment-0 }
 - extendedWaitUntil:

@@ -1,5 +1,8 @@
 # 反馈问题：文字加一张图，服务端连 e2e.sh 启动的假 GitHub（不连真实的 GitHub）。
-# 看得到公开提醒和会公开的诊断信息；发出去后 issue 里只有代码块里的文字、诊断信息和附件个数。
+# 看得到公开提醒（文字和照片视频一起公开、照片会去掉拍摄地点）和会公开的诊断信息；发出去后 issue 里
+# 是代码块里的文字、诊断信息，以及嵌入的附件公开链接（F-126）。
+# 样例图带虚构的 GPS 和 Orientation=6：传上去的那份已经压缩、没有 EXIF，由 verify-uploads 直接查存储，
+# 公开链接打开后的 302 也在那里核对。
 # 假 GitHub 失败时反馈留在服务端的队列里，界面写“已收到”，列表里是“等待发送”。
 # 没有配置 GitHub 时的“暂不可用”要换服务端配置，由服务端测试和手动走查覆盖。
 appId: com.gchust.xiaodouya
@@ -17,16 +20,20 @@ appId: com.gchust.xiaodouya
     visible: { id: feedback-privacy }
     timeout: 15000
 - assertVisible:
-    text: .*公开的网页.*
+    text: .*照片、视频会一起公开在网页上.*
 - assertVisible:
-    text: .*只有开发者能看.*
+    text: .*不要拍到孩子的脸.*
+- assertVisible:
+    text: .*去掉拍摄地点.*
+- assertVisible:
+    text: .*会和文字一起公开
 - assertVisible: 这些信息也会一起公开
 - assertVisible: SG
 - tapOn: { id: feedback-text }
 # Maestro 的 inputText 遇到 # 就停了，引用和图片语法的转义由服务端测试覆盖。
 - inputText: E2E-${RUN_ID} @octocat crash after saving a photo
 - hideKeyboard
-# E2E 构建的选择器给一张内置样例图。
+# E2E 构建的选择器给一张带虚构 GPS 的内置样例图，加进来时就压缩成 JPEG。
 - tapOn: { id: feedback-pick }
 - extendedWaitUntil:
     visible: { id: selected-media }

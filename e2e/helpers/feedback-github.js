@@ -27,8 +27,17 @@ if (ACTION === 'fail') {
     throw new Error('@提及或 #引用跑到了代码块外面');
   }
   if (body.indexOf(EMAIL) >= 0) throw new Error('issue 里出现了账号邮箱');
+  // 附件的对象路径和签名链接不能出现，公开链接（/v1/public/feedback-files/<令牌>）才行。
   if (body.indexOf('feedback/') >= 0 || body.indexOf('X-Amz') >= 0) {
-    throw new Error('issue 里出现了附件的地址');
+    throw new Error('issue 里出现了附件的对象路径或签名链接');
   }
-  if (body.indexOf('1 个（图片') < 0) throw new Error('issue 里应该写着有 1 张图片');
+  if (body.indexOf('1 个（图片') < 0 || body.indexOf('1 个公开在下面') < 0) {
+    throw new Error('issue 里应该写着有 1 张公开的图片');
+  }
+  const embed =
+    /!\[图片 1（[^\]]*）\]\((http:\/\/localhost:\d+\/v1\/public\/feedback-files\/[A-Za-z0-9_-]{43})\)/;
+  if (!embed.test(outside)) throw new Error('issue 里没有嵌入图片的公开链接');
+  if (inside.indexOf('/v1/public/feedback-files/') >= 0) {
+    throw new Error('公开链接跑进了用户文字的代码块里');
+  }
 }
