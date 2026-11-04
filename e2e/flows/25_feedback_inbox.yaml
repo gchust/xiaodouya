@@ -1,0 +1,86 @@
+# 收到的反馈（F-125）：维护者在 App 里看流程 24 发出的反馈和附件。
+# 维护者的邮箱写死在 e2e.sh 的 FEEDBACK_VIEWER_EMAILS 里，脚本走真实接口准备这个账号并加入这次的家庭。
+# 管理员不在名单里，看不到入口；服务端对他是 403（脚本里核对，App 里藏入口不算权限）。
+# 跑完 App 里登录的是维护者，不是管理员，所以排在分组最后。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-feedback }
+- assertNotVisible: { id: open-feedback-inbox }
+- takeScreenshot: .artifacts/e2e-25-admin-no-entry
+- runScript:
+    file: ../helpers/feedback-maintainer.js
+    env:
+      EMAIL: admin-${RUN_ID}@example.test
+      RUN_ID: ${RUN_ID}
+- scrollUntilVisible:
+    element: { id: sign-out }
+- tapOn: { id: sign-out }
+- tapOn: { id: signout-confirm }
+- extendedWaitUntil:
+    visible: { id: welcome-screen }
+    timeout: 20000
+- tapOn: { id: welcome-login }
+- tapOn: { id: field-email }
+- inputText: feedback-maintainer@example.test
+- hideKeyboard
+- tapOn: { id: field-password }
+- inputText: correct-horse-9
+- hideKeyboard
+- tapOn: { id: auth-submit }
+# 只看回忆的家人登录后先到回忆页。
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-feedback-inbox }
+    timeout: 20000
+- assertVisible: 收到的反馈
+- takeScreenshot: .artifacts/e2e-25-inbox-entry
+- tapOn: { id: open-feedback-inbox }
+- extendedWaitUntil:
+    visible: { id: feedback-inbox-note }
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: .*E2E-${RUN_ID}.*
+    timeout: 15000
+# 流程 24 第二条在 GitHub 失败时排队了，也在列表里。
+- assertVisible:
+    text: .*Queued-${RUN_ID}.*
+- takeScreenshot: .artifacts/e2e-25-inbox-list
+- tapOn:
+    text: .*E2E-${RUN_ID}.*
+- extendedWaitUntil:
+    visible: { id: feedback-detail-text }
+    timeout: 15000
+- assertVisible: 照片 1
+- assertVisible: 已建 issue
+- takeScreenshot: .artifacts/e2e-25-inbox-detail
+- tapOn: { id: feedback-attachment-0 }
+- extendedWaitUntil:
+    visible: { id: feedback-media-image }
+    timeout: 20000
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-25-inbox-photo
+- tapOn: { id: feedback-media-close }
+- extendedWaitUntil:
+    visible: { id: feedback-detail-text }
+    timeout: 10000
+# 下载按证件处理：先说明会离开 App 的保护，再选位置，不进相册（E2E 构建的位置是 App 里的固定目录）。
+- tapOn: { id: feedback-attachment-download-0 }
+- extendedWaitUntil:
+    visible: { id: doc-download-note }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-25-inbox-download
+- tapOn: { id: doc-download-confirm }
+- extendedWaitUntil:
+    visible: 已保存到你选的文件夹
+    timeout: 20000

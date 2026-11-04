@@ -30,7 +30,8 @@
         "17a_cn_optional_vaccine",
         "18_other_region",
         "23_app_update",
-        "24_feedback"
+        "24_feedback",
+        "25_feedback_inbox"
       ]
     },
     "daily": {
@@ -82,9 +83,10 @@
       "12_birth_profile"
     ],
     "20_viewer_role": ["03_moment_upload", "14a_avatar"],
-    "21_caregiver_usage": ["20_viewer_role"]
+    "21_caregiver_usage": ["20_viewer_role"],
+    "25_feedback_inbox": ["24_feedback"]
   },
-  "endOfGroup": ["20_viewer_role", "21_caregiver_usage", "22_delete_account"],
+  "endOfGroup": ["20_viewer_role", "21_caregiver_usage", "22_delete_account", "25_feedback_inbox"],
   "uploadChecks": {
     "memory": ["03_moment_upload"],
     "multipart": ["03a_bulk_moment", "03b_upload_control"],
