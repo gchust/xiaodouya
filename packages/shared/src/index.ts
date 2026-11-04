@@ -9,6 +9,7 @@ export * from './domain/milestones';
 export * from './domain/multipart';
 export * from './domain/recordTime';
 export * from './domain/storage';
+export * from './domain/tapGuard';
 export * from './domain/units';
 export * from './domain/vaccinePlan';
 export * from './domain/vaccines';
