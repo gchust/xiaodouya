@@ -1,6 +1,12 @@
 import { L, type Localized, localized } from '../i18n';
-import type { NutrientValues } from '../schemas';
-import { emptyFormulaForm, type FormulaForm, formulaFormFromData, iuToUg } from './nutrition';
+import type { FormulaBasis, NutrientValues } from '../schemas';
+import {
+  emptyFormulaForm,
+  type FormulaForm,
+  formulaFormFromData,
+  iuToUg,
+  kjToKcal,
+} from './nutrition';
 
 /**
  * 预置奶粉。新增品牌只加一条数据，不用改页面。不代表推荐，界面也不评价。
@@ -16,8 +22,10 @@ export interface FormulaPreset {
   /** 主要在哪些地区销售，只影响排序。空数组表示不限。 */
   regions: readonly string[];
   label: null | {
-    basis: 'per100ml';
+    basis: FormulaBasis;
     values: NutrientValues;
+    /** 来源给了冲调比例才写；按每 100 g 而没有它时，选中后要用户照罐身的冲调表补上。 */
+    powderGPer100ml?: number;
     source: { label: string; url: string; readOn: string; version: string };
   };
 }
@@ -29,32 +37,58 @@ const HEALTH_CANADA_LABELS =
 type PresetInput = Omit<FormulaPreset, 'name' | 'label'> & {
   name: string | Localized;
   label: null | {
-    basis: 'per100ml';
+    basis: FormulaBasis;
     values: NutrientValues;
+    powderGPer100ml?: number;
     source: { label: Localized; url: string; readOn: string; version: Localized };
   };
 };
 
 const presetData: readonly PresetInput[] = [
   {
-    // 合生元官网（biostime.com.cn/pai-star.html，2026-11-01）正文没有营养数值，只有宣传图，图片的 CDN
-    // 返回 403 读不到；市场监管总局的配方注册信息也没查到。搜索到的只有测评和电商转述，彼此矛盾，不能用。
+    // 数值来自第三方站纽奶乐（nznewmilk.com.cn，一家奶粉品牌的官网，页面自己写明“不属于国家市场监督管理总局官方网站”、
+    // 和合生元无关联）整理的“合生元派星天护婴儿配方奶粉（0—6月龄，1段）”，国食注字 YP20235061，2023-08-29 批准，
+    // GB 10765-2021。页面说营养成分表来自总局的配方注册公开信息，标签核验日期 2026-07-03，没有放标签或证书原图。
+    // 仓库所有者 2026-11-04 指定采用（issue #60），未经市场监管总局或合生元官方原文核对，按 AGENTS.md 第 8 节属于待复核。
     //
-    // issue #60 要“派星 1 段新版”，2026-11-04 再查（待复核，没有带数值）：
-    // - 京东自营的商品名是“派星 婴儿配方奶粉1段新版(0-6个月)800g 6重HMO+DHA”（SKU 1720648），详情页要登录才显示，
-    //   没读到标签。测评文章说 2026 年 3 月升级成 6 种 HMO，没有官方原文。
-    // - 第三方站 nznewmilk.com.cn 列了“合生元派星天护婴儿配方奶粉（1段）”国食注字 YP20235061（2023-08-29 批准）
-    //   每 100 g 的数值，自称整理自总局公开信息，但写明不是总局网站，也没有标签或证书原图。它的成分表里没有 HMO，
-    //   名字也是“派星天护”，所以就算数字对，也多半不是“新版”。
-    // - 总局特殊食品信息查询平台（tsspxx.gsxt.gov.cn）在这台机器上返回 502 或连不上，没能核对这个注册号。
-    // 罐身多半只给每 100 g，要做成预置还得有冲调表上“每 100 ml 冲好的奶用多少克粉”，只有水量不够。
+    // 没有核对的地方：
+    // - 注册名是“派星天护”。京东自营把“派星 1段新版 6重HMO+DHA”（SKU 1720648）和“派星天护 720g”分开卖，
+    //   这个页面的成分表里没有 HMO，所以不能确定它就是京东上的“新版”，要看罐身的国食注字是不是 YP20235061。
+    // - 总局特殊食品信息查询平台（tsspxx.gsxt.gov.cn）在这台机器上返回 502 或连不上；合生元官网只有宣传图，图片 CDN 返回 403。
+    //
+    // 页面是每 100 克奶粉，只抄了这里用的七项；能量 2113 kJ 按 4.184 换成 kcal。页面没有冲调比例，不拿“几勺加多少水”换算，
+    // 所以 `powderGPer100ml` 空着，选中后要照罐身的冲调表填每 100 ml 冲好的奶用多少克粉才能算。
     id: 'biostime-paixing-1',
     name: '合生元 派星 1 段',
     regions: ['CN'],
-    label: null,
+    label: {
+      basis: 'per100g',
+      values: {
+        energyKcal: kjToKcal(2113),
+        proteinG: 10.6,
+        fatG: 27.3,
+        carbsG: 52.5,
+        calciumMg: 317,
+        ironMg: 3.2,
+        vitaminDUg: 12.9,
+      },
+      source: {
+        label: L(
+          '第三方网站纽奶乐整理的配方注册信息（仓库所有者指定采用，未经总局或合生元官方原文核对）',
+          'Registration data compiled by the third-party site NewMilk (adopted at the repository owner’s request; not checked against SAMR or Biostime originals)',
+        ),
+        url: 'https://www.nznewmilk.com.cn/formula/registration/yp20235061/',
+        readOn: '2026-11-04',
+        version: L(
+          '注册名“合生元派星天护婴儿配方奶粉（0—6月龄，1段）”，国食注字 YP20235061，每 100 g 奶粉',
+          'Registered as Biostime Pai-star Tianhu infant formula (0–6 months, stage 1), SAMR YP20235061, per 100 g powder',
+        ),
+      },
+    },
   },
   {
-    // 同上。段数和适用月龄来自京东的商品列表。
+    // 官网同样没有数值。纽奶乐页面链接了派星天护 2 段（YP20235062），这次没有读，也没有被指定采用。
+    // 段数和适用月龄来自京东的商品列表。
     id: 'biostime-paixing-2',
     name: '合生元 派星 2 段',
     regions: ['CN'],
@@ -150,5 +184,6 @@ export function presetToForm(preset: FormulaPreset): FormulaForm {
     name: preset.name,
     basis: preset.label.basis,
     values: preset.label.values,
+    powderGPer100ml: preset.label.powderGPer100ml,
   });
 }

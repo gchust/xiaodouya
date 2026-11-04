@@ -443,11 +443,32 @@ describe('推荐量表', () => {
 });
 
 describe('预置奶粉', () => {
-  it('合生元派星 1 段只有名字，没读到标签就不带数值', () => {
-    const preset = formulaPresets.find((p) => p.id === 'biostime-paixing-1');
+  it('合生元派星 2 段只有名字，没读到标签就不带数值', () => {
+    const preset = formulaPresets.find((p) => p.id === 'biostime-paixing-2');
     expect(preset?.name).toContain('派星');
     expect(preset?.label).toBeNull();
     expect(preset?.regions).toContain('CN');
+  });
+
+  it('合生元派星 1 段按每 100 g 带数值，冲调比例来源没给就空着', () => {
+    const preset = formulaPresets.find((p) => p.id === 'biostime-paixing-1');
+    expect(preset?.regions).toContain('CN');
+    expect(preset?.label?.basis).toBe('per100g');
+    expect(preset?.label?.powderGPer100ml).toBeUndefined();
+    expect(preset?.label?.source.version).toContain('YP20235061');
+    if (!preset?.label) throw new Error('缺数值');
+    // 没有冲调比例时算不出每 100 ml，不能猜。
+    expect(per100mlValues(preset.label).needsRatio).toBe(true);
+    const form = presetToForm(preset);
+    expect(form.basis).toBe('per100g');
+    expect(form.powderGPer100ml).toBe('');
+    expect(Number(form.fields.energyKcal)).toBeCloseTo(kjToKcal(2113), 3);
+    expect(form.fields.proteinG).toBe('10.6');
+    // 填上罐身的冲调比例就能算：每 100 ml 用 13 g 粉（虚构的比例）时蛋白质是 1.378 g。
+    expect(per100mlValues({ ...preset.label, powderGPer100ml: 13 }).values.proteinG).toBeCloseTo(
+      1.378,
+      6,
+    );
   });
 
   it('有数值的预置都写了来源、读取日期和配方版本', () => {
@@ -481,6 +502,17 @@ describe('预置奶粉', () => {
       ironMg: 1.2,
       vitaminDUg: iuToUg(41),
     });
+    // 纽奶乐整理的 YP20235061 营养成分表（每 100 克），只取这七项。
+    const paixing = formulaPresets.find((p) => p.id === 'biostime-paixing-1')?.label;
+    expect(paixing?.values).toEqual({
+      energyKcal: kjToKcal(2113),
+      proteinG: 10.6,
+      fatG: 27.3,
+      carbsG: 52.5,
+      calciumMg: 317,
+      ironMg: 3.2,
+      vitaminDUg: 12.9,
+    });
   });
 
   it('id 不重复', () => {
@@ -497,7 +529,7 @@ describe('预置奶粉', () => {
   });
 
   it('选中只有名字的预置：表单里只有名字', () => {
-    const preset = formulaPresets.find((p) => p.id === 'biostime-paixing-1');
+    const preset = formulaPresets.find((p) => p.id === 'biostime-paixing-2');
     if (!preset) throw new Error('缺预置');
     const form = presetToForm(preset);
     expect(form.name).toBe(preset.name);
