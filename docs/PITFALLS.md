@@ -39,6 +39,7 @@
 - **`stop()` 不会取消已经发出的同步请求。** 退出登录清空本地之后响应才到的话，记录会被写回 SQLite，还会标记“同步过”，下一个登录的人就看到了上一个人的数据。按会话编号丢弃旧响应。上传队列同理，失败的任务不能再存回去。
 - **`store.write` 必须校验。** `rebuild` 会跳过校验不过的记录，不校验的话它存得下、看不见、服务端也不收。改已有记录时更糟：原来的内容也跟着消失。一条回忆 105 张照片就走到过这里：弹层正常关闭，时间线是空的，文件还在后台上传。
 - **不要把翻译后的文字写进记录。** 不填标题的信以前存成“无题”，英文下就会存成 “Untitled”，中文的家人看到的是英文。显示时才补的默认值就存空字符串（v0.1.0 也按空标题显示“无题”）。内置疫苗写 `recordName`（中文原名），显示时按 id 换语言，否则换一种语言记的剂次对不上名字。
+- **按时间倒序翻页，游标不能是 JS 的 `Date`。** Postgres 的时间戳到微秒，`Date` 只到毫秒，同一毫秒里的几条会被漏掉或重复。「收到的反馈」的游标是 `floor(extract(epoch …) * 1000000)` 的微秒数加 id，`feedback-viewer.test.ts` 把三条改成同一个时间点来测。
 
 ## 账号和登录
 
@@ -133,6 +134,7 @@
 - **`name` 不能换成英文。** iOS 的工程目录（`ios/app.xcworkspace`）是从它算的，非 ASCII 的名字才得到 `app`，改了会弄坏 `scripts/ios-build.sh`。Android 的默认 `app_name` 用 `withStringsXml` 覆盖，中文放 `locales`。
 - **`locales` 只写带限定符的资源目录，默认的 `values/strings.xml` 不归它管。** 手机是法语时用默认资源，所以默认资源要写英文。小工具的 `label` 直接进清单，要写成 `@string/...` 才能本地化。
 - **跟着文字收缩的 Text 可能把最后一个单词折到看不见的第二行。** 空状态的标题 “The first moment starts today” 在屏幕上只剩 “The first moment starts”，`uiautomator` 读到的文字是完整的，只有看截图才发现。量出来的宽度比实际画的窄一点时，高度还是一行。中文没遇到过。居中的文字用 `alignSelf: 'stretch'`。
+- **`ListCard` 的 `Row` 放不下长的等宽值。** 反馈 ID（uuid）放在 `Row` 的右边，中文还放得下，英文标签 `Feedback ID` 更长，值折成两行、第二行被卡片裁掉一半（模拟器截图上才看出来）。长的、要复制的值单独一行放在卡片下面。
 
 ## Android 构建和模拟器
 
@@ -156,6 +158,7 @@
 - **更新已装的 App 时，系统确认按钮写的是“更新”（Update），不是“安装”。** 第一次写的提示是“再点一次安装”，在 API 35 上对不上。文案写成“更新或安装”。
 - **`adb emu network speed` 限不住模拟器走 Wi-Fi 的下载。** 设成 `edge` 后 44 MB 还是几秒下完，看不到进度，也来不及点取消。要慢下来就在宿主机开一个限速的 TCP 转发，让服务端的 `S3_PUBLIC_ENDPOINT` 指向它：SigV4 签的是 Host，转发不改 Host 就能过签名。
 - **界面一直在刷新时 `uiautomator dump` 会卡住。** 下载进度每次回调都重画，`scripts/adb-ui.py` 的 `ids`、`tap=` 等不到空闲就超时。这时用截图加坐标点。
+- **在仓库外的目录里调 `apksigner` 会报 `mise ERROR No version is set for shim: java`。** mise 的 shim 按当前目录找 `.mise.toml`，scratchpad 里找不到。用 `env PATH=$(mise where java)/bin:/usr/bin:/bin apksigner …`，或者先回到仓库目录。
 
 ## 依赖和环境
 
@@ -260,6 +263,7 @@
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
 - **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
+- **E2E 里要在服务端配置里写死的账号，邮箱只能是固定的。** `e2e.sh` 启动服务端时还没有 `RUN_ID`，`FEEDBACK_VIEWER_EMAILS` 只能写 `feedback-maintainer@example.test`。本地开发库跨次保留，上一次留下的同名账号还在别的家庭里，邀请会失败；`feedback-maintainer.js` 先登录、用密码正常删除这个账号，再注册、加入这次的家庭。
 
 ## 并行开发
 

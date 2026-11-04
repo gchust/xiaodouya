@@ -297,7 +297,19 @@ App ──POST /v1/feedback {id, text, diagnostics, attachments}──> 服务�
 - **先存库再建 issue：** 建 issue 用和待删除队列一样的租约（一条 `UPDATE … WHERE id IN (… FOR UPDATE SKIP LOCKED)` 推后下次时间），Edge Function 多个实例同时补发也不会建重复的。GitHub 的报错只记状态码：它的错误响应会回显请求的一部分，令牌只在请求头里。不加 labels 和 assignees，标签不存在、权限不够时 GitHub 的处理不一致。
 - **幂等：** 反馈 id 由手机生成。草稿状态下同一个 id 再调可以改文字和附件（去掉的附件进待删除队列），已经提交的原样返回状态。手机上草稿和附件副本存在 `Paths.document/feedback/`，每传好一个附件记一次，断网、被杀后重发只传剩下的；服务端说附件没到（`not_uploaded`、`size_mismatch`）就全部重传一次。退出登录、换账号时随本地数据一起清除。
 - **清理（`cli maintenance`）：** 一天还没提交的草稿连附件删掉；issue 建好 `FEEDBACK_ATTACHMENT_DAYS` 天后删附件，反馈行留着（`attachment_count` 记着当初有几个）；删除账号时反馈随账号级联删除，附件在同一个事务里进待删除队列。
-- **维护者看附件：** `cli feedback <id>`，10 分钟的签名链接，和证件一样。
+- **维护者看附件：** App 的「收到的反馈」或 `cli feedback <id>`（`--download <目录>` 存到本机），都是 10 分钟的签名链接，和证件一样。
+
+```
+维护者 App ──GET /v1/me──> canViewFeedback（只是布尔值，名单不下发）
+           ──GET /v1/feedback-inbox?before=<游标>&limit=──> 草稿以外的反馈，时间倒序
+           ──GET /v1/feedback-inbox/:id──> 一条
+           ──GET /v1/feedback-inbox/:id/attachments/:附件 id──> HEAD 核对还在 → 10 分钟的链接（不在：410）
+```
+
+- **权限是服务端的名单（`FEEDBACK_VIEWER_EMAILS`），和家庭角色无关。** 三个接口都先判断名单，名单外和没开是同一个 403。服务器发邮件时还要求邮箱验证过，否则维护者还没注册时别人能抢先用这个邮箱注册。名单不放进 `config.feedback`：看反馈只要数据库和平台存储，GitHub 的令牌过期了也要能看。
+- **不带提交者：** `feedback.ts` 里给维护者的查询不 JOIN `users`、`memberships`，不读 `user_id`，邮箱和家庭从这条路拿不到。
+- **游标是“创建时间的微秒数_id”：** `Date` 只到毫秒，按毫秒翻页时同一毫秒的几条会漏掉或重复。
+- **App 里：** 链接每次打开、每次下载时现取，不进 `mediaUrlBatcher` 的缓存；照片只放内存缓存；下载走证件的流程（`sensitive`，不进相册），`DownloadRequest.signedUrl` 让下载器从这个接口取链接。
 
 ## 角色变化
 
