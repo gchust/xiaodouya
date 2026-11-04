@@ -133,13 +133,16 @@ export function TodayScreen() {
         : t().today.feedDue;
   const feedHintNear = estimate.isLearned && estimate.remainingMs < 30 * 60_000;
 
-  const toggleSleep = () =>
+  /** `shownAsleep` 是被点的按钮画出来时的状态，也就是用户以为自己在点的那个。 */
+  const toggleSleep = (shownAsleep: boolean) =>
     guardTap(sleepTaps, 'sleep', Date.now, async () => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      // 按点击这一刻的记录判断，不用渲染时的：上一下刚写完、界面还没重画时，渲染时的还是旧状态。
       const latest = app.store.getSnapshot().events;
       const open = activeSleep(latest.map((e) => e.data));
       const openEntry = open ? latest.find((e) => e.data === open) : undefined;
+      // 上一下已经写好、按钮还没来得及重画时又点了一下：按“睡眠”是要开始，已经开始了就什么都不做，
+      // 不能把刚开始的睡眠结束掉。手机忙的时候第二下可能晚于 500 ms 才到，只靠时间挡不住。
+      if (Boolean(open) !== shownAsleep) return;
       if (open && openEntry) {
         const end = Date.now();
         await app.write('event', { ...open, endAt: end }, openEntry.id);
@@ -277,7 +280,10 @@ export function TodayScreen() {
           <Dot color={colors.diaper} />
           <Text style={s.actionLabel}>{t().today.diaper}</Text>
         </PressScale>
-        <SleepAction sleeping={Boolean(sleeping)} onPress={() => void toggleSleep()} />
+        <SleepAction
+          sleeping={Boolean(sleeping)}
+          onPress={() => void toggleSleep(Boolean(sleeping))}
+        />
         <PressScale
           testID="action-more"
           accessibilityLabel={t().today.more}
