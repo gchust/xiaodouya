@@ -36,6 +36,7 @@ export const ui: Catalog['ui'] = {
   dlNoSpace: 'The phone is out of storage. Free up some space, then tap again.',
   dlIncomplete: 'The downloaded file is incomplete. Tap again to retry.',
   dlSave: "Saving didn't work. Tap again to retry.",
+  dlGone: 'This file has been deleted.',
   dlSavedGallery: 'Saved to photos',
   dlSavedFolder: 'Saved to the folder you chose',
   dlCancelled: 'Download cancelled',

@@ -242,12 +242,13 @@ export function ViewerScreen() {
 /** 比 1 大一点点就算放大，否则手指一动就锁住翻页。 */
 const ZOOMED_ABOVE = 1.01;
 
-function ZoomableImage({
+/** 收到的反馈的全屏查看（FeedbackMediaScreen）也用它。只用到宽高：不知道时按铺满算。 */
+export function ZoomableImage({
   media,
   onZoomChange,
   children,
 }: {
-  media: MediaRef;
+  media: { width?: number; height?: number };
   onZoomChange: (zoomed: boolean) => void;
   children: ReactNode;
 }) {
@@ -510,7 +511,7 @@ function VideoPage({ media }: { media: MediaRef }) {
   return <VideoPlayer uri={source.uri} />;
 }
 
-function VideoPlayer({ uri }: { uri: string }) {
+export function VideoPlayer({ uri }: { uri: string }) {
   const player = useVideoPlayer({ uri }, (p) => {
     p.play();
   });

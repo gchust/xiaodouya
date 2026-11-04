@@ -327,6 +327,15 @@ export function FamilyScreen() {
             sub={feedbackOn === false ? t().feedback.rowUnavailable : t().feedback.rowSub}
             onPress={() => router.push('/feedback')}
           />
+          {/* 只是入口：服务端每次请求都按 FEEDBACK_VIEWER_EMAILS 判断，App 拿不到名单。 */}
+          {me?.canViewFeedback === true ? (
+            <NavRow
+              testID="open-feedback-inbox"
+              label={t().feedback.inboxRow}
+              sub={t().feedback.inboxRowSub}
+              onPress={() => router.push('/feedback-inbox')}
+            />
+          ) : null}
           <NavRow
             testID="sign-out"
             label={t().auth.signOut}
