@@ -148,6 +148,12 @@ run_attempt() {
   [ -n "$media_before" ] || { echo "查不了系统媒体库" >&2; return 1; }
   for flow in "${flows[@]}"; do
     echo "▶ $flow"
+    # 两条更新流程要存储里不同的 APK：23 要换过的字节（校验失败），23a 要对得上的（自动下载后提示安装）。
+    # 每次都在流程开始前放好，整组重跑时也一样。
+    case "$(basename "$flow" .yaml)" in
+      23_app_update) bash e2e/helpers/fake-release.sh tampered 9>&- ;;
+      23a_auto_update) bash e2e/helpers/fake-release.sh intact 9>&- ;;
+    esac
     status=0
     run_flow "$flow" "$run_id" || status=$?
     [ "$status" -eq 0 ] || return "$status"

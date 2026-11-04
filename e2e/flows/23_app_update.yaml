@@ -1,7 +1,7 @@
 # 应用内更新：设置里检查更新、看到新版本、以后再说；点更新后下载，文件和清单的 sha256 对不上时拒绝安装，能重试。
-# 存储里的假版本由 e2e/helpers/fake-release.sh 发布（scripts/e2e.sh 跑流程之前调用），APK 的字节被换过。
+# 存储里的假版本由 e2e/helpers/fake-release.sh 发布（scripts/e2e.sh 跑流程之前调用），这条流程开始前 APK 的字节被换过（tampered）。
 # 系统安装界面 Maestro 管不到：真的装上新版本在模拟器上手动验证（docs/PROGRESS.md 的 F-120）。
-# E2E 构建不自动检查（会挡住别的流程），自动检查的节流和提示只有单元测试。
+# E2E 构建不自动检查（会挡住别的流程），自动检查的节流和提示只有单元测试。自动下载见流程 23a。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
