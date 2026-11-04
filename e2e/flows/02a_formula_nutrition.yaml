@@ -1,4 +1,4 @@
-# 奶粉营养：没标注时不安慰；手动配置、沿用上一次、预置只有名字、按部分字段估算。
+# 奶粉营养：没标注时不安慰；手动配置、沿用上一次、预置只有名字、预置按每 100 g 缺冲调比例、按部分字段估算。
 # 不依赖 02：ls 的排序跟语言环境有关，这个流程可能排在 02 前面。
 appId: com.gchust.xiaodouya
 ---
@@ -51,8 +51,8 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: nutrition-add-formula }
 - takeScreenshot: .artifacts/e2e-02a-presets
 - scrollUntilVisible:
-    element: { id: formula-preset-biostime-paixing-1 }
-- tapOn: { id: formula-preset-biostime-paixing-1 }
+    element: { id: formula-preset-biostime-paixing-2 }
+- tapOn: { id: formula-preset-biostime-paixing-2 }
 - assertVisible: { id: formula-name-only }
 - takeScreenshot: .artifacts/e2e-02a-preset-name-only
 - scrollUntilVisible:
@@ -63,8 +63,31 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - scrollUntilVisible:
     element: { text: 还没有营养数据，请对照罐身录入 }
-- assertVisible: 合生元 派星 1 段
+- assertVisible: 合生元 派星 2 段
 - takeScreenshot: .artifacts/e2e-02a-name-only-listed
+# 预置按每 100 g 带数值、没有冲调比例：表单停在每 100 g，保存后提示还缺比例，不猜
+- scrollUntilVisible:
+    element: { id: nutrition-add-formula }
+    direction: UP
+- tapOn: { id: nutrition-add-formula }
+- scrollUntilVisible:
+    element: { id: formula-preset-biostime-paixing-1 }
+- tapOn: { id: formula-preset-biostime-paixing-1 }
+- assertNotVisible: { id: formula-name-only }
+- assertVisible:
+    text: .*YP20235061.*
+- assertVisible: { id: formula-ratio }
+- takeScreenshot: .artifacts/e2e-02a-preset-per100g
+- scrollUntilVisible:
+    element: { id: formula-save }
+- tapOn: { id: formula-save }
+- extendedWaitUntil:
+    notVisible: { id: formula-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: formula-row-合生元 派星 1 段 }
+- assertVisible: 还缺冲调比例，算不出来
+- takeScreenshot: .artifacts/e2e-02a-per100g-listed
 - scrollUntilVisible:
     element: { id: nutrition-back }
     direction: UP
