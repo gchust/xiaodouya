@@ -883,7 +883,8 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
           {view.avatar ? <Avatar uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
           <TextWidget
             text={t().widgetUi.quickTitle(
-              shortBabyName(view.babyName, view.avatar ? 10 : 12),
+              // 4×2 横向还很宽，放了头像也不用少放字（模拟器上 “Little Bean · 第 1 天” 加头像只占一半）。
+              shortBabyName(view.babyName, 12),
               view.dayNumber,
             )}
             maxLines={1}

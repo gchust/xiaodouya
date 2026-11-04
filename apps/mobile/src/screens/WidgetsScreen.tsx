@@ -146,7 +146,7 @@ function DisplaySettings() {
           value={showAvatar}
           onChange={(next) => void changeAvatar(next)}
           disabled={!loaded}
-          last={!(showAvatar && !baby?.data.avatar)}
+          last
         />
         {showAvatar && !baby?.data.avatar ? (
           <Muted style={[s.hint, s.missing]} testID="widget-avatar-missing">
@@ -286,5 +286,6 @@ const s = StyleSheet.create({
     borderBottomColor: colors.rule,
   },
   hint: { fontSize: 11, lineHeight: 16 },
-  missing: { paddingBottom: 12, marginTop: -4 },
+  // 接在开关那一行下面，算同一行的补充说明，中间不画分隔线。
+  missing: { paddingBottom: 12, marginTop: -6 },
 });
