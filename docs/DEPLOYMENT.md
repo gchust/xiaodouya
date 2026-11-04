@@ -638,19 +638,24 @@ SELECT object_key, attempts, next_attempt_at, last_error FROM pending_object_del
 
 App 的「家人 → 设置 → 反馈问题」：用户写文字、加最多 5 个照片或视频，服务端在配置的 GitHub 仓库建一个 issue。**不配置时什么都不影响：** 那一行写着“这台服务器暂不支持”，点进去是一句说明，接口返回 503 `feedback_disabled`。
 
-**隐私：** 仓库通常是公开的，而截图可能拍到别人家的孩子。
+**隐私：** 仓库通常是公开的，而截图可能拍到别人家的孩子。**仓库所有者 2026-11-04 决定：新提交的反馈，照片和视频和文字一起公开在 issue 里**（F-126），隐私风险可以接受。
 
-- issue 里只有用户写的文字（整段放在代码块里，`@某人`、`#123`、图片和链接都不生效）、反馈 id、App 版本、系统和版本、语言、家庭的地区、附件的个数类型和大小。没有邮箱、账号、家庭、宝宝的信息，也没有附件的地址。标题是 `App 反馈 <id 前 8 位> · android 0.3.3`，不含用户的文字。
+- issue 里有用户写的文字（整段放在代码块里，`@某人`、`#123`、图片和链接都不生效）、反馈 id、App 版本、系统和版本、语言、家庭的地区、附件的个数类型和大小，以及下面说的附件公开链接。没有邮箱、账号、家庭、宝宝的信息，也没有附件 id、对象路径和签名链接。标题是 `App 反馈 <id 前 8 位> · android 0.3.3`，不含用户的文字。
 - 附件只放平台存储（`S3_*`）的 `feedback/<反馈 id>/<附件 id>`，不进家庭自带的 Bucket，不算家庭配额（反馈是账号的事，没有家庭的人也能提），靠每人每天的条数和附件个数、大小兜底。服务器没有平台存储时只收文字。
-- 维护者在 App 的「收到的反馈」里看附件（要设 `FEEDBACK_VIEWER_EMAILS`，见下面[在 App 里查看反馈](#在-app-里查看反馈)），或者用 `cli feedback <id>`（10 分钟的签名链接，不要贴进 issue）。反馈 id 和账号的对应在 `feedback.user_id`，只在数据库里，两种方式都不显示提交者是谁。
-- 附件在 issue 建好后 `FEEDBACK_ATTACHMENT_DAYS` 天（默认 90）由 `cli maintenance` 删除；一天没提交的草稿连附件一起删；用户删除账号时反馈和附件立即删除，已经发到 GitHub 的文字留在那里（提交前 App 说明过会公开）。
+- **哪些附件公开：** 只有新版 App 提交、提交时带了 `publicAttachments: true` 的反馈（App 只在提示写着“照片和视频会和文字一起公开”时才带）。改版前的 App 提交的反馈当时承诺过“不公开，只有开发者能看”，没有这个字段，**永远不生成公开链接**，补发时也不会。服务器没设 `PUBLIC_API_URL` 时 `/v1/config` 的 `feedback.publicAttachments` 是 `false`，App 照旧说附件不公开，也不带这个字段。类型不在白名单（JPEG、PNG、GIF、WebP、MP4、MOV、WebM、3GP）的附件不公开，只写个数。
+- **公开链接：** 提交时给每个附件一个 32 字节的随机令牌（base64url，256 位），和反馈 id、附件 id、对象路径都没有关系，存在 `feedback_attachments.public_token`。正文里图片用 `![]()` 嵌入，视频写成链接，地址是 `<PUBLIC_API_URL>/v1/public/feedback-files/<令牌>`。打开它不用登录，服务端 302 到 10 分钟的签名链接（每次现签，`Cache-Control: no-store`）。令牌不对、附件删了、没有平台存储都是同一个 404。不需要给 GitHub 令牌加 Contents 写权限。
+- **照片和视频的处理：** App 加照片时就重新编码成 JPEG（长边 2048、质量 0.8，和照片预览一样），不带原图的 EXIF 和 GPS，压缩不了的照片不加进来（不会退回上传原图）。**视频原样上传，可能带着拍摄地点**（系统选择器给的文件不一定抹掉位置），App 的提示里写了。
+- 维护者在 App 的「收到的反馈」里看附件（要设 `FEEDBACK_VIEWER_EMAILS`，见下面[在 App 里查看反馈](#在-app-里查看反馈)），详情写明这一条的附件公开了没有；或者用 `cli feedback <id>`（10 分钟的签名链接）。**改版前的反馈附件不要贴进 issue。** 反馈 id 和账号的对应在 `feedback.user_id`，只在数据库里，两种方式都不显示提交者是谁。
+- 附件在 issue 建好后 `FEEDBACK_ATTACHMENT_DAYS` 天（默认 90）由 `cli maintenance` 删除，公开链接随之 404；一天没提交的草稿连附件一起删；用户删除账号时反馈和附件立即删除，公开链接立即 404，已经发到 GitHub 的文字留在那里（提交前 App 说明过会公开）。**GitHub 的图片代理（camo）会缓存图片，链接失效后 issue 里的图片可能还能看到一段时间**，我们删不掉那份缓存；看过、存过的人手里的副本也收不回。
+- **日志：** 服务端自己的日志不记公开链接的路径（出错时只记 `/v1/public/feedback-files/…`）。但托管平台的访问日志（Supabase 的函数调用日志、Caddy 开了访问日志时）会记下完整路径，里面有令牌。令牌只能打开已经放在公开 issue 里的那个文件。
 
 **开启步骤：**
 
 1. 在 GitHub 建 fine-grained personal access token（Settings → Developer settings → Fine-grained tokens）：Repository access 选 **Only select repositories**，只选反馈要去的这一个仓库；Repository permissions 只给 **Issues: Read and write**（Metadata: Read-only 会自动带上），其他都不给。有效期最长一年，到期前要换，换了要重新设置下面的 Secret。仓库是组织的话，组织可能要先批准这个令牌。
-2. 设置 `FEEDBACK_GITHUB_REPO=owner/name` 和 `FEEDBACK_GITHUB_TOKEN`（Supabase 用 `supabase secrets set`，Docker 写进 `deploy/.env`），重新部署。只设一项会拒绝启动。仓库是私有的，再设 `FEEDBACK_REPO_PUBLIC=false`，App 就不说“文字会公开”。
-3. 每天的维护任务（`maintenance.yml`）也设同样的两个 Secret，它才会补发排队的反馈；`FEEDBACK_ATTACHMENT_DAYS` 要和函数一样。
-4. 用 App 提交一条测试反馈，确认仓库里出现了 issue，再 `cli feedback` 看一眼状态是 `sent`。
+2. 设置 `FEEDBACK_GITHUB_REPO=owner/name` 和 `FEEDBACK_GITHUB_TOKEN`（Supabase 用 `supabase secrets set`，Docker 写进 `deploy/.env`），重新部署。只设一项会拒绝启动。仓库是私有的，再设 `FEEDBACK_REPO_PUBLIC=false`，App 就不说“文字会公开”，改说“照片和视频是拿到链接就能打开的网址”（链接不用登录，私有仓库挡不住拿到链接的人）。
+3. 附件要放进 issue，再设 `PUBLIC_API_URL`，值和 App 的 `EXPO_PUBLIC_API_URL` 一样（Supabase 是 `https://<project-ref>.supabase.co/functions/v1/api`），重新部署。不设时附件不公开，App 照旧说只有开发者能看。
+4. 每天的维护任务（`maintenance.yml`）也设同样的两个 Secret，它才会补发排队的反馈；`FEEDBACK_ATTACHMENT_DAYS` 要和函数一样。`PUBLIC_API_URL` 取仓库变量 `PUBLIC_API_URL`，没设就用 `EXPO_PUBLIC_API_URL`；都没有时，同意公开附件的那些排队反馈这一步不补发（`feedbackWaitingForConfig` 里有它们），等之后有人提交时由函数补发。
+5. 用 App 提交一条测试反馈（加一张不涉及任何人的图），确认仓库里出现了 issue、图片能显示，再 `cli feedback` 看一眼状态是 `sent`。
 
 **GitHub 不可用时不丢：** 先存库，再建 issue。失败（GitHub 挂了、令牌失效、被限流、10 秒没响应）时状态是 `queued`，App 写“已收到，稍后会自动发出”；按 1 分钟起翻倍、最长约 17 小时退避重试，触发点是之后任何人提交反馈、每天的 `cli maintenance`。令牌失效时维护任务每天都会失败（退出码非 0），看 `cli feedback` 的最后一列。已知：GitHub 建好了 issue 但响应没回来（比如函数刚好被回收）时，重试会多建一个，正文里的反馈 id 一样。
 
@@ -664,7 +669,7 @@ pnpm --filter @xiaodouya/server cli feedback <反馈 id> --download ~/feedback-<
 
 `cli feedback` 只要 `DATABASE_URL` 和 `S3_*`，不要 `APP_SECRET` 和 GitHub 的配置。日志和数据库里都没有令牌，失败原因只记状态码（`GitHub 返回 HTTP 401`）。
 
-**限流：** 每个账号每天 `RATE_FEEDBACK_PER_DAY`（默认 10）条，全站每小时 `RATE_FEEDBACK_GLOBAL_HOUR`（默认 200）条，重试同一条不算。文字最多 4000 字，附件最多 5 个，照片 20 MB、视频 100 MB（单个 PUT，不分片）。
+**限流：** 每个账号每天 `RATE_FEEDBACK_PER_DAY`（默认 10）条，全站每小时 `RATE_FEEDBACK_GLOBAL_HOUR`（默认 200）条，重试同一条不算。文字最多 4000 字，附件最多 5 个，照片 20 MB（压缩之后算）、视频 100 MB（单个 PUT，不分片）。附件的公开链接每个来源 15 分钟 `RATE_PUBLIC_FEEDBACK_FILE_PER_IP_15MIN`（默认 300）次、每个令牌每小时 `RATE_PUBLIC_FEEDBACK_FILE_PER_TOKEN_HOUR`（默认 120）次，在查库之前计数。issue 里的图片是 GitHub 的图片代理来取的，它的地址所有 GitHub 用户共用，按来源的限制不要调得太低。
 
 ### 在 App 里查看反馈
 
@@ -778,6 +783,9 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `FEEDBACK_GITHUB_TOKEN`           | 和上一项一起 | —                                | fine-grained token，只选这一个仓库，只给 Issues 读写。是密钥，不要提交，永远不下发给 App                 |
 | `FEEDBACK_REPO_PUBLIC`            | 否   | `true`                                   | 仓库是私有的才设 `false`。App 据此决定要不要提醒“文字会公开”                                             |
 | `FEEDBACK_ATTACHMENT_DAYS`        | 否   | `90`                                     | 反馈附件在 issue 建好后保留几天，`0` 一直保留。**函数和定时任务要设成一样**                               |
+| `PUBLIC_API_URL`                  | 否   | 不设：反馈附件不公开                     | 服务端对外的地址，和 `EXPO_PUBLIC_API_URL` 一样。反馈附件的公开链接用它拼，见[用户反馈](#用户反馈)。必须是 http(s) 地址，写错拒绝启动 |
+| `RATE_PUBLIC_FEEDBACK_FILE_PER_IP_15MIN` | 否 | `300`                              | 反馈附件公开链接，每个来源 15 分钟几次，`0` 不限。GitHub 的图片代理是共用的地址，不要调太低 |
+| `RATE_PUBLIC_FEEDBACK_FILE_PER_TOKEN_HOUR` | 否 | `120`                            | 反馈附件公开链接，每个链接每小时几次，`0` 不限 |
 | `RATE_FEEDBACK_PER_DAY`           | 否   | `10`                                     | 每个账号每天几条反馈，`0` 不限。重试同一条不算                                                           |
 | `RATE_FEEDBACK_GLOBAL_HOUR`       | 否   | `200`                                    | 全站每小时几条反馈，`0` 不限。令牌是部署者的，被刷爆了所有人都发不出去                                   |
 | `FEEDBACK_VIEWER_EMAILS`          | 否   | 不开                                     | 能在 App 的「收到的反馈」里看反馈和附件的邮箱，逗号分隔，大小写不敏感。先注册再填，见[在 App 里查看反馈](#在-app-里查看反馈) |

@@ -41,11 +41,12 @@ Xiaodouya is for adults. Children are not our users. Most of what you enter is a
 | Moments and letters | Title, text, time, milestone flag, label of whoever recorded it | Optional | Memories, growth book |
 | **Photos, videos, recordings** | Files you choose or record, thumbnails, photo previews, original file name, type, size, duration, recording waveform | Optional | Storing and displaying them |
 | **Documents** | Document name, subtitle, document number, issue and expiry dates, document photos or PDFs | Optional | Keeping records. You may store birth certificates, passports, child health booklets, medical reports, insurance policies, medical receipts and so on |
+| Feedback | The feedback you write, the photos and videos you choose (photos are compressed first and details such as where they were taken are removed), and the app version, system and version, language and your family's region | Optional, only when you send it | Improving the app. **It is made public**, see section 6 |
 | Technical information | Request method, path, status code and error message; counters to stop password guessing (only a hash containing IP address and email, in a 15-minute window). Our hosting providers also keep their own access logs, including IP addresses | Automatic | Running the service, debugging, security |
 
 **What we treat as sensitive:** your child's health records, birth information, documents and document files. We use them only to provide the app's features to your family. We do not use them for advertising or to train models, and we do not sell them.
 
-**Hidden information in photos:** photos and files can contain embedded details such as the time, place and device. The app does not read or use these to locate you, but it also does not currently remove them from the original file, so they may be stored with it. The thumbnails and previews the app creates are re-encoded and don't contain these details. If this concerns you, please remove them before uploading.
+**Hidden information in photos:** photos and files can contain embedded details such as the time, place and device. The app does not read or use these to locate you, but it also does not currently remove them from the original file, so they may be stored with it. The thumbnails and previews the app creates, and photos in feedback, are re-encoded and don't contain these details. If this concerns you, please remove them before uploading.
 
 ### What we don't do
 
@@ -93,6 +94,7 @@ We use the providers below to run Xiaodouya. `〔To do〕` We put data-processin
 | Cloudflare (R2) | File storage and encrypted database backups | Photos, videos, recordings, document files, thumbnails, encrypted backups | Always (unless the admin set up their own storage) |
 | GitHub (Actions) | Running the daily backup job. The backup is encrypted during the job, so unencrypted data passes through the runner first | Database contents | Only if backups run this way |
 | `[Email provider]` | Sending verification and reset emails | Email address, email content | Only if email is enabled `〔In development〕` |
+| GitHub (Issues) | Posting the feedback you send as an issue in `[Feedback repository]`, usually a public web page | Feedback text and diagnostics; links to photos and videos (see "Sending feedback" below) | Only when you send feedback |
 
 
 Otherwise we provide your information only when required by law or a binding government request, when necessary to protect someone's safety, or with your consent. If the operating entity changes, we will tell you in advance.
@@ -106,6 +108,17 @@ Admins and caregivers can create a link to one day and send it to someone. **Any
 - **What comes along technically:** file links contain the storage address and the file path, and the path contains a random family identifier. It can't be used to sign in or read anything else.
 - **How long:** links expire after the 1, 7 or 30 days you choose. You (or an admin) can revoke one at any time. They also stop working when their creator is removed from the family, changed to view-only, or deletes their account. After revoking, opening the link shows nothing, but a page that is already open can still show photos and videos for up to 1 hour, and we can't take back anything they saved themselves.
 - **Who it passes through:** the page is hosted on Cloudflare. When it opens, the viewer's IP address and browser details are processed by Cloudflare, Supabase and the storage provider (retention not confirmed). The page loads no third-party analytics, ads or fonts.
+
+### Sending feedback
+
+What you send from Family → Settings → Send feedback is posted as an issue on GitHub. When the repository is public, **anyone can see it**, and the app tells you so before you send.
+
+- **What is made public:** what you write, the app version, system and version, language and your family's region, and the photos and videos you add. Photos are shown on the page and videos are a link that anyone can open without signing in. **Please make sure they don't show children's faces, ID documents or your address.**
+- **What isn't:** your email, account, family members and your baby's details. Only our database knows which account sent which feedback.
+- **How photos and videos are handled:** photos are compressed first and hidden details such as where they were taken are removed. Videos are uploaded as they are and **may include where they were taken**.
+- **Earlier feedback:** feedback sent before this change was told photos and videos are not public, and they won't be made public.
+- **How long:** photos and videos are deleted `[Feedback attachment days]` days after sending, or right away when you delete your account, and the links stop working. But GitHub caches images on the page, so they may still be visible for a while after deletion, and we can't take back anything people saved themselves. The text stays on GitHub and is not deleted automatically when you delete your account.
+- **Who it passes through:** GitHub stores and shows the issue and passes images through its own servers. When someone opens a photo or video link, their IP address and browser details are processed by GitHub, Supabase and the storage provider.
 
 ## 7. Where data is stored and international transfers
 
@@ -128,6 +141,7 @@ Except for the files described below, we currently have no rule that deletes dat
 | Invitation codes | Expire after 7 days. The invitation record is kept |
 | Password-guessing counters | 15 minutes |
 | Database backups | One a day, encrypted, kept for 30 days. So content you delete may remain in backups for up to 30 days. Backups do not include the files themselves |
+| Feedback | The text stays in the GitHub issue and is not deleted automatically when you delete your account. Photos and videos are deleted `[Feedback attachment days]` days after sending, or right away when you delete your account; GitHub's image cache may keep them for a while |
 | Provider logs | Set by each provider `〔To do: find out and add here〕` |
 | Copies on your phone | Cleared when you sign out or delete your account on that phone, including file copies and image cache. Kept if your sign-in expires or you are removed from the family, so you can carry on if you return to the same family. If you delete your account on another phone, the copy on this phone stays until someone signs in with a different account |
 
@@ -247,10 +261,11 @@ When this policy changes, we update the effective date. For important changes, s
 - [ ] The release build is confirmed to allow only HTTPS (F-76 has not actually produced a release build). The first item in section 11 depends on this
 - [ ] Supabase's Data API really is off (`docs/DEPLOYMENT.md`, part 0, step 2). The "database access is limited to the server" item in section 11 depends on this
 - [ ] It is decided whether embedded photo metadata is removed, and section 3 reflects this
+- [ ] Feedback: whether `[Feedback repository]` is public, whether the server sets `PUBLIC_API_URL` (without it photos and videos are not public and "Sending feedback" in section 6 must change), and `[Feedback attachment days]` (`FEEDBACK_ATTACHMENT_DAYS`) are decided
 
 **For the operator:**
 
-- [ ] Replace every placeholder: `[Operator name]`, `[Operator address]`, `[Contact email]`, `[Effective date]`, `[Account deletion URL]`, `[Deletion period]`, `[Minimum age]`, `[Email provider]`, `[EU/UK representative]`, `[China representative]`
+- [ ] Replace every placeholder: `[Operator name]`, `[Operator address]`, `[Contact email]`, `[Effective date]`, `[Account deletion URL]`, `[Deletion period]`, `[Minimum age]`, `[Email provider]`, `[EU/UK representative]`, `[China representative]`, `[Feedback repository]`, `[Feedback attachment days]`
 - [ ] Resolve every `〔In development〕` and `〔To do〕`
 - [ ] Data-processing agreements are signed, and provider log and push-content retention are known
 - [ ] The data-access rules and breach-response procedure are written
