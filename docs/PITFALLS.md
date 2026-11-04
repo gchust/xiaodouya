@@ -263,6 +263,9 @@
 - **不要断言“这是最后一条迁移”。** `preview.test.ts` 写过 `migrations.at(-1)` 包含 `'preview'`，下一个追加迁移的人就把它弄红了。要守护的是相对顺序，断言它排在谁之后。
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
 - **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
+- **换包走查的 APK 不要放在 `/tmp`。** 这台机器的 `/tmp` 是 tmpfs，Claude Code 的临时目录有配额，一个 E2E APK 就 46 MB，复制、去签名、对齐、重签各一份，几个 Agent 叠起来就满了：`zip -d` 写到一半失败，留下一个 31 MB 的坏 APK，之后连命令输出都写不进去（F-127 走查时遇到）。放到 worktree 的 `.artifacts/` 下（已忽略），用完删掉。
+- **同一台模拟器上不能同时跑两个 `maestro test`。** 前一个还在跑流程 18 时又起了一个，新的那个每条流程几毫秒就失败，日志是 `DeviceServerDiedException ... during 'deviceInfo'`，看起来像模拟器坏了。自己手动跑之前先 `pgrep -f maestro.cli`，后台跑的命令要等它真的退出（等待脚本超时不等于 Maestro 结束了）。
+- **机器忙时 `scrollUntilVisible` 30 秒滚不到疫苗本底部。** 几个 Agent 同时编译、跑模拟器时宿主机负载到 27，每次点击要 20 秒，流程 17a 滚到三十多行免疫规划表下面的自费疫苗卡片时超时，紧接着流程 18 启动 30 秒还停在开屏。滚到页面很下面的元素给 90 秒，失败时先看 `uptime`，别急着怀疑代码。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
 - **E2E 里要在服务端配置里写死的账号，邮箱只能是固定的。** `e2e.sh` 启动服务端时还没有 `RUN_ID`，`FEEDBACK_VIEWER_EMAILS` 只能写 `feedback-maintainer@example.test`。本地开发库跨次保留，上一次留下的同名账号还在别的家庭里，邀请会失败；`feedback-maintainer.js` 先登录、用密码正常删除这个账号，再注册、加入这次的家庭。
 
