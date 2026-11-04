@@ -2,8 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
   AppUpdateQuery,
   AppUpdateResponse,
+  AUTO_DOWNLOAD_MAX_ATTEMPTS,
+  autoAttemptsFor,
+  autoDownloadBlocker,
+  defaultAutoUpdatePrefs,
+  exhaustAutoAttempts,
   isReleaseKey,
+  parseDownloadedUpdate,
   ReleaseManifest,
+  recordAutoAttempt,
   releaseNotesFor,
   shouldAutoCheckUpdate,
   shouldNotifyUpdate,
@@ -134,5 +141,72 @@ describe('发布说明', () => {
     expect(releaseNotesFor({ zh: '  ' }, 'zh')).toBe(null);
     expect(releaseNotesFor(undefined, 'zh')).toBe(null);
     expect(releaseNotesFor(null, 'zh')).toBe(null);
+  });
+});
+
+describe('自动下载', () => {
+  const on = { autoDownload: true, wifiOnly: true };
+  const update = { versionCode: 120, sha256: 'b'.repeat(64) };
+
+  it('默认关：用户自己打开才下载；打开后默认只在 Wi-Fi 下', () => {
+    expect(defaultAutoUpdatePrefs).toEqual({ autoDownload: false, wifiOnly: true });
+    expect(
+      autoDownloadBlocker({ prefs: defaultAutoUpdatePrefs, network: 'wifi', attempts: 0 }),
+    ).toBe('off');
+    expect(autoDownloadBlocker({ prefs: on, network: 'wifi', attempts: 0 })).toBe(null);
+  });
+
+  it('只在 Wi-Fi 下时，移动数据不下；关掉这一项后移动数据也下；断网都不下', () => {
+    expect(autoDownloadBlocker({ prefs: on, network: 'cellular', attempts: 0 })).toBe('needsWifi');
+    const anyNetwork = { autoDownload: true, wifiOnly: false };
+    expect(autoDownloadBlocker({ prefs: anyNetwork, network: 'cellular', attempts: 0 })).toBe(null);
+    expect(autoDownloadBlocker({ prefs: anyNetwork, network: 'none', attempts: 0 })).toBe(
+      'offline',
+    );
+    expect(autoDownloadBlocker({ prefs: on, network: 'none', attempts: 0 })).toBe('offline');
+  });
+
+  it('同一个版本自动下载的次数有上限，不无限重试', () => {
+    const max = AUTO_DOWNLOAD_MAX_ATTEMPTS;
+    expect(max).toBeGreaterThan(0);
+    expect(autoDownloadBlocker({ prefs: on, network: 'wifi', attempts: max - 1 })).toBe(null);
+    expect(autoDownloadBlocker({ prefs: on, network: 'wifi', attempts: max })).toBe('exhausted');
+  });
+
+  it('次数按版本和文件记：换了版本或者重新发布了文件就从头算', () => {
+    let stored: string | null = null;
+    expect(autoAttemptsFor(stored, update)).toBe(0);
+    stored = recordAutoAttempt(stored, update);
+    stored = recordAutoAttempt(stored, update);
+    expect(autoAttemptsFor(stored, update)).toBe(2);
+    expect(autoAttemptsFor(stored, { ...update, versionCode: 121 })).toBe(0);
+    expect(autoAttemptsFor(stored, { ...update, sha256: 'c'.repeat(64) })).toBe(0);
+    const other = recordAutoAttempt(stored, { ...update, versionCode: 121 });
+    expect(autoAttemptsFor(other, { ...update, versionCode: 121 })).toBe(1);
+    expect(autoAttemptsFor(other, update)).toBe(0);
+    expect(autoAttemptsFor(exhaustAutoAttempts(update), update)).toBe(AUTO_DOWNLOAD_MAX_ATTEMPTS);
+    // 存的内容坏了当成没试过：不能把自动下载永远挡住，也不能抛错。
+    expect(autoAttemptsFor('garbage', update)).toBe(0);
+    expect(autoAttemptsFor('', update)).toBe(0);
+  });
+
+  it('下好的版本记在本机，读回来先过校验，坏了当没有', () => {
+    const saved = {
+      versionCode: 120,
+      versionName: '0.4.0',
+      size: 1000,
+      sha256: 'b'.repeat(64),
+      required: false,
+      notes: { zh: '修了一些问题' },
+    };
+    expect(parseDownloadedUpdate(JSON.stringify(saved))).toEqual(saved);
+    expect(parseDownloadedUpdate(null)).toBe(null);
+    expect(parseDownloadedUpdate('')).toBe(null);
+    expect(parseDownloadedUpdate('{not json')).toBe(null);
+    expect(parseDownloadedUpdate(JSON.stringify({ ...saved, sha256: 'nope' }))).toBe(null);
+    // 签名链接不留：过期了也没用。
+    expect(
+      parseDownloadedUpdate(JSON.stringify({ ...saved, url: 'https://x.test/a?sig=1' })),
+    ).not.toHaveProperty('url');
   });
 });

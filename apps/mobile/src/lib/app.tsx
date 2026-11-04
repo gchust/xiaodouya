@@ -38,6 +38,7 @@ import { clearWidgetAvatars } from '../widgets/avatarCache';
 import { scheduleWidgetRefresh } from '../widgets/controller';
 import { shouldOfferVerifyStep } from './accountLogic';
 import { type Api, ApiFailure } from './api';
+import { forgetUpdateDownloads } from './appUpdateRuntime';
 import { DEFAULT_API_URL } from './config';
 import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
@@ -240,6 +241,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     clearFeedbackDraft();
     // 已经排好的本机提醒不随数据消失，账号没了之后还会响。
     await scheduleFeedReminder([], false);
+    // 自动下载新版本的设置在 meta 里，上面随 store.clear() 清掉了；下好没装的安装包也一起删。
+    forgetUpdateDownloads();
     setHasSynced(false);
   }, [services]);
 

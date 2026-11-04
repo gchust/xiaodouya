@@ -96,6 +96,77 @@ export function shouldNotifyUpdate(
   return update.required || update.versionCode !== notifiedVersionCode;
 }
 
+/**
+ * 自动下载新版本（issue #74）。设置存在这台手机上，不同步给家人：流量和存储是这台手机的事。
+ * 默认关，用户自己打开才下载；打开后默认只在 Wi-Fi 下，安装包四五十 MB。
+ */
+export const AutoUpdatePrefs = z.object({ autoDownload: z.boolean(), wifiOnly: z.boolean() });
+export type AutoUpdatePrefs = z.infer<typeof AutoUpdatePrefs>;
+export const defaultAutoUpdatePrefs: AutoUpdatePrefs = { autoDownload: false, wifiOnly: true };
+
+/** 和上传队列一样分三种。连着 Wi-Fi 以外的网络都按移动数据算。 */
+export type NetworkKind = 'wifi' | 'cellular' | 'none';
+
+/**
+ * 同一个版本（同一个文件）最多自动开始下载几次。断网、被杀、Wi-Fi 断开都算一次，
+ * 最坏多花三个安装包的流量，之后只提示有新版本，用户自己点下载。
+ */
+export const AUTO_DOWNLOAD_MAX_ATTEMPTS = 3;
+
+export type AutoDownloadBlocker = 'off' | 'offline' | 'needsWifi' | 'exhausted';
+
+/** null 是现在可以自动下载。 */
+export function autoDownloadBlocker(input: {
+  prefs: AutoUpdatePrefs;
+  network: NetworkKind;
+  attempts: number;
+}): AutoDownloadBlocker | null {
+  if (!input.prefs.autoDownload) return 'off';
+  if (input.network === 'none') return 'offline';
+  if (input.prefs.wifiOnly && input.network !== 'wifi') return 'needsWifi';
+  if (input.attempts >= AUTO_DOWNLOAD_MAX_ATTEMPTS) return 'exhausted';
+  return null;
+}
+
+type AttemptTarget = Pick<AppUpdateInfo, 'versionCode' | 'sha256'>;
+const attemptPrefix = (update: AttemptTarget) => `${update.versionCode}:${update.sha256}:`;
+
+/** 存的是 `版本号:sha256:次数`，只记最近一个版本。 */
+export function autoAttemptsFor(stored: string | null, update: AttemptTarget): number {
+  const prefix = attemptPrefix(update);
+  if (!stored?.startsWith(prefix)) return 0;
+  const count = Number(stored.slice(prefix.length));
+  return Number.isInteger(count) && count > 0 ? count : 0;
+}
+
+export function recordAutoAttempt(stored: string | null, update: AttemptTarget): string {
+  return `${attemptPrefix(update)}${autoAttemptsFor(stored, update) + 1}`;
+}
+
+/** 文件和发布的对不上时不再自动下：再下一次多半还是同一个坏文件。 */
+export function exhaustAutoAttempts(update: AttemptTarget): string {
+  return `${attemptPrefix(update)}${AUTO_DOWNLOAD_MAX_ATTEMPTS}`;
+}
+
+/**
+ * 下好、校验过、还没装的版本，记在本机。App 被杀后重新打开时用它在本地重新核对文件，
+ * 不用等下一次检查就能提示安装。不存签名链接。
+ */
+export const DownloadedUpdate = AppUpdateInfo.omit({ url: true, expiresIn: true });
+export type DownloadedUpdate = z.infer<typeof DownloadedUpdate>;
+
+export function parseDownloadedUpdate(raw: string | null): DownloadedUpdate | null {
+  if (!raw) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = DownloadedUpdate.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** 发布说明是发布者写的，不翻译：按语言取，没有就用另一种。 */
 export function releaseNotesFor(
   notes: ReleaseNotes | null | undefined,

@@ -23,8 +23,9 @@ export function updateRowSub(phase: UpdatePhase, currentName: string): string {
       return `${t().update.downloading} ${percent(phase.received, phase.total)}%`;
     case 'available':
     case 'verifying':
-    case 'ready':
       return t().update.rowAvailable(phase.update.versionName);
+    case 'ready':
+      return t().update.rowReady(phase.update.versionName);
     default:
       return t().update.rowCurrent(currentName);
   }
