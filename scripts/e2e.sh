@@ -52,7 +52,7 @@ fi
 
 if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
   echo "警告：8787 端口已有服务端在运行，将直接使用它。它可能是别的分支的代码。" >&2
-  echo "警告：它没有连假的 GitHub、没有设 FEEDBACK_VIEWER_EMAILS 的话，流程 24、25（反馈）会失败。" >&2
+  echo "警告：它没有连假的 GitHub、没有设 FEEDBACK_VIEWER_EMAILS、PUBLIC_API_URL 的话，流程 24、25（反馈）会失败。" >&2
 else
   # 后台进程不能带着锁（9>&-）：否则这次跑完锁还在，下一次调用会一直排队。
   # 进程环境优先于 .env，所以这几项不用写进 .env.example。
