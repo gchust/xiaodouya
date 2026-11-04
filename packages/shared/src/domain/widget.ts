@@ -8,6 +8,7 @@ import {
   diaperKinds,
   type EventData,
   type FormulaData,
+  type MediaRef,
   type Role,
 } from '../schemas';
 import { dayNumber, formatClock, startOfLocalDay } from './age';
@@ -173,6 +174,7 @@ export type WidgetView =
       kind: 'ready';
       /** 算这份显示时的时间。 */
       now: number;
+      /** 小工具上的称呼：这台手机设的，或者宝宝的名字，见 `WidgetViewInput.label`。 */
       babyName: string;
       /** 出生当天是第 1 天，和今天页的标题一样。 */
       dayNumber: number;
@@ -202,6 +204,8 @@ export interface WidgetViewInput {
   dayStart: number;
   /** 最后一次同步成功的时间。别的家人的记录要同步后才到，界面要说清楚数据新到什么时候。 */
   syncedAt: number | null;
+  /** 这台手机给小工具设的称呼（`WidgetPrefs.label`），没设或是空白时用宝宝的名字。 */
+  label?: string | null;
 }
 
 function widgetSleep(entries: readonly WidgetEntry[], now: number): WidgetSleep {
@@ -265,7 +269,7 @@ export function widgetDayline(
 }
 
 export function buildWidgetView(input: WidgetViewInput): WidgetView {
-  const { session, baby, entries, units, now, dayStart, syncedAt } = input;
+  const { session, baby, entries, units, now, dayStart, syncedAt, label } = input;
   const reason = blockReason(session, Boolean(baby));
   if (reason || !baby) {
     const blocked = reason ?? 'noBaby';
@@ -277,7 +281,7 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
   return {
     kind: 'ready',
     now,
-    babyName: baby.name,
+    babyName: normalizeWidgetLabel(label) ?? baby.name,
     dayNumber: dayNumber(baby.birthAt, now),
     nextFeed: widgetNextFeed(entries, now),
     lastDiaper: widgetLastDiaper(entries, now),
@@ -293,6 +297,55 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     dayStart,
     syncedAt,
   };
+}
+
+/** 小工具上的称呼最多几个字。再长小工具的上排也放不下，显示时还会按宽度截短（`shortBabyName`）。 */
+export const WIDGET_LABEL_MAX = 12;
+
+/**
+ * 小工具的显示设置，只存在这台手机上，不同步：同一个宝宝，爸爸手机上叫“豆豆”，奶奶手机上可以叫“乖孙”。
+ * 读的是本机存的 JSON，格式不对的项按没设处理，不能让小工具画不出来。
+ */
+export const WidgetPrefs = z.looseObject({
+  label: z.string().max(200).optional().catch(undefined),
+  /** 默认不显示：桌面上谁拿起手机都能看到这张脸，要由这台手机的主人自己决定。 */
+  showAvatar: z.boolean().optional().catch(undefined),
+});
+export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
+
+export function parseWidgetPrefs(raw: string | null): WidgetPrefs {
+  if (!raw) return {};
+  try {
+    const parsed = WidgetPrefs.safeParse(JSON.parse(raw));
+    if (!parsed.success) return {};
+    const { label, showAvatar } = parsed.data;
+    return {
+      ...(label !== undefined ? { label } : {}),
+      ...(showAvatar !== undefined ? { showAvatar } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** 去掉首尾空白，中间的空白和换行合成一个空格，按字截到上限；什么都没剩就是没设。 */
+export function normalizeWidgetLabel(input: string | null | undefined): string | null {
+  const text = (input ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return null;
+  return Array.from(text).slice(0, WIDGET_LABEL_MAX).join('').trim();
+}
+
+export function widgetLabel(prefs: WidgetPrefs, babyName: string): string {
+  return normalizeWidgetLabel(prefs.label) ?? babyName;
+}
+
+/**
+ * 小工具要显示的头像缓存的键，不显示时是 null。用头像文件的 id：换头像一定是新 id（见 `saveAvatar`），
+ * 所以键对不上的缓存就是旧头像，不能拿来显示。
+ */
+export function widgetAvatarKey(prefs: WidgetPrefs, avatar: MediaRef | undefined): string | null {
+  if (prefs.showAvatar !== true || !avatar || avatar.kind !== 'image') return null;
+  return avatar.id;
 }
 
 /**

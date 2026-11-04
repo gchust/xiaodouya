@@ -153,6 +153,7 @@
 - **`react-native-android-widget` 的配置插件不能设 `minResizeWidth`/`minResizeHeight`。** 小工具最小只能缩到 `minWidth`/`minHeight`（现在是 110dp），做不出 2×1 的窄版。要做得自己写配置插件改生成的 XML。
 - **`apps/mobile/src/theme.ts` 引了 reanimated，vitest 里加载不了。** 小工具的颜色放在不依赖 React Native 的 `widgets/palette.ts`，节奏条的 SVG 也是纯函数（`widgets/dayline.ts`），这样能直接写单元测试。
 - **不要给小工具里的文字容器 `flex: 1`。** react-native-android-widget 量出来的宽度偏大，旁边定宽的文字也会被挤出卡片。要截短就在 JS 里截（`shortBabyName`）。
+- **`ImageWidget` 先把图拉伸到 `imageWidth`×`imageHeight` 再套 `resizeMode`。** 0.26.0 的原生代码是 `Bitmap.createScaledBitmap(bitmap, w, h, true)`，`cover` 救不回来，不是正方形的头像会被压扁；而且是整张解码，不会按尺寸采样。小工具的头像在存缓存时就裁成 128 px 的正方形（`widgets/avatarFile.ts` 的 `squareCrop`）。图片来源的类型只收 `require`、`http(s):`、`data:image`，原生其实也认 `file://`，这里用类型保证的 `data:` URI；`http` 不能用，签名链接会过期，后台任务也可能没网。
 - **模拟器锁不会提醒你到期。** `flock ... sleep 900` 一到时间别的会话马上拿到锁，并且 `e2e.sh` 会卸载 App，桌面上的小工具随之消失。要跨多次命令用模拟器时，把整段写成脚本交给 `flock` 跑，不要自己估时间：这个 PR 走查时就有一次命令落在锁到期之后，差点盖掉别人刚装的 APK。
 - **改写 JSX 文字时不要用 `node.getText()`。** TypeScript 的 `getText` 跳过前导空白，`{n} 项` 后面那段就变成 `项`，迁移后是 `共 100项`，单元测试不管这个，流程 03a 才发现。要用 `src.slice(node.pos, node.end)`，改完和原文比一遍。
 - **`expo-intent-launcher` 的 `startActivityAsync` 要等打开的界面关掉才返回。** 系统安装界面开着时再调一次会抛 `ActivityAlreadyStartedException`，当成“打不开”就会在安装界面还在屏幕上时报错。应用内更新用一个标记挡住重复点击（`UpdateController.install`）。

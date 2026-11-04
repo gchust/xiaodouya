@@ -17,9 +17,11 @@ import { describe, expect, it } from 'vitest';
 import { type LocalDb, RecordStore, type StoredRecord } from '../src/data/store';
 import { LAST_SYNC_KEY, SyncEngine, type SyncTransport } from '../src/data/syncEngine';
 import { runWidgetAction } from '../src/widgets/actions';
+import { avatarFileName, squareCrop, staleAvatarFiles } from '../src/widgets/avatarFile';
 import { daylineSvg } from '../src/widgets/dayline';
 import { eventLink, FEED_LINK, linkKey, parseWidgetLink, TODAY_LINK } from '../src/widgets/links';
 import { widgetPalettes } from '../src/widgets/palette';
+import { readWidgetPrefs, saveWidgetPrefs, WIDGET_PREFS_KEY } from '../src/widgets/prefs';
 
 class MemoryDb implements LocalDb {
   records = new Map<string, StoredRecord>();
@@ -393,5 +395,49 @@ class MainActivity : ReactActivity() {
 
   it('模板变了要报错，不能悄悄失效', () => {
     expect(() => addOnNewIntent('class Other {}')).toThrow();
+  });
+});
+
+describe('小工具的称呼和头像设置', () => {
+  it('存在本机，读回来是同一份；称呼清空后回到宝宝的名字', async () => {
+    const db = new MemoryDb();
+    expect(await readWidgetPrefs(db)).toEqual({});
+    await saveWidgetPrefs(db, { label: '  豆豆  ' });
+    await saveWidgetPrefs(db, { showAvatar: true });
+    expect(await readWidgetPrefs(db)).toEqual({ label: '豆豆', showAvatar: true });
+    await saveWidgetPrefs(db, { label: '   ' });
+    expect(await readWidgetPrefs(db)).toEqual({ showAvatar: true });
+  });
+
+  it('边改称呼边点开关，两项都留下', async () => {
+    const db = new MemoryDb();
+    await Promise.all([
+      saveWidgetPrefs(db, { label: '豆' }),
+      saveWidgetPrefs(db, { showAvatar: true }),
+      saveWidgetPrefs(db, { label: '豆豆' }),
+    ]);
+    expect(await readWidgetPrefs(db)).toEqual({ label: '豆豆', showAvatar: true });
+  });
+
+  it('存坏了也能读，按默认处理', async () => {
+    const db = new MemoryDb();
+    await db.setMeta(WIDGET_PREFS_KEY, '{oops');
+    expect(await readWidgetPrefs(db)).toEqual({});
+  });
+});
+
+describe('小工具头像的缓存文件', () => {
+  it('裁成居中的正方形，横图竖图都一样', () => {
+    expect(squareCrop(400, 300)).toEqual({ originX: 50, originY: 0, width: 300, height: 300 });
+    expect(squareCrop(300, 401)).toEqual({ originX: 0, originY: 50, width: 300, height: 300 });
+    expect(squareCrop(128, 128)).toEqual({ originX: 0, originY: 0, width: 128, height: 128 });
+  });
+
+  it('只留现在这张头像的文件，换了头像、关了开关时旧的都删', () => {
+    const a = '6f1c2a4e-1111-4c3b-9a55-0d2c7e9b1a01';
+    const b = '6f1c2a4e-2222-4c3b-9a55-0d2c7e9b1a02';
+    const names = [avatarFileName(a), avatarFileName(b), `${b}.tmp`];
+    expect(staleAvatarFiles(names, b)).toEqual([avatarFileName(a), `${b}.tmp`]);
+    expect(staleAvatarFiles(names, null)).toEqual(names);
   });
 });

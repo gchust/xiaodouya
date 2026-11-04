@@ -14,6 +14,34 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: widgets-screen }
     timeout: 10000
+# 小工具上的称呼和头像（F-129）：存在这台手机上，离开再回来还在。头像默认关着。
+- assertVisible: { id: widget-display }
+- assertVisible: { id: widget-avatar-toggle, checked: false }
+- tapOn: { id: widget-label-input }
+- inputText: Bean
+- hideKeyboard
+- tapOn: { id: widget-avatar-toggle }
+- assertVisible: { id: widget-avatar-toggle, checked: true }
+# 这一组的宝宝没有头像：打开了也只能提示去今天页加。
+- assertVisible: { id: widget-avatar-missing }
+- takeScreenshot: .artifacts/e2e-14e-widget-display
+- tapOn: { id: widgets-back }
+- extendedWaitUntil:
+    visible: { id: open-widgets }
+    timeout: 10000
+- tapOn: { id: open-widgets }
+- extendedWaitUntil:
+    visible: { id: widgets-screen }
+    timeout: 10000
+- assertVisible: { id: widget-label-input, text: Bean }
+- assertVisible: { id: widget-avatar-toggle, checked: true }
+# 清空称呼就回到宝宝的名字，关掉头像，后面的流程照旧。
+- tapOn: { id: widget-label-input }
+- eraseText: 10
+- hideKeyboard
+- tapOn: { id: widget-avatar-toggle }
+- assertVisible: { id: widget-avatar-toggle, checked: false }
+- assertNotVisible: { id: widget-avatar-missing }
 - assertVisible: { id: widget-card-QuickWidget }
 - assertVisible: { id: widget-card-FeedWidget }
 - assertVisible: { id: widget-card-SleepWidget }
