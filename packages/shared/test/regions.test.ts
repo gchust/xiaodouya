@@ -10,6 +10,8 @@ import {
   newCustomVaccineId,
   nextVaccine,
   normalizeVaccineId,
+  optionalRecordedText,
+  optionalVaccineBook,
   otherVaccineRecords,
   parseCollectionData,
   regionFor,
@@ -310,6 +312,70 @@ describe('自费疫苗不改变免疫规划的状态', () => {
     expect(otherVaccineRecords(CN, [{ id: 'e', data: five }])).toEqual([
       { id: 'e', vaccineId: 'cn:opt-dtap-ipv-hib', name: fiveName, at: now },
     ]);
+  });
+});
+
+/** 疫苗本上直接列出自费疫苗（issue #68）：找得到、看得到记过没有，但没有到期和提醒。 */
+describe('疫苗本上的自费疫苗', () => {
+  const birth = at(2026, 1, 1);
+  const pcvName = '13 价肺炎球菌结合疫苗 PCV13';
+  const shotOf = (id: string, vaccineId: string, when: number, name = pcvName) => ({
+    id,
+    data: { type: 'vaccine', at: when, vaccineId, name } as EventData,
+  });
+
+  it('按地区列表的顺序列出全部自费疫苗，没记过的没有记录', () => {
+    const book = optionalVaccineBook(CN.optionalVaccines, []);
+    expect(book.map((e) => e.vaccine.id)).toEqual(CN.optionalVaccines?.vaccines.map((v) => v.id));
+    expect(book.every((e) => e.records.length === 0)).toBe(true);
+  });
+  it('按 id 把记录配到疫苗上，同一种打了几剂都在，新的在前', () => {
+    const book = optionalVaccineBook(CN.optionalVaccines, [
+      shotOf('a', 'cn:opt-pcv13', at(2026, 2, 15)),
+      shotOf('b', 'cn:opt-pcv13', at(2026, 4, 15)),
+      shotOf('c', 'cn:opt-rv5', at(2026, 2, 15), '五价轮状病毒疫苗 RV5（进口）'),
+    ]);
+    const pcv = book.find((e) => e.vaccine.localId === 'pcv13');
+    expect(pcv?.records.map((r) => r.id)).toEqual(['b', 'a']);
+    expect(pcv?.records[0]).toEqual({
+      id: 'b',
+      vaccineId: 'cn:opt-pcv13',
+      name: pcvName,
+      at: at(2026, 4, 15),
+    });
+    expect(book.find((e) => e.vaccine.localId === 'rv5')?.records.map((r) => r.id)).toEqual(['c']);
+    expect(book.find((e) => e.vaccine.localId === 'hib')?.records).toEqual([]);
+  });
+  it('只按 id 配对：自己填名字的、免疫规划的、别的地区的都不算', () => {
+    const book = optionalVaccineBook(CN.optionalVaccines, [
+      shotOf('custom', newCustomVaccineId('u1'), birth, '13价肺炎'),
+      shotOf('free', 'cn:bcg', birth, '卡介苗 BCG'),
+      shotOf('sg', 'sg:pcv-1', birth, '肺炎球菌结合疫苗 PCV 第 1 剂'),
+      { id: 'sleep', data: { type: 'sleep', at: birth, endAt: birth + 1000 } as EventData },
+    ]);
+    expect(book.every((e) => e.records.length === 0)).toBe(true);
+  });
+  it('没有自费疫苗列表的地区什么都不列', () => {
+    const entries = [shotOf('a', 'cn:opt-pcv13', birth)];
+    expect(optionalVaccineBook(SG.optionalVaccines, entries)).toEqual([]);
+    expect(optionalVaccineBook(US.optionalVaccines, entries)).toEqual([]);
+    expect(optionalVaccineBook(OTHER.optionalVaccines, entries)).toEqual([]);
+  });
+  it('只有记录，没有到期、待接种之类的状态', () => {
+    const [entry] = optionalVaccineBook(CN.optionalVaccines, []);
+    expect(Object.keys(entry ?? {}).sort()).toEqual(['records', 'vaccine']);
+  });
+  it('记过的显示日期，几剂时写剂数和最近一次；没记过的不写状态', () => {
+    const book = optionalVaccineBook(CN.optionalVaccines, [
+      shotOf('a', 'cn:opt-pcv13', at(2026, 2, 15)),
+      shotOf('b', 'cn:opt-pcv13', at(2026, 4, 15)),
+      shotOf('c', 'cn:opt-rv5', at(2026, 2, 15)),
+    ]);
+    const text = (localId: string) =>
+      optionalRecordedText(book.find((e) => e.vaccine.localId === localId) as never);
+    expect(text('rv5')).toBe('已接种 2026.02.15');
+    expect(text('pcv13')).toBe('已接种 2 剂 · 最近 2026.04.15');
+    expect(text('hib')).toBeNull();
   });
 });
 

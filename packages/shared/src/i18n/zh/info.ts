@@ -33,6 +33,11 @@ export const info = {
   hiddenLink: (n: Text) => `已隐藏 ${n} 剂 ›`,
   inertPlans: (n: Text) =>
     `别的地区的表上还有 ${n} 项隐藏或改过时间的设置，这里不生效，换回那个地区就恢复。`,
+  optionalSummary: (total: Text, recorded: Text) =>
+    recorded ? `共 ${total} 种 · 已记 ${recorded} 种` : `共 ${total} 种 · 自费自愿，不会提醒`,
+  optionalExpand: '展开',
+  optionalCollapse: '收起',
+  optionalRecordA11y: (name: Text) => `记一剂${name}`,
   otherRecords: '其他接种记录',
   givenOn: (date: Text) => `已接种 ${date}`,
   otherRecordsNote:

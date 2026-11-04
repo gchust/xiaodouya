@@ -1,10 +1,11 @@
 import { t } from '../i18n';
 import type { EventData, VaccinePlanData } from '../schemas';
-import { formatMonthDay } from './age';
+import { formatFullDate, formatMonthDay } from './age';
 import {
   isCustomVaccineId,
   normalizeVaccineId,
   type OptionalVaccine,
+  type OptionalVaccineBookEntry,
   type VaccineDose,
   type VaccineStatus,
 } from './vaccines';
@@ -155,6 +156,17 @@ export function doseTimeText(dose: VaccineDose): string {
 /** 自费疫苗的参考时间。只说通常从什么时候开始，不说该打了，也没有到期的概念。 */
 export function optionalStartText(vaccine: OptionalVaccine): string {
   return t().domain.vaccine.usuallyFrom(vaccine.startLabel);
+}
+
+/** 疫苗本上自费疫苗那一行记过什么。没记过就是 null：不写“未接种”“待接种”，那会像在建议打。 */
+export function optionalRecordedText(entry: OptionalVaccineBookEntry): string | null {
+  const [latest] = entry.records;
+  if (!latest) return null;
+  const text = t().domain.vaccine;
+  const date = formatFullDate(latest.at);
+  return entry.records.length === 1
+    ? text.doneOn(date)
+    : text.givenDoses(entry.records.length, date);
 }
 
 /** 今天页的疫苗提醒。 */
