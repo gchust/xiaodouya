@@ -13,6 +13,14 @@ export const feedback: Catalog['feedback'] = {
     "What you write is posted on a public web page that anyone can see. Please don't include your baby's name, birthday, ID numbers, address or other private details.",
   privateNote:
     "What you write goes to the developers. Please don't include your baby's name, birthday, ID numbers, address or other private details.",
+  publicWithFilesNote:
+    "What you write and the photos and videos you add are posted together on a public web page that anyone can see. Please don't include your baby's name, birthday, ID numbers or address, and make sure photos and videos don't show children's faces, ID documents or your address.",
+  linkedWithFilesNote:
+    "What you write and the photos and videos you add go to the developers. The photos and videos are web links that anyone with the link can open. Please don't include your baby's name, birthday, ID numbers or address, and make sure photos and videos don't show children's faces, ID documents or your address.",
+  publicFilesNote: (days) =>
+    days
+      ? `Photos are compressed first, and details like where they were taken are removed. Videos are uploaded as they are and may include where they were taken. Attachments are deleted ${days} days after sending and the links stop working, though images on the web page may stay cached for a while.`
+      : 'Photos are compressed first, and details like where they were taken are removed. Videos are uploaded as they are and may include where they were taken. Attachments are kept until your account is deleted, though images on the web page may stay cached for a while.',
   attachmentsNote: (days) =>
     days
       ? `Photos and videos are not public. Only the developers can see them, and they are deleted ${days} days after sending.`
@@ -22,6 +30,10 @@ export const feedback: Catalog['feedback'] = {
   counter: (n, max) => `${n} / ${max}`,
   pick: 'Photo / video',
   pickSub: (max) => `Up to ${max}, not public`,
+  pickSubPublic: (max) => `Up to ${max}, made public with your text`,
+  pickSubLinked: (max) => `Up to ${max}, sent to the developers`,
+  photoFailed: "A photo couldn't be compressed, so it wasn't added. Try a different one.",
+  photoFailedReason: "a photo couldn't be compressed. Remove it and send again",
   picking: 'Opening…',
   tooMany: (max) => `You can add up to ${max} attachments`,
   tooBig: (size) => `A file is too large. The maximum is ${size}`,
@@ -55,7 +67,7 @@ export const feedback: Catalog['feedback'] = {
   inboxRowSub: 'Text and attachments people sent. Only you can see this row',
   inboxTitle: 'Received feedback',
   inboxNote:
-    "Photos and videos may show other people's children. Only look at them here: don't forward them or paste them into an issue. The sender's email and family are not shown here.",
+    "Photos and videos may show other people's children. Attachments sent from the new app are already public in the issue with the text. Older feedback was promised that attachments stay private: only look at those here, and don't forward them or paste them into an issue. The sender's email and family are not shown here.",
   inboxEmpty: 'No feedback yet',
   inboxEmptySub: 'Feedback shows up here once someone sends it.',
   inboxLoadFailed: (reason) => `Couldn't load: ${reason}`,
@@ -79,6 +91,9 @@ export const feedback: Catalog['feedback'] = {
   detailDiagnostics: 'Diagnostics',
   detailAttachments: 'Attachments',
   detailNoAttachments: 'No attachments',
+  detailPublic: 'Sent with consent to publish. The attachments are already in the issue.',
+  detailPrivate:
+    "Sent when attachments were promised to stay private. Only look at them here, and don't forward them or paste them into an issue.",
   detailExpired: (n) =>
     `${plural(n, 'attachment was', 'attachments were')} deleted after the retention period`,
   detailDeleteAt: (date) => `Attachments will be deleted on ${date}`,

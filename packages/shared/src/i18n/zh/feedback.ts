@@ -12,6 +12,15 @@ export const feedback = {
   publicNote:
     '你写的文字会发到一个公开的网页上，任何人都能看到。请不要写宝宝的名字、生日、证件号、住址这些隐私信息。',
   privateNote: '你写的文字会交给开发者。请不要写宝宝的名字、生日、证件号、住址这些隐私信息。',
+  // 附件会放进 issue（F-126）。public：仓库公开；linked：仓库私有，但附件是不用登录就能打开的链接。
+  publicWithFilesNote:
+    '你写的文字和加的照片、视频会一起公开在网页上，任何人都能看到。请不要写宝宝的名字、生日、证件号、住址；照片和视频里也不要拍到孩子的脸、证件和住址。',
+  linkedWithFilesNote:
+    '你写的文字和加的照片、视频会交给开发者，照片和视频是拿到链接就能打开的网址。请不要写宝宝的名字、生日、证件号、住址；照片和视频里也不要拍到孩子的脸、证件和住址。',
+  publicFilesNote: (days: number | null) =>
+    days
+      ? `照片会先压缩，并去掉拍摄地点等信息；视频原样上传，可能带着拍摄地点。附件发出 ${days} 天后删除，链接随之失效，但网页上的图片可能还会缓存一段时间。`
+      : '照片会先压缩，并去掉拍摄地点等信息；视频原样上传，可能带着拍摄地点。附件一直保留，删除账号时删除，但网页上的图片可能还会缓存一段时间。',
   attachmentsNote: (days: number | null) =>
     days
       ? `照片和视频不公开，只有开发者能看，发出 ${days} 天后删除。`
@@ -21,6 +30,10 @@ export const feedback = {
   counter: (n: Text, max: Text) => `${n} / ${max}`,
   pick: '照片 / 视频',
   pickSub: (max: Text) => `最多 ${max} 个，不公开`,
+  pickSubPublic: (max: Text) => `最多 ${max} 个，会和文字一起公开`,
+  pickSubLinked: (max: Text) => `最多 ${max} 个，会交给开发者`,
+  photoFailed: '有照片没能压缩，没有加进来。换一张试试。',
+  photoFailedReason: '有照片没能压缩，请移除它再发',
   picking: '正在打开…',
   tooMany: (max: Text) => `最多加 ${max} 个附件`,
   tooBig: (size: Text) => `有文件太大了，最大 ${size}`,
@@ -55,7 +68,7 @@ export const feedback = {
   inboxRowSub: '用户发来的文字和附件，只有你能看到这一项',
   inboxTitle: '收到的反馈',
   inboxNote:
-    '照片和视频可能拍到别人家的孩子。只在这里看，不要转发，也不要贴进 issue。这里不显示提交者的邮箱和家庭。',
+    '照片和视频可能拍到别人家的孩子。新版 App 提交的附件已经和文字一起公开在 issue 里；更早的反馈承诺过附件不公开，只在这里看，不要转发，也不要贴进 issue。这里不显示提交者的邮箱和家庭。',
   inboxEmpty: '还没有收到反馈',
   inboxEmptySub: '用户发出反馈后会出现在这里。',
   inboxLoadFailed: (reason: string) => `没有读到：${reason}`,
@@ -79,6 +92,8 @@ export const feedback = {
   detailDiagnostics: '诊断信息',
   detailAttachments: '附件',
   detailNoAttachments: '没有附件',
+  detailPublic: '提交时同意公开，附件已经放在 issue 里。',
+  detailPrivate: '提交时承诺过附件不公开：只在这里看，不要转发，也不要贴进 issue。',
   detailExpired: (n: number) => `${n} 个附件过了保留期，已经删除`,
   detailDeleteAt: (date: string) => `附件会在 ${date} 删除`,
   attachmentLabel: (video: boolean, n: Text) => (video ? `视频 ${n}` : `照片 ${n}`),
