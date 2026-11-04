@@ -11,3 +11,5 @@ supportedArchitectures:
   libc: [current]
 minimumReleaseAgeExclude:
   - "@expo/metro-runtime@58.0.16"
+patchedDependencies:
+  react-native-android-widget: patches/react-native-android-widget.patch

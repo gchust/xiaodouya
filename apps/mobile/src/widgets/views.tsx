@@ -13,6 +13,7 @@ import { FlexWidget, ImageWidget, SvgWidget, TextWidget } from 'react-native-and
 import { DAYLINE_HEIGHT, daylineSvg } from './dayline';
 import { eventLink, FEED_LINK, TODAY_LINK } from './links';
 import { type WidgetPalette, widgetPalettes } from './palette';
+import { buttonOf } from './pending';
 
 export const widgetNames = [
   'FeedWidget',
@@ -26,10 +27,7 @@ export type WidgetName = (typeof widgetNames)[number];
 /** 小工具上能直接记录的按钮。快捷记录上一次显示五个，刚记好时要知道变绿的是哪一个。 */
 export type WidgetButton = 'feed' | 'sleep' | DiaperKind;
 
-export function buttonOf(action: WidgetAction): WidgetButton {
-  if (action.type === 'diaper') return action.kind;
-  return action.type === 'feed' ? 'feed' : 'sleep';
-}
+export { buttonOf };
 
 /** 每个按钮一个新 id：同一张画面上连点同一个按钮仍然是同一条记录，点不同的按钮各记各的。 */
 export type WidgetIds = Record<WidgetButton, string>;
@@ -257,6 +255,10 @@ function Empty({ title, sub, ink, muted }: { title: string; sub: string; ink: He
   );
 }
 
+/** 被点的按钮在写好之前换成“记录中…”，点击仍是原来那一次，见 `pending.ts`。 */
+const isPending = (action?: WidgetAction, pending?: WidgetButton) =>
+  Boolean(action && pending && buttonOf(action) === pending);
+
 function Button({
   text,
   background,
@@ -264,6 +266,7 @@ function Button({
   action,
   link,
   label,
+  pending,
 }: {
   text: string;
   background: Hex;
@@ -271,7 +274,9 @@ function Button({
   action?: WidgetAction;
   link?: string;
   label: string;
+  pending?: WidgetButton;
 }) {
+  const shownText = isPending(action, pending) ? t().widgetUi.recording : text;
   return (
     <FlexWidget
       {...click(action, link)}
@@ -285,7 +290,11 @@ function Button({
         borderRadius: 19,
       }}
     >
-      <TextWidget text={text} maxLines={1} style={{ fontSize: 14, fontWeight: '700', color }} />
+      <TextWidget
+        text={shownText}
+        maxLines={1}
+        style={{ fontSize: 14, fontWeight: '700', color }}
+      />
     </FlexWidget>
   );
 }
@@ -301,6 +310,7 @@ function Chip({
   label,
   flex = 1,
   mono,
+  pending,
 }: {
   top: ReactElement;
   text: string;
@@ -311,7 +321,9 @@ function Chip({
   label: string;
   flex?: number;
   mono?: boolean;
+  pending?: WidgetButton;
 }) {
+  const busy = isPending(action, pending);
   return (
     <FlexWidget
       {...click(action, link)}
@@ -328,14 +340,14 @@ function Chip({
     >
       {top}
       <TextWidget
-        text={text}
+        text={busy ? t().widgetUi.recording : text}
         maxLines={1}
         style={{
-          fontSize: mono ? 15 : 13,
+          fontSize: mono && !busy ? 15 : 13,
           fontWeight: '700',
           color,
           marginTop: 4,
-          ...(mono ? { fontFamily: MONO } : {}),
+          ...(mono && !busy ? { fontFamily: MONO } : {}),
         }}
       />
     </FlexWidget>
@@ -347,7 +359,12 @@ function SmallText({ text, color }: { text: string; color: Hex }) {
 }
 
 /** 直接调用拿到数组，不当成组件用：小工具的渲染只认一层层的元素，组件不能返回数组。 */
-function diaperChips(p: WidgetPalette, ids: WidgetIds, shown?: WidgetFeedback): ReactElement[] {
+function diaperChips(
+  p: WidgetPalette,
+  ids: WidgetIds,
+  shown?: WidgetFeedback,
+  pending?: WidgetButton,
+): ReactElement[] {
   const kinds: { kind: DiaperKind; dot: Hex }[] = [
     { kind: 'wee', dot: p.wee },
     { kind: 'poo', dot: p.poo },
@@ -373,6 +390,7 @@ function diaperChips(p: WidgetPalette, ids: WidgetIds, shown?: WidgetFeedback): 
         color={p.chipText}
         action={{ type: 'diaper', id: ids[kind], kind }}
         label={t().widgetUi.logDiaper(diaperLabel(kind))}
+        pending={pending}
       />
     ),
   );
@@ -392,6 +410,7 @@ interface CardProps {
   ids: WidgetIds;
   shown?: WidgetFeedback;
   size: WidgetSize;
+  pending?: WidgetButton;
 }
 
 function nextFeedLine(view: Ready, p: WidgetPalette): { text: string; color?: Hex } | null {
@@ -402,7 +421,7 @@ function nextFeedLine(view: Ready, p: WidgetPalette): { text: string; color?: He
   return next.status === 'near' ? { text, color: p.accentText } : { text };
 }
 
-function FeedCard({ view, p, ids, shown }: CardProps) {
+function FeedCard({ view, p, ids, shown, pending }: CardProps) {
   const { lastFeed, lastFeedAmount } = view;
   if (shown) {
     return (
@@ -481,6 +500,7 @@ function FeedCard({ view, p, ids, shown }: CardProps) {
           background={p.accent}
           color={p.white}
           action={{ type: 'feed', id: ids.feed }}
+          pending={pending}
           label={t().widgetUi.logFeed(lastFeedAmount)}
         />
       ) : (
@@ -496,7 +516,7 @@ function FeedCard({ view, p, ids, shown }: CardProps) {
   );
 }
 
-function SleepCard({ view, p, ids, shown }: CardProps) {
+function SleepCard({ view, p, ids, shown, pending }: CardProps) {
   const { sleep } = view;
   const slept = t().widgetUi.sleptToday(sleptHours(view));
   // 睡着时整块变成夜蓝色，远远一看就知道宝宝在不在睡。
@@ -531,6 +551,7 @@ function SleepCard({ view, p, ids, shown }: CardProps) {
             background={p.nightButton}
             color={p.nightButtonText}
             action={{ type: 'sleepEnd', sleepId: sleep.id }}
+            pending={pending}
             label={t().widgetUi.logAwake}
           />
         )}
@@ -570,6 +591,7 @@ function SleepCard({ view, p, ids, shown }: CardProps) {
       background={p.sleepButton}
       color={p.white}
       action={{ type: 'sleepStart', id: ids.sleep }}
+      pending={pending}
       label={t().widgetUi.startSleepA11y}
     />
   );
@@ -636,7 +658,7 @@ function SleepCard({ view, p, ids, shown }: CardProps) {
   );
 }
 
-function DiaperCard({ view, p, ids, shown }: CardProps) {
+function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
   const count = (
     <TextWidget
       text={t().widgetUi.diapersToday(view.today.diapers)}
@@ -671,7 +693,7 @@ function DiaperCard({ view, p, ids, shown }: CardProps) {
     );
   }
   const last = view.lastDiaper;
-  const chips = <Row>{diaperChips(p, ids)}</Row>;
+  const chips = <Row>{diaperChips(p, ids, undefined, pending)}</Row>;
   if (!last) {
     return (
       <Card background={p.card} link={TODAY_LINK} label={t().widgetUi.noDiaper}>
@@ -732,7 +754,7 @@ function StatusItem({
   );
 }
 
-function QuickCard({ view, p, ids, shown }: CardProps) {
+function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   const { lastFeed, lastFeedAmount, sleep, lastDiaper } = view;
   // 这一行和今天页的时间线一样只写钟点，所以只放过去 24 小时里的，更早的会被看成今天的。
   // 一行放不下日期：三项都带上日期时最后一项会被挤出卡片。
@@ -812,6 +834,7 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
         background={p.accent}
         color={p.white}
         action={{ type: 'feed', id: ids.feed }}
+        pending={pending}
         label={t().widgetUi.logFeed(lastFeedAmount)}
       />
     ) : (
@@ -843,6 +866,7 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
         background={p.sleepButton}
         color={p.white}
         action={{ type: 'sleepEnd', sleepId: sleep.id }}
+        pending={pending}
         label={t().widgetUi.logAwake}
       />
     ) : sleep.status === 'forgotten' ? (
@@ -861,6 +885,7 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
         background={p.sleepButton}
         color={p.white}
         action={{ type: 'sleepStart', id: ids.sleep }}
+        pending={pending}
         label={t().widgetUi.startSleepA11y}
       />
     );
@@ -902,7 +927,7 @@ function QuickCard({ view, p, ids, shown }: CardProps) {
         )}
       </FlexWidget>
       {status}
-      <Row>{[feedChip, ...diaperChips(p, ids, shown), sleepChip]}</Row>
+      <Row>{[feedChip, ...diaperChips(p, ids, shown, pending), sleepChip]}</Row>
     </Card>
   );
 }
@@ -1063,9 +1088,10 @@ function renderWith(
   ids: WidgetIds,
   shown: WidgetFeedback | undefined,
   size: WidgetSize,
+  pending: WidgetButton | undefined,
 ): ReactElement {
   if (view.kind === 'blocked') return <Blocked message={view.message} p={p} />;
-  const props = { view, p, ids, shown, size };
+  const props = { view, p, ids, shown, size, pending };
   switch (name) {
     case 'FeedWidget':
       return <FeedCard {...props} />;
@@ -1087,10 +1113,11 @@ export function renderWidgetFor(
   ids: WidgetIds,
   shown?: WidgetFeedback,
   size?: WidgetSize,
+  pending?: WidgetButton,
 ): { light: ReactElement; dark: ReactElement } {
   const actual = size && size.width > 0 ? size : DEFAULT_SIZES[name];
   return {
-    light: renderWith(name, view, widgetPalettes.light, ids, shown, actual),
-    dark: renderWith(name, view, widgetPalettes.dark, ids, shown, actual),
+    light: renderWith(name, view, widgetPalettes.light, ids, shown, actual, pending),
+    dark: renderWith(name, view, widgetPalettes.dark, ids, shown, actual, pending),
   };
 }
