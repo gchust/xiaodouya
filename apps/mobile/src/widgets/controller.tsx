@@ -66,18 +66,6 @@ const delay = (ms: number) =>
     setTimeout(resolve, ms);
   });
 
-/**
- * 画完“记录中…”之后，同一个小工具至少隔这么久再画下一张。库每画一次就删掉上一张图片文件，
- * 桌面还没读完上一张时下一张就到了，小工具会整块空白一下（模拟器上 0.28 秒内连画两次时看到过，见 PITFALLS）。
- */
-const PENDING_SETTLE_MS = 600;
-
-async function settleAfter(pendingAt: number | null): Promise<void> {
-  if (pendingAt === null) return;
-  const wait = PENDING_SETTLE_MS - (Date.now() - pendingAt);
-  if (wait > 0) await delay(wait);
-}
-
 async function readSession(core: CoreServices) {
   const { token, serverUrl, me } = await readStoredSession();
   // 可能是系统在 App 没开时拉起的，这时还没有 AppProvider 定下语言。
@@ -232,10 +220,9 @@ export async function handleWidgetClick(
   }
   pending.start(name, action, Date.now());
   // 先画“记录中…”再做别的：读登录信息、写数据库都要时间，这段时间画面不变就会被再点一下。
-  let pendingAt: number | null = null;
+  // 紧接着还会画“已记好”：库原本画新图前就删掉上一张，桌面还在读时会整块空白，补丁改成保留上一张（见 PITFALLS）。
   if (lastView?.kind === 'ready') {
     props.renderWidget(renderCurrent(name, lastView, props.widgetInfo));
-    pendingAt = Date.now();
   }
   let core: CoreServices;
   let plan: WidgetPlan;
@@ -257,7 +244,6 @@ export async function handleWidgetClick(
       }
       if (result.kind !== 'write') {
         // 没有写入（重复点击、状态已经变了、没有权限）：只把显示更新成现在的真实状态。
-        await settleAfter(pendingAt);
         props.renderWidget(renderCurrent(name, view, props.widgetInfo));
       }
       return result;
@@ -268,7 +254,6 @@ export async function handleWidgetClick(
     throw error;
   }
   if (plan.kind !== 'write') return;
-  await settleAfter(pendingAt);
   await refreshWidgets(core);
   // 先让用户看到“已记录”，再同步；同步慢或者没网都不影响这条记录已经存好。
   await Promise.all([delay(FEEDBACK_MS), syncInBackground(core).catch(() => {})]);
