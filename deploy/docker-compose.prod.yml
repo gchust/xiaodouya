@@ -55,6 +55,8 @@ services:
       FEEDBACK_GITHUB_TOKEN: ${FEEDBACK_GITHUB_TOKEN:-}
       FEEDBACK_REPO_PUBLIC: ${FEEDBACK_REPO_PUBLIC:-true}
       FEEDBACK_ATTACHMENT_DAYS: ${FEEDBACK_ATTACHMENT_DAYS:-90}
+      # 能在 App 里看收到的反馈的账号邮箱，逗号分隔，不填就没有这个入口。
+      FEEDBACK_VIEWER_EMAILS: ${FEEDBACK_VIEWER_EMAILS:-}
 
   caddy:
     image: caddy:2

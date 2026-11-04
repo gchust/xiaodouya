@@ -2,16 +2,26 @@
  * 用户反馈：先存库，再在配置的 GitHub 仓库建 issue。
  *
  * 仓库通常是公开的，而反馈的截图可能拍到别人家的孩子，所以附件只放平台存储（`feedback/` 前缀），
- * issue 正文只有用户写的文字和诊断信息（`renderFeedbackIssue`），维护者用 `cli feedback <id>` 取短时效的链接。
+ * issue 正文只有用户写的文字和诊断信息（`renderFeedbackIssue`）。维护者在 App 的「收到的反馈」
+ * （FEEDBACK_VIEWER_EMAILS 里的账号）或用 `cli feedback <id>` 取短时效的链接。
  *
  * 建 issue 的重试和待删除队列（objectDeletions.ts）是同一个写法：一条语句把要处理的行的下次重试时间推后
  * （租约），提交后再调 GitHub。Edge Function 可能同时有好几个实例，不这样会建出重复的 issue。
  * 触发点有三个：提交时当场一次、之后任何人提交时顺手补发到期的、每天的 `cli maintenance`。
  */
-import { type FeedbackDiagnostics, renderFeedbackIssue } from '@xiaodouya/shared';
+import { Buffer } from 'node:buffer';
+import {
+  expiredAttachmentCount,
+  type FeedbackDiagnostics,
+  type FeedbackInboxItem,
+  type FeedbackInboxResponse,
+  feedbackAttachmentFileName,
+  feedbackAttachmentKind,
+  renderFeedbackIssue,
+} from '@xiaodouya/shared';
 import type { Config, FeedbackServerConfig } from './config';
 import type { Sql, Tx } from './db';
-import { presignDownload, storageById } from './storage';
+import { headObject, presignDownload, storageById } from './storage';
 
 /** 维护者看附件的链接，和证件一样不超过 10 分钟。 */
 const DETAILS_URL_TTL = 600;
@@ -304,6 +314,187 @@ export async function feedbackDetails(
     attachmentCount: row.attachment_count,
     attachments,
   };
+}
+
+// ─── 维护者在 App 里看反馈（/v1/feedback-inbox） ─────────────────
+// 名单的判断在 app.ts。这里查出来的东西只有反馈本身：不 JOIN users、memberships，user_id 不进 SELECT，
+// 提交者是谁、在哪个家庭从这里拿不到。
+
+interface InboxRow {
+  id: string;
+  status: 'queued' | 'sent';
+  created_at: Date;
+  submitted_at: Date | null;
+  sent_at: Date | null;
+  text: string;
+  diagnostics: FeedbackDiagnostics;
+  issue_number: number | null;
+  issue_url: string | null;
+  attachment_count: number;
+  last_error: string | null;
+  /** created_at 的微秒数。Date 只到毫秒，按它翻页会漏掉或重复同一毫秒的几条。 */
+  cursor_us: string;
+}
+
+async function toInboxItems(
+  sql: Sql,
+  config: Config,
+  rows: InboxRow[],
+): Promise<FeedbackInboxItem[]> {
+  if (rows.length === 0) return [];
+  const files = await sql<{ id: string; feedback_id: string; mime: string; size: string }[]>`
+    SELECT id, feedback_id, mime, size FROM feedback_attachments
+    WHERE feedback_id = ANY(${rows.map((r) => r.id)}::uuid[]) AND status = 'ready'
+    ORDER BY created_at, id`;
+  const days = config.feedbackAttachmentDays;
+  return rows.map((r) => {
+    const attachments = files
+      .filter((f) => f.feedback_id === r.id)
+      .map((f) => ({
+        id: f.id,
+        mime: f.mime,
+        size: Number(f.size),
+        kind: feedbackAttachmentKind(f.mime),
+      }));
+    return {
+      id: r.id,
+      status: r.status,
+      createdAt: r.created_at.getTime(),
+      submittedAt: r.submitted_at?.getTime() ?? null,
+      sentAt: r.sent_at?.getTime() ?? null,
+      text: r.text,
+      diagnostics: r.diagnostics,
+      issueNumber: r.issue_number,
+      issueUrl: r.issue_url,
+      attachmentCount: r.attachment_count,
+      attachments,
+      attachmentsDeleteAt:
+        days !== null && r.sent_at && attachments.length > 0
+          ? r.sent_at.getTime() + days * 86_400_000
+          : null,
+      lastError: r.last_error,
+    };
+  });
+}
+
+/** 按创建时间倒序，草稿不算。before 是上一页的 next。 */
+export async function feedbackInbox(
+  sql: Sql,
+  config: Config,
+  { before, limit }: { before?: string; limit: number },
+): Promise<FeedbackInboxResponse> {
+  const [us, afterId] = before ? before.split('_') : [null, null];
+  const rows = await sql<InboxRow[]>`
+    SELECT id, status, created_at, submitted_at, sent_at, text, diagnostics, issue_number, issue_url,
+           attachment_count, last_error,
+           floor(extract(epoch FROM created_at) * 1000000)::bigint::text AS cursor_us
+    FROM feedback
+    WHERE status <> 'draft'
+      AND (${us}::bigint IS NULL OR (created_at, id) <
+           (timestamptz 'epoch' + ${us}::bigint * interval '1 microsecond', ${afterId}::uuid))
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit + 1}`;
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
+  return {
+    items: await toInboxItems(sql, config, page),
+    next: rows.length > limit && last ? `${last.cursor_us}_${last.id}` : null,
+  };
+}
+
+export async function feedbackInboxItem(
+  sql: Sql,
+  config: Config,
+  id: string,
+): Promise<FeedbackInboxItem | null> {
+  const rows = await sql<InboxRow[]>`
+    SELECT id, status, created_at, submitted_at, sent_at, text, diagnostics, issue_number, issue_url,
+           attachment_count, last_error, '' AS cursor_us
+    FROM feedback WHERE id = ${id} AND status <> 'draft'`;
+  const [item] = await toInboxItems(sql, config, rows);
+  return item ?? null;
+}
+
+export type AttachmentUrlResult =
+  | { kind: 'ok'; url: string; expiresIn: number }
+  | { kind: 'not_found' }
+  /** 过了保留期删掉了，或者存储里已经没有这个对象。 */
+  | { kind: 'gone' }
+  | { kind: 'no_storage' };
+
+/** 一个附件的签名链接，每次现签。先 HEAD 一次：对象已经不在时如实说，不给一个打开就 404 的链接。 */
+export async function feedbackAttachmentUrl(
+  sql: Sql,
+  config: Config,
+  feedbackId: string,
+  attachmentId: string,
+): Promise<AttachmentUrlResult> {
+  const [row] = await sql<
+    { attachment_count: number; remaining: number; object_key: string | null }[]
+  >`SELECT f.attachment_count,
+           (SELECT count(*) FROM feedback_attachments x WHERE x.feedback_id = f.id)::int AS remaining,
+           a.object_key
+    FROM feedback f
+    LEFT JOIN feedback_attachments a ON a.feedback_id = f.id AND a.id = ${attachmentId} AND a.status = 'ready'
+    WHERE f.id = ${feedbackId} AND f.status <> 'draft'`;
+  if (!row) return { kind: 'not_found' };
+  if (!row.object_key) {
+    // 行没了：少掉的那几个是维护任务按保留期删的。附件一个都没少，就是 id 不对。
+    return row.remaining < row.attachment_count ? { kind: 'gone' } : { kind: 'not_found' };
+  }
+  const storage = await storageById(sql, config, '', null);
+  if (!storage) return { kind: 'no_storage' };
+  if (!(await headObject(storage, row.object_key))) return { kind: 'gone' };
+  return {
+    kind: 'ok',
+    url: await presignDownload(storage, row.object_key, DETAILS_URL_TTL),
+    expiresIn: DETAILS_URL_TTL,
+  };
+}
+
+/**
+ * `cli feedback <id> --download <目录>`：把附件存到本机，文件名是附件 id 加扩展名。
+ * 不打印签名链接。已经存在的同名文件不覆盖，返回写下的路径。
+ */
+export async function downloadFeedbackAttachments(
+  sql: Sql,
+  config: Config,
+  feedbackId: string,
+  dir: string,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<{ saved: string[]; skipped: { id: string; reason: string }[] } | null> {
+  const item = await feedbackInboxItem(sql, config, feedbackId);
+  if (!item) return null;
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  await mkdir(dir, { recursive: true });
+  const saved: string[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  for (const a of item.attachments) {
+    const result = await feedbackAttachmentUrl(sql, config, feedbackId, a.id);
+    if (result.kind !== 'ok') {
+      skipped.push({ id: a.id, reason: result.kind === 'gone' ? '已经删除' : '没有平台存储' });
+      continue;
+    }
+    const response = await fetchImpl(result.url);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {});
+      skipped.push({ id: a.id, reason: `存储返回 HTTP ${response.status}` });
+      continue;
+    }
+    const path = join(dir, feedbackAttachmentFileName(a.id, a.mime));
+    try {
+      // wx：不覆盖已有的文件，重复下载同一条不会把别的东西冲掉。
+      await writeFile(path, Buffer.from(await response.arrayBuffer()), { flag: 'wx' });
+      saved.push(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      skipped.push({ id: a.id, reason: `${path} 已经存在` });
+    }
+  }
+  const expired = expiredAttachmentCount(item);
+  if (expired > 0) skipped.push({ id: '-', reason: `${expired} 个附件过了保留期，已经删除` });
+  return { saved, skipped };
 }
 
 /** `cli feedback` 不带 id：最近的反馈和状态，看有没有卡在队列里的。 */

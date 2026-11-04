@@ -131,6 +131,101 @@ export interface FeedbackConfig {
   attachmentDays: number | null;
 }
 
+// ─── 维护者查看收到的反馈 ────────────────────────────────
+// 只有服务端 FEEDBACK_VIEWER_EMAILS 里的账号能用，判断只在服务端。App 只拿到 MeResponse.canViewFeedback
+// 决定显不显示入口，名单本身不下发。返回的内容里没有提交者的邮箱、账号和家庭。
+
+export const FEEDBACK_INBOX_PAGE = 20;
+export const FEEDBACK_INBOX_MAX_PAGE = 50;
+
+/** 游标是上一页最后一条的“创建时间（微秒）_id”，按时间倒序翻页，不会因为同一毫秒的两条漏掉或重复。 */
+export const FeedbackInboxQuery = z.object({
+  before: z
+    .string()
+    .regex(/^\d{1,20}_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(FEEDBACK_INBOX_MAX_PAGE).optional(),
+});
+export type FeedbackInboxQuery = z.infer<typeof FeedbackInboxQuery>;
+
+export type FeedbackAttachmentKind = 'image' | 'video';
+
+export interface FeedbackInboxAttachment {
+  id: string;
+  mime: string;
+  size: number;
+  kind: FeedbackAttachmentKind;
+}
+
+export interface FeedbackInboxItem {
+  id: string;
+  /** 草稿还没提交，不在这里。 */
+  status: Exclude<FeedbackStatus, 'draft'>;
+  createdAt: number;
+  submittedAt: number | null;
+  sentAt: number | null;
+  text: string;
+  diagnostics: FeedbackDiagnostics;
+  issueNumber: number | null;
+  issueUrl: string | null;
+  /** 提交时有几个附件。比 attachments 多，说明过了保留期已经删掉了。 */
+  attachmentCount: number;
+  /** 还在存储里的附件。 */
+  attachments: FeedbackInboxAttachment[];
+  /** 附件预计什么时候删除。null：一直保留，或者还没建 issue（建好之后才开始算）。 */
+  attachmentsDeleteAt: number | null;
+  /** 还在排队时最近一次建 issue 失败的原因（只有状态码），给维护者看令牌是不是过期了。 */
+  lastError: string | null;
+}
+
+export interface FeedbackInboxResponse {
+  items: FeedbackInboxItem[];
+  /** 下一页的游标，没有更多时为 null。 */
+  next: string | null;
+}
+
+/** 附件的签名链接，每次打开时现取，和证件一样不超过 10 分钟。 */
+export interface FeedbackAttachmentUrlResponse {
+  url: string;
+  expiresIn: number;
+}
+
+export const feedbackAttachmentKind = (mime: string): FeedbackAttachmentKind =>
+  mime.toLowerCase().startsWith('video/') ? 'video' : 'image';
+
+/** 比提交时少了几个附件：过了保留期被维护任务删掉了。 */
+export const expiredAttachmentCount = (
+  item: Pick<FeedbackInboxItem, 'attachmentCount' | 'attachments'>,
+) => Math.max(0, item.attachmentCount - item.attachments.length);
+
+const FEEDBACK_EXTENSIONS: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/avif': 'avif',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/3gpp': '3gp',
+  'video/x-matroska': 'mkv',
+};
+
+/**
+ * 下载到电脑或手机时的文件名：附件 id 加扩展名。用户原来的文件名可能带人名，服务端本来也不存。
+ * 不认识的类型用 MIME 的后半段（只留字母数字），再不行就是 bin。
+ */
+export function feedbackAttachmentFileName(id: string, mime: string): string {
+  const lower = mime.toLowerCase().split(';')[0]!.trim();
+  const known = FEEDBACK_EXTENSIONS[lower];
+  if (known) return `${id}.${known}`;
+  const sub = (lower.split('/')[1] ?? '').replace(/^x-/, '').replace(/[^a-z0-9]/g, '');
+  return `${id}.${sub.slice(0, 8) || 'bin'}`;
+}
+
 // 双向文字控制符能让显示的顺序和实际内容不一样（GitHub 也会为此警告）。零宽连接符不去掉：表情和一些文字要用。
 const INVISIBLE = /[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 // 制表和换行以外的控制字符。
@@ -196,7 +291,7 @@ export function renderFeedbackIssue(input: FeedbackIssueInput): { title: string;
     `| 地区 | ${d.region ? `\`${d.region}\`` : '—'} |`,
     `| 附件 | ${describeFeedbackAttachments(input.attachments)} |`,
     '',
-    `维护者查看附件：\`cli feedback ${input.id}\`（签名链接 10 分钟有效）。`,
+    `维护者查看附件：\`cli feedback ${input.id}\`（签名链接 10 分钟有效），或在 App 的「收到的反馈」里查看。`,
     '',
   ].join('\n');
   return { title, body };

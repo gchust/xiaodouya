@@ -36,6 +36,7 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
       if (p.reason === 'export') return 'Exporting too often. Please try again later.';
       if (p.reason === 'feedback')
         return 'Quite a lot of feedback right now. Please try again later.';
+      if (p.reason === 'feedbackView') return 'Too many requests. Please try again later.';
       return typeof p.minutes === 'number'
         ? `Too many attempts. Please try again in ${p.minutes} minutes.`
         : 'Too many attempts. Please try again later.';
@@ -48,6 +49,7 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
     forbidden: (p: ApiErrorParams) => {
       if (p.reason === 'viewer') return 'You can only view memories and photos.';
       if (p.reason === 'admin') return 'Only an admin can do this.';
+      if (p.reason === 'feedbackViewer') return "This account can't view received feedback.";
       return "You don't have permission.";
     },
     wrong_password: () => 'Incorrect password.',
@@ -80,6 +82,8 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
     feedback_disabled: () => "Feedback isn't turned on for this server.",
     feedback_attachments_unavailable: () =>
       "This server can't take attachments. You can still send the text.",
+    feedback_attachment_gone: () =>
+      'This attachment has been deleted, most likely after the retention period.',
     bad_endpoint: () => "This storage address can't be used.",
     storage_test_failed: (p: ApiErrorParams) =>
       storageTestReasonText(typeof p.reason === 'string' ? p.reason : undefined),
