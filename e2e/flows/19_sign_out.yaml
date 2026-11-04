@@ -22,9 +22,13 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: sign-out }
+# 滚到底还带着惯性，马上点会点空，弹层不出来（PITFALLS“向上滚动后马上点按钮可能点空”）
+- waitForAnimationToEnd
 - tapOn: { id: sign-out }
-- assertVisible:
-    text: 还有.*没有传到服务器.*
+- extendedWaitUntil:
+    visible:
+      text: 还有.*没有传到服务器.*
+    timeout: 10000
 - assertVisible: 仍然退出
 - takeScreenshot: .artifacts/e2e-19-unsynced-warning
 - tapOn: { id: sheet-cancel }
@@ -44,9 +48,12 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: sign-out }
+- waitForAnimationToEnd
 - tapOn: { id: sign-out }
-- assertVisible:
-    text: 退出后手机上的数据会被清除.*
+- extendedWaitUntil:
+    visible:
+      text: 退出后手机上的数据会被清除.*
+    timeout: 10000
 - takeScreenshot: .artifacts/e2e-19-clean-warning
 - tapOn: { id: signout-confirm }
 - extendedWaitUntil:
