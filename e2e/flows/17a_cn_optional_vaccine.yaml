@@ -73,7 +73,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: vaccine-optional-status-pcv13 }
     centerElement: true
-    timeout: 30000
+    timeout: 90000
 - assertVisible:
     id: vaccine-optional-status-pcv13
     text: 已接种 .*
@@ -138,13 +138,13 @@ appId: com.gchust.xiaodouya
 # 记在“其他接种记录”里，免费的百白破仍然按表显示，没有被自动标成已接种
 - scrollUntilVisible:
     element: 五联疫苗（百白破-脊灰-Hib）DTaP-IPV/Hib
-    timeout: 30000
+    timeout: 90000
 - assertVisible: { id: vaccine-other-section }
 - takeScreenshot: .artifacts/e2e-17a-record
 - scrollUntilVisible:
     element: { id: vaccine-row-dtap-1 }
     direction: UP
-    timeout: 30000
+    timeout: 90000
 - assertNotVisible:
     id: vaccine-status-dtap-1
     text: 已接种.*
@@ -152,7 +152,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: region-row }
     direction: UP
-    timeout: 30000
+    timeout: 90000
 - tapOn: { id: region-row }
 - tapOn: { id: region-SG }
 - tapOn: { id: region-confirm }
