@@ -233,6 +233,7 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
   }, [load]);
 
   const rows = item ? inboxAttachmentRows(item) : [];
+  const showError = Boolean(item?.lastError && item.status === 'queued');
   const expired = item ? expiredAttachmentCount(item) : 0;
   // 每次点下载都现取一个链接：签名 10 分钟就过期，不能用打开页面时取的。
   const freshUrl = (attachmentId: string) => async () => {
@@ -329,11 +330,11 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
                   </View>
                 ))}
               </ListCard>
-            ) : (
+            ) : item.attachmentCount === 0 ? (
               <Muted style={s.note} testID="feedback-detail-no-attachments">
-                {item.attachmentCount === 0 ? t().feedback.detailNoAttachments : ''}
+                {t().feedback.detailNoAttachments}
               </Muted>
-            )}
+            ) : null}
             {expired > 0 ? (
               <Muted style={s.note} testID="feedback-detail-expired">
                 {t().feedback.detailExpired(expired)}
@@ -377,23 +378,26 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
                       {item.issueNumber ? `#${item.issueNumber}` : '↗'}
                     </Mono>
                   }
+                  last={!showError}
                 />
               ) : (
-                <Row label={t().feedback.detailIssue} value={t().feedback.detailNoIssue} />
+                <Row
+                  label={t().feedback.detailIssue}
+                  value={t().feedback.detailNoIssue}
+                  last={!showError}
+                />
               )}
-              {item.lastError && item.status === 'queued' ? (
-                <Row label={t().feedback.detailLastError} value={item.lastError} />
+              {showError ? (
+                <Row label={t().feedback.detailLastError} value={item.lastError ?? ''} last />
               ) : null}
-              <Row
-                label={t().feedback.detailId}
-                value={
-                  <Mono selectable style={[s.value, { flexShrink: 1 }]} numberOfLines={1}>
-                    {item.id}
-                  </Mono>
-                }
-                last
-              />
             </ListCard>
+            {/* 完整的 id 单独一行：`cli feedback <id>` 要用，放在行里英文界面会被截断。 */}
+            <View style={{ gap: 2 }}>
+              <Muted style={s.note}>{t().feedback.detailId}</Muted>
+              <Mono selectable testID="feedback-detail-id" style={s.idText}>
+                {item.id}
+              </Mono>
+            </View>
           </View>
 
           <View style={{ gap: 8 }}>
@@ -575,6 +579,7 @@ const s = StyleSheet.create({
   attachmentOpen: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   kindDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent },
   value: { fontSize: 12, color: colors.ink },
+  idText: { fontSize: 12, color: colors.inkSoft },
   note: { fontSize: 11, lineHeight: 17 },
   viewer: { flex: 1, backgroundColor: '#000' },
   center: {
