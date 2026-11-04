@@ -163,7 +163,7 @@
 - **`expo-intent-launcher` 的 `startActivityAsync` 要等打开的界面关掉才返回。** 系统安装界面开着时再调一次会抛 `ActivityAlreadyStartedException`，当成“打不开”就会在安装界面还在屏幕上时报错。应用内更新用一个标记挡住重复点击（`UpdateController.install`）。
 - **更新已装的 App 时，系统确认按钮写的是“更新”（Update），不是“安装”。** 第一次写的提示是“再点一次安装”，在 API 35 上对不上。文案写成“更新或安装”。
 - **系统安装界面装完不会打开 App，下载的安装包要等新版本第一次打开才删。** F-130 走查时点“更新”装上 0.9.1 之后，`cache/updates/xiaodouya-901.apk`（44 MB）还在，打开 App 后才被 `removeInstalledApks` 删掉。装完一直不打开的话这个包就一直占着；缓存目录，系统清理时也会删。要确认删除就要先打开新版本再看。
-- **release 包没有 `run-as`，看 App 的缓存目录用 `su`。** 模拟器（google_apis 镜像）上 `adb -s emulator-5554 shell su 0 ls -la /data/data/com.gchust.xiaodouya/cache/updates` 能直接看，不用 `adb root`（它会重启 adbd，别的 Agent 正在跑的 Maestro 会断）。
+- **release 包没有 `run-as`，看 App 的缓存目录用 `su`。** 本机模拟器（`sdk_gphone64_x86_64-userdebug`，API 35）上 `adb -s emulator-5554 shell su 0 ls -la /data/data/com.gchust.xiaodouya/cache/updates` 能直接看，不用动 adbd（没试 `adb root`）。
 - **模拟器上 `svc wifi disable` 之后 NetInfo 报的是移动数据，不是断网。** 镜像自带一个 HSPA 的移动网络（`dumpsys connectivity` 里 `MOBILE[HSPA]`），关 Wi-Fi 就能测“只在 Wi-Fi 下”，`svc wifi enable` 后 NetInfo 的变化事件会触发自动下载。
 - **`adb emu network speed` 限不住模拟器走 Wi-Fi 的下载。** 设成 `edge` 后 44 MB 还是几秒下完，看不到进度，也来不及点取消。要慢下来就在宿主机开一个限速的 TCP 转发，让服务端的 `S3_PUBLIC_ENDPOINT` 指向它：SigV4 签的是 Host，转发不改 Host 就能过签名。
 - **界面一直在刷新时 `uiautomator dump` 会卡住。** 下载进度每次回调都重画，`scripts/adb-ui.py` 的 `ids`、`tap=` 等不到空闲就超时。这时用截图加坐标点。
