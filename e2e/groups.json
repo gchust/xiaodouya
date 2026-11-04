@@ -38,6 +38,7 @@
       "setup": [],
       "flows": [
         "01_onboarding",
+        "01a_double_tap",
         "02_records",
         "02a_formula_nutrition",
         "06_offline",

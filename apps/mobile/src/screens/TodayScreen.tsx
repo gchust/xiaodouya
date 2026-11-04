@@ -3,6 +3,7 @@ import {
   ageParts,
   ageText,
   assessDayNutrition,
+  createTapGuard,
   dayNumber,
   describeEvent,
   dueVaccine,
@@ -14,10 +15,12 @@ import {
   formatDuration,
   formatHoursMinutes,
   formatVolume,
+  guardTap,
   nutritionEntryText,
   planSchedule,
   summarize24h,
   summaryText,
+  TAP_HOLD_MS,
   t,
   timelineEntries,
   todayInsight,
@@ -27,7 +30,7 @@ import {
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -84,6 +87,8 @@ export function TodayScreen() {
   const now = Date.now();
   const [refreshing, setRefreshing] = useState(false);
   const [changingAvatar, setChangingAvatar] = useState(false);
+  // 睡眠按钮是开关，连点两下会记成“睡着又马上醒了”（issue #69），见 `tapGuard.ts`。
+  const sleepTaps = useRef(createTapGuard({ holdMs: TAP_HOLD_MS })).current;
   useWidgetLink({
     ready: Boolean(baby) && app.role !== 'viewer',
     openEvent: (id) => {
@@ -101,7 +106,6 @@ export function TodayScreen() {
   const data = events.map((e) => e.data);
   const estimate = estimateNextFeed(data, now);
   const sleeping = activeSleep(data);
-  const sleepingEntry = sleeping ? events.find((e) => e.data === sleeping) : undefined;
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
   const recent = timelineEntries(events, now);
@@ -129,17 +133,25 @@ export function TodayScreen() {
         : t().today.feedDue;
   const feedHintNear = estimate.isLearned && estimate.remainingMs < 30 * 60_000;
 
-  const toggleSleep = async () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    if (sleeping && sleepingEntry) {
-      const end = Date.now();
-      await app.write('event', { ...sleeping, endAt: end }, sleepingEntry.id);
-      toast(t().today.wokeUp(formatDuration(end - sleeping.at)));
-    } else {
-      const id = await app.write('event', { type: 'sleep', at: Date.now(), byName: app.label });
-      toast(t().today.sleepStarted, { undo: () => void app.remove(id) });
-    }
-  };
+  /** `shownAsleep` 是被点的按钮画出来时的状态，也就是用户以为自己在点的那个。 */
+  const toggleSleep = (shownAsleep: boolean) =>
+    guardTap(sleepTaps, 'sleep', Date.now, async () => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      const latest = app.store.getSnapshot().events;
+      const open = activeSleep(latest.map((e) => e.data));
+      const openEntry = open ? latest.find((e) => e.data === open) : undefined;
+      // 上一下已经写好、按钮还没来得及重画时又点了一下：按“睡眠”是要开始，已经开始了就什么都不做，
+      // 不能把刚开始的睡眠结束掉。手机忙的时候第二下可能晚于 500 ms 才到，只靠时间挡不住。
+      if (Boolean(open) !== shownAsleep) return;
+      if (open && openEntry) {
+        const end = Date.now();
+        await app.write('event', { ...open, endAt: end }, openEntry.id);
+        toast(t().today.wokeUp(formatDuration(end - open.at)));
+      } else {
+        const id = await app.write('event', { type: 'sleep', at: Date.now(), byName: app.label });
+        toast(t().today.sleepStarted, { undo: () => void app.remove(id) });
+      }
+    });
 
   const changeAvatar = async () => {
     setChangingAvatar(true);
@@ -268,7 +280,10 @@ export function TodayScreen() {
           <Dot color={colors.diaper} />
           <Text style={s.actionLabel}>{t().today.diaper}</Text>
         </PressScale>
-        <SleepAction sleeping={Boolean(sleeping)} onPress={() => void toggleSleep()} />
+        <SleepAction
+          sleeping={Boolean(sleeping)}
+          onPress={() => void toggleSleep(Boolean(sleeping))}
+        />
         <PressScale
           testID="action-more"
           accessibilityLabel={t().today.more}

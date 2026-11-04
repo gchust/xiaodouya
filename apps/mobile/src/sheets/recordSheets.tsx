@@ -3,6 +3,7 @@ import {
   assessTemperature,
   checkRecordTime,
   chipsFor,
+  createTapGuard,
   describeEvent,
   doseTimeText,
   type EventData,
@@ -16,6 +17,7 @@ import {
   formatMonthDay,
   formatTemperatureRange,
   formulaSnapshot,
+  guardTap,
   isCustomVaccineId,
   lastFeedDefaults,
   medicineSuggestions,
@@ -27,6 +29,7 @@ import {
   planSchedule,
   scaleFor,
   stepDisplay,
+  TAP_HOLD_MS,
   t,
   toDisplay,
   toMetric,
@@ -36,7 +39,7 @@ import {
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import { type ReactNode, useCallback, useState } from 'react';
+import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
@@ -66,12 +69,17 @@ interface SheetMode<T extends EventData['type']> {
 
 const HOUR = 3_600_000;
 
-/** 所有记录弹层的保存逻辑：写入、震动、Toast、撤销。 */
+/**
+ * 所有记录弹层的保存逻辑：写入、震动、Toast、撤销。
+ * 一个弹层只保存一次：写本地的这几十毫秒里、弹层收起之前，保存按钮还能点到，连点会多记一条（issue #69）。
+ * 弹层每次打开都是新的一份（见 `SheetProvider`），所以挡住的只是这一次的重复点击；写失败了会放开。
+ */
 export function useSaveEvent() {
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
   const units = useUnits();
+  const guard = useRef(createTapGuard({ holdMs: TAP_HOLD_MS })).current;
   const { me, label } = app;
   return useCallback(
     async (event: EventData, id?: string, base?: EventData) => {
@@ -82,7 +90,9 @@ export function useSaveEvent() {
           ? mergeEdit(base ?? latest, latest, event)
           : event
         : { ...event, byName: event.byName ?? label };
-      const recordId = await app.write('event', data, id);
+      const saved = await guardTap(guard, 'save', Date.now, () => app.write('event', data, id));
+      if (!saved.ran) return;
+      const recordId = saved.value;
       sheet.close();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       const others = (me?.members ?? []).filter((m) => m.userId !== me?.user.id);
@@ -104,7 +114,7 @@ export function useSaveEvent() {
         },
       );
     },
-    [app, sheet, toast, me, label, units],
+    [app, sheet, toast, me, label, units, guard],
   );
 }
 

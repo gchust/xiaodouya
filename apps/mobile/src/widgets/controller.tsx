@@ -7,6 +7,7 @@ import {
   startOfLocalDay,
   t,
   type WidgetAction,
+  type WidgetPlan,
   type WidgetSession,
   type WidgetView,
   widgetAvatarKey,
@@ -25,6 +26,7 @@ import { applyLocale } from '../lib/locale';
 import { readStoredSession } from '../lib/storedSession';
 import { runWidgetAction } from './actions';
 import { readWidgetAvatar, updateWidgetAvatar } from './avatarCache';
+import { createPendingTaps, idsWithPending } from './pending';
 import { readWidgetPrefs } from './prefs';
 import { createQueue } from './queue';
 import {
@@ -39,7 +41,10 @@ import {
 } from './views';
 
 const REFRESH_DEBOUNCE_MS = 800;
-/** “已记录”停留多久，这段时间按钮不会再记一条，防止手抖连点。 */
+/**
+ * “已记录”停留多久。这段时间被点的按钮换成“修改或撤销”，不会再记一条。5 秒够看清楚、
+ * 够发现点错了去撤销；更长的话真的要接着记下一次时还得等。超过之后再点就是新的一条。
+ */
 const FEEDBACK_MS = 5_000;
 /** 后台任务的上限是 30 秒，同步不能占满。 */
 const SYNC_LIMIT_MS = 15_000;
@@ -47,6 +52,12 @@ const SYNC_LIMIT_MS = 15_000;
 const STALE_SYNC_MS = 10 * 60_000;
 
 const feedback = new Map<WidgetName, WidgetFeedback>();
+const pending = createPendingTaps();
+/**
+ * 最近一次算出来的显示。点击时先用它画“记录中…”，不用等读数据库；进程刚被拉起时没有，
+ * 只能等数据读出来（这时大部分时间花在系统启动进程上，JS 这边帮不上）。
+ */
+let lastView: ShownWidgetView | null = null;
 /** 写入、读数据、重画都排队，几个点击任务同时跑时画出来的也是一致的，见 `queue.ts`。 */
 const queue = createQueue();
 
@@ -87,11 +98,15 @@ export async function loadWidgetView(core: CoreServices): Promise<ShownWidgetVie
     syncedAt: syncedAt > 0 ? syncedAt : null,
     label: display.label,
   });
-  if (view.kind !== 'ready') return view;
+  if (view.kind !== 'ready') {
+    lastView = view;
+    return view;
+  }
   // 只读本机已经准备好的文件，不联网；对不上现在的头像就不显示，见 avatarCache.ts。
   const key = widgetAvatarKey(display, baby?.data.avatar);
   const avatar = key ? await readWidgetAvatar(key) : null;
-  return avatar ? { ...view, avatar } : view;
+  lastView = avatar ? { ...view, avatar } : view;
+  return lastView;
 }
 
 function isWidgetName(name: string): name is WidgetName {
@@ -114,7 +129,15 @@ function sizeOf(info?: Pick<WidgetInfo, 'width' | 'height'>): WidgetSize | undef
 }
 
 function renderCurrent(name: WidgetName, view: WidgetView, info?: WidgetInfo) {
-  return renderWidgetFor(name, view, newIds(), feedback.get(name), sizeOf(info));
+  const tap = pending.get(name, Date.now());
+  return renderWidgetFor(
+    name,
+    view,
+    idsWithPending(newIds(), tap),
+    feedback.get(name),
+    sizeOf(info),
+    tap ? buttonOf(tap) : undefined,
+  );
 }
 
 /** 只能在队列里调用。 */
@@ -189,28 +212,47 @@ export async function handleWidgetClick(
   action: WidgetAction,
   props: Pick<WidgetTaskHandlerProps, 'renderWidget' | 'widgetInfo'>,
 ): Promise<void> {
-  const core = await getCoreServices();
-  const { session } = await readSession(core);
   if (!isWidgetName(name)) {
+    const core = await getCoreServices();
+    const { session } = await readSession(core);
     await runWidgetAction(action, core.store, session, Date.now());
     return;
   }
-  const plan = await queue(async () => {
-    const result = await runWidgetAction(action, core.store, session, Date.now());
-    const view = await loadWidgetView(core);
-    if (result.kind === 'write') {
-      feedback.set(name, {
-        eventId: result.id,
-        title: feedbackTitle(action, view),
-        at: result.data.type === 'sleep' && result.data.endAt ? result.data.endAt : result.data.at,
-        button: buttonOf(action),
-      });
-    } else {
-      // 没有写入（重复点击、状态已经变了、没有权限）：只把显示更新成现在的真实状态。
-      props.renderWidget(renderCurrent(name, view, props.widgetInfo));
-    }
-    return result;
-  });
+  pending.start(name, action, Date.now());
+  // 先画“记录中…”再做别的：读登录信息、写数据库都要时间，这段时间画面不变就会被再点一下。
+  // 紧接着还会画“已记好”：库原本画新图前就删掉上一张，桌面还在读时会整块空白，补丁改成保留上一张（见 PITFALLS）。
+  if (lastView?.kind === 'ready') {
+    props.renderWidget(renderCurrent(name, lastView, props.widgetInfo));
+  }
+  let core: CoreServices;
+  let plan: WidgetPlan;
+  try {
+    core = await getCoreServices();
+    const { session } = await readSession(core);
+    plan = await queue(async () => {
+      const result = await runWidgetAction(action, core.store, session, Date.now());
+      pending.finish(name, action);
+      const view = await loadWidgetView(core);
+      if (result.kind === 'write') {
+        feedback.set(name, {
+          eventId: result.id,
+          title: feedbackTitle(action, view),
+          at:
+            result.data.type === 'sleep' && result.data.endAt ? result.data.endAt : result.data.at,
+          button: buttonOf(action),
+        });
+      }
+      if (result.kind !== 'write') {
+        // 没有写入（重复点击、状态已经变了、没有权限）：只把显示更新成现在的真实状态。
+        props.renderWidget(renderCurrent(name, view, props.widgetInfo));
+      }
+      return result;
+    });
+  } catch (error) {
+    // 没写成：放开按钮，下一次点击要能记上。重画交给 taskHandler。
+    pending.finish(name, action);
+    throw error;
+  }
   if (plan.kind !== 'write') return;
   await refreshWidgets(core);
   // 先让用户看到“已记录”，再同步；同步慢或者没网都不影响这条记录已经存好。

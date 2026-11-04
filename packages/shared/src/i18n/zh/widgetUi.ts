@@ -57,6 +57,8 @@ export const widgetUi = {
   quickLogged: (title: Text) => `已记好 · ${title}，点绿色按钮修改或撤销`,
   chipDone: '已记好',
   chipEdit: '修改',
+  /** 点了以后、写好之前的一瞬间。小工具冷启动要近 2 秒，不先换个字会以为没点上。 */
+  recording: '记录中…',
   galleryRow: '桌面小工具',
   galleryRowSub: '不用打开 App 就能记',
   galleryIntro: '放到手机桌面上，不用打开 App，点一下就记好。跟随手机的深色模式，半夜也不刺眼。',

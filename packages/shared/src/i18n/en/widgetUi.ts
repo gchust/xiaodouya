@@ -57,6 +57,7 @@ export const widgetUi: Catalog['widgetUi'] = {
   quickLogged: (title) => `Logged ${title}. Tap the green button to edit or undo`,
   chipDone: 'Logged',
   chipEdit: 'Edit',
+  recording: 'Saving…',
   galleryRow: 'Home screen widgets',
   galleryRowSub: 'Log without opening the app',
   galleryIntro:

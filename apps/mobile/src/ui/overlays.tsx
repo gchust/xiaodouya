@@ -2,6 +2,7 @@ import { t } from '@xiaodouya/shared';
 import { usePathname } from 'expo-router';
 import {
   createContext,
+  Fragment,
   type ReactNode,
   useCallback,
   useContext,
@@ -55,13 +56,23 @@ export function useSheet(): SheetApi {
   return api;
 }
 
+/**
+ * `key` 每次打开都换：上一个弹层还在收起时又打开同一种弹层，React 会沿用旧的那一份，
+ * 里面的输入和“已经保存过”的状态都会带过来，新的一次保存会被当成重复点击挡掉（见 `useSaveEvent`）。
+ */
+interface SheetState {
+  title: string;
+  render: () => ReactNode;
+  key: number;
+}
+
 function SheetLayer({
   sheet,
   visible,
   onClose,
   onHidden,
 }: {
-  sheet: { title: string; render: () => ReactNode } | null;
+  sheet: SheetState | null;
   visible: boolean;
   onClose: () => void;
   onHidden: () => void;
@@ -198,7 +209,7 @@ function SheetLayer({
               contentContainerStyle={s.sheetBody}
               bounces={false}
             >
-              {sheet.render()}
+              <Fragment key={sheet.key}>{sheet.render()}</Fragment>
             </ScrollView>
           </Animated.View>
         </>
@@ -357,7 +368,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
 
 /** 弹层放在 AppProvider 里面，弹层内容才能读取账号和记录。 */
 export function SheetProvider({ children }: { children: ReactNode }) {
-  const [sheet, setSheet] = useState<{ title: string; render: () => ReactNode } | null>(null);
+  const [sheet, setSheet] = useState<SheetState | null>(null);
+  const opened = useRef(0);
   const [visible, setVisible] = useState(false);
   const { dismissToast } = useFeedback();
 
@@ -378,11 +390,13 @@ export function SheetProvider({ children }: { children: ReactNode }) {
       open(title, render) {
         // Toast 显示在弹层之上，正好盖住底部的按钮：喂完奶马上点尿布，点击全落在 Toast 上。
         dismissToast();
-        setSheet({ title, render });
+        opened.current += 1;
+        setSheet({ title, render, key: opened.current });
         setVisible(true);
       },
       replace(title, render) {
-        setSheet({ title, render });
+        opened.current += 1;
+        setSheet({ title, render, key: opened.current });
         setVisible(true);
       },
       setTitle(title) {

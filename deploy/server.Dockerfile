@@ -3,6 +3,8 @@ FROM node:24-slim AS build
 WORKDIR /repo
 RUN corepack enable
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# pnpm-workspace.yaml 里的 patchedDependencies 要能找到补丁文件，否则 --frozen-lockfile 直接失败。
+COPY patches patches/
 COPY apps/server/package.json apps/server/
 COPY packages/shared/package.json packages/shared/
 # 锁文件校验需要工作区里每个包的 package.json，但 Expo 和分享页的依赖服务端用不到。

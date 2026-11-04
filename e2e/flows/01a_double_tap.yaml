@@ -1,0 +1,108 @@
+# 连点记录按钮只记一条（issue #69）。点得比画面变化还快：
+# 睡眠按钮连点两下不能变成“睡着又马上醒了”，尿布一点就记的按钮、喂奶的保存按钮连点只记一条。
+# 排在 02 之前，今天还没有记录，数得清；测试用的记录最后都删掉。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible:
+    id: summary
+    text: 喂奶 0 次.*尿布 0　.*
+
+# ─── 睡眠：连点两下，还在睡 ─────────────────────────
+- tapOn:
+    id: action-sleep
+    repeat: 2
+    delay: 100
+- extendedWaitUntil:
+    visible:
+      text: .*睡觉中.*
+    timeout: 15000
+- assertVisible:
+    id: action-sleep
+    text: 醒了
+- assertNotVisible:
+    text: .*睡觉中.*
+    index: 1
+- assertNotVisible:
+    text: 睡了.*
+- takeScreenshot: .artifacts/e2e-01a-sleep-double-tap
+
+# ─── 尿布：一点就记，连点三下只有一条 ──────────────────
+- tapOn: { id: action-diaper }
+- tapOn:
+    id: diaper-wee
+    repeat: 3
+    delay: 60
+# 后面几下可能落在弹层收起后的页面上：打开了别的弹层就关掉，点到了底部标签就回到今天。
+- runFlow:
+    when:
+      visible: { id: sheet-cancel }
+    commands:
+      - tapOn: { id: sheet-cancel }
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: 换尿布 · 尿尿
+    timeout: 15000
+- assertNotVisible:
+    text: 换尿布 · 尿尿
+    index: 1
+- assertVisible:
+    id: summary
+    text: .*尿布 1　.*
+- takeScreenshot: .artifacts/e2e-01a-diaper-triple-tap
+
+# ─── 喂奶：保存按钮连点三下只有一条 ───────────────────
+- tapOn: { id: action-feed }
+- tapOn:
+    id: feed-save
+    repeat: 3
+    delay: 60
+- runFlow:
+    when:
+      visible: { id: sheet-cancel }
+    commands:
+      - tapOn: { id: sheet-cancel }
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible:
+      text: 喂奶 \d+ml
+    timeout: 15000
+- assertNotVisible:
+    text: 喂奶 \d+ml
+    index: 1
+- assertVisible:
+    id: summary
+    text: 喂奶 1 次.*
+- takeScreenshot: .artifacts/e2e-01a-feed-triple-tap
+
+# ─── 收尾：结束睡眠，删掉测试用的记录 ──────────────────
+- tapOn: { id: action-sleep }
+- extendedWaitUntil:
+    visible:
+      text: 睡了.*
+    timeout: 15000
+- tapOn:
+    text: 睡了.*
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- tapOn: 换尿布 · 尿尿
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- tapOn:
+    text: 喂奶 \d+ml
+- tapOn: { id: event-delete }
+- extendedWaitUntil:
+    notVisible: { id: event-delete }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: summary
+      text: 喂奶 0 次.*尿布 0　.*
+    timeout: 15000

@@ -1,0 +1,47 @@
+diff --git a/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java b/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+index df7e6a63f04000f08bd0260b8c059c62eefca764..362b501f31ad5d206582de92e9e9b084161044f3 100644
+--- a/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
++++ b/android/src/main/java/com/reactnativeandroidwidget/RNWidget.java
+@@ -149,9 +149,11 @@ public class RNWidget {
+ 
+     private Uri saveBitmapToDisk(int widgetId, String mode, Bitmap bitmap) {
+         String imagePrefix = "widget_" + widgetId + "_mode_" + mode;
+-        // Previously the fixed filename was overwritten on every render.
+-        RNWidgetImageProvider.deleteMainImage(appContext, widgetId, mode);
++        // xiaodouya: keep the previous image until the next render. The launcher applies updates
++        // asynchronously and may still be loading the previous image when a new render deletes it;
++        // the widget then shows blank (FileNotFoundException in the launcher's ImageView).
+         String fileName = RNWidgetImageProvider.writeImage(appContext, imagePrefix, bitmap);
++        RNWidgetImageProvider.deleteMainImagesExcept(appContext, widgetId, mode, fileName, 1);
+         return RNWidgetImageProvider.getImageUri(appContext, fileName);
+     }
+ 
+diff --git a/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java b/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+index 382d72a2856ba02bf530f7172a87c03505f8d7de..42df24a3da64fa1071f79ccb8b6ab0f8c94634ef 100644
+--- a/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
++++ b/android/src/main/java/com/reactnativeandroidwidget/RNWidgetImageProvider.java
+@@ -105,6 +105,24 @@ public class RNWidgetImageProvider extends ContentProvider {
+         }
+     }
+ 
++    /** Deletes old main images, keeping {@code current} and the {@code keepPrevious} newest others. */
++    static void deleteMainImagesExcept(Context context, int widgetId, String mode, String current, int keepPrevious) {
++        String prefix = "widget_" + widgetId + "_mode_" + mode;
++        File[] files = getFolderWithImages(context).listFiles(file ->
++            !file.getName().equals(current)
++                && (file.getName().equals(prefix + ".png")
++                    || (file.getName().startsWith(prefix + "_")
++                        && !file.getName().startsWith(prefix + "_collection_")))
++        );
++        if (files == null) {
++            return;
++        }
++        java.util.Arrays.sort(files, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
++        for (int i = keepPrevious; i < files.length; i++) {
++            files[i].delete();
++        }
++    }
++
+     private static void deleteImages(Context context, String prefix) {
+         File folder = getFolderWithImages(context);
+         File[] files = folder.listFiles(pathname -> pathname.getName().startsWith(prefix));
