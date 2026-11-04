@@ -147,44 +147,6 @@ for (const row of rows) {
     avatarSizes.set(row.id, jpegSize(bytes));
   }
 }
-await sql.end();
-
-// 流程 14a：320×160 旋转后是 160×320，再裁成 160×160。
-if (expected('avatar')) {
-  const edited = [...avatarSizes.values()];
-  need(
-    edited.some((size) => size?.width === 160 && size?.height === 320),
-    `没有旋转后的头像：${JSON.stringify(edited)}`,
-  );
-  const current = avatarSizes.get(avatar?.id);
-  need(
-    current?.width === 160 && current?.height === 160,
-    `当前头像不是裁好的正方形：${JSON.stringify(current)}`,
-  );
-  need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
-}
-// 流程 03a 的样例：原图带 GPS，所以“预览和缩略图没有元数据”才算数，查的方法也是灵的。
-if (expected('preview')) {
-  const gpsOriginals = rows.filter(
-    (r) => r.variant === 'original' && metadata.get(`${r.id}/original`)?.gps,
-  );
-  need(gpsOriginals.length > 0, '没有带 GPS 的原图，预览里没有 EXIF 这件事没有被验证到');
-  for (const { id } of gpsOriginals) {
-    const original = metadata.get(`${id}/original`);
-    need(original.orientation === 6 && original.fictional, '原图被改过：应该原样保存');
-    const preview = metadata.get(`${id}/preview`);
-    need(preview, `带 GPS 的照片 ${id} 没有预览`);
-    need(preview && !preview.fictional, `预览 ${id} 带着原图的 EXIF 内容`);
-    // 64×48 加 Orientation=6：EXIF 去掉之后，方向只能靠像素本身。也不能放大。
-    need(
-      preview?.width === 48 && preview?.height === 64,
-      `预览 ${id} 的尺寸不对：${preview?.width}×${preview?.height}`,
-    );
-    const thumb = metadata.get(`${id}/thumb`);
-    need(thumb && !thumb.fictional, `缩略图 ${id} 带着原图的 EXIF 内容`);
-    need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
-  }
-}
 // 流程 24：反馈的照片会公开（F-126）。样例原图带虚构的 GPS，传上去的必须是重新编码过的 JPEG，
 // 而且公开链接打开后跳到的就是这个对象。
 if (expected('feedback')) {
@@ -233,6 +195,44 @@ if (expected('feedback')) {
         Number(new URL(location).searchParams.get('X-Amz-Expires')) <= 600,
       '公开链接没有跳到这个附件 10 分钟内的签名链接',
     );
+  }
+}
+await sql.end();
+
+// 流程 14a：320×160 旋转后是 160×320，再裁成 160×160。
+if (expected('avatar')) {
+  const edited = [...avatarSizes.values()];
+  need(
+    edited.some((size) => size?.width === 160 && size?.height === 320),
+    `没有旋转后的头像：${JSON.stringify(edited)}`,
+  );
+  const current = avatarSizes.get(avatar?.id);
+  need(
+    current?.width === 160 && current?.height === 160,
+    `当前头像不是裁好的正方形：${JSON.stringify(current)}`,
+  );
+  need(avatar?.width === 160 && avatar?.height === 160, '记录里的头像尺寸不对');
+}
+// 流程 03a 的样例：原图带 GPS，所以“预览和缩略图没有元数据”才算数，查的方法也是灵的。
+if (expected('preview')) {
+  const gpsOriginals = rows.filter(
+    (r) => r.variant === 'original' && metadata.get(`${r.id}/original`)?.gps,
+  );
+  need(gpsOriginals.length > 0, '没有带 GPS 的原图，预览里没有 EXIF 这件事没有被验证到');
+  for (const { id } of gpsOriginals) {
+    const original = metadata.get(`${id}/original`);
+    need(original.orientation === 6 && original.fictional, '原图被改过：应该原样保存');
+    const preview = metadata.get(`${id}/preview`);
+    need(preview, `带 GPS 的照片 ${id} 没有预览`);
+    need(preview && !preview.fictional, `预览 ${id} 带着原图的 EXIF 内容`);
+    // 64×48 加 Orientation=6：EXIF 去掉之后，方向只能靠像素本身。也不能放大。
+    need(
+      preview?.width === 48 && preview?.height === 64,
+      `预览 ${id} 的尺寸不对：${preview?.width}×${preview?.height}`,
+    );
+    const thumb = metadata.get(`${id}/thumb`);
+    need(thumb && !thumb.fictional, `缩略图 ${id} 带着原图的 EXIF 内容`);
+    need(thumb && thumb.height > thumb.width, `缩略图 ${id} 方向不对`);
   }
 }
 const previews = rows.filter((r) => r.variant === 'preview').length;

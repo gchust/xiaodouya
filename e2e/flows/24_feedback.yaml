@@ -45,9 +45,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: 已发送，谢谢你的反馈
     timeout: 30000
-# 列表在页面下面，要滚过去。
+# 列表在页面下面，要滚过去。提示卡变长之后，只滚到列表露出一条边时状态那一行还在屏幕外，所以滚到中间。
 - scrollUntilVisible:
     element: { id: feedback-item-sent }
+    centerElement: true
     timeout: 15000
 - takeScreenshot: .artifacts/e2e-24-feedback-sent
 - runScript:
@@ -79,6 +80,7 @@ appId: com.gchust.xiaodouya
     timeout: 30000
 - scrollUntilVisible:
     element: { id: feedback-item-queued }
+    centerElement: true
 - assertVisible: 等待发送
 - takeScreenshot: .artifacts/e2e-24-feedback-queued
 - scrollUntilVisible:
