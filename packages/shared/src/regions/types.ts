@@ -1,5 +1,5 @@
 import type { Units } from '../domain/units';
-import type { VaccineDose } from '../domain/vaccines';
+import type { OptionalVaccine, VaccineDose } from '../domain/vaccines';
 import type { NutritionReferenceUse } from '../health/nutritionReferences';
 
 export type PaperSize = 'A4' | 'Letter';
@@ -19,6 +19,15 @@ export interface VaccineSource {
  */
 export type ReviewStatus = 'primary-source' | 'needs-review' | 'no-schedule';
 
+/** 当地免疫规划以外、家里自愿选的疫苗。接种弹层里可以直接选，不进疫苗本的状态和提醒。 */
+export interface OptionalVaccines {
+  /** 接种弹层里入口的名字，比如“自费疫苗（非免疫规划）”。 */
+  title: string;
+  /** 列表上方和选中后的说明：月龄只是首针的参考，必须包含“以接种单位安排和说明书为准”。 */
+  note: string;
+  vaccines: readonly OptionalVaccine[];
+}
+
 /** 一个地区的全部差异都在这里，页面只读这些字段，不判断具体是哪个地区。 */
 export interface RegionDefinition {
   /** 存进 `BabyData.region`，大写的 ISO 3166-1 代码，要和系统地区代码对得上。 */
@@ -31,6 +40,8 @@ export interface RegionDefinition {
   disclaimer: string;
   /** 没有疫苗表时，疫苗本上的解释。 */
   emptyScheduleNote?: string;
+  /** 没有的地区，接种弹层里不出现这个入口。 */
+  optionalVaccines?: OptionalVaccines;
   documentSuggestions: readonly string[];
   /** 每日营养的参考量用哪张表。本地原文没核对时写清楚，界面会显示这句话。 */
   nutrition: NutritionReferenceUse;

@@ -104,6 +104,7 @@
 - **能补记之后，记录的时间不再说明它是什么时候记的。** “最早一条很久以前”曾被当成“已经记满一天”，第一天用的家庭补一条旧疫苗就被提示喂奶偏少；几个月前的喂奶也会被学成现在的间隔。判断数据够不够时要看最近的日常记录，不能只看最早或最多。
 - **chinacdc.cn 的 PDF 不是一直能读。** 2026-11-02 再读返回 445，上次（F-90）能读。读不到就不重试、不绕过，只用文件里已有的缩写和通用名，写明待复核。AAP 的 PDF 这次能读，`pdftotext -layout` 能看到 Table 1 的术语。
 - **翻译健康文案时用同一组输入比较两种语言的数字。** 把 “3 个月以下” 译错成 “under 6 months” 不会报错，`i18n-content.test.ts` 抽出句子里的数字比较才能发现。
+- **chinacdc.cn 的 PDF 用 curl 返回 445 时，WebFetch 还能拿到。** WebFetch 读不出 PDF 正文，但会把原文件存进 tool-results，`pdftotext -layout` 就能看（2026-11-04 读了 2026 年版免疫程序和 2026—2027 流感指南）。已经失效的旧链接（2016 年的 EV71 指南返回 404）用 `curl https://web.archive.org/web/2020/<原地址>` 能读到。疫苗说明书没有找到能读的官方来源，宣传单之类的资料要写明待复核。
 
 ## React Native 和 Expo
 
@@ -257,6 +258,8 @@
 - **开发用的 S3 是大家共用的，发布清单放在默认前缀会互相挡住。** 发布脚本不把清单覆盖成更低的 versionCode，E2E 的假版本（versionCode 2000000000、APK 被换过）要是写进默认的 `releases/android/`，之后谁在本机手动发布都会被拒，连到这个前缀的 App 也只会看到坏版本。`e2e.sh` 用 `releases-e2e/android/`，手动测试另起一个前缀（服务端和发布脚本都设 `APP_RELEASE_PREFIX`）。
 - **不要断言“这是最后一条迁移”。** `preview.test.ts` 写过 `migrations.at(-1)` 包含 `'preview'`，下一个追加迁移的人就把它弄红了。要守护的是相对顺序，断言它排在谁之后。
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
+- **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
+- **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
 
 ## 并行开发
 

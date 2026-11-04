@@ -23,6 +23,7 @@ import {
   metricToSave,
   newCustomVaccineId,
   nextVaccine,
+  optionalStartText,
   planSchedule,
   scaleFor,
   stepDisplay,
@@ -837,6 +838,8 @@ export function VaccineSheet({
     Date.now(),
   );
   const [planning, setPlanning] = useState(false);
+  const [pickingOptional, setPickingOptional] = useState(false);
+  const optional = region.optionalVaccines;
   const pending = vaccinesToOffer(statuses, preselect);
   const [selected, setSelected] = useState(
     custom ? CUSTOM_OPTION : (preselect ?? nextVaccine(statuses)?.id ?? CUSTOM_OPTION),
@@ -845,7 +848,8 @@ export function VaccineSheet({
   const [date, setDate] = useState(() => new Date());
   const isCustom = selected === CUSTOM_OPTION;
   const dose = pending.find((v) => v.id === selected);
-  const name = isCustom ? customName.trim() : dose?.recordName;
+  const chosenOptional = optional?.vaccines.find((v) => v.id === selected);
+  const name = isCustom ? customName.trim() : (dose?.recordName ?? chosenOptional?.recordName);
   const now = Date.now();
   const check = checkRecordTime({ at: doseTimestamp(date, now), birthAt, now, dateOnly: true });
   const submit = () => {
@@ -853,7 +857,9 @@ export function VaccineSheet({
     void save({
       type: 'vaccine',
       at: doseTimestamp(date, Date.now()),
-      vaccineId: isCustom ? newCustomVaccineId(Crypto.randomUUID()) : (dose?.id as string),
+      vaccineId: isCustom
+        ? newCustomVaccineId(Crypto.randomUUID())
+        : ((dose ?? chosenOptional)?.id as string),
       name,
     });
   };
@@ -880,6 +886,52 @@ export function VaccineSheet({
       />
     </View>
   ) : null;
+  // 自费疫苗有十几种，平铺会把“已接种”挤出屏幕，所以在弹层里换成列表，选好再回来。
+  if (optional && pickingOptional) {
+    const back = () => {
+      setPickingOptional(false);
+      sheet.setTitle(t().today.vaccination);
+    };
+    return (
+      <>
+        <Muted testID="vaccine-optional-note" style={{ fontSize: 12, lineHeight: 19 }}>
+          {optional.note}
+        </Muted>
+        <View style={{ gap: 8 }}>
+          {optional.vaccines.map((v) => {
+            const on = selected === v.id;
+            return (
+              <Pressable
+                key={v.id}
+                testID={`vaccine-optional-${v.localId}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${v.name} · ${optionalStartText(v)}`}
+                accessibilityState={{ selected: on }}
+                onPress={() => {
+                  setSelected(v.id);
+                  back();
+                }}
+                style={[s.vaccineOption, { backgroundColor: on ? colors.ink : colors.paper }]}
+              >
+                <Text style={{ fontSize: 14, color: on ? colors.paper : colors.ink }}>
+                  {v.name}
+                </Text>
+                <Text style={{ fontSize: 11, color: on ? colors.off : colors.muted }}>
+                  {optionalStartText(v)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Button
+          testID="vaccine-optional-back"
+          tone="ghost"
+          label={t().common.back}
+          onPress={back}
+        />
+      </>
+    );
+  }
   if (planning) {
     return (
       <>
@@ -923,7 +975,31 @@ export function VaccineSheet({
             </Pressable>
           );
         })}
-        {pending.length > 0 ? (
+        {optional ? (
+          <Pressable
+            testID="vaccine-optional"
+            accessibilityRole="button"
+            accessibilityLabel={
+              chosenOptional ? chosenOptional.name : t().records.optionalVaccineA11y(optional.title)
+            }
+            accessibilityState={{ selected: Boolean(chosenOptional) }}
+            onPress={() => {
+              setPickingOptional(true);
+              sheet.setTitle(optional.title);
+            }}
+            style={[
+              s.vaccineOption,
+              { backgroundColor: chosenOptional ? colors.ink : colors.paper },
+            ]}
+          >
+            <Text style={{ fontSize: 14, color: chosenOptional ? colors.paper : colors.ink }}>
+              {chosenOptional
+                ? `${chosenOptional.name} · ${optionalStartText(chosenOptional)}`
+                : `${optional.title} · ${t().records.pickFromList} ›`}
+            </Text>
+          </Pressable>
+        ) : null}
+        {pending.length > 0 || optional ? (
           <Pressable
             testID="vaccine-custom"
             accessibilityRole="button"
@@ -948,9 +1024,26 @@ export function VaccineSheet({
         />
       ) : null}
       {dose?.note ? <Muted style={{ fontSize: 12, lineHeight: 19 }}>{dose.note}</Muted> : null}
-      <Muted testID="vaccine-sheet-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
-        {region.disclaimer}
-      </Muted>
+      {chosenOptional?.note ? (
+        <Muted testID="vaccine-optional-dose-note" style={{ fontSize: 12, lineHeight: 19 }}>
+          {chosenOptional.note}
+        </Muted>
+      ) : null}
+      {chosenOptional?.mayReplace ? (
+        <Muted testID="vaccine-optional-replace" style={{ fontSize: 12, lineHeight: 19 }}>
+          {chosenOptional.mayReplace}
+        </Muted>
+      ) : null}
+      {/* 地区的说明讲的是免疫规划表，选了自费疫苗时换成自费疫苗的说明。 */}
+      {optional && chosenOptional ? (
+        <Muted testID="vaccine-optional-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
+          {optional.note}
+        </Muted>
+      ) : (
+        <Muted testID="vaccine-sheet-disclaimer" style={{ fontSize: 11, lineHeight: 18 }}>
+          {region.disclaimer}
+        </Muted>
+      )}
       <Button
         testID="vaccine-save"
         tone="green"

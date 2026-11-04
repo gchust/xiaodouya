@@ -1,0 +1,98 @@
+# 中国的自费疫苗（issue #62）：添加疫苗时从列表选，看到参考首针月龄和说明，不用手填名字。
+# 记下后进“其他接种记录”，免费的剂次不受影响。最后换回新加坡，后面的流程按新加坡断言。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: region-row }
+- tapOn: { id: region-row }
+- tapOn: { id: region-CN }
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+- assertVisible: 中国大陆
+# Toast 在屏幕底部，滚到底部的链接可能正好在它下面，点到的是 Toast（CI 上这样失败过）
+- extendedWaitUntil:
+    notVisible: 已换成中国大陆
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-add-custom }
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn: { id: vaccine-add-custom }
+- extendedWaitUntil:
+    visible: { id: vaccine-date }
+    timeout: 10000
+# 小屏上待接种的几剂会把入口挤到下面
+- scrollUntilVisible:
+    element: { id: vaccine-optional }
+- assertVisible: { id: vaccine-optional }
+- takeScreenshot: .artifacts/e2e-17a-sheet
+- tapOn: { id: vaccine-optional }
+# 列表：说明写明只是首针的参考，以接种单位和说明书为准
+- assertVisible: { id: vaccine-optional-note }
+- assertVisible:
+    text: .*以接种单位安排和说明书为准.*
+- assertVisible: 通常从 1.5 月龄开始
+- takeScreenshot: .artifacts/e2e-17a-list
+# 流感按中国疾控的指南从 6 月龄开始
+- scrollUntilVisible:
+    element: { id: vaccine-optional-flu }
+- assertVisible: 通常从 6 月龄开始
+- scrollUntilVisible:
+    element: { id: vaccine-optional-dtap-ipv-hib }
+    direction: UP
+- tapOn: { id: vaccine-optional-dtap-ipv-hib }
+# 回到记录表单：选中的是五联，替代只是一句说明
+- assertVisible: { id: vaccine-optional }
+- assertVisible:
+    text: .*五联疫苗.*通常从 2 月龄开始.*
+- scrollUntilVisible:
+    element: { id: vaccine-optional-replace }
+- assertVisible:
+    text: .*具体以接种单位为准.*
+- assertVisible: { id: vaccine-optional-disclaimer }
+- assertNotVisible: { id: vaccine-custom-name }
+- takeScreenshot: .artifacts/e2e-17a-picked
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+# 记在“其他接种记录”里，免费的百白破仍然按表显示，没有被自动标成已接种
+- scrollUntilVisible:
+    element: 五联疫苗（百白破-脊灰-Hib）DTaP-IPV/Hib
+    timeout: 30000
+- assertVisible: { id: vaccine-other-section }
+- takeScreenshot: .artifacts/e2e-17a-record
+- scrollUntilVisible:
+    element: { id: vaccine-row-dtap-1 }
+    direction: UP
+    timeout: 30000
+- assertNotVisible:
+    id: vaccine-status-dtap-1
+    text: 已接种.*
+# 换回新加坡
+- scrollUntilVisible:
+    element: { id: region-row }
+    direction: UP
+    timeout: 30000
+- tapOn: { id: region-row }
+- tapOn: { id: region-SG }
+- tapOn: { id: region-confirm }
+- extendedWaitUntil:
+    notVisible: { id: region-confirm }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: 已换成新加坡
+    timeout: 15000
+- assertVisible: 新加坡

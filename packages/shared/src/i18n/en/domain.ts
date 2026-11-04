@@ -95,6 +95,7 @@ export const domain: Catalog['domain'] = {
     timeTbd: 'Date to be set',
     notYet: 'Not yet',
     reminderWhen: (age) => `recommended age: ${age}`,
+    usuallyFrom: (age) => `Usually started from ${age}`,
     reminder: (name, when) =>
       `${name}, ${when}. Tap here after the shot to record it in the vaccine book.`,
   },
