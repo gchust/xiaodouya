@@ -232,6 +232,36 @@ export interface OtherVaccineRecord {
   at: number;
 }
 
+export interface OptionalVaccineBookEntry {
+  vaccine: OptionalVaccine;
+  /** 这种疫苗的接种记录，新的在前。自费疫苗多半要打几剂，一种疫苗只有一行，所以是列表。 */
+  records: OtherVaccineRecord[];
+}
+
+/**
+ * 疫苗本上的自费疫苗（issue #68）：每种一行，带上记过的剂次。
+ * 故意只有记录、没有状态：不判断该不该打、有没有到时间，也不进提醒。
+ * 只按 id 配对，自己填的名字是用户数据，不去猜它是哪种疫苗。
+ */
+export function optionalVaccineBook(
+  optional: { vaccines: readonly OptionalVaccine[] } | undefined,
+  entries: readonly { id: string; data: EventData }[],
+): OptionalVaccineBookEntry[] {
+  if (!optional) return [];
+  const byVaccine = new Map<string, OtherVaccineRecord[]>();
+  for (const { id, data } of entries) {
+    if (data.type !== 'vaccine') continue;
+    const vaccineId = normalizeVaccineId(data.vaccineId);
+    const list = byVaccine.get(vaccineId) ?? [];
+    list.push({ id, vaccineId, name: vaccineRecordName(vaccineId, data.name), at: data.at });
+    byVaccine.set(vaccineId, list);
+  }
+  return optional.vaccines.map((vaccine) => ({
+    vaccine,
+    records: (byVaccine.get(vaccine.id) ?? []).sort((a, b) => b.at - a.at),
+  }));
+}
+
 /**
  * 不在当前地区表里的接种记录：换地区前打的和自定义的。
  * 不做跨地区对应：不同地区的“同名”疫苗能否互相替代，是医生的判断。

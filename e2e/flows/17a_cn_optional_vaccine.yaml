@@ -1,4 +1,5 @@
-# 中国的自费疫苗（issue #62）：添加疫苗时从列表选，看到参考首针月龄和说明，不用手填名字。
+# 中国的自费疫苗：疫苗本上直接列出来，点一行记一剂，记过的显示日期（issue #68）；
+# 添加疫苗时也能从列表选，看到参考首针月龄和说明，不用手填名字（issue #62）。
 # 记下后进“其他接种记录”，免费的剂次不受影响。最后换回新加坡，后面的流程按新加坡断言。
 appId: com.gchust.xiaodouya
 ---
@@ -23,9 +24,75 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: 已换成中国大陆
     timeout: 15000
+# 疫苗本上直接看得到自费疫苗（issue #68）。默认收起，免费的表不被挤到下面。
+# 在三十多行的免疫规划表下面，慢的模拟器上 30 秒滚不到
+- scrollUntilVisible:
+    element: { id: vaccine-optional-toggle }
+    centerElement: true
+    timeout: 90000
+- waitForAnimationToEnd
+- assertVisible:
+    id: vaccine-optional-toggle
+    text: .*自费疫苗（非免疫规划）.*共 16 种.*
+- assertNotVisible: { id: vaccine-optional-row-pcv13 }
+- takeScreenshot: .artifacts/e2e-17a-book
+- tapOn: { id: vaccine-optional-toggle }
+- scrollUntilVisible:
+    element: { id: vaccine-optional-row-pcv13 }
+    centerElement: true
+- waitForAnimationToEnd
+- assertVisible:
+    id: vaccine-optional-row-pcv13
+    text: .*13 价肺炎球菌结合疫苗 PCV13.*通常从 1.5 月龄开始.*
+# 没记过的只写参考月龄，不写“可以预约了”“未到时间”这类状态
+- assertNotVisible: { id: vaccine-optional-status-pcv13 }
+- takeScreenshot: .artifacts/e2e-17a-book-open
+- tapOn: { id: vaccine-optional-row-pcv13 }
+# 接种弹层里已经选好了 PCV13，说明换成自费疫苗的
+- extendedWaitUntil:
+    visible: { id: vaccine-date }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: vaccine-optional-disclaimer }
+# 无障碍名字是选中的疫苗名
+- assertVisible:
+    id: vaccine-optional
+    text: 13 价肺炎球菌结合疫苗 PCV13
+- assertNotVisible: { id: vaccine-custom-name }
+- takeScreenshot: .artifacts/e2e-17a-book-sheet
+- scrollUntilVisible:
+    element: { id: vaccine-save }
+- tapOn: { id: vaccine-save }
+- extendedWaitUntil:
+    notVisible: { id: vaccine-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+# 记过的显示日期；免费的表没有因此变化
+- scrollUntilVisible:
+    element: { id: vaccine-optional-status-pcv13 }
+    centerElement: true
+    timeout: 90000
+- assertVisible:
+    id: vaccine-optional-status-pcv13
+    text: 已接种 .*
+- takeScreenshot: .artifacts/e2e-17a-book-recorded
+- scrollUntilVisible:
+    element: { id: vaccine-optional-toggle }
+    direction: UP
+    centerElement: true
+- waitForAnimationToEnd
+- assertVisible:
+    id: vaccine-optional-toggle
+    text: .*已记 1 种.*
+- tapOn: { id: vaccine-optional-toggle }
+- assertNotVisible: { id: vaccine-optional-row-pcv13 }
+# 原来的入口：＋ 其他疫苗 里也能选
 - scrollUntilVisible:
     element: { id: vaccine-add-custom }
-    timeout: 30000
+    direction: UP
+    timeout: 90000
 - waitForAnimationToEnd
 - tapOn: { id: vaccine-add-custom }
 - extendedWaitUntil:
@@ -71,13 +138,13 @@ appId: com.gchust.xiaodouya
 # 记在“其他接种记录”里，免费的百白破仍然按表显示，没有被自动标成已接种
 - scrollUntilVisible:
     element: 五联疫苗（百白破-脊灰-Hib）DTaP-IPV/Hib
-    timeout: 30000
+    timeout: 90000
 - assertVisible: { id: vaccine-other-section }
 - takeScreenshot: .artifacts/e2e-17a-record
 - scrollUntilVisible:
     element: { id: vaccine-row-dtap-1 }
     direction: UP
-    timeout: 30000
+    timeout: 90000
 - assertNotVisible:
     id: vaccine-status-dtap-1
     text: 已接种.*
@@ -85,7 +152,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: region-row }
     direction: UP
-    timeout: 30000
+    timeout: 90000
 - tapOn: { id: region-row }
 - tapOn: { id: region-SG }
 - tapOn: { id: region-confirm }

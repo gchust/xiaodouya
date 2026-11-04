@@ -35,6 +35,13 @@ export const info: Catalog['info'] = {
   hiddenLink: (n) => `${n} ${n === 1 ? 'dose' : 'doses'} hidden ›`,
   inertPlans: (n) =>
     `The schedule of another region has ${n} hidden or rescheduled ${n === 1 ? 'setting' : 'settings'}. They don't apply here, and come back if you change back to that region.`,
+  optionalSummary: (total, recorded) =>
+    recorded
+      ? `${total} vaccines · ${recorded} recorded`
+      : `${total} vaccines · optional, no reminders`,
+  optionalExpand: 'Show',
+  optionalCollapse: 'Hide',
+  optionalRecordA11y: (name) => `Record a dose of ${name}`,
   otherRecords: 'Other vaccination records',
   givenOn: (date) => `Given ${date}`,
   otherRecordsNote:

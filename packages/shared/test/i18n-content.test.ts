@@ -16,7 +16,9 @@ import {
   metricUnits,
   milestoneTemplates,
   newCustomVaccineId,
+  optionalRecordedText,
   optionalStartText,
+  optionalVaccineBook,
   otherVaccineRecords,
   regionFor,
   regionList,
@@ -415,6 +417,30 @@ describe('地区内容', () => {
     const en = statuses('en');
     expect(en.map((s) => s.tone)).toEqual(zh.map((s) => s.tone));
     expect(JSON.stringify(en)).not.toMatch(CJK);
+  });
+
+  it('疫苗本上自费疫苗记过几剂、最近哪天，两种语言一致', () => {
+    const shot = (id: string, at: number) => ({
+      id,
+      data: {
+        type: 'vaccine',
+        at,
+        vaccineId: 'cn:opt-pcv13',
+        name: '13 价肺炎球菌结合疫苗 PCV13',
+      } as EventData,
+    });
+    const texts = both(() => {
+      const book = optionalVaccineBook(regionFor('CN').optionalVaccines, [
+        shot('a', new Date(2026, 1, 15).getTime()),
+        shot('b', new Date(2026, 3, 15).getTime()),
+      ]);
+      return book.map((entry) => optionalRecordedText(entry));
+    });
+    expect(texts.en).toHaveLength(texts.zh.length);
+    expect(texts.en.map((text) => text === null)).toEqual(texts.zh.map((text) => text === null));
+    expect(texts.zh.filter(Boolean)).toEqual(['已接种 2 剂 · 最近 2026.04.15']);
+    expect(texts.en.filter(Boolean)).toEqual(['2 doses given · last Apr 15, 2026']);
+    expect(JSON.stringify(texts.en)).not.toMatch(CJK);
   });
 
   it('换语言后再次读取能拿到新的语言，中间不用重新加载', () => {

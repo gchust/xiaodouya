@@ -87,6 +87,7 @@ export const domain = {
     birth: '出生',
     months: (months: number) => `${months} 个月`,
     doneOn: (date: string) => `已接种 ${date}`,
+    givenDoses: (count: number, date: string) => `已接种 ${count} 剂 · 最近 ${date}`,
     plannedOn: (date: string) => `计划 ${date}`,
     askDoctor: '和医生商量',
     depends: '看情况',

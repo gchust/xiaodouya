@@ -12,6 +12,10 @@ import {
   inertPlanCount,
   knowledgeForAge,
   normalizeVaccineId,
+  type OptionalVaccines,
+  optionalRecordedText,
+  optionalStartText,
+  optionalVaccineBook,
   otherVaccineRecords,
   planSchedule,
   regionFor,
@@ -305,6 +309,17 @@ export function InfoScreen() {
             {t().info.inertPlans(inert)}
           </Muted>
         ) : null}
+        {region.optionalVaccines ? (
+          <OptionalVaccinesSection
+            optional={region.optionalVaccines}
+            events={events}
+            onRecord={(vaccineId) =>
+              sheet.open(t().today.vaccination, () => (
+                <VaccineSheet birthAt={birthAt} preselect={vaccineId} />
+              ))
+            }
+          />
+        ) : null}
         {others.length > 0 ? (
           <View testID="vaccine-other-section" style={s.section}>
             <Text style={s.subTitle}>{t().info.otherRecords}</Text>
@@ -392,6 +407,99 @@ function VaccineRow({
         {status.text}
       </Text>
     </Pressable>
+  );
+}
+
+/**
+ * 当地免疫规划以外、自愿选的疫苗（issue #68：入口只在接种弹层里时找不到）。
+ * 默认收起，不把免费的表挤到下面。没有状态和提醒，只写记过的日期；每一剂的记录还在“其他接种记录”里改。
+ */
+function OptionalVaccinesSection({
+  optional,
+  events,
+  onRecord,
+}: {
+  optional: OptionalVaccines;
+  events: readonly { id: string; data: EventData }[];
+  onRecord: (vaccineId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const book = optionalVaccineBook(optional, events);
+  const summary = t().info.optionalSummary(
+    book.length,
+    book.filter((entry) => entry.records.length > 0).length,
+  );
+  return (
+    <View testID="vaccine-optional-section" style={s.section}>
+      <ListCard>
+        <Pressable
+          testID="vaccine-optional-toggle"
+          accessibilityRole="button"
+          accessibilityLabel={`${optional.title} · ${summary}`}
+          accessibilityState={{ expanded: open }}
+          onPress={() => setOpen((v) => !v)}
+          style={[s.vaccineRow, open ? s.divider : null]}
+        >
+          <View style={{ flex: 1, gap: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '500', color: colors.ink }}>
+              {optional.title}
+            </Text>
+            <Muted style={{ fontSize: 11 }}>{summary}</Muted>
+          </View>
+          <Text style={s.link}>{open ? t().info.optionalCollapse : t().info.optionalExpand}</Text>
+        </Pressable>
+        {open
+          ? book.map((entry, i) => {
+              const v = entry.vaccine;
+              const recorded = optionalRecordedText(entry);
+              return (
+                <Pressable
+                  key={v.id}
+                  testID={`vaccine-optional-row-${v.localId}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={[
+                    t().info.optionalRecordA11y(v.name),
+                    optionalStartText(v),
+                    recorded,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  onPress={() => onRecord(v.id)}
+                  style={[s.vaccineRow, i < book.length - 1 ? s.divider : null]}
+                >
+                  <View style={{ width: 16 }}>
+                    <Dot color={recorded ? colors.green : colors.off} />
+                  </View>
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={{ fontSize: 13, color: colors.ink }}>{v.name}</Text>
+                    <Muted style={{ fontSize: 11 }}>{optionalStartText(v)}</Muted>
+                  </View>
+                  {recorded ? (
+                    <Text
+                      testID={`vaccine-optional-status-${v.localId}`}
+                      style={{
+                        fontSize: 11,
+                        color: colors.green,
+                        maxWidth: '40%',
+                        textAlign: 'right',
+                      }}
+                    >
+                      {recorded}
+                    </Text>
+                  ) : (
+                    <Text style={s.linkMuted}>›</Text>
+                  )}
+                </Pressable>
+              );
+            })
+          : null}
+      </ListCard>
+      {open ? (
+        <Muted testID="vaccine-optional-book-note" style={{ fontSize: 11, lineHeight: 18 }}>
+          {optional.note}
+        </Muted>
+      ) : null}
+    </View>
   );
 }
 

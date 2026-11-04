@@ -88,6 +88,7 @@ export const domain: Catalog['domain'] = {
     birth: 'Birth',
     months: (months) => plural(months, 'month', 'months'),
     doneOn: (date) => `Given ${date}`,
+    givenDoses: (count, date) => `${count} doses given · last ${date}`,
     plannedOn: (date) => `Planned ${date}`,
     askDoctor: 'Ask your doctor',
     depends: 'Depends',

@@ -239,7 +239,7 @@
 - **脚本里拿 `flock` 排队时，后台进程要关掉锁的文件描述符。** `e2e.sh` 启动的服务端继承了 fd 9，脚本退出后还活着，锁就一直不放，第二次调用卡到 CI 超时（串行模式 run 41468801018 跑了两小时才被取消）。启动时写 `9>&-`。
 - **断开后不能只重跑那一条流程。** 流程不是幂等的：run 41551513433 里 03b 中途断开，重跑时第一次的同名回忆还在，“回忆已删除”的断言失败。`e2e.sh` 改成整组从头重跑一次（重装 App、新账号、新 `RUN_ID`，`verify-uploads.mjs` 只查新账号），只认这条流程的**第一个错误**是断开（`scripts/e2e-env-failure.mjs`）：断言失败之后才断开的，收尾时日志里也有 `device offline`，以前的 grep 会把它当断开重跑，掩盖断言失败。
 - **Maestro 断开一次就不会自己重连。** 设备几秒后回来了，同一个 `maestro test` 进程后面的命令和流程全部失败（Maestro#3720，维护者说等 Maestro 3）。所以每条流程单独一个进程，判断断开前先等 `adb get-state` 连续几秒是 `device`，`adb wait-for-device` 一回来就返回，不够。
-- **向上滚动后马上点按钮可能点空。** 列表还带着惯性，按钮一露出来就点，点下去时它已经滑走，弹层没打开，下一步才报“找不到元素”。这种失败时有时无（流程 11a；流程 19 滚到底点“退出登录”也这样，run 41775256799 和 41778765366 各失败一次，两个 PR 的下一轮 CI 都通过）。滚动后先 `waitForAnimationToEnd`，再确认一次目标还在。
+- **向上滚动后马上点按钮可能点空。** 列表还带着惯性，按钮一露出来就点，点下去时它已经滑走，弹层没打开，下一步才报“找不到元素”。这种失败时有时无（流程 11a；流程 19 滚到底点“退出登录”也这样，run 41775256799 和 41778765366 各失败一次，两个 PR 的下一轮 CI 都通过；流程 10a 点 `＋ 其他疫苗` 在 run 41822873334 也这样失败一次，截图里标题行已经滑出屏幕）。滚动后先 `waitForAnimationToEnd`，再确认一次目标还在。
 - **`scrollUntilVisible` 一看到目标就停。** 滚到区块标题后再断言下面的内容，长列表时内容还在屏幕外。要断言哪一行就滚到哪一行。
 - **本地连续构建后先释放内存。** Gradle 和 Kotlin 守护进程留在后台占几 G，模拟器会因此反复弹 System UI 无响应。先 `./gradlew --stop` 再启动模拟器；这时强杀 systemui 只会让它循环卡住。
 - **E2E 的语言和地区不要依赖默认猜测。** CI 模拟器是 en-US，建档默认会猜成美国，后面所有 `喂奶 130ml` 都会变成盎司。流程 01 要明确选新加坡，改地区的流程结束时要换回来。
@@ -263,6 +263,9 @@
 - **不要断言“这是最后一条迁移”。** `preview.test.ts` 写过 `migrations.at(-1)` 包含 `'preview'`，下一个追加迁移的人就把它弄红了。要守护的是相对顺序，断言它排在谁之后。
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
 - **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
+- **换包走查的 APK 不要放在 `/tmp`。** 这台机器的 `/tmp` 是 tmpfs，Claude Code 的临时目录有配额，一个 E2E APK 就 46 MB，复制、去签名、对齐、重签各一份，几个 Agent 叠起来就满了：`zip -d` 写到一半失败，留下一个 31 MB 的坏 APK，之后连命令输出都写不进去（F-127 走查时遇到）。放到 worktree 的 `.artifacts/` 下（已忽略），用完删掉。
+- **同一台模拟器上不能同时跑两个 `maestro test`。** 前一个还在跑流程 18 时又起了一个，新的那个每条流程几毫秒就失败，日志是 `DeviceServerDiedException ... during 'deviceInfo'`，看起来像模拟器坏了。自己手动跑之前先 `pgrep -f maestro.cli`，后台跑的命令要等它真的退出（等待脚本超时不等于 Maestro 结束了）。
+- **机器忙时 `scrollUntilVisible` 30 秒滚不到疫苗本底部。** 几个 Agent 同时编译、跑模拟器时宿主机负载到 27，每次点击要 20 秒，流程 17a 滚到三十多行免疫规划表下面的自费疫苗卡片时超时，紧接着流程 18 启动 30 秒还停在开屏。滚到页面很下面的元素给 90 秒，失败时先看 `uptime`，别急着怀疑代码。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
 - **E2E 里要在服务端配置里写死的账号，邮箱只能是固定的。** `e2e.sh` 启动服务端时还没有 `RUN_ID`，`FEEDBACK_VIEWER_EMAILS` 只能写 `feedback-maintainer@example.test`。本地开发库跨次保留，上一次留下的同名账号还在别的家庭里，邀请会失败；`feedback-maintainer.js` 先登录、用密码正常删除这个账号，再注册、加入这次的家庭。
 
