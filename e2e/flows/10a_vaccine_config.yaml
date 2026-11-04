@@ -94,7 +94,13 @@ appId: com.gchust.xiaodouya
     element: { id: vaccine-add-custom }
     direction: UP
     timeout: 30000
+# 向上滚完列表还带着惯性，马上点会点空，弹层没打开（PR #72 的 CI 这样失败过）
+- waitForAnimationToEnd
+- assertVisible: { id: vaccine-add-custom }
 - tapOn: { id: vaccine-add-custom }
+- extendedWaitUntil:
+    visible: { id: vaccine-mode-plan }
+    timeout: 10000
 - tapOn: { id: vaccine-mode-plan }
 - tapOn: { id: vaccine-plan-name }
 - inputText: Flu Plan
