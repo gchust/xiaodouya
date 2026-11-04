@@ -33,4 +33,12 @@ export const update = {
   toast: (version: Text) => `小豆芽有新版本 ${version}`,
   toastRequired: (version: Text) => `这个版本已经停止支持，请更新到 ${version}`,
   toastAction: '看看',
+  autoRow: '自动下载新版本',
+  autoRowSub: '有新版本时在后台下载好，再提醒你安装',
+  wifiOnlyRow: '仅在 Wi-Fi 下自动下载',
+  wifiOnlySub: '用移动数据时不自动下载，安装包有几十 MB',
+  rowReady: (version: Text) => `新版本 ${version} 已下载好，点这里安装`,
+  readyCard: (version: Text) => `新版本 ${version} 已下载好`,
+  readyCardInstallA11y: (version: Text) => `安装新版本 ${version}`,
+  readyCardLaterA11y: '以后再说，先不安装',
 };

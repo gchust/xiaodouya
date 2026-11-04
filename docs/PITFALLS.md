@@ -162,6 +162,9 @@
 - **改写 JSX 文字时不要用 `node.getText()`。** TypeScript 的 `getText` 跳过前导空白，`{n} 项` 后面那段就变成 `项`，迁移后是 `共 100项`，单元测试不管这个，流程 03a 才发现。要用 `src.slice(node.pos, node.end)`，改完和原文比一遍。
 - **`expo-intent-launcher` 的 `startActivityAsync` 要等打开的界面关掉才返回。** 系统安装界面开着时再调一次会抛 `ActivityAlreadyStartedException`，当成“打不开”就会在安装界面还在屏幕上时报错。应用内更新用一个标记挡住重复点击（`UpdateController.install`）。
 - **更新已装的 App 时，系统确认按钮写的是“更新”（Update），不是“安装”。** 第一次写的提示是“再点一次安装”，在 API 35 上对不上。文案写成“更新或安装”。
+- **系统安装界面装完不会打开 App，下载的安装包要等新版本第一次打开才删。** F-130 走查时点“更新”装上 0.9.1 之后，`cache/updates/xiaodouya-901.apk`（44 MB）还在，打开 App 后才被 `removeInstalledApks` 删掉。装完一直不打开的话这个包就一直占着；缓存目录，系统清理时也会删。要确认删除就要先打开新版本再看。
+- **release 包没有 `run-as`，看 App 的缓存目录用 `su`。** 本机模拟器（`sdk_gphone64_x86_64-userdebug`，API 35）上 `adb -s emulator-5554 shell su 0 ls -la /data/data/com.gchust.xiaodouya/cache/updates` 能直接看，不用动 adbd（没试 `adb root`）。
+- **模拟器上 `svc wifi disable` 之后 NetInfo 报的是移动数据，不是断网。** 镜像自带一个 HSPA 的移动网络（`dumpsys connectivity` 里 `MOBILE[HSPA]`），关 Wi-Fi 就能测“只在 Wi-Fi 下”，`svc wifi enable` 后 NetInfo 的变化事件会触发自动下载。
 - **`adb emu network speed` 限不住模拟器走 Wi-Fi 的下载。** 设成 `edge` 后 44 MB 还是几秒下完，看不到进度，也来不及点取消。要慢下来就在宿主机开一个限速的 TCP 转发，让服务端的 `S3_PUBLIC_ENDPOINT` 指向它：SigV4 签的是 Host，转发不改 Host 就能过签名。
 - **界面一直在刷新时 `uiautomator dump` 会卡住。** 下载进度每次回调都重画，`scripts/adb-ui.py` 的 `ids`、`tap=` 等不到空闲就超时。这时用截图加坐标点。
 - **在仓库外的目录里调 `apksigner` 会报 `mise ERROR No version is set for shim: java`。** mise 的 shim 按当前目录找 `.mise.toml`，scratchpad 里找不到。用 `env PATH=$(mise where java)/bin:/usr/bin:/bin apksigner …`，或者先回到仓库目录。
@@ -272,6 +275,7 @@
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
 - **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
 - **换包走查的 APK 不要放在 `/tmp`。** 这台机器的 `/tmp` 是 tmpfs，Claude Code 的临时目录有配额，一个 E2E APK 就 46 MB，复制、去签名、对齐、重签各一份，几个 Agent 叠起来就满了：`zip -d` 写到一半失败，留下一个 31 MB 的坏 APK，之后连命令输出都写不进去（F-127 走查时遇到）。放到 worktree 的 `.artifacts/` 下（已忽略），用完删掉。
+- **`pnpm e2e` 里的 adb 和 Maestro 没有指定设备。** `scripts/e2e.sh` 用的是裸 `adb`（安装、卸载、关飞行模式）和不带 `--device` 的 `maestro test`，真机连着时（`adb devices` 里有 `adb-…._adb-tls-connect._tcp`）不能直接跑。F-130 本地验证时照着 e2e.sh 的步骤另写了脚本，`adb -s emulator-5554`、`maestro --device emulator-5554`，同样先拿模拟器的锁、启动 8787 上的服务端、调 `fake-release.sh`。
 - **同一台模拟器上不能同时跑两个 `maestro test`。** 前一个还在跑流程 18 时又起了一个，新的那个每条流程几毫秒就失败，日志是 `DeviceServerDiedException ... during 'deviceInfo'`，看起来像模拟器坏了。自己手动跑之前先 `pgrep -f maestro.cli`，后台跑的命令要等它真的退出（等待脚本超时不等于 Maestro 结束了）。
 - **机器忙时 `scrollUntilVisible` 30 秒滚不到疫苗本底部。** 几个 Agent 同时编译、跑模拟器时宿主机负载到 27，每次点击要 20 秒，流程 17a 滚到三十多行免疫规划表下面的自费疫苗卡片时超时，紧接着流程 18 启动 30 秒还停在开屏。滚到页面很下面的元素给 90 秒，失败时先看 `uptime`，别急着怀疑代码。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。

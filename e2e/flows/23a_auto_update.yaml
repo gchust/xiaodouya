@@ -1,0 +1,78 @@
+# 自动下载新版本（F-130，issue #74）：设置里打开后在后台下好、校验好，不弹窗；今天页出现提示卡，点了才安装。
+# 存储里的假版本由 e2e/helpers/fake-release.sh 发布，e2e.sh 在这条流程开始前把 APK 换回和清单一致的字节（intact）。
+# E2E 构建不在打开 App 时自动检查（会挡住别的流程），这里靠打开开关时的那一次检查。
+# 节流、只在 Wi-Fi 下、次数上限只有单元测试和模拟器手动走查；安装包有没有删掉在手动走查里看缓存目录。
+# 系统安装界面 Maestro 管不到：新装的 App 没有“安装未知应用”的授权，点安装打开的是带「去设置」的弹层。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: pref-auto-update }
+- assertVisible: 自动下载新版本
+- assertVisible: 有新版本时在后台下载好，再提醒你安装
+# 默认关，子选项不出现
+- assertVisible:
+    id: pref-auto-update
+    checked: false
+- assertNotVisible: { id: pref-auto-update-wifi }
+- tapOn: { id: pref-auto-update }
+- extendedWaitUntil:
+    visible: { id: pref-auto-update-wifi }
+    timeout: 10000
+- assertVisible:
+    id: pref-auto-update-wifi
+    checked: true
+- assertVisible: 仅在 Wi-Fi 下自动下载
+# 不弹窗：在后台下好、校验好之后，设置里这一行写着已下载好
+- extendedWaitUntil:
+    visible: 新版本 99.0.0-e2e 已下载好，点这里安装
+    timeout: 60000
+- assertNotVisible: { id: update-available }
+- takeScreenshot: .artifacts/e2e-23a-settings
+# 今天页的提示卡，在记录按钮下面
+- tapOn: { id: tab-today }
+- scrollUntilVisible:
+    element: { id: update-ready-card }
+- assertVisible: 新版本 99.0.0-e2e 已下载好
+- assertVisible: { id: action-feed }
+- takeScreenshot: .artifacts/e2e-23a-ready-card
+- tapOn: { id: update-ready-install }
+- extendedWaitUntil:
+    visible: { id: update-open-settings }
+    timeout: 10000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: update-open-settings }
+    timeout: 10000
+# App 被杀后重新打开：在本机核对下好的文件，不用等下一次检查，提示卡还在
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-today }
+    timeout: 30000
+- tapOn: { id: tab-today }
+- scrollUntilVisible:
+    element: { id: update-ready-card }
+    timeout: 30000
+# 以后再说：这个版本不再出现
+- tapOn: { id: update-ready-later }
+- extendedWaitUntil:
+    notVisible: { id: update-ready-card }
+    timeout: 10000
+# 关掉开关：下好的包删掉，设置行回到“有新版本”，子选项收起
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: pref-auto-update }
+- assertVisible: 新版本 99.0.0-e2e 已下载好，点这里安装
+- tapOn: { id: pref-auto-update }
+- extendedWaitUntil:
+    notVisible: { id: pref-auto-update-wifi }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 有新版本 99.0.0-e2e
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-23a-turned-off

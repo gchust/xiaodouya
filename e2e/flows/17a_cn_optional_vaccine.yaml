@@ -89,10 +89,12 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: vaccine-optional-toggle }
 - assertNotVisible: { id: vaccine-optional-row-pcv13 }
 # 原来的入口：＋ 其他疫苗 里也能选
+# 往上滚时它可能停在只露出一条边的位置（Maestro 也算可见），点下去没反应；滚到中间再点。
 - scrollUntilVisible:
     element: { id: vaccine-add-custom }
     direction: UP
     timeout: 90000
+    centerElement: true
 - waitForAnimationToEnd
 - tapOn: { id: vaccine-add-custom }
 - extendedWaitUntil:

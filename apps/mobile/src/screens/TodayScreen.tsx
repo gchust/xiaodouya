@@ -66,6 +66,7 @@ import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+import { UpdateReadyCard } from '../ui/UpdateReadyCard';
 import { useWidgetLink } from '../widgets/useWidgetLink';
 
 /** 链接文字只有 16 高，上下各扩 14 才到 44。 */
@@ -304,6 +305,7 @@ export function TodayScreen() {
         </View>
       ) : null}
 
+      <UpdateReadyCard />
       {events.length > 0 ? <NotificationPrompt /> : null}
 
       {nutritionText ? (

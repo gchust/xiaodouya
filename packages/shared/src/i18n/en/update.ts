@@ -36,4 +36,12 @@ export const update: Catalog['update'] = {
   toast: (version) => `A new version of Xiaodouya is available: ${version}`,
   toastRequired: (version) => `This version is no longer supported. Please update to ${version}`,
   toastAction: 'View',
+  autoRow: 'Download updates automatically',
+  autoRowSub: 'Downloads new versions in the background, then reminds you to install',
+  wifiOnlyRow: 'Only download on Wi-Fi',
+  wifiOnlySub: "Won't use mobile data. Updates are tens of MB",
+  rowReady: (version) => `Version ${version} is downloaded. Tap to install`,
+  readyCard: (version) => `Version ${version} is downloaded`,
+  readyCardInstallA11y: (version) => `Install version ${version}`,
+  readyCardLaterA11y: 'Later, not now',
 };

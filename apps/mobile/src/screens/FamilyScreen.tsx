@@ -19,7 +19,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
-import { currentAppVersion, getUpdateController, useUpdatePhase } from '../lib/appUpdateRuntime';
+import {
+  currentAppVersion,
+  getUpdateController,
+  useUpdatePhase,
+  useUpdateSettings,
+} from '../lib/appUpdateRuntime';
 import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { exportFamilyData } from '../lib/familyExport';
@@ -66,6 +71,7 @@ export function FamilyScreen() {
   // 只有打开了应用内更新的 Android 构建才有这一行。
   const updates = getUpdateController(app.api, app.db);
   const updatePhase = useUpdatePhase(updates);
+  const updateSettings = useUpdateSettings(updates);
   const appVersion = currentAppVersion();
 
   const loadStorage = useCallback(async () => {
@@ -318,6 +324,25 @@ export function FamilyScreen() {
               label={t().update.row}
               sub={updateRowSub(updatePhase, appVersion.name)}
               onPress={() => sheet.open(t().update.title, () => <UpdateSheet />)}
+            />
+          ) : null}
+          {/* 存在这台手机上，不同步：流量和存储是这台手机的。默认关，见 shared 的 defaultAutoUpdatePrefs。 */}
+          {updates && appVersion && updateSettings ? (
+            <Toggle
+              testID="pref-auto-update"
+              label={t().update.autoRow}
+              sub={t().update.autoRowSub}
+              value={updateSettings.autoDownload}
+              onChange={(v) => void updates.setAutoDownload(v)}
+            />
+          ) : null}
+          {updates && appVersion && updateSettings?.autoDownload ? (
+            <Toggle
+              testID="pref-auto-update-wifi"
+              label={t().update.wifiOnlyRow}
+              sub={t().update.wifiOnlySub}
+              value={updateSettings.wifiOnly}
+              onChange={(v) => void updates.setWifiOnly(v)}
             />
           ) : null}
           {/* 没开反馈的服务器也显示这一行，写明暂不可用：藏起来的话用户会以为 App 没有这个功能。 */}
