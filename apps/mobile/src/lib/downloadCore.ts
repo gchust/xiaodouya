@@ -183,7 +183,8 @@ export type DownloadFailure =
   | 'network'
   | 'no-space'
   | 'incomplete'
-  | 'save';
+  | 'save'
+  | 'gone';
 
 export type DownloadOutcome =
   | { status: 'saved'; target: SaveTarget }
@@ -206,6 +207,7 @@ const failureText = (reason: DownloadFailure): string => {
     'no-space': text.dlNoSpace,
     incomplete: text.dlIncomplete,
     save: text.dlSave,
+    gone: text.dlGone,
   };
   return byReason[reason];
 };
@@ -230,11 +232,19 @@ export function downloadMessage(outcome: DownloadOutcome): string | null {
 
 export class FolderNameTakenError extends Error {}
 
+/** 自带的 signedUrl 抛这个：服务端说文件已经删除（比如反馈附件过了保留期），不是网络问题。 */
+export class DownloadGone extends Error {}
+
 export interface DownloadRequest {
   media: Pick<MediaRef, 'id' | 'kind' | 'mime' | 'size'>;
   fileName: string;
   /** 证件：不进相册，见 saveTargetFor。 */
   sensitive: boolean;
+  /**
+   * 不是家庭的文件（收到的反馈的附件）：链接从别的接口取，手机上也不会有它的副本。
+   * 不给时走 ports.signedUrl（回忆和证件）。
+   */
+  signedUrl?: () => Promise<string | null>;
 }
 
 /** 和平台打交道的部分，真实实现在 downloads.ts。 */
@@ -324,15 +334,15 @@ export function createDownloader(ports: DownloadPorts, options: { platform: stri
     stopIfAborted();
 
     const tempUri = ports.prepareTemp(media.id, fileName);
-    const local = await ports.findLocalCopy(media);
+    const local = request.signedUrl ? null : await ports.findLocalCopy(media);
     if (local) {
       await ports.copyInto(local, tempUri);
     } else {
       let url: string | null;
       try {
-        url = await ports.signedUrl(media);
-      } catch {
-        throw new Failed('network');
+        url = request.signedUrl ? await request.signedUrl() : await ports.signedUrl(media);
+      } catch (error) {
+        throw new Failed(error instanceof DownloadGone ? 'gone' : 'network');
       }
       if (!url) throw new Failed('not-ready');
       stopIfAborted();

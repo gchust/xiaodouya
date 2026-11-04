@@ -369,6 +369,11 @@ export interface MeResponse {
   members: FamilyMember[];
   invites: PendingInvite[];
   prefs: Prefs;
+  /**
+   * 这个账号能不能在 App 里看收到的反馈（服务端 FEEDBACK_VIEWER_EMAILS）。只用来决定显不显示入口，
+   * 真正的权限在服务端每次请求时判断。旧服务端没有这个字段，当作不能。
+   */
+  canViewFeedback?: boolean;
 }
 
 export interface AuthResponse {

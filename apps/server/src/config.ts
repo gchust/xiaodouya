@@ -76,6 +76,10 @@ const EnvSchema = DbEnvSchema.extend({
   FEEDBACK_ATTACHMENT_DAYS: z.coerce.number().int().nonnegative().default(90),
   RATE_FEEDBACK_PER_DAY: z.coerce.number().int().nonnegative().default(10),
   RATE_FEEDBACK_GLOBAL_HOUR: z.coerce.number().int().nonnegative().default(200),
+  /** 能在 App 里看收到的反馈的账号，逗号分隔。不设就没有这个功能。 */
+  FEEDBACK_VIEWER_EMAILS: optionalText,
+  /** 维护者看反馈的接口每人每小时几次（列表、单条、附件链接合计），0 表示不限。 */
+  RATE_FEEDBACK_VIEW_PER_HOUR: z.coerce.number().int().nonnegative().default(600),
   NODE_ENV: optionalText,
 });
 
@@ -165,6 +169,12 @@ export interface Config {
    * 定时清理的环境可能没有 GitHub 的配置，保留期也要照样生效。
    */
   feedbackAttachmentDays: number | null;
+  /**
+   * 能在 App 里看收到的反馈的邮箱（小写），null 表示没有这个功能。也不放进 feedback 里：
+   * 看反馈只要数据库和平台存储，GitHub 的令牌过期了、拿掉了也要能看。
+   */
+  feedbackViewers: ReadonlySet<string> | null;
+  feedbackViewPerHour: number;
 }
 
 const GITHUB_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -190,6 +200,25 @@ function toFeedbackConfig(e: z.infer<typeof EnvSchema>): Config['feedback'] {
     perUserDay: e.RATE_FEEDBACK_PER_DAY,
     globalHour: e.RATE_FEEDBACK_GLOBAL_HOUR,
   };
+}
+
+/**
+ * 大小写不敏感（注册时邮箱统一转成小写），空格和空项去掉。写错一项就拒绝启动：
+ * 悄悄跳过的话，维护者只会看到入口没出现，不知道是哪里配错了。
+ */
+function toFeedbackViewers(raw: string | undefined): ReadonlySet<string> | null {
+  const emails = (raw ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  if (emails.length === 0) return null;
+  const bad = emails.filter((v) => !z.email().safeParse(v).success);
+  if (bad.length > 0) {
+    throw new Error(
+      `环境变量配置有误：\n  FEEDBACK_VIEWER_EMAILS: 第 ${emails.indexOf(bad[0]!) + 1} 项不是邮箱`,
+    );
+  }
+  return new Set(emails);
 }
 
 /** 配错时拒绝启动：悄悄退回“不发邮件”的话，部署者要到有人找回不了密码才发现。 */
@@ -291,5 +320,7 @@ export function loadConfig(env: Env = process.env): Config {
     mail: toMailConfig(e),
     feedback: toFeedbackConfig(e),
     feedbackAttachmentDays: e.FEEDBACK_ATTACHMENT_DAYS > 0 ? e.FEEDBACK_ATTACHMENT_DAYS : null,
+    feedbackViewers: toFeedbackViewers(e.FEEDBACK_VIEWER_EMAILS),
+    feedbackViewPerHour: e.RATE_FEEDBACK_VIEW_PER_HOUR,
   };
 }

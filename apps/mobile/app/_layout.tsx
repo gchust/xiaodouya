@@ -48,6 +48,12 @@ export default function RootLayout() {
                 <Stack.Screen name="records" />
                 <Stack.Screen name="uploads" />
                 <Stack.Screen name="feedback" />
+                <Stack.Screen name="feedback-inbox/index" />
+                <Stack.Screen name="feedback-inbox/[id]" />
+                <Stack.Screen
+                  name="feedback-media"
+                  options={{ animation: 'fade', contentStyle: { backgroundColor: '#000' } }}
+                />
                 <Stack.Screen name="widgets" />
                 <Stack.Screen
                   name="viewer"

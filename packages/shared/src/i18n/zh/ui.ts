@@ -33,6 +33,7 @@ export const ui = {
   dlNoSpace: '手机存储空间不够了，清理后再点一次',
   dlIncomplete: '下载的文件不完整，再点一次试试',
   dlSave: '保存没有成功，再点一次试试',
+  dlGone: '这个文件已经删除了',
   dlSavedGallery: '已保存到相册',
   dlSavedFolder: '已保存到你选的文件夹',
   dlCancelled: '已取消下载',

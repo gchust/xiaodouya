@@ -5,6 +5,9 @@ import type {
   CreateShareRequest,
   CreateShareResponse,
   FamilyExport,
+  FeedbackAttachmentUrlResponse,
+  FeedbackInboxItem,
+  FeedbackInboxResponse,
   FeedbackListResponse,
   FeedbackStatus,
   MediaUrlsResponse,
@@ -261,6 +264,21 @@ export class Api {
   }
   listFeedback() {
     return this.request<FeedbackListResponse>('GET', '/v1/feedback');
+  }
+  /** 收到的反馈：只有服务端名单里的账号能用，其他人 403。 */
+  feedbackInbox(before?: string | null) {
+    const query = before ? `?before=${encodeURIComponent(before)}` : '';
+    return this.request<FeedbackInboxResponse>('GET', `/v1/feedback-inbox${query}`);
+  }
+  feedbackInboxItem(id: string) {
+    return this.request<FeedbackInboxItem>('GET', `/v1/feedback-inbox/${id}`);
+  }
+  /** 每次打开、每次下载都现取，10 分钟有效，不缓存。 */
+  feedbackAttachmentUrl(id: string, attachmentId: string) {
+    return this.request<FeedbackAttachmentUrlResponse>(
+      'GET',
+      `/v1/feedback-inbox/${id}/attachments/${attachmentId}`,
+    );
   }
   /**
    * 连不上时抛错，不猜：猜“允许”会给普通用户看 S3 表单，猜“不允许”会让自建的管理员改不了配置。

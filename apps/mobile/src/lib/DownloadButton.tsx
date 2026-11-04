@@ -1,17 +1,17 @@
-import type { MediaRef } from '@xiaodouya/shared';
 import { t } from '@xiaodouya/shared';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Mono, Muted } from '../ui/primitives';
 import { useApp } from './app';
-import { downloadMessage, downloadProgressLabel } from './downloadCore';
+import { type DownloadRequest, downloadMessage, downloadProgressLabel } from './downloadCore';
 import { cancelDownload, startDownload, useDownloadState } from './downloads';
 
 /**
  * 文字按钮，点击后原地显示进度，下载中再点一次是取消。
  * sensitive 用于证件：先说明文件会离开 App 的保护范围，再让用户选位置，不会进相册。
  * 证件只在已解锁的证件详情页提供这个按钮，全屏查看器可以通过链接直接打开，不放这里。
+ * signedUrl 给不是家庭文件的下载用（收到的反馈的附件），见 DownloadRequest。
  */
 export function DownloadButton({
   media,
@@ -19,12 +19,14 @@ export function DownloadButton({
   sensitive = false,
   tone = 'card',
   testID,
+  signedUrl,
 }: {
-  media: MediaRef;
+  media: DownloadRequest['media'];
   fileName: string;
   sensitive?: boolean;
   tone?: 'card' | 'dark';
   testID: string;
+  signedUrl?: DownloadRequest['signedUrl'];
 }) {
   const { api } = useApp();
   const { toast } = useFeedback();
@@ -34,7 +36,7 @@ export function DownloadButton({
 
   const begin = () => {
     // 这里的 toast 属于根布局，页面关掉后结果也能提示。
-    void startDownload(api, { media, fileName, sensitive }).then((outcome) => {
+    void startDownload(api, { media, fileName, sensitive, signedUrl }).then((outcome) => {
       const message = downloadMessage(outcome);
       if (message) toast(message);
     });

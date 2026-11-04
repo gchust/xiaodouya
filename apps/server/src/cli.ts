@@ -21,8 +21,10 @@
  *   pnpm --filter @xiaodouya/server cli check-multipart
  *
  * 用户反馈：不带 id 列出最近的反馈和状态；带 id 显示文字、诊断信息和附件的 10 分钟签名链接。
- * 附件不在公开的 issue 里，只能这样看。要 S3_*，不需要 APP_SECRET 和 GitHub 的配置。
- *   pnpm --filter @xiaodouya/server cli feedback [反馈 id]
+ * 附件不在公开的 issue 里，只能这样看，或者在 App 的「收到的反馈」里看（FEEDBACK_VIEWER_EMAILS）。
+ * 加 --download 把附件存到这个目录（文件名是附件 id 加扩展名），不打印链接。
+ * 要 S3_*，不需要 APP_SECRET 和 GitHub 的配置。
+ *   pnpm --filter @xiaodouya/server cli feedback [反馈 id] [--download 目录]
  */
 
 import { Buffer } from 'node:buffer';
@@ -47,8 +49,12 @@ async function resetPassword(sql: Sql, email: string): Promise<boolean> {
   return true;
 }
 
-const [command, email] = process.argv.slice(2);
+const [command, email, ...rest] = process.argv.slice(2);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** 只有 `feedback <id> --download <目录>` 带选项。 */
+const downloadDir = rest[0] === '--download' && rest.length === 2 ? rest[1] : undefined;
+const feedbackArgsOk =
+  email === undefined || (UUID.test(email) && (rest.length === 0 || downloadDir !== undefined));
 
 if (
   command !== 'migrate' &&
@@ -56,11 +62,11 @@ if (
   command !== 'purge-objects' &&
   command !== 'check-upload-size' &&
   command !== 'check-multipart' &&
-  !(command === 'feedback' && (email === undefined || UUID.test(email))) &&
+  !(command === 'feedback' && feedbackArgsOk) &&
   !(command === 'reset-password' && email)
 ) {
   console.error(
-    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli feedback [反馈 id] | cli reset-password <邮箱>',
+    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli feedback [反馈 id [--download 目录]] | cli reset-password <邮箱>',
   );
   process.exit(1);
 }
@@ -132,8 +138,23 @@ try {
     );
     ok = result.ok;
   } else if (command === 'feedback') {
-    const { feedbackDetails, recentFeedback } = await import('./feedback');
-    if (email) {
+    const { downloadFeedbackAttachments, feedbackDetails, recentFeedback } = await import(
+      './feedback'
+    );
+    if (email && downloadDir) {
+      const result = await downloadFeedbackAttachments(sql, storageConfig(), email, downloadDir);
+      if (!result) {
+        console.error('找不到这条反馈（草稿不算）');
+        ok = false;
+      } else {
+        for (const path of result.saved) console.log(`已保存 ${path}`);
+        for (const s of result.skipped) console.log(`跳过 ${s.id}：${s.reason}`);
+        if (result.saved.length === 0 && result.skipped.length === 0)
+          console.log('这条反馈没有附件');
+        // 附件可能拍到别人家的孩子：看完就删，不要传到别处。
+        ok = result.skipped.every((s) => s.id === '-' || s.reason.endsWith('已经存在'));
+      }
+    } else if (email) {
       const details = await feedbackDetails(sql, storageConfig(), email);
       if (!details) {
         console.error('找不到这条反馈');

@@ -119,6 +119,7 @@ supabase secrets set --env-file supabase/.env
 | `RESEND_API_KEY` | `MAIL_PROVIDER=resend` 时必填，Resend 控制台生成的 API Key |
 | `MAIL_FROM` | `MAIL_PROVIDER=resend` 时必填，比如 `小豆芽 <no-reply@baby.example.com>`，域名要先在 Resend 验证 |
 | `FEEDBACK_GITHUB_REPO`、`FEEDBACK_GITHUB_TOKEN` | 可选，两项一起设才打开反馈问题，见[用户反馈](#用户反馈) |
+| `FEEDBACK_VIEWER_EMAILS` | 可选，维护者在 App 里看收到的反馈，见[在 App 里查看反馈](#在-app-里查看反馈) |
 
 函数上不能用 `MAIL_PROVIDER=log`，设了函数会启动失败：日志在云端，验证码不能进去。
 
@@ -641,7 +642,7 @@ App 的「家人 → 设置 → 反馈问题」：用户写文字、加最多 5 
 
 - issue 里只有用户写的文字（整段放在代码块里，`@某人`、`#123`、图片和链接都不生效）、反馈 id、App 版本、系统和版本、语言、家庭的地区、附件的个数类型和大小。没有邮箱、账号、家庭、宝宝的信息，也没有附件的地址。标题是 `App 反馈 <id 前 8 位> · android 0.3.3`，不含用户的文字。
 - 附件只放平台存储（`S3_*`）的 `feedback/<反馈 id>/<附件 id>`，不进家庭自带的 Bucket，不算家庭配额（反馈是账号的事，没有家庭的人也能提），靠每人每天的条数和附件个数、大小兜底。服务器没有平台存储时只收文字。
-- 维护者用 `cli feedback <id>` 看附件（10 分钟的签名链接，不要贴进 issue）。反馈 id 和账号的对应在 `feedback.user_id`，只在数据库里。
+- 维护者在 App 的「收到的反馈」里看附件（要设 `FEEDBACK_VIEWER_EMAILS`，见下面[在 App 里查看反馈](#在-app-里查看反馈)），或者用 `cli feedback <id>`（10 分钟的签名链接，不要贴进 issue）。反馈 id 和账号的对应在 `feedback.user_id`，只在数据库里，两种方式都不显示提交者是谁。
 - 附件在 issue 建好后 `FEEDBACK_ATTACHMENT_DAYS` 天（默认 90）由 `cli maintenance` 删除；一天没提交的草稿连附件一起删；用户删除账号时反馈和附件立即删除，已经发到 GitHub 的文字留在那里（提交前 App 说明过会公开）。
 
 **开启步骤：**
@@ -656,11 +657,35 @@ App 的「家人 → 设置 → 反馈问题」：用户写文字、加最多 5 
 ```bash
 pnpm --filter @xiaodouya/server cli feedback          # 最近 20 条：id、状态、时间、附件数、尝试次数、issue 地址或最后的错误
 pnpm --filter @xiaodouya/server cli feedback <反馈 id> # 文字、诊断信息、附件的 10 分钟签名链接
+pnpm --filter @xiaodouya/server cli feedback <反馈 id> --download ~/feedback-<id>  # 附件存成“附件 id.扩展名”，不打印链接，已有的同名文件不覆盖
 ```
+
+下载到电脑上的附件看完就删，不要传到别处：它们可能拍到别人家的孩子。
 
 `cli feedback` 只要 `DATABASE_URL` 和 `S3_*`，不要 `APP_SECRET` 和 GitHub 的配置。日志和数据库里都没有令牌，失败原因只记状态码（`GitHub 返回 HTTP 401`）。
 
 **限流：** 每个账号每天 `RATE_FEEDBACK_PER_DAY`（默认 10）条，全站每小时 `RATE_FEEDBACK_GLOBAL_HOUR`（默认 200）条，重试同一条不算。文字最多 4000 字，附件最多 5 个，照片 20 MB、视频 100 MB（单个 PUT，不分片）。
+
+### 在 App 里查看反馈
+
+`cli feedback` 要在本机配好线上的 `DATABASE_URL` 和 `S3_*`，手边没有时看不了附件。设了 `FEEDBACK_VIEWER_EMAILS` 之后，名单里的账号在「家人 → 设置」里多一行「收到的反馈」：列表（最近的在前，草稿不算）→ 详情（文字、诊断信息、状态、issue 编号）→ 照片全屏看、视频播放、下载到手机。**不设时这个功能完全关闭**，谁都看不到入口，接口对所有人是 403。
+
+**权限只在服务端判断：**
+
+- 邮箱逗号分隔，大小写不敏感，空格忽略（`" Me@Example.com , other@example.com"`）。写了不是邮箱的东西会拒绝启动。名单不下发给 App，`/v1/me` 只告诉当前账号自己 `canViewFeedback`，App 据此显示入口。入口只是入口：列表、详情和附件链接三个接口每次都按名单判断，名单外的人（不管是不是管理员、在不在家庭里）都是 403 `forbidden`，和没开这个功能分不出来。
+- 和家庭权限无关：维护者不用在任何家庭里，在名单里也不会多读到任何家庭的数据。
+- 服务器配了邮件（`MAIL_PROVIDER`）时，还要这个账号验证过邮箱。**没配邮件的服务器验证不了邮箱，要先用这个邮箱注册好账号，再把它写进名单**：否则别人可以抢先用这个邮箱注册，看到所有人的附件。
+- 返回的内容没有提交者的邮箱、账号 id 和家庭，查询根本不读这些列。附件的链接 10 分钟有效（和证件一样），每次打开、每次下载时现取，不进日志。附件过了保留期被删掉时，详情写“N 个附件过了保留期，已经删除”，打开旧链接是 410 `feedback_attachment_gone`。
+- 每个维护者每小时 `RATE_FEEDBACK_VIEW_PER_HOUR`（默认 600）次，三个接口合计，`0` 不限。
+- App 里照片只放内存缓存，不写磁盘缓存；下载按证件处理：先说明“会离开小豆芽的保护”，Android 让你选文件夹，iOS 走系统分享，不进相册（相册可能自动备份到云端）。
+
+**开启：** 只要数据库和平台存储，不需要 GitHub 的配置（令牌过期了也能看）。
+
+1. 先用维护者的邮箱在 App 里注册并登录（没配邮件的服务器尤其要先注册，见上面）。
+2. Supabase：`supabase secrets set FEEDBACK_VIEWER_EMAILS=me@example.com`，然后**部署包含这个功能的函数**（旧版本的函数不认识这个变量，设了也没有入口）。Docker：写进 `deploy/.env` 后 `docker compose up -d server`。
+3. 回到 App 的家人页（会重新读 `/v1/me`），设置里出现「收到的反馈」。不出现时，先确认登录的就是名单里的邮箱、服务器配了邮件时这个邮箱验证过。
+
+去掉一个人：从名单里删掉再部署，他下一次请求就是 403。每天的维护任务不用设这个变量。
 
 ## 分享页（Cloudflare Worker 静态资源）
 
@@ -755,6 +780,8 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 | `FEEDBACK_ATTACHMENT_DAYS`        | 否   | `90`                                     | 反馈附件在 issue 建好后保留几天，`0` 一直保留。**函数和定时任务要设成一样**                               |
 | `RATE_FEEDBACK_PER_DAY`           | 否   | `10`                                     | 每个账号每天几条反馈，`0` 不限。重试同一条不算                                                           |
 | `RATE_FEEDBACK_GLOBAL_HOUR`       | 否   | `200`                                    | 全站每小时几条反馈，`0` 不限。令牌是部署者的，被刷爆了所有人都发不出去                                   |
+| `FEEDBACK_VIEWER_EMAILS`          | 否   | 不开                                     | 能在 App 的「收到的反馈」里看反馈和附件的邮箱，逗号分隔，大小写不敏感。先注册再填，见[在 App 里查看反馈](#在-app-里查看反馈) |
+| `RATE_FEEDBACK_VIEW_PER_HOUR`     | 否   | `600`                                    | 每个维护者每小时看反馈的请求数（列表、详情、附件链接合计），`0` 不限                                       |
 | `FEEDBACK_GITHUB_API_URL`         | 否   | `https://api.github.com`                 | 只给测试和 E2E 连假的 GitHub 用，线上不要设                                                              |
 | `DB_POOL_MAX`                     | 否   | `10`（Edge Function 是 `1`）             | 数据库连接池大小                                                                                          |
 | `DB_PREPARE`                      | 否   | `true`（Edge Function 是 `false`）       | 是否用命名预处理语句。事务模式的连接池不支持，必须是 `false`                                              |

@@ -42,6 +42,7 @@ cleanup() {
 trap cleanup EXIT
 
 # 反馈（流程 24）连假的 GitHub，绝不连真实的。端口写死在 e2e/helpers/feedback-github.js 里。
+# 收到的反馈（流程 25）的维护者邮箱也写死，见 e2e/helpers/feedback-maintainer.js。
 FAKE_GITHUB_PORT=8790
 if ! curl -fs "http://localhost:$FAKE_GITHUB_PORT/__issues" >/dev/null 2>&1; then
   setsid bash -c "cd apps/server && exec npx tsx test/fake-github.ts $FAKE_GITHUB_PORT fictional-e2e-token" \
@@ -51,13 +52,14 @@ fi
 
 if curl -fs http://localhost:8787/healthz >/dev/null 2>&1; then
   echo "警告：8787 端口已有服务端在运行，将直接使用它。它可能是别的分支的代码。" >&2
-  echo "警告：它没有连假的 GitHub 的话，流程 24（反馈）会失败。" >&2
+  echo "警告：它没有连假的 GitHub、没有设 FEEDBACK_VIEWER_EMAILS 的话，流程 24、25（反馈）会失败。" >&2
 else
   # 后台进程不能带着锁（9>&-）：否则这次跑完锁还在，下一次调用会一直排队。
   # 进程环境优先于 .env，所以这几项不用写进 .env.example。
   FEEDBACK_GITHUB_REPO=fictional-owner/fictional-repo \
     FEEDBACK_GITHUB_TOKEN=fictional-e2e-token \
     FEEDBACK_GITHUB_API_URL="http://localhost:$FAKE_GITHUB_PORT" \
+    FEEDBACK_VIEWER_EMAILS=feedback-maintainer@example.test \
     setsid bash -c 'cd apps/server && exec npx tsx --env-file-if-exists=.env src/index.ts' \
     > "$ART/server.log" 2>&1 9>&- &
   SERVER_PID=$!

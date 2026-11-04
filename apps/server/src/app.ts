@@ -27,6 +27,11 @@ import {
   effectiveUnits,
   type FamilyExport,
   type FamilyMember,
+  FEEDBACK_INBOX_PAGE,
+  type FeedbackAttachmentUrlResponse,
+  type FeedbackInboxItem,
+  FeedbackInboxQuery,
+  type FeedbackInboxResponse,
   type FeedbackListResponse,
   type FeedbackStatus,
   ForgotPasswordRequest,
@@ -112,6 +117,9 @@ import {
   deliverInBackground,
   enqueueRemovedAttachments,
   enqueueUserFeedbackObjects,
+  feedbackAttachmentUrl,
+  feedbackInbox,
+  feedbackInboxItem,
   feedbackObjectKey,
 } from './feedback';
 import type { Mailer } from './mailer';
@@ -217,7 +225,7 @@ interface Membership {
 type Env = { Variables: { user: AuthedUser; membership: Membership | null } };
 
 function fail(
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 429 | 501 | 503,
+  status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 429 | 501 | 503,
   code: string,
   message: string,
   params?: Record<string, string | number>,
@@ -689,6 +697,14 @@ export function createApp({
     return c.json({ ok: true });
   });
 
+  /**
+   * 能不能看收到的反馈：邮箱在 FEEDBACK_VIEWER_EMAILS 里。服务器发邮件时还要验证过邮箱，
+   * 否则维护者还没注册时，别人先用这个邮箱注册就能看到所有反馈的附件。不发邮件的服务器验证不了，
+   * 维护者要先注册好再把邮箱写进名单（见 DEPLOYMENT）。
+   */
+  const canViewFeedback = (user: AuthedUser) =>
+    Boolean(config.feedbackViewers?.has(user.email)) && (user.emailVerified || !mailer);
+
   async function buildMe(user: AuthedUser, m: Membership | null): Promise<MeResponse> {
     let family: MeResponse['family'] = null;
     let members: FamilyMember[] = [];
@@ -730,6 +746,7 @@ export function createApp({
       members,
       invites,
       prefs: user.prefs,
+      canViewFeedback: canViewFeedback(user),
     };
   }
 
@@ -1115,6 +1132,65 @@ export function createApp({
         attachments: r.attachments,
       })),
     });
+  });
+
+  // ─── 维护者看收到的反馈 ─────────────────────────────────
+  // 只有 FEEDBACK_VIEWER_EMAILS 里的账号。和家庭权限无关：维护者不用在任何家庭里，名单里的人也不会因此
+  // 多读到任何家庭数据。没配置和不在名单里是同一个 403，从外面分不出这台服务器有没有开这个功能。
+  // 返回的内容不带提交者的邮箱、账号和家庭（feedback.ts 里的查询根本不读这些列）。
+
+  const requireFeedbackViewer = async (c: Context<Env>) => {
+    const user = c.get('user');
+    if (!canViewFeedback(user)) {
+      fail(403, 'forbidden', '这个账号不能查看收到的反馈', { reason: 'feedbackViewer' });
+    }
+    if (
+      config.feedbackViewPerHour > 0 &&
+      !(await allowAttempt(sql, `feedback-view:${user.id}`, config.feedbackViewPerHour, HOUR_MS))
+    ) {
+      fail(429, 'too_many_attempts', '看得太频繁了，请稍后再试', { reason: 'feedbackView' });
+    }
+  };
+
+  v1.get('/feedback-inbox', async (c) => {
+    await requireFeedbackViewer(c);
+    const query = FeedbackInboxQuery.safeParse(c.req.query());
+    if (!query.success) {
+      fail(400, 'invalid_input', '输入有误：before 或 limit 不对', {
+        field: 'query',
+        detail: query.error.issues[0]?.message ?? '',
+      });
+    }
+    return c.json<FeedbackInboxResponse>(
+      await feedbackInbox(sql, config, {
+        before: query.data.before,
+        limit: query.data.limit ?? FEEDBACK_INBOX_PAGE,
+      }),
+    );
+  });
+
+  v1.get('/feedback-inbox/:id', async (c) => {
+    await requireFeedbackViewer(c);
+    const item = await feedbackInboxItem(sql, config, feedbackIdParam(c));
+    if (!item) fail(404, 'not_found', '找不到这条反馈');
+    return c.json<FeedbackInboxItem>(item);
+  });
+
+  /** 每次打开时现取。链接只在响应体里，不进日志（onError 只记路径，路径里没有链接）。 */
+  v1.get('/feedback-inbox/:id/attachments/:attachmentId', async (c) => {
+    await requireFeedbackViewer(c);
+    const id = feedbackIdParam(c);
+    const attachmentId = z.uuid().safeParse(c.req.param('attachmentId'));
+    if (!attachmentId.success) fail(404, 'not_found', '找不到这个附件');
+    const result = await feedbackAttachmentUrl(sql, config, id, attachmentId.data);
+    if (result.kind === 'not_found') fail(404, 'not_found', '找不到这个附件');
+    if (result.kind === 'gone') {
+      fail(410, 'feedback_attachment_gone', '这个附件已经删除，多半是过了保留期');
+    }
+    if (result.kind === 'no_storage') {
+      fail(503, 'storage_unavailable', '存储暂时不可用，请稍后再试');
+    }
+    return c.json<FeedbackAttachmentUrlResponse>({ url: result.url, expiresIn: result.expiresIn });
   });
 
   // ─── 家庭和邀请 ─────────────────────────────────────────

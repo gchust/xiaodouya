@@ -766,6 +766,8 @@ async function accountLifecycle(base: string) {
 }
 
 const FAKE_GITHUB_TOKEN = 'github_pat_FICTIONAL_edge_smoke';
+/** 能在 App 里看反馈的维护者。名单在函数启动前就要定，每次跑换一个，开发数据库是共用的。 */
+const FEEDBACK_VIEWER = `edge-maintainer-${randomUUID().slice(0, 8)}@example.test`;
 
 /** 反馈：附件签名直传，函数里用 fetch 连（假的）GitHub，失败时留在队列里，日志里没有令牌。 */
 async function feedback(runtime: Runtime, github: FakeGithub) {
@@ -832,6 +834,40 @@ async function feedback(runtime: Runtime, github: FakeGithub) {
   });
   check(queued.json.status === 'queued', 'GitHub 失败时留在队列里，请求本身成功');
   check(!runtime.output().includes(FAKE_GITHUB_TOKEN), '函数的日志里没有令牌');
+
+  console.log('维护者在 App 里看反馈：名单、列表、附件的签名链接');
+  const outsider = await request(base, 'GET', '/v1/feedback-inbox', { token: auth.token });
+  check(outsider.status === 403, '不在名单里的账号 403');
+  const { json: maintainer } = await request<{ token: string }>(base, 'POST', '/v1/auth/register', {
+    body: {
+      email: FEEDBACK_VIEWER.toUpperCase(),
+      password: 'correct horse',
+      displayName: '维护者',
+    },
+  });
+  const me = await request<{ canViewFeedback?: boolean }>(base, 'GET', '/v1/me', {
+    token: maintainer.token,
+  });
+  check(me.json.canViewFeedback === true, '/v1/me 说名单里的账号能看');
+  const inbox = await request<{
+    items: { id: string; text: string; attachments: { id: string }[] }[];
+  }>(base, 'GET', '/v1/feedback-inbox?limit=50', { token: maintainer.token });
+  const mine = inbox.json.items.find((i) => i.id === id);
+  check(
+    inbox.status === 200 && mine?.attachments[0]?.id === attachment,
+    `列表里有这条反馈和附件（${inbox.ms} ms）`,
+  );
+  check(!JSON.stringify(inbox.json).includes(email), '列表里没有提交者的邮箱');
+  const link = await request<{ url: string; expiresIn: number }>(
+    base,
+    'GET',
+    `/v1/feedback-inbox/${id}/attachments/${attachment}`,
+    { token: maintainer.token },
+  );
+  check(link.status === 200 && link.json.expiresIn <= 600, '附件链接不超过 10 分钟');
+  const downloaded = Buffer.from(await (await fetch(link.json.url)).arrayBuffer());
+  check(downloaded.equals(bytes), '用链接下载到的就是传上去的附件');
+  check(!runtime.output().includes('X-Amz'), '函数的日志里没有签名链接');
 }
 
 async function ssrf(base: string, token: string) {
@@ -871,6 +907,7 @@ try {
       FEEDBACK_GITHUB_REPO: 'fictional-owner/fictional-repo',
       FEEDBACK_GITHUB_TOKEN: FAKE_GITHUB_TOKEN,
       FEEDBACK_GITHUB_API_URL: github.url,
+      FEEDBACK_VIEWER_EMAILS: ` ${FEEDBACK_VIEWER} `,
     },
     port,
   );

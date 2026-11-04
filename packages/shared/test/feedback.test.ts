@@ -3,9 +3,13 @@ import {
   CreateFeedbackRequest,
   cleanFeedbackText,
   describeFeedbackAttachments,
+  expiredAttachmentCount,
   FEEDBACK_MAX_IMAGE_BYTES,
   FEEDBACK_MAX_VIDEO_BYTES,
   FeedbackDiagnostics,
+  FeedbackInboxQuery,
+  feedbackAttachmentFileName,
+  feedbackAttachmentKind,
   feedbackAttachmentLimit,
   feedbackDiagnostics,
   fenceFor,
@@ -207,5 +211,54 @@ describe('手机上读到的诊断信息', () => {
       region: undefined,
     });
     expect(d).toEqual({ appVersion: '0.3.3', os: 'other', osVersion: 'unknown', locale: 'zh' });
+  });
+});
+
+describe('维护者查看收到的反馈', () => {
+  it('issue 里说可以在 App 里看附件，但没有任何能打开附件的东西', () => {
+    const { body } = renderFeedbackIssue({
+      id,
+      text: '闪退',
+      diagnostics,
+      attachments: [{ mime: 'image/jpeg', size: 3_200_000 }],
+    });
+    const line = body.split('\n').find((l) => l.startsWith('维护者查看附件'));
+    expect(line).toBe(
+      `维护者查看附件：\`cli feedback ${id}\`（签名链接 10 分钟有效），或在 App 的「收到的反馈」里查看。`,
+    );
+    expect(body).not.toMatch(/https?:|xiaodouya:\/\/|feedback\//);
+  });
+
+  it('下载的文件名是附件 id 加扩展名，不认识的类型也不会带出奇怪的字符', () => {
+    const a = '11111111-2222-4333-8444-555555555555';
+    expect(feedbackAttachmentFileName(a, 'image/jpeg')).toBe(`${a}.jpg`);
+    expect(feedbackAttachmentFileName(a, 'IMAGE/PNG')).toBe(`${a}.png`);
+    expect(feedbackAttachmentFileName(a, 'video/quicktime')).toBe(`${a}.mov`);
+    expect(feedbackAttachmentFileName(a, 'video/mp4; codecs=avc1')).toBe(`${a}.mp4`);
+    expect(feedbackAttachmentFileName(a, 'image/x-portable-bitmap')).toBe(`${a}.portable`);
+    expect(feedbackAttachmentFileName(a, 'image/../../etc')).toBe(`${a}.bin`);
+    expect(feedbackAttachmentFileName(a, 'weird')).toBe(`${a}.bin`);
+  });
+
+  it('附件类型只分照片和视频', () => {
+    expect(feedbackAttachmentKind('video/mp4')).toBe('video');
+    expect(feedbackAttachmentKind('VIDEO/quicktime')).toBe('video');
+    expect(feedbackAttachmentKind('image/heic')).toBe('image');
+  });
+
+  it('提交时的附件比现在多，就是过了保留期删掉了', () => {
+    const att = { id, mime: 'image/jpeg', size: 1, kind: 'image' as const };
+    expect(expiredAttachmentCount({ attachmentCount: 2, attachments: [att] })).toBe(1);
+    expect(expiredAttachmentCount({ attachmentCount: 1, attachments: [att] })).toBe(0);
+    expect(expiredAttachmentCount({ attachmentCount: 0, attachments: [] })).toBe(0);
+  });
+
+  it('游标格式卡死，页大小有上限', () => {
+    expect(FeedbackInboxQuery.safeParse({ before: `1767225600123456_${id}` }).success).toBe(true);
+    expect(FeedbackInboxQuery.safeParse({ before: 'garbage' }).success).toBe(false);
+    expect(FeedbackInboxQuery.safeParse({ before: `1_${id}'--` }).success).toBe(false);
+    expect(FeedbackInboxQuery.parse({ limit: '5' }).limit).toBe(5);
+    expect(FeedbackInboxQuery.safeParse({ limit: '51' }).success).toBe(false);
+    expect(FeedbackInboxQuery.safeParse({ limit: '0' }).success).toBe(false);
   });
 });

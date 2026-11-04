@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDownloader,
+  DownloadGone,
   type DownloadPorts,
   downloadFileNames,
   downloadMessage,
@@ -461,5 +462,41 @@ describe('下载流程', () => {
     expect(outcome).toEqual({ status: 'saved', target: 'share' });
     expect(ports.share).toHaveBeenCalledWith('file:///cache/downloads/d1/a.pdf', 'application/pdf');
     expect(ports.pickFolder).not.toHaveBeenCalled();
+  });
+});
+
+describe('自带链接的下载（收到的反馈的附件）', () => {
+  const attachment = { id: 'f1', kind: 'image', mime: 'image/jpeg', size: 100 } as const;
+
+  it('用请求自带的链接，不找本地副本，也不问回忆的接口；敏感的不进相册', async () => {
+    const ports = fakePorts({ findLocalCopy: async () => 'file:///uploads/f1-original' });
+    const signedUrl = vi.fn(async () => 'https://storage.example/feedback-signed');
+    const outcome = await createDownloader(ports, android).start({
+      media: attachment,
+      fileName: 'f1.jpg',
+      sensitive: true,
+      signedUrl,
+    });
+    expect(outcome).toEqual({ status: 'saved', target: 'folder' });
+    expect(signedUrl).toHaveBeenCalledTimes(1);
+    expect(ports.signedUrl).not.toHaveBeenCalled();
+    expect(ports.findLocalCopy).not.toHaveBeenCalled();
+    expect(ports.fetchTo.mock.calls[0]?.[0]).toBe('https://storage.example/feedback-signed');
+    expect(ports.saveToGallery).not.toHaveBeenCalled();
+  });
+
+  it('服务端说附件已经删除时如实说，不说成网络问题', async () => {
+    const ports = fakePorts();
+    const outcome = await createDownloader(ports, android).start({
+      media: attachment,
+      fileName: 'f1.jpg',
+      sensitive: true,
+      signedUrl: async () => {
+        throw new DownloadGone();
+      },
+    });
+    expect(outcome).toEqual({ status: 'failed', reason: 'gone' });
+    expect(downloadMessage(outcome)).toBe('这个文件已经删除了');
+    expect(ports.fetchTo).not.toHaveBeenCalled();
   });
 });
