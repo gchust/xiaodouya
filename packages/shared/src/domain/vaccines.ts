@@ -66,6 +66,57 @@ export function defineSchedule(
 }
 
 /**
+ * 参考首针月龄的依据：
+ * - guideline：疫苗说明书，或疾控、卫生部门的指南原文。
+ * - leaflet：接种单位的宣传资料，没有和说明书核对，待复核。
+ */
+export type OptionalVaccineBasis = 'guideline' | 'leaflet';
+
+/**
+ * 不在当地免疫规划里、家里自愿选择的疫苗（比如中国的自费疫苗）。只是让家长不用手填名字：
+ * 不进疫苗本的状态和提醒，记下后和自定义的一样放在“其他接种记录”。
+ */
+export interface OptionalVaccine {
+  /** 带地区前缀的 id（`cn:opt-pcv13`），写进接种记录。`opt-` 保证不和免疫规划的剂次撞。 */
+  id: string;
+  /** 地区内的 id（`pcv13`），用来生成 testID。 */
+  localId: string;
+  name: string;
+  /** 写进接种记录的名字，永远是中文原名，理由同 VaccineDose.recordName。 */
+  recordName: string;
+  /** 通常从几月龄开始打第一剂。只是参考，不是完整的接种程序，也不用来判断到期。 */
+  startMonths: number;
+  startLabel: string;
+  note?: string;
+  /** 官方方案写明可以算作完成的免费剂次。只是一句说明，不会自动把那些剂次标成已接种。 */
+  mayReplace?: string;
+  basis: OptionalVaccineBasis;
+}
+
+export type OptionalVaccineInput = Omit<
+  OptionalVaccine,
+  'id' | 'localId' | 'name' | 'recordName' | 'startLabel' | 'note' | 'mayReplace'
+> & {
+  id: string;
+  name: Localized;
+  startLabel: Localized;
+  note?: Localized;
+  mayReplace?: Localized;
+};
+
+/** 地区文件用它声明自费疫苗。名字也登记进 doseNames，英文界面下记录才能按 id 换语言。 */
+export function defineOptionalVaccines(
+  namespace: string,
+  vaccines: readonly OptionalVaccineInput[],
+): readonly OptionalVaccine[] {
+  return vaccines.map(({ id, name, ...vaccine }) => {
+    const fullId = `${namespace}:opt-${id}`;
+    doseNames.set(fullId, name);
+    return localized({ ...vaccine, name, recordName: name.zh, id: fullId, localId: id });
+  });
+}
+
+/**
  * 接种记录显示成什么名字。自己填的和不认识的原样显示，内置剂次按当前语言：
  * 记录里存的是中文原名，中文界面就显示记录里的字，不改变已有内容。
  */

@@ -180,6 +180,132 @@ describe('中国：《国家免疫规划疫苗儿童免疫程序及说明（2026
   });
 });
 
+/**
+ * 自费疫苗（issue #62）。月龄只是“通常从几月龄开始”的参考，不进疫苗本的状态和提醒。
+ * 流感按中国疾控的指南，其余来自接种点的宣传单（待复核），见 cn.ts。
+ */
+describe('中国：自费、自愿的非免疫规划疫苗', () => {
+  const optional = CN.optionalVaccines;
+  const list = optional?.vaccines ?? [];
+  const find = (localId: string) => list.find((v) => v.localId === localId);
+
+  it('可以直接从列表选，不用手填名字', () => {
+    expect(list.map((v) => v.localId)).toEqual([
+      'rv5',
+      'pcv13',
+      'dtap-ipv-hib',
+      'rv',
+      'hib',
+      'dtap-hib',
+      'menacyw-conj',
+      'menac-conj',
+      'flu',
+      'ev71',
+      'var',
+      'ppsv23',
+      'cholera',
+      'mpsv4',
+      'hpv2',
+      'hpv9',
+    ]);
+  });
+  it('按参考首针月龄排列', () => {
+    const starts = list.map((v) => v.startMonths);
+    expect(starts).toEqual([...starts].sort((a, b) => a - b));
+  });
+  it('id 带地区前缀，不会和免疫规划的剂次撞，写进记录的是中文原名', () => {
+    const scheduled = new Set(CN.vaccineSchedule.map((d) => d.id));
+    for (const v of list) {
+      expect(v.id).toBe(`cn:opt-${v.localId}`);
+      expect(scheduled.has(v.id)).toBe(false);
+      expect(v.recordName).toMatch(/[一-龥]/);
+    }
+    expect(new Set(list.map((v) => v.id)).size).toBe(list.length);
+  });
+  it('流感疫苗按中国疾控的指南从 6 月龄开始，不用宣传单上的 6.5 月', () => {
+    expect(find('flu')?.startMonths).toBe(6);
+    expect(find('flu')?.basis).toBe('guideline');
+    expect(find('flu')?.note).toContain('2 剂');
+  });
+  it('其余的参考月龄来自宣传单，标着待复核', () => {
+    expect(list.filter((v) => v.basis === 'guideline').map((v) => v.localId)).toEqual(['flu']);
+    expect(find('rv5')?.startMonths).toBe(1.5);
+    expect(find('pcv13')?.startMonths).toBe(1.5);
+    expect(find('dtap-ipv-hib')?.startMonths).toBe(2);
+    expect(find('rv')?.startMonths).toBe(2.5);
+    expect(find('menacyw-conj')?.startMonths).toBe(3);
+    expect(find('menac-conj')?.startMonths).toBe(6);
+    expect(find('ev71')?.startMonths).toBe(6.5);
+    expect(find('var')?.startMonths).toBe(12);
+    expect(find('ppsv23')?.startMonths).toBe(24);
+    expect(find('mpsv4')?.startMonths).toBe(36);
+    expect(find('hpv9')?.startMonths).toBe(108);
+  });
+  it('乙脑灭活疫苗已经在免疫规划表里二选一，不再列一次', () => {
+    expect(list.some((v) => v.recordName.includes('乙脑'))).toBe(false);
+    expect(dose(CN.vaccineSchedule, 'cn:je-i-1')).toBeDefined();
+  });
+  it('只有官方方案写了能算作完成的，才说可能替代免费疫苗', () => {
+    const replacing = list.filter((v) => v.mayReplace).map((v) => v.localId);
+    expect(replacing).toEqual([
+      'dtap-ipv-hib',
+      'dtap-hib',
+      'menacyw-conj',
+      'menac-conj',
+      'mpsv4',
+      'hpv2',
+      'hpv9',
+    ]);
+    for (const id of replacing) expect(find(id)?.mayReplace).toContain('以接种单位为准');
+  });
+  it('HPV 不假定性别，适用人群以说明书为准', () => {
+    for (const id of ['hpv2', 'hpv9']) {
+      const v = find(id);
+      expect(v?.note).toContain('适用人群以说明书为准');
+      expect(`${v?.name}${v?.note}${v?.mayReplace}`).not.toMatch(/女孩|女性|男孩|男性/);
+    }
+  });
+  it('说明写明是参考首针月龄，以接种单位安排和说明书为准', () => {
+    expect(optional?.note).toContain('第一剂');
+    expect(optional?.note).toContain('不是完整的接种程序');
+    expect(optional?.note).toContain('以接种单位安排和说明书为准');
+  });
+  it('其他地区没有自费疫苗列表', () => {
+    expect(SG.optionalVaccines).toBeUndefined();
+    expect(US.optionalVaccines).toBeUndefined();
+    expect(OTHER.optionalVaccines).toBeUndefined();
+  });
+});
+
+describe('自费疫苗不改变免疫规划的状态', () => {
+  const birth = at(2026, 1, 1);
+  const now = at(2026, 3, 10);
+  const fiveName = '五联疫苗（百白破-脊灰-Hib）DTaP-IPV/Hib';
+  const five: EventData = {
+    type: 'vaccine',
+    at: now,
+    vaccineId: 'cn:opt-dtap-ipv-hib',
+    name: fiveName,
+  };
+
+  it('打了五联，免费的百白破和脊灰也不会自动标成已接种或跳过', () => {
+    const statuses = vaccineStatuses(CN, birth, [five], now);
+    expect(statuses.find((v) => v.id === 'cn:dtap-1')?.state).toBe('due');
+    expect(statuses.find((v) => v.id === 'cn:ipv-1')?.state).toBe('due');
+    expect(statuses.some((v) => v.id.startsWith('cn:opt-'))).toBe(false);
+  });
+  it('不会出现在提醒和接种弹层的待接种里', () => {
+    const statuses = vaccineStatuses(CN, birth, [], at(2036, 1, 1));
+    expect(dueVaccine(statuses)?.id.startsWith('cn:opt-')).toBe(false);
+    expect(vaccinesToOffer(statuses).some((v) => v.id.startsWith('cn:opt-'))).toBe(false);
+  });
+  it('记下的自费疫苗进“其他接种记录”', () => {
+    expect(otherVaccineRecords(CN, [{ id: 'e', data: five }])).toEqual([
+      { id: 'e', vaccineId: 'cn:opt-dtap-ipv-hib', name: fiveName, at: now },
+    ]);
+  });
+});
+
 describe('美国：AAP 2026 儿童和青少年免疫表', () => {
   const s = US.vaccineSchedule;
   it('来源是 AAP 2026', () => {

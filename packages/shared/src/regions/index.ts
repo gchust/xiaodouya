@@ -6,7 +6,13 @@ import { SG } from './sg';
 import type { RegionDefinition } from './types';
 import { US } from './us';
 
-export type { PaperSize, RegionDefinition, ReviewStatus, VaccineSource } from './types';
+export type {
+  OptionalVaccines,
+  PaperSize,
+  RegionDefinition,
+  ReviewStatus,
+  VaccineSource,
+} from './types';
 
 /** 新增国家：加一个数据文件，再在这里登记。页面都是按这个列表和字段渲染的，不用改。 */
 export const regions = { SG, CN, US, OTHER } as const;

@@ -44,6 +44,8 @@ export const records: Catalog['records'] = {
   otherVaccine: 'Other vaccine',
   otherVaccineCustom: 'Other vaccine (type the name)',
   vaccineName: 'Vaccine name',
+  pickFromList: 'pick from list',
+  optionalVaccineA11y: (title) => `${title}, pick from list`,
   given: 'Given',
   editFeed: 'Edit feed',
   editDiaper: 'Edit diaper',

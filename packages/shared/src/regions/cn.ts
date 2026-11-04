@@ -1,5 +1,5 @@
 import { metricUnits } from '../domain/units';
-import { defineSchedule } from '../domain/vaccines';
+import { defineOptionalVaccines, defineSchedule } from '../domain/vaccines';
 import { nutritionReferenceFallback } from '../health/nutritionReferences';
 import { L, localized } from '../i18n';
 import type { RegionDefinition } from './types';
@@ -13,6 +13,204 @@ const HEPA = L(
   '1 dose of live vaccine, or 2 doses of inactivated vaccine, arranged by the vaccination site',
 );
 
+/** 下面的“可能替代”都来自《国家免疫规划疫苗儿童免疫程序及说明（2026 年版）》第二部分的“其他事项”。 */
+const SITE_DECIDES = {
+  zh: '具体以接种单位为准',
+  en: 'the vaccination site decides',
+};
+const MEN_CONJ_REPLACE = L(
+  `24 月龄前按说明书打完规定剂次，可能替代免费的 A 群流脑多糖疫苗，${SITE_DECIDES.zh}`,
+  `If the doses on the label are finished before 24 months, it may replace the free group A meningococcal polysaccharide doses; ${SITE_DECIDES.en}`,
+);
+const HPV_REPLACE = L(
+  `按说明书打完全程后，13 周岁的免费双价 HPV 疫苗就不用再打，${SITE_DECIDES.zh}`,
+  `Once the full course on the label is done, the free bivalent HPV vaccine at 13 years is not needed; ${SITE_DECIDES.en}`,
+);
+const HPV_WHO = L('适用人群以说明书为准', 'Who it is for depends on the product label');
+
+/**
+ * 自费、自愿的非免疫规划疫苗（issue #62）：接种弹层里直接选，不用手填名字。
+ *
+ * 月龄是“通常从几月龄开始打第一剂”的参考，不是接种程序，不进疫苗本的状态和提醒。
+ * 除流感外，月龄来自接种点宣传单（仓库所有者 2026-11-04 提供，未与说明书核对，待复核）。
+ * 宣传单原文注明“图中标识的年龄表示第一次接种该疫苗的时间”；同一种疫苗画在几个月龄上的，
+ * 这里只取最早的一个，其余写在注释里。宣传单上的乙脑灭活疫苗（8 月龄）不列在这里：
+ * 2026 年版免疫规划里它和乙脑减毒活疫苗二选一，疫苗本上已经有这几剂。
+ */
+const OPTIONAL = defineOptionalVaccines('cn', [
+  {
+    // 宣传单：1.5 月“进口5价轮状疫苗”。
+    id: 'rv5',
+    name: L('五价轮状病毒疫苗 RV5（进口）', 'Pentavalent rotavirus vaccine (RV5, imported)'),
+    startMonths: 1.5,
+    startLabel: L('1.5 月龄', '1.5 months'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：1.5 月“13价肺炎疫苗”。
+    id: 'pcv13',
+    name: L('13 价肺炎球菌结合疫苗 PCV13', '13-valent pneumococcal conjugate vaccine (PCV13)'),
+    startMonths: 1.5,
+    startLabel: L('1.5 月龄', '1.5 months'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：2 月“五联”。替代：2026 年版第二部分三（二）1“含 IPV 成分的非免疫规划疫苗，
+    // 可视为完成相应剂次的脊灰疫苗接种”，四（二）“含百日咳成分的非免疫规划疫苗，可视为完成相应剂次 DTaP 接种”。
+    id: 'dtap-ipv-hib',
+    name: L('五联疫苗（百白破-脊灰-Hib）DTaP-IPV/Hib', '5-in-1 vaccine (DTaP-IPV/Hib)'),
+    startMonths: 2,
+    startLabel: L('2 月龄', '2 months'),
+    mayReplace: L(
+      `含百白破和脊灰灭活疫苗成分，按说明书接种的，可能替代相应剂次的免费百白破和脊灰疫苗，${SITE_DECIDES.zh}`,
+      `It contains DTaP and IPV. Given as the label directs, it may replace the matching free DTaP and polio doses; ${SITE_DECIDES.en}`,
+    ),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：2.5 月“国产轮状疫苗”。国产轮状疫苗不止一种，起始月龄以所用产品的说明书为准。
+    id: 'rv',
+    name: L('轮状病毒疫苗（国产）', 'Rotavirus vaccine (made in China)'),
+    startMonths: 2.5,
+    startLabel: L('2.5 月龄', '2.5 months'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：3 月“Hib疫苗/四联”。Hib 不在 2026 年版免疫规划里，没有可替代的剂次。
+    id: 'hib',
+    name: L(
+      'b 型流感嗜血杆菌结合疫苗 Hib',
+      'Haemophilus influenzae type b conjugate vaccine (Hib)',
+    ),
+    startMonths: 3,
+    startLabel: L('3 月龄', '3 months'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：3 月“Hib疫苗/四联”。替代：2026 年版第二部分四（二），含百日咳成分。
+    id: 'dtap-hib',
+    name: L('四联疫苗（百白破-Hib）DTaP-Hib', '4-in-1 vaccine (DTaP-Hib)'),
+    startMonths: 3,
+    startLabel: L('3 月龄', '3 months'),
+    mayReplace: L(
+      `含百白破成分，按说明书接种的，可能替代相应剂次的免费百白破疫苗，${SITE_DECIDES.zh}`,
+      `It contains DTaP. Given as the label directs, it may replace the matching free DTaP doses; ${SITE_DECIDES.en}`,
+    ),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：3 月、半岁、9 月、2 岁都写了“ACYW135四价流脑结合疫苗”。
+    // 替代：2026 年版第二部分八（二）5“小于 24 月龄儿童，如已按流脑结合疫苗说明书接种了规定的剂次，可视为完成 MPSV—A 接种剂次”。
+    id: 'menacyw-conj',
+    name: L(
+      'ACYW135 群流脑结合疫苗 MenACYW',
+      'Meningococcal groups A, C, Y, W135 conjugate vaccine (MenACYW)',
+    ),
+    startMonths: 3,
+    startLabel: L('3 月龄', '3 months'),
+    mayReplace: MEN_CONJ_REPLACE,
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：半岁、9 月“AC流脑结合疫苗”。替代依据同上。
+    id: 'menac-conj',
+    name: L('AC 群流脑结合疫苗 MenAC', 'Meningococcal groups A and C conjugate vaccine (MenAC)'),
+    startMonths: 6,
+    startLabel: L('6 月龄', '6 months'),
+    mayReplace: MEN_CONJ_REPLACE,
+    basis: 'leaflet',
+  },
+  {
+    // 《中国流感疫苗预防接种技术指南（2026—2027）》，中国疾病预防控制中心，2026 年 9 月：
+    // https://www.chinacdc.cn/jkyj/mygh02/jswj2026/202609/P020260902609797521311.pdf
+    // “IIV3 … 可用于 6 月龄及以上人群”；“6 月龄及以上—9 岁以下儿童 … 既往未接种过流感疫苗，
+    // 首次接种流感病毒灭活疫苗时，建议接种 2 剂次 … 间隔≥4 周”。宣传单写的是 6.5 月，以指南为准。
+    id: 'flu',
+    name: L('流感疫苗', 'Influenza (flu) vaccine'),
+    startMonths: 6,
+    startLabel: L('6 月龄', '6 months'),
+    note: L(
+      '每个流感季都要打；以前没打过的孩子，第一次通常打 2 剂，间隔至少 4 周',
+      'Given every flu season. Children who have never had it usually get 2 doses the first time, at least 4 weeks apart',
+    ),
+    basis: 'guideline',
+  },
+  {
+    // 宣传单：6.5 月“EV71型手足口病疫苗”。中国疾控 2016 年的《肠道病毒71型灭活疫苗使用技术指南》
+    // 原文链接已失效，没有读到，所以没有改。
+    id: 'ev71',
+    name: L('EV71 手足口病疫苗', 'EV71 vaccine (hand, foot and mouth disease)'),
+    startMonths: 6.5,
+    startLabel: L('6.5 月龄', '6.5 months'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：1 岁“水痘疫苗”。
+    id: 'var',
+    name: L('水痘疫苗 VarV', 'Varicella (chickenpox) vaccine'),
+    startMonths: 12,
+    startLabel: L('1 周岁', '1 year'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：2 岁“23价肺炎疫苗”。
+    id: 'ppsv23',
+    name: L(
+      '23 价肺炎球菌多糖疫苗 PPSV23',
+      '23-valent pneumococcal polysaccharide vaccine (PPSV23)',
+    ),
+    startMonths: 24,
+    startLabel: L('2 周岁', '2 years'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：2 岁“霍乱疫苗”。
+    id: 'cholera',
+    name: L('霍乱疫苗', 'Cholera vaccine'),
+    startMonths: 24,
+    startLabel: L('2 周岁', '2 years'),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：3 岁、6 岁“ACYW135流脑多糖疫苗”。
+    // 替代：2026 年版第二部分八（二）6“如儿童 3 周岁和 6 周岁时已接种含 A 群和 C 群流脑疫苗成分的疫苗，
+    // 可视为完成相应剂次的 MPSV—AC 接种”。
+    id: 'mpsv4',
+    name: L(
+      'ACYW135 群流脑多糖疫苗 MPSV4',
+      'Meningococcal groups A, C, Y, W135 polysaccharide vaccine (MPSV4)',
+    ),
+    startMonths: 36,
+    startLabel: L('3 周岁', '3 years'),
+    mayReplace: L(
+      `3 周岁、6 周岁时打的，可能替代相应剂次的免费 A 群 C 群流脑多糖疫苗，${SITE_DECIDES.zh}`,
+      `Given at 3 or 6 years, it may replace the matching free group A and C meningococcal polysaccharide dose; ${SITE_DECIDES.en}`,
+    ),
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：9 岁“二价HPV疫苗(女性)”。适用人群写成以说明书为准，不假定宝宝的性别。
+    // 替代：2026 年版第二部分十一（二）2“如接种对象已按照相应 HPV 疫苗（任何价次）产品说明书完成全程接种的，无需再接种”。
+    id: 'hpv2',
+    name: L('双价 HPV 疫苗 2vHPV（自费）', 'Bivalent HPV vaccine (2vHPV, paid)'),
+    startMonths: 108,
+    startLabel: L('9 周岁', '9 years'),
+    note: HPV_WHO,
+    mayReplace: HPV_REPLACE,
+    basis: 'leaflet',
+  },
+  {
+    // 宣传单：9 岁“九价HPV疫苗(女性)”。适用人群和替代依据同上。
+    id: 'hpv9',
+    name: L('九价 HPV 疫苗 9vHPV', '9-valent HPV vaccine (9vHPV)'),
+    startMonths: 108,
+    startLabel: L('9 周岁', '9 years'),
+    note: HPV_WHO,
+    mayReplace: HPV_REPLACE,
+    basis: 'leaflet',
+  },
+]);
+
 /**
  * 《国家免疫规划疫苗儿童免疫程序及说明（2026 年版）》，国家疾控局、国家卫生健康委，2026 年 6 月。
  *
@@ -23,7 +221,7 @@ const HEPA = L(
  * 新华社 2026-07-07 的报道（通过 Internet Archive 读到）印证了百白破从 2 月龄起、共 5 剂：
  * https://www.news.cn/politics/20260707/8a1dfcdac2f942c99070a3125f3eeea4/c.html
  *
- * 这里只有国家免疫规划疫苗。各省可能另外增加项目，自费疫苗也不在表内，都可以记成自定义疫苗。
+ * 疫苗本里只有国家免疫规划疫苗。各省可能另外增加项目，可以记成自定义疫苗；自费疫苗见上面的 OPTIONAL。
  * HBsAg 阳性产妇所生新生儿等特殊情况的安排不同，由接种单位决定，所以界面注明以诊所为准。
  */
 export const CN: RegionDefinition = localized({
@@ -261,6 +459,14 @@ export const CN: RegionDefinition = localized({
     version: L('2026 年版（2026 年 6 月）', '2026 edition (June 2026)'),
   }),
   reviewStatus: 'primary-source',
+  optionalVaccines: localized({
+    title: L('自费疫苗（非免疫规划）', 'Optional vaccines (outside the national program)'),
+    note: L(
+      '自费、自愿接种。月龄是通常开始打第一剂的参考，不是完整的接种程序，App 不会提醒。参考来自接种单位的宣传资料和中国疾控的流感疫苗指南，以接种单位安排和说明书为准。',
+      "Optional and paid for by the family. The age is when the first dose usually starts, not a full schedule, and the app won't send reminders. Based on a vaccination site's leaflet and China CDC's flu vaccine guideline. The vaccination site's plan and the product label take precedence.",
+    ),
+    vaccines: OPTIONAL,
+  }),
   disclaimer: L(
     '按《国家免疫规划疫苗儿童免疫程序及说明（2026 年版）》排列，只含国家免疫规划疫苗，以诊所安排和健康手册为准。',
     "Based on China's National Immunization Program schedule (2026 edition). National program vaccines only. Your clinic's plan and health record book take precedence.",

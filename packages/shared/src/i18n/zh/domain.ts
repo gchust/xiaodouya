@@ -94,6 +94,7 @@ export const domain = {
     timeTbd: '时间待定',
     notYet: '未到时间',
     reminderWhen: (age: string) => `${age}可接种`,
+    usuallyFrom: (age: string) => `通常从 ${age}开始`,
     reminder: (name: string, when: string) => `${name}，${when}。打完点这里在疫苗本里记一笔。`,
   },
   nutrition: {

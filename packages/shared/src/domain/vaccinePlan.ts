@@ -4,6 +4,7 @@ import { formatMonthDay } from './age';
 import {
   isCustomVaccineId,
   normalizeVaccineId,
+  type OptionalVaccine,
   type VaccineDose,
   type VaccineStatus,
 } from './vaccines';
@@ -149,6 +150,11 @@ export function doseTimeText(dose: VaccineDose): string {
   return dose.plannedAt === undefined
     ? dose.ageLabel
     : t().domain.vaccine.plannedOn(formatMonthDay(dose.plannedAt));
+}
+
+/** 自费疫苗的参考时间。只说通常从什么时候开始，不说该打了，也没有到期的概念。 */
+export function optionalStartText(vaccine: OptionalVaccine): string {
+  return t().domain.vaccine.usuallyFrom(vaccine.startLabel);
 }
 
 /** 今天页的疫苗提醒。 */

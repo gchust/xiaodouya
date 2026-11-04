@@ -16,6 +16,7 @@ import {
   metricUnits,
   milestoneTemplates,
   newCustomVaccineId,
+  optionalStartText,
   otherVaccineRecords,
   regionFor,
   regionList,
@@ -291,6 +292,24 @@ describe('记录是数据，不翻译', () => {
     expect(withLocale('en', () => vaccineRecordName('xx:gone', '旧的疫苗'))).toBe('旧的疫苗');
   });
 
+  it('自费疫苗写进记录的也是中文原名，英文下按 id 显示', () => {
+    const pcv = regionFor('CN').optionalVaccines?.vaccines.find((v) => v.localId === 'pcv13');
+    expect(pcv).toBeDefined();
+    if (!pcv) return;
+    const zhName = withLocale('zh', () => pcv.name);
+    expect(withLocale('en', () => pcv.recordName)).toBe(zhName);
+    const stored = record(zhName, pcv.id);
+    expect(describeEvent(stored, NOW)).toBe(`接种 ${zhName}`);
+    expect(withLocale('en', () => describeEvent(stored, NOW))).toBe(
+      `Vaccine: ${withLocale('en', () => pcv.name)}`,
+    );
+    // 换到别的地区之后，其他接种记录里也是当前语言。
+    expect(
+      withLocale('en', () => otherVaccineRecords(regionFor('SG'), [{ id: '1', data: stored }]))[0]
+        ?.name,
+    ).toBe(withLocale('en', () => pcv.name));
+  });
+
   it('其他接种记录也按当前语言显示内置剂次', () => {
     const entries = [{ id: '1', data: record('卡介苗 BCG', 'sg:bcg') }];
     const us = regionFor('US');
@@ -321,6 +340,15 @@ describe('地区内容', () => {
         version: region.source?.version,
         doses: region.vaccineSchedule.map((d) => ({ name: d.name, age: d.ageLabel, note: d.note })),
         nutrition: region.nutrition.note,
+        optionalTitle: region.optionalVaccines?.title,
+        optionalNote: region.optionalVaccines?.note,
+        optional: (region.optionalVaccines?.vaccines ?? []).map((v) => ({
+          name: v.name,
+          start: v.startLabel,
+          usually: optionalStartText(v),
+          note: v.note,
+          mayReplace: v.mayReplace,
+        })),
       }));
       expect(JSON.stringify(text.en)).not.toMatch(CJK);
       expect(text.zh.disclaimer).toContain('以诊所安排和健康手册为准');
@@ -333,6 +361,26 @@ describe('地区内容', () => {
         expect(numbers(dose.age)).toEqual(numbers(zh?.age ?? ''));
         expect(numbers(dose.note ?? '')).toEqual(numbers(zh?.note ?? ''));
         expect(Boolean(dose.note)).toBe(Boolean(zh?.note));
+      });
+      expect(text.en.optional).toHaveLength(text.zh.optional.length);
+      expect(Boolean(text.en.optionalNote)).toBe(Boolean(text.zh.optionalNote));
+      if (text.zh.optionalNote) {
+        expect(text.zh.optionalNote).toContain('以接种单位安排和说明书为准');
+        expect(text.en.optionalNote).toContain('take precedence');
+      }
+      text.en.optional.forEach((v, i) => {
+        const zh = text.zh.optional[i];
+        // 参考月龄、剂数、间隔、替代条件里的年龄都不能因为翻译变。
+        expect(numbers(v.start)).toEqual(numbers(zh?.start ?? ''));
+        expect(numbers(v.usually)).toEqual(numbers(zh?.usually ?? ''));
+        expect(numbers(v.note ?? '')).toEqual(numbers(zh?.note ?? ''));
+        expect(numbers(v.mayReplace ?? '')).toEqual(numbers(zh?.mayReplace ?? ''));
+        expect(Boolean(v.note)).toBe(Boolean(zh?.note));
+        expect(Boolean(v.mayReplace)).toBe(Boolean(zh?.mayReplace));
+        if (zh?.mayReplace) expect(v.mayReplace).toContain('vaccination site decides');
+        expect(`${v.name} ${v.note ?? ''} ${v.mayReplace ?? ''}`).not.toMatch(
+          /\b(he|she|his|her|girls?|boys?|women|men)\b/i,
+        );
       });
     },
   );

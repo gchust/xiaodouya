@@ -43,6 +43,8 @@ export const records = {
   otherVaccine: '其他疫苗',
   otherVaccineCustom: '其他疫苗（自己填名字）',
   vaccineName: '疫苗名称',
+  pickFromList: '从列表选',
+  optionalVaccineA11y: (title: Text) => `${title}，从列表选`,
   given: '已接种',
   editFeed: '修改喂奶',
   editDiaper: '修改尿布',
