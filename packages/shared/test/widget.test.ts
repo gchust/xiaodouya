@@ -361,3 +361,151 @@ describe('formatSyncedAt', () => {
     expect(formatSyncedAt(null, dayStart)).toBe('未同步');
   });
 });
+
+const diaper = (id: string, at: number, kind: 'wee' | 'poo' | 'both') =>
+  entry(id, { type: 'diaper', at, kind });
+
+describe('小工具记录尿布', () => {
+  it('按点的按钮写一条尿布，时间用现在，记录人是自己', () => {
+    expect(
+      plan({ type: 'diaper', id: 'd1', kind: 'poo' }, [diaper('old', now - HOUR, 'wee')]),
+    ).toEqual({
+      kind: 'write',
+      id: 'd1',
+      data: { type: 'diaper', at: now, kind: 'poo', byName: '爸爸' },
+    });
+  });
+
+  it('同一个 id 点两次只记一条，撤销过的也不会复活', () => {
+    expect(plan({ type: 'diaper', id: 'd1', kind: 'wee' }, [], { known: ['d1'] })).toEqual({
+      kind: 'noop',
+    });
+  });
+
+  it('只看回忆的家人和没有宝宝时都不写', () => {
+    const viewer: WidgetSession = { ...member, role: 'viewer' };
+    expect(plan({ type: 'diaper', id: 'd1', kind: 'wee' }, [], { session: viewer })).toEqual({
+      kind: 'blocked',
+    });
+    expect(plan({ type: 'diaper', id: 'd1', kind: 'wee' }, [], { hasBaby: false })).toEqual({
+      kind: 'blocked',
+    });
+  });
+
+  it('只接受三种尿布', () => {
+    expect(parseWidgetAction({ type: 'diaper', id: 'a', kind: 'both' })).toEqual({
+      type: 'diaper',
+      id: 'a',
+      kind: 'both',
+    });
+    expect(parseWidgetAction({ type: 'diaper', id: 'a', kind: 'blood' })).toBeNull();
+    expect(parseWidgetAction({ type: 'diaper', kind: 'wee' })).toBeNull();
+  });
+});
+
+describe('小工具显示的新内容', () => {
+  const build = (
+    entries: WidgetEntry[],
+    over: Partial<Parameters<typeof buildWidgetView>[0]> = {},
+  ) => {
+    const view = buildWidgetView({
+      session: member,
+      baby,
+      entries,
+      units: metricUnits,
+      now,
+      dayStart,
+      syncedAt: now - 60_000,
+      ...over,
+    });
+    if (view.kind !== 'ready') throw new Error('应该是 ready');
+    return view;
+  };
+  const threeFeeds = (lastAgo: number) => [
+    feed('c', now - lastAgo, 90),
+    feed('b', now - lastAgo - 3 * HOUR, 90),
+    feed('a', now - lastAgo - 6 * HOUR, 90),
+  ];
+
+  it('第几天和今天页一样，出生当天是第 1 天', () => {
+    expect(build([]).dayNumber).toBe(31);
+  });
+
+  it('不到 3 次喂奶不估算下次时间，不能拿默认间隔吓人或安慰人', () => {
+    expect(build([]).nextFeed).toBeNull();
+    expect(build([feed('b', now - HOUR, 90), feed('a', now - 4 * HOUR, 90)]).nextFeed).toBeNull();
+  });
+
+  it('下次喂奶写成具体时刻，30 分钟内算快到了，过了就是到时间了', () => {
+    expect(build(threeFeeds(HOUR)).nextFeed).toEqual({ at: now + 2 * HOUR, status: 'later' });
+    expect(build(threeFeeds(2.75 * HOUR)).nextFeed).toEqual({
+      at: now + 0.25 * HOUR,
+      status: 'near',
+    });
+    expect(build(threeFeeds(3 * HOUR)).nextFeed).toEqual({ at: now, status: 'due' });
+  });
+
+  it('上次换尿布取最新的一条，未来时间的不算', () => {
+    const view = build([
+      diaper('future', now + HOUR, 'wee'),
+      diaper('new', now - HOUR, 'poo'),
+      diaper('old', now - 2 * HOUR, 'wee'),
+    ]);
+    expect(view.lastDiaper).toEqual({ id: 'new', at: now - HOUR, kind: 'poo' });
+    expect(build([]).lastDiaper).toBeNull();
+  });
+
+  it('同步时间平时不显示，超过 30 分钟没同步或者从没同步过才显示', () => {
+    expect(build([]).showSync).toBe(false);
+    expect(build([], { syncedAt: now - 30 * 60_000 }).showSync).toBe(false);
+    expect(build([], { syncedAt: now - 31 * 60_000 }).showSync).toBe(true);
+    expect(build([], { syncedAt: null }).showSync).toBe(true);
+  });
+});
+
+describe('一天的节奏', () => {
+  const build = (entries: WidgetEntry[]) => {
+    const view = buildWidgetView({
+      session: member,
+      baby,
+      entries,
+      units: metricUnits,
+      now,
+      dayStart,
+      syncedAt: now,
+    });
+    if (view.kind !== 'ready') throw new Error('应该是 ready');
+    return view.dayline;
+  };
+
+  it('按一天里的位置放喂奶和尿布，昨天和未来的不放', () => {
+    const line = build([
+      feed('a', dayStart + 6 * HOUR, 90),
+      feed('y', dayStart - HOUR, 90),
+      feed('f', now + HOUR, 90),
+      diaper('d', dayStart + 3 * HOUR, 'wee'),
+    ]);
+    expect(line.feeds).toEqual([0.25]);
+    expect(line.diapers).toEqual([0.125]);
+    expect(line.now).toBe(0.5);
+  });
+
+  it('跨午夜的睡眠从 0 点画起，正在睡的画到现在，忘了结束的不画', () => {
+    expect(build([sleep('s', dayStart - HOUR, dayStart + 3 * HOUR)]).sleeps).toEqual([
+      { from: 0, to: 0.125 },
+    ]);
+    expect(build([sleep('s', now - 3 * HOUR)]).sleeps).toEqual([{ from: 0.375, to: 0.5 }]);
+    expect(build([sleep('s', now - FORGOTTEN_SLEEP_MS - 1)]).sleeps).toEqual([]);
+  });
+
+  it('按时间先后排好', () => {
+    const line = build([
+      feed('b', dayStart + 9 * HOUR, 90),
+      feed('a', dayStart + 3 * HOUR, 90),
+      sleep('t', dayStart + 6 * HOUR, dayStart + 7 * HOUR),
+      sleep('s', dayStart + HOUR, dayStart + 2 * HOUR),
+    ]);
+    expect(line.feeds).toEqual([0.125, 0.375]);
+    expect(line.sleeps.map((s) => s.from)).toEqual([1 / 24, 0.25]);
+  });
+});

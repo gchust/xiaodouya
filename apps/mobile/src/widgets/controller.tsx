@@ -1,5 +1,6 @@
 import {
   buildWidgetView,
+  type DiaperKind,
   effectiveUnits,
   type Prefs,
   type Role,
@@ -11,14 +12,27 @@ import {
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
-import { requestWidgetUpdate, type WidgetTaskHandlerProps } from 'react-native-android-widget';
+import {
+  requestWidgetUpdate,
+  type WidgetInfo,
+  type WidgetTaskHandlerProps,
+} from 'react-native-android-widget';
 import { type CoreServices, getCoreServices } from '../data/services';
 import { LAST_SYNC_KEY, ROLE_KEY } from '../data/syncEngine';
 import { DEFAULT_API_URL } from '../lib/config';
 import { applyLocale } from '../lib/locale';
 import { readStoredSession } from '../lib/storedSession';
 import { runWidgetAction } from './actions';
-import { renderWidgetFor, type WidgetFeedback, type WidgetName, widgetNames } from './views';
+import { createQueue } from './queue';
+import {
+  buttonOf,
+  renderWidgetFor,
+  type WidgetFeedback,
+  type WidgetIds,
+  type WidgetName,
+  type WidgetSize,
+  widgetNames,
+} from './views';
 
 const REFRESH_DEBOUNCE_MS = 800;
 /** “已记录”停留多久，这段时间按钮不会再记一条，防止手抖连点。 */
@@ -29,6 +43,8 @@ const SYNC_LIMIT_MS = 15_000;
 const STALE_SYNC_MS = 10 * 60_000;
 
 const feedback = new Map<WidgetName, WidgetFeedback>();
+/** 写入、读数据、重画都排队，几个点击任务同时跑时画出来的也是一致的，见 `queue.ts`。 */
+const queue = createQueue();
 
 const delay = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -71,9 +87,36 @@ function isWidgetName(name: string): name is WidgetName {
   return (widgetNames as readonly string[]).includes(name);
 }
 
-/** 每次渲染都换一个新 id：下一次点击是新记录，而同一张画面上的连点仍然是同一条。 */
-function renderCurrent(name: WidgetName, view: WidgetView) {
-  return renderWidgetFor(name, view, Crypto.randomUUID(), feedback.get(name));
+/** 每次渲染都换一批新 id：下一次点击是新记录，而同一张画面上的连点仍然是同一条。 */
+function newIds(): WidgetIds {
+  return {
+    feed: Crypto.randomUUID(),
+    sleep: Crypto.randomUUID(),
+    wee: Crypto.randomUUID(),
+    poo: Crypto.randomUUID(),
+    both: Crypto.randomUUID(),
+  };
+}
+
+function sizeOf(info?: Pick<WidgetInfo, 'width' | 'height'>): WidgetSize | undefined {
+  return info ? { width: info.width, height: info.height } : undefined;
+}
+
+function renderCurrent(name: WidgetName, view: WidgetView, info?: WidgetInfo) {
+  return renderWidgetFor(name, view, newIds(), feedback.get(name), sizeOf(info));
+}
+
+/** 只能在队列里调用。 */
+async function renderAll(core: CoreServices): Promise<void> {
+  const view = await loadWidgetView(core);
+  await Promise.all(
+    widgetNames.map((widgetName) =>
+      requestWidgetUpdate({
+        widgetName,
+        renderWidget: (info) => renderCurrent(widgetName, view, info),
+      }),
+    ),
+  );
 }
 
 /** 重画桌面上所有小工具。没有放小工具时这里几乎没有开销。 */
@@ -81,15 +124,7 @@ export async function refreshWidgets(core?: CoreServices): Promise<void> {
   if (Platform.OS !== 'android') return;
   try {
     const services = core ?? (await getCoreServices());
-    const view = await loadWidgetView(services);
-    await Promise.all(
-      widgetNames.map((widgetName) =>
-        requestWidgetUpdate({
-          widgetName,
-          renderWidget: () => renderCurrent(widgetName, view),
-        }),
-      ),
-    );
+    await queue(() => renderAll(services));
   } catch {
     // 小工具刷新失败不能影响 App 本身，下一次写入或系统定时刷新会再试。
   }
@@ -116,43 +151,71 @@ async function syncInBackground(core: CoreServices): Promise<void> {
   await Promise.race([core.engine.syncOnce(), delay(SYNC_LIMIT_MS)]);
 }
 
+const diaperTitle = (kind: DiaperKind) =>
+  kind === 'wee'
+    ? t().records.diaperWet
+    : kind === 'poo'
+      ? t().records.diaperDirty
+      : t().records.diaperBoth;
+
+/** “已记好 · …”后面的那几个字。写入之后再取，喂奶的奶量就是刚记下的这条。 */
 function feedbackTitle(action: WidgetAction, view: WidgetView): string {
-  if (action.type === 'sleepStart') return t().widgetUi.sleepStarted;
-  if (action.type === 'sleepEnd') return t().widgetUi.wokeLogged;
+  if (action.type === 'sleepStart') return t().widgetUi.fellAsleep;
+  if (action.type === 'sleepEnd') return t().widgetUi.awake;
+  if (action.type === 'diaper') return diaperTitle(action.kind);
   return view.kind === 'ready' && view.lastFeedAmount
-    ? t().widgetUi.feedLogged(view.lastFeedAmount)
+    ? t().domain.events.feed(view.lastFeedAmount)
     : t().records.logged;
 }
 
 export async function handleWidgetClick(
   name: string,
   action: WidgetAction,
-  props: Pick<WidgetTaskHandlerProps, 'renderWidget'>,
+  props: Pick<WidgetTaskHandlerProps, 'renderWidget' | 'widgetInfo'>,
 ): Promise<void> {
   const core = await getCoreServices();
   const { session } = await readSession(core);
-  const plan = await runWidgetAction(action, core.store, session, Date.now());
-  const view = await loadWidgetView(core);
-  if (!isWidgetName(name)) return;
-  if (plan.kind !== 'write') {
-    // 没有写入（重复点击、状态已经变了、没有权限）：只把显示更新成现在的真实状态。
-    props.renderWidget(renderCurrent(name, view));
+  if (!isWidgetName(name)) {
+    await runWidgetAction(action, core.store, session, Date.now());
     return;
   }
-  feedback.set(name, { eventId: plan.id, title: feedbackTitle(action, view) });
+  const plan = await queue(async () => {
+    const result = await runWidgetAction(action, core.store, session, Date.now());
+    const view = await loadWidgetView(core);
+    if (result.kind === 'write') {
+      feedback.set(name, {
+        eventId: result.id,
+        title: feedbackTitle(action, view),
+        at: result.data.type === 'sleep' && result.data.endAt ? result.data.endAt : result.data.at,
+        button: buttonOf(action),
+      });
+    } else {
+      // 没有写入（重复点击、状态已经变了、没有权限）：只把显示更新成现在的真实状态。
+      props.renderWidget(renderCurrent(name, view, props.widgetInfo));
+    }
+    return result;
+  });
+  if (plan.kind !== 'write') return;
   await refreshWidgets(core);
   // 先让用户看到“已记录”，再同步；同步慢或者没网都不影响这条记录已经存好。
   await Promise.all([delay(FEEDBACK_MS), syncInBackground(core).catch(() => {})]);
-  feedback.delete(name);
-  await refreshWidgets(core);
+  await queue(async () => {
+    // 这几秒里又点了同一个小工具时，提示已经换成新的那条，不能把它删掉。
+    if (feedback.get(name)?.eventId === plan.id) feedback.delete(name);
+    await renderAll(core);
+  }).catch(() => {});
 }
 
 export async function handleWidgetTick(
   name: string,
-  props: Pick<WidgetTaskHandlerProps, 'renderWidget'>,
+  props: Pick<WidgetTaskHandlerProps, 'renderWidget' | 'widgetInfo'>,
 ): Promise<void> {
   const core = await getCoreServices();
-  if (isWidgetName(name)) props.renderWidget(renderCurrent(name, await loadWidgetView(core)));
+  if (isWidgetName(name)) {
+    await queue(async () => {
+      props.renderWidget(renderCurrent(name, await loadWidgetView(core), props.widgetInfo));
+    });
+  }
   const syncedAt = Number((await core.db.getMeta(LAST_SYNC_KEY)) ?? 0);
   if (Date.now() - syncedAt < STALE_SYNC_MS) return;
   await syncInBackground(core).catch(() => {});

@@ -4,14 +4,18 @@ import {
   type BabyData,
   canReadCollection,
   canWriteCollection,
+  type DiaperKind,
+  diaperKinds,
   type EventData,
   type FormulaData,
   type Role,
 } from '../schemas';
-import { formatClock } from './age';
+import { dayNumber, formatClock, startOfLocalDay } from './age';
 import { type DaySummary, summarizeDay } from './events';
 import {
+  estimateNextFeed,
   type FeedDefaults,
+  FORGOTTEN_SLEEP_MS,
   feedMilkFields,
   feedsNewestFirst,
   lastFeedDefaults,
@@ -62,6 +66,7 @@ const WidgetAction = z.discriminatedUnion('type', [
   z.object({ type: z.literal('feed'), id: z.string().min(1) }),
   z.object({ type: z.literal('sleepStart'), id: z.string().min(1) }),
   z.object({ type: z.literal('sleepEnd'), sleepId: z.string().min(1) }),
+  z.object({ type: z.literal('diaper'), id: z.string().min(1), kind: z.enum(diaperKinds) }),
 ]);
 export type WidgetAction = z.infer<typeof WidgetAction>;
 
@@ -125,6 +130,13 @@ export function planWidgetAction(action: WidgetAction, input: WidgetPlanInput): 
       if (target?.data !== state.sleep) return { kind: 'noop' };
       return { kind: 'write', id: target.id, data: { ...state.sleep, endAt: now } };
     }
+    case 'diaper':
+      if (isKnownId(action.id)) return { kind: 'noop' };
+      return {
+        kind: 'write',
+        id: action.id,
+        data: { type: 'diaper', at: now, kind: action.kind, ...byName },
+      };
   }
 }
 
@@ -133,11 +145,42 @@ export type WidgetSleep =
   | { status: 'asleep'; id: string; since: number }
   | { status: 'forgotten'; id: string; since: number };
 
+/** 超过这么久没同步，小工具上才写出同步时间。平时不写，界面更干净；旧了要让人知道家人的记录可能还没到。 */
+export const WIDGET_SYNC_STALE_MS = 30 * 60_000;
+/** 和今天页一样：离下次喂奶不到 30 分钟算快到了。 */
+const FEED_NEAR_MS = 30 * 60_000;
+
+/**
+ * 下次喂奶的估算。小工具最快 30 分钟才刷新一次，所以给具体时刻而不是“还有多久”，过一会儿也不会错。
+ * 不到 3 次喂奶（`isLearned` 为假）就不估算：默认间隔是猜的，不能拿来提醒，也不能让人放心。
+ */
+export interface WidgetNextFeed {
+  at: number;
+  status: 'later' | 'near' | 'due';
+}
+
+/** 今天的节奏条。位置是一天里的比例（0 是 0 点，1 是明天 0 点），按时间先后排好。 */
+export interface WidgetDayline {
+  feeds: number[];
+  diapers: number[];
+  sleeps: { from: number; to: number }[];
+  now: number;
+}
+
 export type WidgetView =
   | { kind: 'blocked'; reason: WidgetBlockReason; message: string }
   | {
       kind: 'ready';
+      /** 算这份显示时的时间。 */
+      now: number;
       babyName: string;
+      /** 出生当天是第 1 天，和今天页的标题一样。 */
+      dayNumber: number;
+      nextFeed: WidgetNextFeed | null;
+      lastDiaper: { id: string; at: number; kind: DiaperKind } | null;
+      dayline: WidgetDayline;
+      /** 是否在小工具上写出同步时间，见 `WIDGET_SYNC_STALE_MS`。 */
+      showSync: boolean;
       lastFeed: { id: string; at: number; ml: number } | null;
       lastFeedAmount: string | null;
       canQuickFeed: boolean;
@@ -173,6 +216,54 @@ function widgetSleep(entries: readonly WidgetEntry[], now: number): WidgetSleep 
   return { status: state.status, id, since: state.sleep.at };
 }
 
+function widgetNextFeed(entries: readonly WidgetEntry[], now: number): WidgetNextFeed | null {
+  const estimate = estimateNextFeed(events(entries), now);
+  if (!estimate.last || !estimate.isLearned) return null;
+  const status =
+    estimate.remainingMs <= 0 ? 'due' : estimate.remainingMs < FEED_NEAR_MS ? 'near' : 'later';
+  return { at: estimate.last.at + estimate.intervalMs, status };
+}
+
+function widgetLastDiaper(entries: readonly WidgetEntry[], now: number) {
+  let last: { id: string; at: number; kind: DiaperKind } | null = null;
+  for (const { id, data } of entries) {
+    if (data.type !== 'diaper' || data.at > now) continue;
+    if (!last || data.at > last.at) last = { id, at: data.at, kind: data.kind };
+  }
+  return last;
+}
+
+/**
+ * 睡眠和 `summarizeDay` 用同一套规则：跨午夜的只算今天这段，正在睡的算到现在，
+ * 忘了结束的（超过 12 小时没点醒了）不画，不然一整天都是蓝的。
+ */
+export function widgetDayline(
+  events: readonly EventData[],
+  dayStart: number,
+  now: number,
+): WidgetDayline {
+  // 明天 0 点按日历算，夏令时那天是 23 或 25 小时。
+  const dayEnd = startOfLocalDay(dayStart + 36 * 3_600_000);
+  const at = (ms: number) => Math.min(1, Math.max(0, (ms - dayStart) / (dayEnd - dayStart)));
+  const line: WidgetDayline = { feeds: [], diapers: [], sleeps: [], now: at(now) };
+  for (const e of events) {
+    if (e.type === 'sleep') {
+      if (!e.endAt && now - e.at > FORGOTTEN_SLEEP_MS) continue;
+      const end = Math.min(e.endAt ?? now, now);
+      const begin = Math.max(e.at, dayStart);
+      if (end > begin) line.sleeps.push({ from: at(begin), to: at(end) });
+      continue;
+    }
+    if (e.at < dayStart || e.at > now) continue;
+    if (e.type === 'feed') line.feeds.push(at(e.at));
+    else if (e.type === 'diaper') line.diapers.push(at(e.at));
+  }
+  line.feeds.sort((a, b) => a - b);
+  line.diapers.sort((a, b) => a - b);
+  line.sleeps.sort((a, b) => a.from - b.from);
+  return line;
+}
+
 export function buildWidgetView(input: WidgetViewInput): WidgetView {
   const { session, baby, entries, units, now, dayStart, syncedAt } = input;
   const reason = blockReason(session, Boolean(baby));
@@ -185,7 +276,13 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
   const today = summarizeDay(events(entries), dayStart, now);
   return {
     kind: 'ready',
+    now,
     babyName: baby.name,
+    dayNumber: dayNumber(baby.birthAt, now),
+    nextFeed: widgetNextFeed(entries, now),
+    lastDiaper: widgetLastDiaper(entries, now),
+    dayline: widgetDayline(events(entries), dayStart, now),
+    showSync: syncedAt === null || now - syncedAt > WIDGET_SYNC_STALE_MS,
     lastFeed: last && lastEntry ? { id: lastEntry.id, at: last.at, ml: last.ml } : null,
     lastFeedAmount: last ? formatVolume(last.ml, units.volume) : null,
     canQuickFeed: quickFeedMl(lastFeedDefaults(events(entries), [], now)) !== null,

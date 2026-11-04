@@ -143,6 +143,10 @@
 - **`uiautomator` 报 `null root node`，`adb-ui.py` 说“读不到界面结构”时，先看屏幕是不是灭了。** 截图一片黑，`dumpsys window` 的 `mCurrentFocus=null`。模拟器睡着了（`mWakefulness=Asleep`），不是 App 的问题。先 `adb shell input keyevent KEYCODE_WAKEUP`。
 - **把小工具放到模拟器桌面：** 长按桌面空白处 → Widgets → 点小豆芽 → 点预览 → Add。`input swipe x y x y 2000` 能当长按，时间短了不行。
 - **`am kill` 只杀得掉已经进入缓存状态的进程。** 刚跑完后台任务时它静默什么都不做，要等几秒再试并用 `pidof` 确认。不确认的话，“App 被杀”的测试其实是在进程活着时跑的。
+- **HyperOS 的小部件列表里“找不到”小豆芽，其实在最下面。** 2026-11-03 在 Redmi K70 Ultra（HyperOS 3.0，Android 16）上查到：长按桌面 → 添加小部件，先显示的是“支持小部件应用”，只有按小米规范适配过的应用，搜索也只搜这些；普通 Android 小工具在列表最底下的“安卓小部件”里，按应用分组，小豆芽排在最后。排查时先 `adb shell dumpsys appwidget | grep <包名>` 看系统有没有登记，登记了就是桌面的问题，不要先怀疑配置。`widgetCategory` 带 `not_keyguard` 编译成 `9`（全手机只有我们一家不是 1、3、5、7），这台手机上照样能列出来。App 里“桌面小工具”页用 `requestPinWidget` 直接弹出添加窗口，绕开这个列表。
+- **几个小工具的点击是同时跑的后台任务，不排队会画出新旧混在一起的画面。** 2026-11-03 在模拟器上 0.7 秒内连点喂奶、尿尿、醒了：睡眠小工具显示了“已记好 · 醒了”，却还是睡着时的夜蓝卡片和入睡时间，5 秒后才对。原因是一个任务读完数据还没画完，另一个任务已经写入并设好了“刚记好”。写入、读数据、重画现在都进 `widgets/queue.ts` 的同一个队列。
+- **`react-native-android-widget` 的配置插件不能设 `minResizeWidth`/`minResizeHeight`。** 小工具最小只能缩到 `minWidth`/`minHeight`（现在是 110dp），做不出 2×1 的窄版。要做得自己写配置插件改生成的 XML。
+- **`apps/mobile/src/theme.ts` 引了 reanimated，vitest 里加载不了。** 小工具的颜色放在不依赖 React Native 的 `widgets/palette.ts`，节奏条的 SVG 也是纯函数（`widgets/dayline.ts`），这样能直接写单元测试。
 - **不要给小工具里的文字容器 `flex: 1`。** react-native-android-widget 量出来的宽度偏大，旁边定宽的文字也会被挤出卡片。要截短就在 JS 里截（`shortBabyName`）。
 - **模拟器锁不会提醒你到期。** `flock ... sleep 900` 一到时间别的会话马上拿到锁，并且 `e2e.sh` 会卸载 App，桌面上的小工具随之消失。要跨多次命令用模拟器时，把整段写成脚本交给 `flock` 跑，不要自己估时间：这个 PR 走查时就有一次命令落在锁到期之后，差点盖掉别人刚装的 APK。
 - **改写 JSX 文字时不要用 `node.getText()`。** TypeScript 的 `getText` 跳过前导空白，`{n} 项` 后面那段就变成 `项`，迁移后是 `共 100项`，单元测试不管这个，流程 03a 才发现。要用 `src.slice(node.pos, node.end)`，改完和原文比一遍。

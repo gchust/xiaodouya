@@ -17,7 +17,9 @@ import { describe, expect, it } from 'vitest';
 import { type LocalDb, RecordStore, type StoredRecord } from '../src/data/store';
 import { LAST_SYNC_KEY, SyncEngine, type SyncTransport } from '../src/data/syncEngine';
 import { runWidgetAction } from '../src/widgets/actions';
+import { daylineSvg } from '../src/widgets/dayline';
 import { eventLink, FEED_LINK, linkKey, parseWidgetLink, TODAY_LINK } from '../src/widgets/links';
+import { widgetPalettes } from '../src/widgets/palette';
 
 class MemoryDb implements LocalDb {
   records = new Map<string, StoredRecord>();
@@ -139,6 +141,73 @@ describe('小工具写入', () => {
     const sleeps = store.getSnapshot().events.filter((e) => e.data.type === 'sleep');
     expect(sleeps).toHaveLength(1);
     expect(sleeps[0]?.data).toMatchObject({ at: now - HOUR, endAt: now });
+  });
+});
+
+describe('小工具记尿布', () => {
+  it('写一条尿布进发件箱，点同一个按钮重试不会多记', async () => {
+    const { db, store } = await setup();
+    const plan = await runWidgetAction(
+      { type: 'diaper', id: 'd1', kind: 'both' },
+      store,
+      session,
+      now,
+    );
+    expect(plan.kind).toBe('write');
+    expect(db.records.get('d1')).toMatchObject({
+      collection: 'event',
+      dirty: true,
+      data: { type: 'diaper', at: now, kind: 'both', byName: '爸爸' },
+    });
+    const again = await runWidgetAction(
+      { type: 'diaper', id: 'd1', kind: 'both' },
+      store,
+      session,
+      now + 1000,
+    );
+    expect(again.kind).toBe('noop');
+    expect(store.getSnapshot().events.filter((e) => e.data.type === 'diaper')).toHaveLength(1);
+  });
+
+  it('撤销之后迟到的重试不会让尿布复活', async () => {
+    const { store } = await setup();
+    await runWidgetAction({ type: 'diaper', id: 'd1', kind: 'wee' }, store, session, now);
+    await store.remove('d1');
+    await runWidgetAction({ type: 'diaper', id: 'd1', kind: 'wee' }, store, session, now + 1000);
+    expect(store.getSnapshot().events.some((e) => e.id === 'd1')).toBe(false);
+  });
+});
+
+describe('今日汇总的节奏条', () => {
+  const line = { feeds: [0.25], diapers: [0.5], sleeps: [{ from: 0, to: 0.1 }], now: 0.75 };
+
+  it('按宽度放位置：睡眠的段、喂奶和尿布的点、现在的竖线', () => {
+    const svg = daylineSvg(line, 200, widgetPalettes.light);
+    expect(svg).toContain('width="200"');
+    expect(svg).toContain(
+      `<rect x="0" y="11" width="20" height="8" rx="2" fill="${widgetPalettes.light.sleepDot}"/>`,
+    );
+    expect(svg).toContain(
+      `<circle cx="50" cy="4" r="3.2" fill="${widgetPalettes.light.feedDot}"/>`,
+    );
+    expect(svg).toContain(
+      `<circle cx="100" cy="26" r="2.6" fill="${widgetPalettes.light.diaperDot}"/>`,
+    );
+    expect(svg).toContain(
+      `<rect x="150" y="7" width="1.5" height="16" fill="${widgetPalettes.light.nowLine}"/>`,
+    );
+  });
+
+  it('很短的小睡也画得出来，贴边的点不会被切掉一半', () => {
+    const svg = daylineSvg(
+      { feeds: [0], diapers: [1], sleeps: [{ from: 0.5, to: 0.5001 }], now: 1 },
+      200,
+      widgetPalettes.dark,
+    );
+    expect(svg).toContain('<rect x="100" y="11" width="2" height="8"');
+    expect(svg).toContain('<circle cx="3.2" cy="4"');
+    expect(svg).toContain('<circle cx="197.4" cy="26"');
+    expect(svg).toContain('<rect x="198.5" y="7"');
   });
 });
 

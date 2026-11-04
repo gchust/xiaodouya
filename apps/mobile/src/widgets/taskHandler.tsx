@@ -18,9 +18,9 @@ export const widgetTaskHandler: WidgetTaskHandler = async ({
   try {
     const action = clickAction === 'RECORD' ? parseWidgetAction(clickActionData) : null;
     if (widgetAction === 'WIDGET_CLICK' && action) {
-      await handleWidgetClick(widgetInfo.widgetName, action, { renderWidget });
+      await handleWidgetClick(widgetInfo.widgetName, action, { renderWidget, widgetInfo });
     } else {
-      await handleWidgetTick(widgetInfo.widgetName, { renderWidget });
+      await handleWidgetTick(widgetInfo.widgetName, { renderWidget, widgetInfo });
     }
   } catch {
     await refreshWidgets();

@@ -1,0 +1,43 @@
+# App 里的“桌面小工具”页：从家人页进来，五个小工具都有预览和“添加到桌面”，点了以后系统弹出添加窗口，
+# 关掉还在这一页。桌面不支持直接添加时会有提示，这一页底下也一直写着手动添加的路径。
+# 小工具本身是系统画在桌面上的，Maestro 看不到，见 docs/PROGRESS.md F-115。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-widgets }
+- tapOn: { id: open-widgets }
+- extendedWaitUntil:
+    visible: { id: widgets-screen }
+    timeout: 10000
+- assertVisible: { id: widget-card-QuickWidget }
+- assertVisible: { id: widget-card-FeedWidget }
+- assertVisible: { id: widget-card-SleepWidget }
+- takeScreenshot: .artifacts/e2e-14e-widget-gallery
+- scrollUntilVisible:
+    element: { id: widgets-manual-hint }
+- assertVisible: { id: widget-card-DiaperWidget }
+- assertVisible: { id: widget-card-SummaryWidget }
+- takeScreenshot: .artifacts/e2e-14e-widget-gallery-bottom
+- tapOn: { id: widget-pin-DiaperWidget }
+- takeScreenshot: .artifacts/e2e-14e-pin-request
+# 系统的添加窗口盖在上面时这一页看不到，按返回关掉它；桌面不支持时没有窗口，只有提示。
+- runFlow:
+    when:
+      notVisible: { id: widgets-screen }
+    commands:
+      - pressKey: back
+- extendedWaitUntil:
+    visible: { id: widgets-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: widgets-back }
+    direction: UP
+- tapOn: { id: widgets-back }
+- extendedWaitUntil:
+    visible: { id: open-widgets }
+    timeout: 10000
