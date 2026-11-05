@@ -338,6 +338,54 @@ async function mainFlow(runtime: Runtime) {
     '下载内容和上传一致（预签名下载）',
   );
 
+  // 证件照的缩略图（F-131）：资料页的卡片要用，链接和证件原件一样不超过 10 分钟。
+  const docThumbBytes = Buffer.from('xiaodouya-fictional-document-thumb');
+  const docThumbId = randomUUID();
+  const docThumbUpload = await request<{ url: string; headers: Record<string, string> }>(
+    base,
+    'POST',
+    '/v1/media/upload-url',
+    {
+      token: owner,
+      body: {
+        id: docThumbId,
+        scope: 'document',
+        variant: 'thumb',
+        mime: 'image/jpeg',
+        size: docThumbBytes.length,
+      },
+    },
+  );
+  check(docThumbUpload.status === 200, '证件缩略图能申请上传链接');
+  await fetch(docThumbUpload.json.url, {
+    method: 'PUT',
+    headers: docThumbUpload.json.headers,
+    body: docThumbBytes,
+  });
+  const docThumbDone = await request(base, 'POST', `/v1/media/${docThumbId}/complete`, {
+    token: owner,
+    body: { variant: 'thumb' },
+  });
+  check(docThumbDone.status === 200, '证件缩略图能完成');
+  const docThumbUrls = await request<{ urls: { url: string | null; expiresIn: number }[] }>(
+    base,
+    'POST',
+    '/v1/media/urls',
+    { token: owner, body: { items: [{ id: docThumbId, variant: 'thumb' }] } },
+  );
+  const docThumb = docThumbUrls.json.urls[0];
+  check(
+    Boolean(docThumb?.url) &&
+      docThumb!.expiresIn <= 600 &&
+      Number(new URL(docThumb!.url!).searchParams.get('X-Amz-Expires')) <= 600,
+    '证件缩略图的签名链接不超过 10 分钟',
+  );
+  const docThumbDownload = await fetch(docThumb?.url ?? '');
+  check(
+    Buffer.from(await docThumbDownload.arrayBuffer()).equals(docThumbBytes),
+    '证件缩略图下载内容和上传一致',
+  );
+
   // 开始、列分片、完成都要解析存储返回的 XML，单个 PUT 用不到这条路径，所以要单独跑一遍。
   console.log('分片上传：开始、断点查询、完成、取消（SDK 解析 XML）');
   const partFile = Buffer.alloc(8 * 1024 * 1024 + 321, 9);
