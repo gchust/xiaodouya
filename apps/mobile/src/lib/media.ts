@@ -18,7 +18,7 @@ import {
   type UploadQueue,
   type UploadTransport,
 } from '../data/uploadQueue';
-import { isPersonalCacheDirectory } from './accountLogic';
+import { HTTP_CACHE_DIRECTORY, isPersonalCacheDirectory } from './accountLogic';
 import { type Api, ApiFailure } from './api';
 import { IS_E2E } from './config';
 import { e2eBulkMoment, e2ePickFiles } from './e2eFixtures';
@@ -612,6 +612,21 @@ export async function clearLocalMedia(): Promise<void> {
     // 清缓存失败不影响退出。
   }
   clearPersonalCache();
+}
+
+/**
+ * 每次启动时清掉 OkHttp 的 HTTP 缓存（F-135）。App 不靠它离线，响应从来没有从这里读出来过
+ * （没有 max-age、ETag，每次都回源），里面只有旧版本或没加 `no-store` 的服务端留下的 `/v1/me` 等。
+ * 每次都清而不是只清一次：OkHttp 打开着目录时被删，之后再写进来的条目没有日志，它自己不会再删。
+ * 尽量在第一个请求之前调用；小工具的后台任务先跑过的话目录已经打开，删掉也只是让它找不到旧条目。
+ */
+export function clearHttpCache(): void {
+  try {
+    const dir = new Directory(Paths.cache, HTTP_CACHE_DIRECTORY);
+    if (dir.exists) dir.delete();
+  } catch {
+    // 删不掉也不能挡住启动，退出登录时还会再清。
+  }
 }
 
 /** 成长册、打开过的证件、导出文件和系统选择器的副本都留在缓存目录，不清就一直在手机上。 */

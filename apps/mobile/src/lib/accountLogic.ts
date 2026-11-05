@@ -40,8 +40,19 @@ export function exportFileName(now: Date): string {
   return `xiaodouya-export-${now.toISOString().slice(0, 10).replaceAll('-', '')}.json`;
 }
 
+/**
+ * Android 上 RN 的 fetch 底层 OkHttp 的磁盘缓存（`OkHttpClientProvider.createClientBuilder(context)`
+ * 写死的目录名）。服务端没加 `no-store` 之前，`/v1/me` 这类 GET 响应原样存在这里（F-135）。
+ */
+export const HTTP_CACHE_DIRECTORY = 'http-cache';
+
 /** 缓存根目录下放用户文件副本的目录。图片库自己的缓存目录由 Image.clearDiskCache 处理，不能直接删。 */
-const PERSONAL_CACHE_DIRECTORIES = new Set(['ImagePicker', 'DocumentPicker', 'Print']);
+const PERSONAL_CACHE_DIRECTORIES = new Set([
+  'ImagePicker',
+  'DocumentPicker',
+  'Print',
+  HTTP_CACHE_DIRECTORY,
+]);
 
 export function isPersonalCacheDirectory(name: string): boolean {
   return PERSONAL_CACHE_DIRECTORIES.has(name);

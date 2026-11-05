@@ -79,6 +79,9 @@ export class Api {
         headers: {
           // 让服务端知道发验证码邮件用什么语言：注册和找回密码时还没有偏好。
           'accept-language': getLocale(),
+          // Android 的 OkHttp 会把 GET 响应存进 cache/http-cache。请求上也写明不存：
+          // 自己部署的旧服务端没有 `no-store` 时，`/v1/me` 也不会落到手机上（F-135）。
+          'cache-control': 'no-store',
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
           ...(process.env.EXPO_PUBLIC_API_REGION && SUPABASE_FUNCTION_URL.test(this.baseUrl)
