@@ -1,5 +1,5 @@
 import type { MediaKind, MediaRef, MediaScope, MediaVariant } from '@xiaodouya/shared';
-import { MULTIPART_PARALLEL, t } from '@xiaodouya/shared';
+import { MULTIPART_PARALLEL, t, thumbnailSize } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, FileMode, Paths, UploadType } from 'expo-file-system';
@@ -37,9 +37,6 @@ export interface PickedFile {
   peaks?: number[];
 }
 
-const THUMB_WIDTH = 720;
-/** 解码时就缩小。12 MP 整张解码要 48 MB，108 MP 要 430 MB，而缩略图只有 720 宽。 */
-const THUMB_DECODE_MAX_SIDE = 1440;
 /** 编辑时要把图解码进内存，手机原图可能有上亿像素，不限制的话旋转时会内存不足。头像用不到更高的清晰度。 */
 const EDIT_MAX_SIDE = 3000;
 
@@ -231,6 +228,7 @@ async function renderJpeg(
 async function makeThumbnail(
   source: { uri: string; kind: 'image' | 'video' },
   targetUri: string,
+  scope: MediaScope,
 ): Promise<{ size: number } | null> {
   let videoFrame: string | null = null;
   try {
@@ -239,9 +237,11 @@ async function makeThumbnail(
         await VideoThumbnails.getThumbnailAsync(source.uri, { time: 500, quality: 0.8 })
       ).uri;
     }
+    // 解码时就缩小：12 MP 整张解码要 48 MB，108 MP 要 430 MB，而缩略图最宽只有 720。
+    const { maxSide, width } = thumbnailSize(scope);
     return await renderJpeg(videoFrame ?? source.uri, targetUri, {
-      decodeMaxSide: THUMB_DECODE_MAX_SIDE,
-      resizeWidth: THUMB_WIDTH,
+      decodeMaxSide: maxSide,
+      resizeWidth: width,
       compress: 0.8,
     });
   } catch {
@@ -535,7 +535,7 @@ export function createUploadTransport(api: Api): UploadTransport {
     async makeThumb(job) {
       if (!job.thumbSource || !new File(job.thumbSource.uri).exists) return null;
       if (job.variant === 'preview') return makePreview(job.thumbSource.uri, job.localUri);
-      return makeThumbnail(job.thumbSource, job.localUri);
+      return makeThumbnail(job.thumbSource, job.localUri, job.scope);
     },
     cancelRemote: (id) => wrap(() => api.cancelUpload(id)),
     multipart: {
