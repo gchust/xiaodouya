@@ -76,8 +76,15 @@ function pageHeader(data: PublicTimelineResponse, now: number): HTMLElement {
       timelineRangeText(data.range, now, (ms) => zonedCalendarDate(ms, timezone).getTime()),
     ),
   );
+  const name = data.baby.name || t().share.fallbackName;
   header.append(
-    el('h1', 'hero-title', t().share.timelinePageTitle(data.baby.name || t().share.fallbackName)),
+    el(
+      'h1',
+      'hero-title',
+      data.kind === 'moments'
+        ? t().share.momentsPageTitle(name)
+        : t().share.timelinePageTitle(name),
+    ),
   );
   if (data.baby.age) header.append(el('p', 'hero-age', agePartsText(data.baby.age)));
   return header;
@@ -104,6 +111,8 @@ export function createTimelinePage({
   const overlays = new Set<() => void>();
   let stopWatching: (() => void) | null = null;
   let timezone = '';
+  /** 选中回忆的链接（F-136）没有“更早的”可言，结尾和空的说法不一样。 */
+  let selected = false;
   let cursor: string | null = null;
   let loading = false;
   let moreFailed = false;
@@ -292,7 +301,7 @@ export function createTimelinePage({
       button.disabled = loading;
       button.addEventListener('click', () => void loadMore());
       more.append(button);
-    } else if (shown > 0) {
+    } else if (shown > 0 && !selected) {
       more.append(el('p', 'note', t().share.timelineEnd));
     }
   }
@@ -328,8 +337,12 @@ export function createTimelinePage({
 
   function renderEmpty() {
     const empty = el('section', 'state state-soft');
-    empty.append(el('p', 'state-title', t().share.timelineEmptyTitle));
-    empty.append(el('p', 'state-body', t().share.emptyBody));
+    empty.append(
+      el('p', 'state-title', selected ? t().share.momentsEmptyTitle : t().share.timelineEmptyTitle),
+    );
+    empty.append(
+      el('p', 'state-body', selected ? t().share.momentsEmptyBody : t().share.emptyBody),
+    );
     list?.replaceWith(empty);
     list = null;
   }
@@ -353,6 +366,7 @@ export function createTimelinePage({
     }
     const data = result.data;
     timezone = data.range.timezone;
+    selected = data.kind === 'moments';
     shown = 0;
     lastDay = null;
     moreFailed = false;

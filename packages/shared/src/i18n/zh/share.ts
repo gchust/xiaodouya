@@ -118,4 +118,30 @@ export const share = {
   itemsTotal: (count: number) => `共 ${count} 项`,
   audioCount: (count: number) => `${count} 段录音`,
   closeMoment: '关闭',
+  // ─── 分享回忆（App，F-136） ────────────────────
+  shareMoment: '分享这一刻',
+  shareMomentA11y: (title: Text) => `分享「${title}」`,
+  viewerShare: '分享',
+  selectMoments: '选几段一起分享',
+  selectLink: '选几段',
+  selectA11y: '选几段回忆一起分享',
+  selectedCount: (count: number) => (count ? `已选 ${count} 段` : '点回忆来选'),
+  selectCancel: '取消',
+  selectToggleA11y: (title: Text) => `选择「${title}」`,
+  shareSelected: (count: number) => `分享 ${count} 段回忆`,
+  shareSelectedNone: '先选几段回忆',
+  momentsFull: (max: number) => `一次最多选 ${max} 段`,
+  momentsSheetTitle: '分享回忆',
+  momentsCount: (count: number) => `${count} 段回忆`,
+  momentsCounts: (moments: number, files: number) =>
+    files ? `${moments} 段回忆、${files} 个文件` : `${moments} 段回忆，没有照片和视频`,
+  momentsWhat:
+    '对方只能看到选中的回忆：文字、里程碑、照片、视频和录音。不包含别的回忆、喂奶尿布睡眠这些记录和健康记录，也不包含写给宝宝的信和出生时间。之后删掉的回忆，对方也就看不到了。',
+  momentsShareMessage: (title: Text, url: string) => `回忆（${title}）：${url}`,
+  linkTitleMoments: (title: Text) => `回忆 · ${title}`,
+  linkTitleMomentsBare: '回忆',
+  // ─── 网页：分享回忆 ────────────────────────────
+  momentsPageTitle: (name: Text) => `${name}的回忆`,
+  momentsEmptyTitle: '这些回忆已经不在了',
+  momentsEmptyBody: '可能已经被删掉了，可以问问发给你的人。',
 };

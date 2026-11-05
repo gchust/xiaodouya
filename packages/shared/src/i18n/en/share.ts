@@ -127,4 +127,32 @@ export const share: Catalog['share'] = {
   itemsTotal: (count) => plural(count, 'item', 'items'),
   audioCount: (count) => plural(count, 'recording', 'recordings'),
   closeMoment: 'Close',
+  // ─── 分享回忆（App，F-136） ────────────────────
+  shareMoment: 'Share this moment',
+  shareMomentA11y: (title) => `Share “${title}”`,
+  viewerShare: 'Share',
+  selectMoments: 'Select moments to share',
+  selectLink: 'Select',
+  selectA11y: 'Select moments to share together',
+  selectedCount: (count) => (count ? `${count} selected` : 'Tap moments to select'),
+  selectCancel: 'Cancel',
+  selectToggleA11y: (title) => `Select “${title}”`,
+  shareSelected: (count) => `Share ${plural(count, 'moment', 'moments')}`,
+  shareSelectedNone: 'Select some moments first',
+  momentsFull: (max) => `You can select up to ${max} at a time`,
+  momentsSheetTitle: 'Share moments',
+  momentsCount: (count) => plural(count, 'moment', 'moments'),
+  momentsCounts: (moments, files) =>
+    files
+      ? `${plural(moments, 'moment', 'moments')}, ${plural(files, 'file', 'files')}`
+      : `${plural(moments, 'moment', 'moments')}, no photos or videos`,
+  momentsWhat:
+    "They can only see the moments you selected: text, milestones, photos, videos and recordings. Other moments, feeds, diapers, sleep and other records, health records, letters to your baby and the time of birth aren't included. If you delete one of these moments later, they won't see it anymore.",
+  momentsShareMessage: (title, url) => `Moments (${title}): ${url}`,
+  linkTitleMoments: (title) => `Moments · ${title}`,
+  linkTitleMomentsBare: 'Moments',
+  // ─── 网页：分享回忆 ────────────────────────────
+  momentsPageTitle: (name) => `Moments with ${name}`,
+  momentsEmptyTitle: 'These moments are no longer here',
+  momentsEmptyBody: 'They may have been deleted. You could ask the person who sent you this link.',
 };

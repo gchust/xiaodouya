@@ -2,6 +2,7 @@ import {
   dayLabel,
   formatMediaDuration,
   formatMonthDay,
+  MAX_SHARE_MOMENTS,
   type MediaRef,
   milestoneTemplates,
   momentCover,
@@ -9,15 +10,25 @@ import {
   visualMedia,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import {
+  BackHandler,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
+import { toggleSelection } from '../lib/share';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
+import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
 import { useCanShare } from '../sheets/shareSheets';
 import { ShareTimelineSheet } from '../sheets/shareTimelineSheet';
 import { colors, fonts, spacing } from '../theme';
@@ -40,9 +51,12 @@ const tabs = (): { key: SubTab; label: string }[] => [
 export function RecallScreen() {
   const insets = useSafeAreaInsets();
   const { role } = useApp();
-  const { baby } = useRecords();
+  const { baby, moments } = useRecords();
   const sheet = useSheet();
+  const { toast } = useFeedback();
   const [tab, setTab] = useState<SubTab>('timeline');
+  /** 选几段回忆一起分享（F-136）。null 是没在选。 */
+  const [selection, setSelection] = useState<readonly string[] | null>(null);
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
   const scroll = useTabScrollRef('recall');
@@ -54,21 +68,71 @@ export function RecallScreen() {
     scroll.current?.scrollTo({ y: 0, animated: false });
   };
 
+  const selecting = selection !== null && tab === 'timeline' && canShare;
+  // 家人在别的手机上删掉的那段，选中的列表里也跟着拿掉。
+  const selected = selecting ? selection.filter((id) => moments.some((m) => m.id === id)) : [];
+  const toggle = (id: string) => {
+    if (!selection) return;
+    const next = toggleSelection(selection, id);
+    if (next === selection) toast(t().share.momentsFull(MAX_SHARE_MOMENTS));
+    setSelection(next);
+  };
+
+  // 选择模式里按返回键是退出选择，不是离开回忆页。
+  useEffect(() => {
+    if (!selecting) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      setSelection(null);
+      return true;
+    });
+    return () => subscription.remove();
+  }, [selecting]);
+
   return (
     <View style={s.root} testID="recall-screen">
       <View style={[s.header, { paddingTop: insets.top + 12 }]}>
         <View style={s.titleRow}>
           <PageTitle>{t().recall.title}</PageTitle>
-          {tab === 'timeline' && canShare ? (
-            <Pressable
-              testID="share-timeline"
-              accessibilityRole="button"
-              accessibilityLabel={t().share.shareTimelineA11y}
-              hitSlop={LINK_HIT_SLOP}
-              onPress={() => sheet.open(t().share.timelineSheetTitle, () => <ShareTimelineSheet />)}
-            >
-              <Text style={s.shareLink}>{t().share.shareTimelineLink}</Text>
-            </Pressable>
+          {selecting ? (
+            <View style={s.headerLinks}>
+              <Muted style={s.selectedCount} testID="share-selected-count">
+                {t().share.selectedCount(selected.length)}
+              </Muted>
+              <Pressable
+                testID="share-select-cancel"
+                accessibilityRole="button"
+                accessibilityLabel={t().share.selectCancel}
+                hitSlop={LINK_HIT_SLOP}
+                onPress={() => setSelection(null)}
+              >
+                <Text style={s.shareLink}>{t().share.selectCancel}</Text>
+              </Pressable>
+            </View>
+          ) : tab === 'timeline' && canShare ? (
+            <View style={s.headerLinks}>
+              {moments.length > 0 ? (
+                <Pressable
+                  testID="share-select"
+                  accessibilityRole="button"
+                  accessibilityLabel={t().share.selectA11y}
+                  hitSlop={LINK_HIT_SLOP}
+                  onPress={() => setSelection([])}
+                >
+                  <Text style={s.shareLink}>{t().share.selectLink}</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                testID="share-timeline"
+                accessibilityRole="button"
+                accessibilityLabel={t().share.shareTimelineA11y}
+                hitSlop={LINK_HIT_SLOP}
+                onPress={() =>
+                  sheet.open(t().share.timelineSheetTitle, () => <ShareTimelineSheet />)
+                }
+              >
+                <Text style={s.shareLink}>{t().share.shareTimelineLink}</Text>
+              </Pressable>
+            </View>
           ) : null}
         </View>
         <View style={s.tabs}>
@@ -81,7 +145,10 @@ export function RecallScreen() {
                 accessibilityRole="tab"
                 accessibilityLabel={t.label}
                 accessibilityState={{ selected: on }}
-                onPress={() => setTab(t.key)}
+                onPress={() => {
+                  setTab(t.key);
+                  setSelection(null);
+                }}
                 style={s.tab}
               >
                 <View
@@ -108,7 +175,15 @@ export function RecallScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {tab === 'timeline' ? <Timeline birthAt={birthAt} /> : null}
+        {tab === 'timeline' ? (
+          <Timeline
+            birthAt={birthAt}
+            canShare={canShare}
+            selected={selecting ? selected : null}
+            onToggle={toggle}
+            onStartSelect={(id) => setSelection([id])}
+          />
+        ) : null}
         {tab === 'photos' ? <Photos /> : null}
         {tab === 'milestones' ? (
           <Milestones
@@ -119,7 +194,27 @@ export function RecallScreen() {
         ) : null}
         {tab === 'letters' ? <Letters /> : null}
       </ScrollView>
-      {canWrite ? (
+      {selecting ? (
+        // 拇指够得到的底部：选好就点，不用回到页面顶上找按钮。
+        <View style={s.selectBar}>
+          <Button
+            testID="share-selected"
+            tone="dark"
+            label={
+              selected.length > 0
+                ? t().share.shareSelected(selected.length)
+                : t().share.shareSelectedNone
+            }
+            disabled={selected.length === 0}
+            onPress={() => {
+              const ids = selected;
+              sheet.open(t().share.momentsSheetTitle, () => (
+                <ShareMomentsSheet ids={ids} onCreated={() => setSelection(null)} />
+              ));
+            }}
+          />
+        </View>
+      ) : canWrite ? (
         <PressScale
           testID="recall-fab"
           accessibilityLabel={tab === 'letters' ? t().recall.writeLetter : t().ui.recordMoment}
@@ -144,7 +239,20 @@ export function RecallScreen() {
   );
 }
 
-function Timeline({ birthAt }: { birthAt: number }) {
+function Timeline({
+  birthAt,
+  canShare,
+  selected,
+  onToggle,
+  onStartSelect,
+}: {
+  birthAt: number;
+  canShare: boolean;
+  /** 选择模式里选中的回忆，不在选时是 null。 */
+  selected: readonly string[] | null;
+  onToggle: (id: string) => void;
+  onStartSelect: (id: string) => void;
+}) {
   const { moments } = useRecords();
   const router = useRouter();
   const app = useApp();
@@ -169,6 +277,27 @@ function Timeline({ birthAt }: { birthAt: number }) {
             ))
           }
         />
+        {canShare ? (
+          <>
+            <Button
+              testID="moment-share"
+              tone="outline"
+              label={t().share.shareMoment}
+              onPress={() =>
+                sheet.replace(t().share.momentsSheetTitle, () => <ShareMomentsSheet ids={[m.id]} />)
+              }
+            />
+            <Button
+              testID="moment-select"
+              tone="outline"
+              label={t().share.selectMoments}
+              onPress={() => {
+                sheet.close();
+                onStartSelect(m.id);
+              }}
+            />
+          </>
+        ) : null}
         <Button
           testID="moment-delete"
           tone="ghost"
@@ -195,6 +324,8 @@ function Timeline({ birthAt }: { birthAt: number }) {
           title: m.data.title || t().ui.thisMoment,
           at: m.data.at,
         });
+        const name = m.data.title || t().ui.thisMoment;
+        const isSelected = selected?.includes(m.id) ?? false;
         return (
           <View key={m.id} style={{ gap: 10 }} testID={`moment-${m.id}`}>
             <View style={s.momentHeadRow}>
@@ -202,8 +333,9 @@ function Timeline({ birthAt }: { birthAt: number }) {
                 testID={`moment-head-${m.id}`}
                 style={s.momentHead}
                 accessibilityRole="button"
-                accessibilityLabel={m.data.title || t().ui.thisMoment}
-                onLongPress={canDelete ? () => openActions(m) : undefined}
+                accessibilityLabel={name}
+                onPress={selected ? () => onToggle(m.id) : undefined}
+                onLongPress={canDelete && !selected ? () => openActions(m) : undefined}
               >
                 <Text style={s.momentTitle}>{m.data.title || t().ui.thisMoment}</Text>
                 <Mono style={s.momentMeta}>
@@ -215,7 +347,21 @@ function Timeline({ birthAt }: { birthAt: number }) {
                   </View>
                 ) : null}
               </Pressable>
-              {canDelete ? (
+              {selected ? (
+                <Pressable
+                  testID={`moment-select-${m.id}`}
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={t().share.selectToggleA11y(name)}
+                  accessibilityState={{ checked: isSelected }}
+                  hitSlop={{ top: 11, bottom: 11, left: 14, right: 14 }}
+                  onPress={() => onToggle(m.id)}
+                  style={s.checkBox}
+                >
+                  <View style={[s.check, isSelected ? s.checkOn : null]}>
+                    {isSelected ? <Text style={s.checkMark}>✓</Text> : null}
+                  </View>
+                </Pressable>
+              ) : canDelete ? (
                 <Pressable
                   testID={`moment-more-${m.id}`}
                   accessibilityRole="button"
@@ -235,12 +381,14 @@ function Timeline({ birthAt }: { birthAt: number }) {
                   cover.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
                 }
                 onPress={() =>
-                  router.push({
-                    pathname: '/viewer',
-                    params: { moment: m.id, index: found.index },
-                  })
+                  selected
+                    ? onToggle(m.id)
+                    : router.push({
+                        pathname: '/viewer',
+                        params: { moment: m.id, index: found.index },
+                      })
                 }
-                style={s.cover}
+                style={[s.cover, isSelected ? s.coverSelected : null]}
               >
                 <MediaImage
                   media={cover}
@@ -492,6 +640,22 @@ const s = StyleSheet.create({
     gap: 12,
   },
   shareLink: { fontSize: 13, color: colors.accent },
+  headerLinks: { flexDirection: 'row', alignItems: 'center', gap: 18 },
+  selectedCount: { fontSize: 13 },
+  checkBox: { paddingTop: 3 },
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.off,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkOn: { backgroundColor: colors.green, borderColor: colors.green },
+  checkMark: { fontSize: 13, lineHeight: 15, color: colors.card },
+  coverSelected: { borderWidth: 2, borderColor: colors.green },
+  selectBar: { position: 'absolute', left: spacing.page, right: spacing.page, bottom: 16 },
   // 上下各 9 的内边距把点击区撑到 44，负外边距抵消，看起来位置不变。
   tabs: { flexDirection: 'row', gap: 18, marginVertical: -9 },
   tab: { minHeight: 44, paddingVertical: 9, justifyContent: 'center' },

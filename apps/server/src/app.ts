@@ -12,6 +12,7 @@ import {
   CreateFeedbackRequest,
   type CreateFeedbackResponse,
   CreateInviteRequest,
+  CreateMomentsShareRequest,
   CreateShareRequest,
   type CreateShareResponse,
   CreateTimelineShareRequest,
@@ -471,7 +472,7 @@ export function createApp({
   function publicShareRoute<T extends { token: string }>(
     path: string,
     schema: z.ZodType<T>,
-    kind: ShareKind,
+    kinds: readonly ShareKind[],
     respond: (c: Context, share: ShareRow, body: T) => Promise<Response>,
   ) {
     app.post(path, bodyLimit({ maxSize: 1024, onError: shareMiss }), async (c) => {
@@ -500,19 +501,22 @@ export function createApp({
         return tooMany();
       }
       const share = await findActiveShare(sql, token);
-      if (!share || share.kind !== kind) return shareMiss(c);
+      if (!share || !kinds.includes(share.kind)) return shareMiss(c);
       return respond(c, share, parsed.data);
     });
   }
 
-  publicShareRoute(PUBLIC_SHARE_PATH, PublicShareRequest, 'day', async (c, share) =>
+  /** 选中回忆的链接（F-136）和时间线用同一个页面、同样两个接口，只是按选中的 id 查。 */
+  const TIMELINE_KINDS: readonly ShareKind[] = ['timeline', 'moments'];
+
+  publicShareRoute(PUBLIC_SHARE_PATH, PublicShareRequest, ['day'], async (c, share) =>
     c.json<PublicShareResponse>(await buildPublicShare(sql, config, share)),
   );
 
   publicShareRoute(
     PUBLIC_TIMELINE_PATH,
     PublicTimelineRequest,
-    'timeline',
+    TIMELINE_KINDS,
     async (c, share, body) =>
       c.json<PublicTimelineResponse>(await buildPublicTimeline(sql, config, share, body.cursor)),
   );
@@ -520,7 +524,7 @@ export function createApp({
   publicShareRoute(
     PUBLIC_TIMELINE_MOMENT_PATH,
     PublicTimelineMomentRequest,
-    'timeline',
+    TIMELINE_KINDS,
     async (c, share, body) => {
       const moment = await buildPublicTimelineMoment(sql, config, share, body.momentId);
       return moment ? c.json<PublicTimelineMomentResponse>(moment) : shareMiss(c);
@@ -1489,6 +1493,7 @@ export function createApp({
       include: { moments: boolean; daily: boolean; health: boolean };
       units: Record<string, string>;
       ttlDays: number;
+      momentIds?: string[];
     },
   ) {
     const m = requireFamily(c);
@@ -1508,11 +1513,12 @@ export function createApp({
       }
       await tx`
         INSERT INTO shares (id, family_id, created_by, token_hash, kind, from_at, to_at, timezone,
-                            include_moments, include_daily, include_health, units, expires_at)
+                            include_moments, include_daily, include_health, units, moment_ids,
+                            expires_at)
         VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${share.kind},
                 ${share.fromAt}, ${share.toAt}, ${share.timezone},
                 ${share.include.moments}, ${share.include.daily}, ${share.include.health},
-                ${tx.json(share.units)}, ${expires})`;
+                ${tx.json(share.units)}, ${share.momentIds ?? null}::uuid[], ${expires})`;
     });
     return c.json<CreateShareResponse>({ id, token, expiresAt: expires.getTime() }, 201);
   }
@@ -1543,13 +1549,27 @@ export function createApp({
     });
   });
 
+  // 选中的回忆（F-136）。不核对这些 id 现在在不在服务器上：刚记的可能还没传上来，
+  // 公开接口每次现查，只认这个家庭、没删的回忆，写成信、证件或别家的 id 也查不出来。
+  v1.post('/shares/moments', async (c) => {
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    const body = await parseBody(c, CreateMomentsShareRequest);
+    return createShare(c, {
+      ...body,
+      kind: 'moments',
+      include: TIMELINE_SHARE_INCLUDE,
+      units: {},
+    });
+  });
+
   v1.get('/shares', async (c) => {
     const m = requireFamily(c);
     if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const rows = await sql<(ShareRow & { label: string })[]>`
       SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
-             s.include_moments, s.include_daily, s.include_health, s.units, s.expires_at, s.created_at,
-             mem.label
+             s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
+             s.expires_at, s.created_at, mem.label
       FROM shares s
       JOIN memberships mem ON mem.family_id = s.family_id AND mem.user_id = s.created_by
       WHERE s.family_id = ${m.familyId} AND s.revoked_at IS NULL AND s.expires_at > now()
@@ -1563,6 +1583,7 @@ export function createApp({
         toAt: Number(row.to_at),
         timezone: row.timezone,
         include: shareInclude(row),
+        ...(row.moment_ids ? { momentIds: row.moment_ids } : {}),
         expiresAt: row.expires_at.getTime(),
         createdAt: row.created_at.getTime(),
         byLabel: row.label,

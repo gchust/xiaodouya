@@ -234,6 +234,7 @@ export function ShareDaySheet({ at }: { at: number }) {
 
 export function SharedLinksSheet() {
   const app = useApp();
+  const { moments } = useRecords();
   const [shares, setShares] = useState<ShareSummary[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -289,7 +290,7 @@ export function SharedLinksSheet() {
         >
           <View style={s.shareRowTop}>
             <View style={{ flex: 1 }}>
-              <Text style={s.shareDate}>{shareLinkTitle(share, Date.now())}</Text>
+              <Text style={s.shareDate}>{shareLinkTitle(share, Date.now(), moments)}</Text>
               <Muted style={s.shareSub}>
                 {t().share.linkLine(formatShortDate(share.expiresAt), share.byLabel)}
               </Muted>

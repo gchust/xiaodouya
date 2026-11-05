@@ -35,9 +35,11 @@ import { downloadFileNames } from '../lib/downloadCore';
 import { clampPan, containedSize } from '../lib/layout';
 import { MediaImage, type MediaSource, useMediaSource, usePhotoSources } from '../lib/mediaViews';
 import { canDecodeFull, type OriginalControl, photoPlan } from '../lib/photoPreview';
+import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
+import { useCanShare } from '../sheets/shareSheets';
 import { colors } from '../theme';
 import { AvatarEditor } from '../ui/AvatarEditor';
-import { useFeedback } from '../ui/overlays';
+import { useFeedback, useSheet } from '../ui/overlays';
 import { Stripes } from '../ui/primitives';
 
 /** 全屏查看回忆里的照片和视频（左右滑动切换）、单个证件图片（可缩放）或宝宝的头像（可编辑）。 */
@@ -53,6 +55,8 @@ export function ViewerScreen() {
   const app = useApp();
   const { role } = app;
   const { toast } = useFeedback();
+  const sheet = useSheet();
+  const canShare = useCanShare();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -224,6 +228,20 @@ export function ViewerScreen() {
               <Text style={s.coverText}>{t().recall.setCover}</Text>
             </Pressable>
           )
+        ) : null}
+        {moment && canShare ? (
+          <Pressable
+            testID="viewer-share"
+            accessibilityRole="button"
+            accessibilityLabel={t().share.shareMomentA11y(moment.data.title || t().ui.thisMoment)}
+            hitSlop={12}
+            onPress={() =>
+              sheet.open(t().share.momentsSheetTitle, () => <ShareMomentsSheet ids={[moment.id]} />)
+            }
+            style={s.coverButton}
+          >
+            <Text style={s.coverText}>{t().share.viewerShare}</Text>
+          </Pressable>
         ) : null}
         {current && currentName ? (
           <DownloadButton
