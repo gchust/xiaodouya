@@ -54,7 +54,7 @@ appId: com.gchust.xiaodouya
     element: { id: doc-file-remove-sample-certificate.pdf }
 # 移除文件要确认：先取消，文件还在；再移除并确认。
 - tapOn: { id: doc-file-remove-sample-certificate.pdf }
-- assertVisible: 从这份资料里移除sample-certificate.pdf？
+- assertVisible: 移除sample-certificate.pdf？
 - takeScreenshot: .artifacts/e2e-11a-doc-remove-confirm
 - tapOn: { id: delete-sheet-cancel }
 - extendedWaitUntil:
