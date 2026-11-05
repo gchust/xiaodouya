@@ -1,0 +1,115 @@
+# 分享时间线（issue #79，F-133）：回忆页时间线的标题右边能进，弹层里能选范围、看到条数和对方能看到什么，
+# 创建链接后在“已分享的链接”里写着“时间线”，撤销后消失。
+# E2E 构建不打开系统分享面板，这里只检查链接本身；对方打开网页那一半由 share-web 的测试和服务端集成测试覆盖。
+# 自己记一段带照片的回忆，用完就删。跑完留下的变化：无，链接撤销了（照片还留在存储里，等宽限期清理）。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+- tapOn: { id: recall-fab }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Timeline ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Timeline ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+
+# ─── 弹层：范围、条数、对方能看到什么 ─────────────
+- assertVisible: { id: share-timeline }
+- takeScreenshot: .artifacts/e2e-11c-recall-entry
+- tapOn: { id: share-timeline }
+- extendedWaitUntil:
+    visible: { id: share-timeline-counts }
+    timeout: 10000
+# 默认最近 30 天，刚记的这段在里面。
+- assertVisible:
+    id: share-timeline-counts
+    text: 这段时间有 .*段回忆.*个文件
+- assertVisible:
+    text: 对方能看到这段时间里的全部回忆.*
+- assertVisible:
+    text: .*视频、录音和以前传的没有预览图的照片是原文件，可能带着拍摄地点。
+- takeScreenshot: .artifacts/e2e-11c-share-sheet
+- tapOn: { id: share-range-week }
+- assertVisible:
+    id: share-timeline-counts
+    text: 这段时间有 .*段回忆.*
+- tapOn: { id: share-range-custom }
+- assertVisible: { id: share-range-from }
+- assertVisible: { id: share-range-to }
+- takeScreenshot: .artifacts/e2e-11c-share-custom
+- tapOn: { id: share-range-all }
+- assertNotVisible: { id: share-range-from }
+- scrollUntilVisible:
+    element: { id: share-create }
+- waitForAnimationToEnd
+- tapOn: { id: share-ttl-1 }
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+# 时间线的令牌在 #t/ 后面，一天的链接不变。
+- assertVisible:
+    id: share-link
+    text: https://share\.example\.test/#t/[A-Za-z0-9_-]{43}
+- assertVisible: 时间线 · 全部回忆，截至 .*
+- assertVisible: { id: share-send }
+- takeScreenshot: .artifacts/e2e-11c-link-created
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+
+# ─── 已分享的链接：写着时间线，撤销后消失 ──────────
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-shares }
+- waitForAnimationToEnd
+- assertVisible: { id: open-shares }
+- tapOn: { id: open-shares }
+- extendedWaitUntil:
+    visible: { id: share-row-0 }
+    timeout: 15000
+- assertVisible: 时间线 · 全部回忆，截至 .*
+- takeScreenshot: .artifacts/e2e-11c-shared-links
+# 撤销要点两次。
+- tapOn: { id: share-revoke-0 }
+- assertVisible:
+    text: 撤销后，拿到链接的人再打开就看不到了.*
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    visible: { id: shares-empty }
+    timeout: 15000
+- assertNotVisible: 时间线 · .*
+- takeScreenshot: .artifacts/e2e-11c-revoked
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: shares-empty }
+    timeout: 10000
+
+# ─── 删掉测试用的回忆 ──────────────────────────────
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: Timeline ${RUN_ID}
+    timeout: 10000
+- tapOn: Timeline ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: Timeline ${RUN_ID}
+    timeout: 15000
+- tapOn: { id: tab-today }

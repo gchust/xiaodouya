@@ -82,6 +82,8 @@
 - **图片在原生内存里，JS 的垃圾回收感觉不到。** `ImageManipulator` 的 context 和 image 用完要 `release()`。
 - **S3 签名链接的路径就是 object key。** 我们的 key 带家庭 id，所以公开页面的文件链接里一定有家庭 id 和存储地址，这和“响应不含家庭 id”冲突。测试只能查链接以外的字段，并如实写进文档和隐私政策。要去掉得改对象路径或代理文件。
 - **公开页面不能用存储配置的 `publicBaseUrl`。** App 的 `/media/urls` 对回忆走这个公开地址，它不会过期，撤销链接后还能一直打开。分享页一律签名。
+- **从页面上拿掉正在放的 `<audio>`、`<video>`，浏览器里还会接着放。** 分享页点开一条回忆是一层，关掉时只 `remove()` 的话录音还在响，对方找不到地方停。拿掉之前先对里面的媒体元素逐个 `pause()`（`momentView.ts`，有单元测试）。
+- **`IntersectionObserver` 只在进出视野时回调。** 时间线加载完一页后底部还在视野里（一页太短、整页是空的回忆），不会再回调，页面就停在“加载更多”。每次加载完重新 `observe` 一次，它会马上按当前状态回调。
 - **`hasThumb: true` 不代表缩略图已经有了。** 缩略图是后来生成的，也可能做不出来。取缩略图的地方都要能退回原图，成长册以前就是直接跳过，照片会从册子里消失。
 - **R2 的预签名文档只列了 GET、HEAD、PUT、DELETE，没提 UploadPart。** S3 兼容表把 UploadPart 列为支持，两页合起来没有说预签名的 UploadPart 一定能用。所以真实存储要跑 `cli check-multipart`，不通过就 `S3_MULTIPART_ENABLED=false`，App 退回单个 PUT。
 - **完成分片之前要核对每片的大小，不能只看片数。** `S3_BIND_UPLOAD_SIZE=false` 时一片可以传任意大小，HEAD 只看合并后的总大小，错的片加上错的片可能正好相等。大小不对的片算没传，重传同一个片号会覆盖。
@@ -261,6 +263,7 @@
 - **单元测试绿了，原生行为不一定对。** 找回选择结果的重试逻辑测试全绿，模拟器上一跑就发现原生层根本不给结果。涉及系统界面和进程生死的修复，要看到模拟器上真的生效。
 - **`adb input swipe` 太快时查看器不一定翻页。** 150 ms 的滑动在 main 和新分支上都有丢，400 ms 的不丢。看模拟器走查的结果时先看滑动是不是真的到位，别把这当成翻页的 Bug。
 - **响应之后才写库的内容，测试里要先 `bg.flush()` 再做下一步。** “重发次数有上限”曾偶发失败（期望 429，实际 200）：验证码在响应后才写，写入如果落在下一轮的 `skipCooldown` 和请求之间，这次请求就在冷却期里，不计数也返回 200。平时失败率低，多跑几次未必看得到；要在写入前等 30ms、`skipCooldown` 后等 100ms 才能稳定复现。
+- **网页走查不用装 Playwright。** 仓库里没有它，`npx` 要临时下载。本机的 `/usr/bin/chromium --headless=new --remote-debugging-port=…` 加 Node 自带的 `WebSocket` 发 DevTools 协议就够了：`Emulation.setTimezoneOverride` 设时区、`Emulation.setDeviceMetricsOverride` 设 390×844、`Runtime.evaluate` 点按钮和读文字、`Page.captureScreenshot` 截图，`Runtime.consoleAPICalled` 和 `Log.entryAdded` 收控制台报错。语言用启动参数 `--lang`（F-133 的走查脚本约 100 行）。
 - **页面的日期和钟点要写明按谁的时区算。** shared 里的格式化函数都读运行环境的时区，服务端和对方的浏览器都不是分享者的时区。本机时区和分享者相同时什么都看不出来，走查要把浏览器设成另一个时区（`timezoneId`）。
 - **`testID` 不能用翻译后的文字生成。** `self-妈妈`、`milestone-第一次抬头` 都是从文字来的，英文下就变了。固定用中文原文（`messagesFor('zh')` 或数据里的 `id`）。
 - **脚本里 `process.exit` 会截断管道里还没写完的输出。** `check-i18n` 报几百条时，`| grep` 只收到前面一部分，看起来问题比实际少。用 `process.exitCode`。
@@ -287,6 +290,7 @@
 - **`.claude/worktrees/` 必须被忽略。** 否则 `git add -A` 会把子 Agent 的 worktree 当成嵌入仓库提交，Biome 也会因为嵌套配置报错。
 - **服务端集成测试每次运行用独立的数据库。** 以前用 `TRUNCATE`，两个 Agent 同时跑会互相删数据。不要改回去。
 - **模拟器只有一台。** `scripts/e2e.sh` 用文件锁排队，手动用 `adb-ui.py` 前先确认没有 E2E 在跑。
+- **带新迁移的分支不要连共用的开发库起服务端。** 服务端启动时会跑迁移，`schema_migrations` 只记序号：这个分支把第 N 条记成已执行，另一个分支也在第 N 条加了不同的迁移，连上同一个库时它的迁移就被跳过了，表现成“列不存在”。走查时另建一个库（`docker exec xiaodouya-dev-postgres-1 psql -U xiaodouya -d xiaodouya -c "CREATE DATABASE xiaodouya_<编号>"`，`DATABASE_URL` 指过去），集成测试本来就每次新建库，不受影响（F-133）。
 - **本地开发库是共用的，别的端口起的服务端也会处理别人留下的队列。** F-126 走查时 8817 上的服务端顺手把别的 Agent 流程 24 留下的排队反馈补发到了自己的假 GitHub（反馈的补发是全库的）。核对假 GitHub 收到的内容时按这次的 `RUN_ID` 找，不要按条数或编号。
 - **8787 端口已有服务时，`e2e.sh` 会直接复用它。** 那可能是别的分支的代码，脚本会打印警告。改了服务端就先停掉旧服务。
 - **Biome 不要格式化 Markdown。** 它会重新对齐表格列宽，改一行就动到整张表，并行开发时 `PROGRESS.md` 必然冲突。已在 `biome.json` 里排除。

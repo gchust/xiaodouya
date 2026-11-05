@@ -682,6 +682,100 @@ async function publicShare(base: string) {
   const revoked = await request(base, 'DELETE', `/v1/shares/${share.json.id}`, { token: owner });
   check(revoked.status === 200, '撤销');
   check((await open(share.json.token)).response.status === 404, '撤销后打不开');
+
+  // 同一个家庭的回忆再分享成时间线：一个有预览的、两个各 100 张的。
+  console.log('分享时间线（F-133）：公开接口');
+  const timeline = await request<{ id: string; token: string }>(
+    base,
+    'POST',
+    '/v1/shares/timeline',
+    {
+      token: owner,
+      body: {
+        fromAt: Date.UTC(2026, 5, 14, 16),
+        toAt: Date.UTC(2026, 5, 15, 16),
+        timezone: 'Asia/Singapore',
+      },
+    },
+  );
+  check(timeline.status === 201, '创建时间线链接');
+  for (const path of ['/v1/public/share/timeline', '/v1/public/share/timeline/moment']) {
+    const preflight = await fetch(`${base}${path}`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://share.fictional.test',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type,x-region',
+      },
+    });
+    check(
+      preflight.status === 204 && preflight.headers.get('access-control-allow-origin') === '*',
+      `${path} 预检不用登录`,
+    );
+  }
+  const post = async (path: string, body: Record<string, string>) => {
+    const response = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'https://share.fictional.test' },
+      body: JSON.stringify(body),
+    });
+    return { response, text: await response.text() };
+  };
+  const tlStarted = Date.now();
+  const firstPage = await post('/v1/public/share/timeline', { token: timeline.json.token });
+  const tlMs = Date.now() - tlStarted;
+  check(
+    firstPage.response.status === 200 &&
+      firstPage.response.headers.get('access-control-allow-origin') === '*' &&
+      firstPage.response.headers.get('cache-control') === 'no-store',
+    `时间线不登录能打开（${tlMs} ms，${firstPage.text.match(/X-Amz-Signature/g)?.length ?? 0} 个签名）`,
+  );
+  const entries = (
+    JSON.parse(firstPage.text) as {
+      entries: { id: string; title: string; cover: { url: string } | null; visualCount: number }[];
+      nextCursor: string | null;
+    }
+  ).entries;
+  check(
+    entries.length === 3 &&
+      !firstPage.text.includes('"events"') &&
+      !firstPage.text.includes('不该出现'),
+    '时间线只有回忆，没有喂奶记录',
+  );
+  check(
+    (firstPage.text.match(/X-Amz-Signature/g)?.length ?? 0) <= entries.length * 2,
+    '一页只签封面',
+  );
+  const withPreview = entries.find((entry) => entry.title === '虚构回忆');
+  const coverDownload = await fetch(withPreview?.cover?.url ?? '');
+  check(
+    Buffer.from(await coverDownload.arrayBuffer()).equals(previewBytes),
+    '封面的签名链接能下载，照片给的是预览',
+  );
+  const many = entries.find((entry) => entry.title === '很多照片');
+  const momentStarted = Date.now();
+  const opened = await post('/v1/public/share/timeline/moment', {
+    token: timeline.json.token,
+    momentId: many?.id ?? '',
+  });
+  const openedMedia = opened.response.ok
+    ? (JSON.parse(opened.text) as { media: unknown[] }).media
+    : [];
+  check(
+    opened.response.status === 200 && openedMedia.length === 100,
+    `点开一条 100 张的回忆（${Date.now() - momentStarted} ms，${opened.text.match(/X-Amz-Signature/g)?.length ?? 0} 个签名）`,
+  );
+  const dayTokenOnTimeline = await post('/v1/public/share/timeline', { token: share.json.token });
+  check(dayTokenOnTimeline.response.status === 404, '撤销了的一天的令牌打不开时间线');
+  const tlRevoked = await request(base, 'DELETE', `/v1/shares/${timeline.json.id}`, {
+    token: owner,
+  });
+  check(tlRevoked.status === 200, '撤销时间线');
+  check(
+    (await post('/v1/public/share/timeline', { token: timeline.json.token })).response.status ===
+      404,
+    '撤销后时间线打不开',
+  );
 }
 
 async function customStorage(base: string, token: string) {

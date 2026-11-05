@@ -48,6 +48,30 @@ export const share = {
   revokeNote: '撤销后，拿到链接的人再打开就看不到了。已经打开的页面，照片和视频最多还能看 1 小时。',
   revoked: '已撤销',
   revokeFailed: '没能撤销，请稍后再试。',
+  // ─── 分享时间线（App） ─────────────────────────
+  shareTimelineLink: '分享时间线',
+  shareTimelineA11y: '分享一段时间的回忆',
+  timelineSheetTitle: '分享时间线',
+  timelineRangeWeek: '最近 7 天',
+  timelineRangeMonth: '最近 30 天',
+  timelineRangeAll: '全部',
+  timelineRangeCustom: '自定义',
+  timelineFrom: '从',
+  timelineTo: '到',
+  timelineBadRange: '开始的日期要早于结束的日期。',
+  timelineCounts: (moments: number, files: number) =>
+    moments
+      ? `这段时间有 ${moments} 段回忆${files ? `、${files} 个文件` : ''}`
+      : '这段时间还没有回忆',
+  timelineWhat:
+    '对方能看到这段时间里的全部回忆：文字、里程碑、照片、视频和录音，之后补记到这段时间的也会出现。不包含喂奶、尿布、睡眠这些记录和健康记录，也不包含写给宝宝的信和出生时间。',
+  timelineLocation:
+    '照片给的是压缩过的预览图，不带拍摄地点。视频、录音和以前传的没有预览图的照片是原文件，可能带着拍摄地点。',
+  timelineShareMessage: (range: Text, url: string) => `成长时间线（${range}）：${url}`,
+  linkTitleDay: (date: Text) => `一天 · ${date}`,
+  linkTitleTimeline: (range: Text) => `时间线 · ${range}`,
+  rangeText: (from: Text, to: Text) => `${from} – ${to}`,
+  rangeAllUntil: (date: Text) => `全部回忆，截至 ${date}`,
   // ─── 网页 ──────────────────────────────────────
   pageTitleBefore: (name: Text, days: Text) => `${name}，出生前 ${days} 天`,
   fallbackName: '宝宝',
@@ -82,4 +106,16 @@ export const share = {
   nextPhoto: '下一张',
   footer: '小豆芽 · 宝宝成长记录',
   footerNote: '这是家人分享给你的私密页面，请不要转发。',
+  // ─── 网页：时间线 ──────────────────────────────
+  timelinePageTitle: (name: Text) => `${name}的成长时间线`,
+  timelineEmptyTitle: '这段时间还没有回忆',
+  loadMore: '加载更多',
+  loadingMore: '正在加载…',
+  loadMoreFailed: '没能加载，点一下重试',
+  timelineEnd: '没有更早的回忆了',
+  openMoment: (title: Text) => `查看「${title}」的全部内容`,
+  openMomentUntitled: '查看这段回忆的全部内容',
+  itemsTotal: (count: number) => `共 ${count} 项`,
+  audioCount: (count: number) => `${count} 段录音`,
+  closeMoment: '关闭',
 };

@@ -2,17 +2,26 @@ import {
   BabyData,
   EventData,
   hasShareContent,
+  hasTimelineContent,
+  type MediaRef,
   type MediaVariant,
   MomentData,
   type PublicMedia,
   type PublicMoment,
   type PublicShareResponse,
+  type PublicTimelineEntry,
+  type PublicTimelineMomentResponse,
+  type PublicTimelineResponse,
   pickEventForShare,
   pickMomentForShare,
   type ShareInclude,
+  type ShareKind,
   ShareUnits,
+  shareCoverId,
   shareDayAge,
   shareIncludesEvent,
+  shareMomentAge,
+  TIMELINE_PAGE_SIZE,
 } from '@xiaodouya/shared';
 import type { Config } from './config';
 import { sha256 } from './crypto';
@@ -26,6 +35,7 @@ export interface ShareRow {
   id: string;
   family_id: string;
   created_by: string;
+  kind: ShareKind;
   from_at: string;
   to_at: string;
   timezone: string;
@@ -49,7 +59,7 @@ export const shareInclude = (row: ShareRow): ShareInclude => ({
  */
 export async function findActiveShare(sql: Sql, token: string): Promise<ShareRow | null> {
   const [row] = await sql<ShareRow[]>`
-    SELECT s.id, s.family_id, s.created_by, s.from_at, s.to_at, s.timezone,
+    SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
            s.include_moments, s.include_daily, s.include_health, s.units, s.expires_at, s.created_at
     FROM shares s
     JOIN memberships m ON m.family_id = s.family_id AND m.user_id = s.created_by AND m.role <> 'viewer'
@@ -84,20 +94,21 @@ function publicRows(rows: readonly MediaRow[]): { main?: MediaRow; thumb?: Media
   return { main: useOriginal ? original : preview, thumb };
 }
 
+/** 这个文件在公开页面上算哪一类。以服务端记的类型为准，记录里写的不算。 */
+function rowsKind(rows: readonly MediaRow[]): PublicMedia['kind'] | null {
+  const { main, thumb } = publicRows(rows);
+  return publicKind((main ?? thumb)?.mime ?? '');
+}
+
 /**
- * 只发传完的、回忆里的、这个家庭的文件。记录是客户端写的：文件 id 可以写成证件或别家的，
+ * 只认传完的、回忆里的、这个家庭的文件。记录是客户端写的：文件 id 可以写成证件或别家的，
  * 类型也可以乱写，所以都以 media 表为准。
- *
- * 一律签名，不用存储配置的公开地址：那种地址不会过期，撤销链接后还一直能打开。
  */
-async function signMedia(
+async function readyMemoryMedia(
   sql: Sql,
-  config: Config,
   familyId: string,
-  moments: MomentData[],
-  maxMedia: number,
-): Promise<{ urls: Map<string, MediaRow[]>; signed: Map<string, string>; omitted: number }> {
-  const ids = [...new Set(moments.flatMap((m) => m.media.map((file) => file.id)))];
+  ids: readonly string[],
+): Promise<Map<string, MediaRow[]>> {
   const rows =
     ids.length === 0
       ? []
@@ -107,13 +118,25 @@ async function signMedia(
             AND id = ANY(${ids}::uuid[])`;
   const byId = new Map<string, MediaRow[]>();
   for (const row of rows) byId.set(row.id, [...(byId.get(row.id) ?? []), row]);
-  const kept = ids.filter((id) => byId.has(id));
-  const allowed = kept.slice(0, maxMedia);
+  return byId;
+}
+
+/**
+ * 给这些文件的要发出去的变体签名，键是 `文件 id/变体`。
+ *
+ * 一律签名，不用存储配置的公开地址：那种地址不会过期，撤销链接后还一直能打开。
+ * 只签要发出去的：每个签名都花 Edge Function 的 CPU，签了不发的原图也没有用。
+ */
+async function signPublicRows(
+  sql: Sql,
+  config: Config,
+  familyId: string,
+  files: readonly (readonly MediaRow[])[],
+): Promise<Map<string, string>> {
   const signed = new Map<string, string>();
   const byStorage = new Map<string | null, MediaRow[]>();
-  for (const id of allowed) {
-    const { main, thumb } = publicRows(byId.get(id) ?? []);
-    // 只签要发出去的：每个签名都花 Edge Function 的 CPU，签了不发的原图也没有用。
+  for (const rows of files) {
+    const { main, thumb } = publicRows(rows);
     for (const row of [main, thumb]) {
       if (!row) continue;
       byStorage.set(row.storage_config_id, [...(byStorage.get(row.storage_config_id) ?? []), row]);
@@ -137,8 +160,46 @@ async function signMedia(
       console.warn('分享页：有一份存储配置签不了链接');
     }
   }
+  return signed;
+}
+
+async function signMedia(
+  sql: Sql,
+  config: Config,
+  familyId: string,
+  moments: MomentData[],
+  maxMedia: number,
+): Promise<{ urls: Map<string, MediaRow[]>; signed: Map<string, string>; omitted: number }> {
+  const ids = [...new Set(moments.flatMap((m) => m.media.map((file) => file.id)))];
+  const byId = await readyMemoryMedia(sql, familyId, ids);
+  const kept = ids.filter((id) => byId.has(id));
+  const allowed = kept.slice(0, maxMedia);
   const urls = new Map(allowed.map((id) => [id, byId.get(id) ?? []]));
+  const signed = await signPublicRows(sql, config, familyId, [...urls.values()]);
   return { urls, signed, omitted: kept.length - allowed.length };
+}
+
+/** 一个文件在公开页面上的样子。没有签出任何链接、或者类型不对时是 null。 */
+function publicFile(
+  file: MediaRef,
+  rows: readonly MediaRow[],
+  signed: Map<string, string>,
+): PublicMedia | null {
+  const { main } = publicRows(rows);
+  const url = (main && signed.get(`${file.id}/${main.variant}`)) ?? null;
+  const thumbUrl = signed.get(`${file.id}/thumb`) ?? null;
+  if (!url && !thumbUrl) return null;
+  const kind = rowsKind(rows);
+  if (!kind) return null;
+  return {
+    id: file.id,
+    kind,
+    url,
+    thumbUrl,
+    ...(file.width ? { width: file.width } : {}),
+    ...(file.height ? { height: file.height } : {}),
+    ...(file.durationMs ? { durationMs: file.durationMs } : {}),
+  };
 }
 
 function publicMediaOf(
@@ -150,23 +211,19 @@ function publicMediaOf(
   for (const file of moment.media) {
     const found = rows.get(file.id);
     if (!found) continue;
-    const { main, thumb } = publicRows(found);
-    const url = (main && signed.get(`${file.id}/${main.variant}`)) ?? null;
-    const thumbUrl = signed.get(`${file.id}/thumb`) ?? null;
-    if (!url && !thumbUrl) continue;
-    const kind = publicKind((main ?? thumb)?.mime ?? '');
-    if (!kind) continue;
-    out.push({
-      id: file.id,
-      kind,
-      url,
-      thumbUrl,
-      ...(file.width ? { width: file.width } : {}),
-      ...(file.height ? { height: file.height } : {}),
-      ...(file.durationMs ? { durationMs: file.durationMs } : {}),
-    });
+    const media = publicFile(file, found, signed);
+    if (media) out.push(media);
   }
   return out;
+}
+
+async function familyBaby(sql: Sql, familyId: string): Promise<BabyData | null> {
+  const [babyRow] = await sql<{ data: unknown }[]>`
+    SELECT data FROM records
+    WHERE family_id = ${familyId} AND collection = 'baby' AND NOT deleted
+    ORDER BY updated_at_client DESC LIMIT 1`;
+  const baby = BabyData.safeParse(babyRow?.data);
+  return baby.success ? baby.data : null;
 }
 
 /**
@@ -221,16 +278,12 @@ export async function buildPublicShare(
     .map((moment) => pickMomentForShare(moment, publicMediaOf(moment, urls, signed)))
     .filter(hasShareContent);
 
-  const [babyRow] = await sql<{ data: unknown }[]>`
-    SELECT data FROM records
-    WHERE family_id = ${share.family_id} AND collection = 'baby' AND NOT deleted
-    ORDER BY updated_at_client DESC LIMIT 1`;
-  const baby = BabyData.safeParse(babyRow?.data);
-  const dayAge = baby.success ? shareDayAge(baby.data.birthAt, toAt, share.timezone) : null;
+  const baby = await familyBaby(sql, share.family_id);
+  const dayAge = baby ? shareDayAge(baby.birthAt, toAt, share.timezone) : null;
 
   return {
     baby: {
-      name: baby.success ? baby.data.name : '',
+      name: baby?.name ?? '',
       dayNumber: dayAge?.dayNumber ?? null,
       age: dayAge?.age ? { months: dayAge.age.months, days: dayAge.age.days } : null,
     },
@@ -238,6 +291,156 @@ export async function buildPublicShare(
     units: ShareUnits.parse(share.units),
     events,
     moments,
+    omittedMedia: omitted,
+    mediaExpiresIn: PUBLIC_MEDIA_TTL,
+  };
+}
+
+// ─── 分享时间线（F-133） ─────────────────────────────────
+
+/** 比任何 UUID 都大：第一页的游标，配合 `at < toAt` 等于不加条件。 */
+const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+
+function parseCursor(cursor: string): { at: number; id: string } {
+  const dot = cursor.indexOf('.');
+  return { at: Number(cursor.slice(0, dot)), id: cursor.slice(dot + 1) };
+}
+
+/** 回忆的 at 不是数字时是 NULL，不进到类型转换里。 */
+const momentAt = (row: { at: number | null }) => row.at ?? 0;
+
+/**
+ * 时间线的一页。新的在前，按 (at, id) 倒序用游标翻，同一毫秒的回忆不会漏也不会重复。
+ * 每条只签封面，点开时再取全部文件（`buildPublicTimelineMoment`），一页的签名数因此有上限。
+ * 调用前要确认 `share.kind === 'timeline'`，游标要先过 `PublicTimelineRequest`。
+ */
+export async function buildPublicTimeline(
+  sql: Sql,
+  config: Config,
+  share: ShareRow,
+  cursor: string | undefined,
+): Promise<PublicTimelineResponse> {
+  const fromAt = Number(share.from_at);
+  const toAt = Number(share.to_at);
+  const after = cursor ? parseCursor(cursor) : { at: toAt, id: MAX_UUID };
+  const rows = await sql<{ id: string; data: unknown; at: number | null }[]>`
+    SELECT id, data, at FROM (
+      SELECT id, data,
+             CASE WHEN jsonb_typeof(data->'at') = 'number'
+                  THEN (data->>'at')::double precision END AS at
+      FROM records
+      WHERE family_id = ${share.family_id} AND collection = 'moment' AND NOT deleted
+    ) moments
+    WHERE at >= ${fromAt}::double precision AND at < ${toAt}::double precision
+      AND (at < ${after.at}::double precision
+           OR (at = ${after.at}::double precision AND id < ${after.id}::uuid))
+    ORDER BY at DESC, id DESC
+    LIMIT ${TIMELINE_PAGE_SIZE + 1}`;
+  const page = rows.slice(0, TIMELINE_PAGE_SIZE);
+  const last = page.at(-1);
+  const nextCursor =
+    rows.length > TIMELINE_PAGE_SIZE && last ? `${momentAt(last)}.${last.id}` : null;
+
+  const moments: { id: string; data: MomentData }[] = [];
+  for (const row of page) {
+    const parsed = MomentData.safeParse(row.data);
+    if (parsed.success) moments.push({ id: row.id, data: parsed.data });
+  }
+  const byId = await readyMemoryMedia(sql, share.family_id, [
+    ...new Set(moments.flatMap((m) => m.data.media.map((file) => file.id))),
+  ]);
+  const kindOf = (id: string) => {
+    const found = byId.get(id);
+    return found ? rowsKind(found) : null;
+  };
+  const covers = moments.map(({ data }) => {
+    const visual = new Set(
+      data.media
+        .map((file) => file.id)
+        .filter((id) => {
+          const kind = kindOf(id);
+          return kind === 'image' || kind === 'video';
+        }),
+    );
+    const audio = new Set(data.media.map((file) => file.id).filter((id) => kindOf(id) === 'audio'));
+    const coverId = shareCoverId(data.media, data.coverMediaId, visual);
+    return { visual, audio, file: data.media.find((file) => file.id === coverId) ?? null };
+  });
+  const signed = await signPublicRows(
+    sql,
+    config,
+    share.family_id,
+    covers.flatMap(({ file }) => (file ? [byId.get(file.id) ?? []] : [])),
+  );
+
+  const baby = await familyBaby(sql, share.family_id);
+  const entries: PublicTimelineEntry[] = moments
+    .map(({ id, data }, index) => {
+      const { visual, audio, file } = covers[index] ?? {
+        visual: new Set<string>(),
+        audio: new Set<string>(),
+        file: null,
+      };
+      const age = baby ? shareMomentAge(baby.birthAt, data.at, share.timezone) : null;
+      return {
+        id,
+        at: data.at,
+        title: data.title,
+        text: data.text,
+        milestone: data.milestone,
+        ...(data.byName ? { byName: data.byName } : {}),
+        dayNumber: age?.dayNumber ?? null,
+        age: age?.age ? { months: age.age.months, days: age.age.days } : null,
+        cover: file ? publicFile(file, byId.get(file.id) ?? [], signed) : null,
+        visualCount: visual.size,
+        audioCount: audio.size,
+      };
+    })
+    .filter(hasTimelineContent);
+
+  const rangeAge = baby ? shareDayAge(baby.birthAt, toAt, share.timezone).age : null;
+  return {
+    kind: 'timeline',
+    baby: {
+      name: baby?.name ?? '',
+      age: rangeAge ? { months: rangeAge.months, days: rangeAge.days } : null,
+    },
+    range: { fromAt, toAt, timezone: share.timezone },
+    entries,
+    nextCursor,
+    mediaExpiresIn: PUBLIC_MEDIA_TTL,
+  };
+}
+
+/**
+ * 点开时间线上的一条回忆：它的全部文件。`momentId` 是对方传来的，
+ * 必须是这个家庭、没删、在这个链接范围里的回忆，否则返回 null（和失效一样的回答）。
+ */
+export async function buildPublicTimelineMoment(
+  sql: Sql,
+  config: Config,
+  share: ShareRow,
+  momentId: string,
+): Promise<PublicTimelineMomentResponse | null> {
+  const [row] = await sql<{ data: unknown }[]>`
+    SELECT data FROM records
+    WHERE id = ${momentId}::uuid AND family_id = ${share.family_id}
+      AND collection = 'moment' AND NOT deleted
+      AND CASE WHEN jsonb_typeof(data->'at') = 'number'
+               THEN (data->>'at')::double precision >= ${Number(share.from_at)}::double precision
+                AND (data->>'at')::double precision < ${Number(share.to_at)}::double precision
+               ELSE false END`;
+  const parsed = MomentData.safeParse(row?.data);
+  if (!parsed.success) return null;
+  const { urls, signed, omitted } = await signMedia(
+    sql,
+    config,
+    share.family_id,
+    [parsed.data],
+    config.limits.sharePublicMedia,
+  );
+  return {
+    media: publicMediaOf(parsed.data, urls, signed),
     omittedMedia: omitted,
     mediaExpiresIn: PUBLIC_MEDIA_TTL,
   };

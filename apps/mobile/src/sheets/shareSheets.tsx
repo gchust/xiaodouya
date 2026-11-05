@@ -20,6 +20,7 @@ import {
   shareDayPending,
   shareDayRange,
   shareDayTitle,
+  shareLinkTitle,
   shareLinkUrl,
 } from '../lib/share';
 import { colors, fonts } from '../theme';
@@ -288,7 +289,7 @@ export function SharedLinksSheet() {
         >
           <View style={s.shareRowTop}>
             <View style={{ flex: 1 }}>
-              <Text style={s.shareDate}>{shareDayTitle(share.fromAt, Date.now())}</Text>
+              <Text style={s.shareDate}>{shareLinkTitle(share, Date.now())}</Text>
               <Muted style={s.shareSub}>
                 {t().share.linkLine(formatShortDate(share.expiresAt), share.byLabel)}
               </Muted>

@@ -79,6 +79,12 @@ describe('打包结果', () => {
     expect(script).toContain('ap-southeast-1');
   });
 
+  it('一天和时间线都在同一个页面里（F-133）', () => {
+    expect(script).toContain('/v1/public/share/timeline/moment');
+    expect(script).toContain('/v1/public/share/timeline');
+    expect(script).toContain('/v1/public/share');
+  });
+
   it('wrangler 配置只有静态文件：没有代码入口、账号和域名', () => {
     const toml = readFileSync(resolve(here, 'wrangler.toml'), 'utf8');
     expect(toml).toMatch(/\[assets\]\s+directory = "\.\/dist"/);
