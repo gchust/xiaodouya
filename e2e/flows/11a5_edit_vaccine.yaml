@@ -31,6 +31,13 @@ appId: com.gchust.xiaodouya
 - assertTrue: ${maestro.copiedText != output.doseBefore}
 - takeScreenshot: .artifacts/e2e-11a-vaccine-moved
 # 改回今天，后面的流程按今天看
+# 刚才保存的 Toast 正好盖在卡介苗这一行上，点到的是 Toast，详情打不开（PR #85 的 CI run 42003973703 这样失败过）
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: vaccine-row-bcg }
+    centerElement: true
 - tapOn: { id: vaccine-row-bcg }
 - tapOn: { id: event-edit }
 - tapOn: { id: vaccine-date-day-0 }
