@@ -224,9 +224,11 @@ App ──下载到 cache/updates──> 核对大小和 sha256 ──> ACTION_V
 | ------------------------------ | ------------------------------------------------------ |
 | 登录过期、被移出家庭、改了密码 | **保留**，回到登录页。同一个人回到同一个家庭后接着同步 |
 | 换账号或换家庭后登录           | 清除                                                   |
-| 主动退出、删除账号             | 清除，包括文件副本、缓存目录里的副本、图片缓存和已排好的本机提醒。有未上传内容时先警告 |
+| 主动退出、删除账号             | 清除，包括文件副本、缓存目录里的副本、图片缓存、网络库的 HTTP 缓存和已排好的本机提醒。有未上传内容时先警告 |
 
 只有服务端返回 `unauthenticated` 才算登录失效，公共 Wi-Fi 或代理返回的 401 不算。
+
+**接口响应不进 HTTP 缓存（F-135）。** Android 上 RN 的 `fetch` 走 OkHttp，它自带 10 MB 的磁盘缓存 `cache/http-cache`（`OkHttpClientProvider.createClientBuilder(context)`），没有 `no-store` 的 GET 响应原样写进去，`/v1/me` 里有邮箱、家庭名、成员称呼和时区。App 不靠它离线（响应没有 `max-age`、`ETag`，每次都回源），所以三层都关掉：服务端所有响应 `Cache-Control: no-store`（`app.ts` 最外层的中间件，出错的响应也带）；App 的每个请求也带 `Cache-Control: no-store`，连自己部署的旧服务端也不写；每次启动和清除本地数据时删掉整个 `http-cache` 目录，清掉旧版本留下的。expo-file-system 和 expo-image 用的是不带缓存的 OkHttp 客户端，不写这里。iOS 上 RN 用的是 `NSURLCache`，只靠服务端的 `no-store`，没有验证过。
 
 清除之后，还在路上的请求不能把数据写回来：`SyncEngine` 丢弃上一个会话的响应，`UploadQueue.reset` 之后失败的任务不再保存。
 

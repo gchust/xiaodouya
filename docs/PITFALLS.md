@@ -76,6 +76,8 @@
 - **账号删了，预签名上传链接还有效。** 手机上的上传可能在删除之后才到达，文件就永远留在存储里了。没传完的文件要等链接过期后再删一次。
 - **删除文件时存储配置已经没了。** `storage_configs` 随家庭级联删除，队列要带着配置的快照（Secret 仍是加密的）。删除也会连接用户填的地址，同样要过 SSRF 检查。
 - **缓存目录里也有用户的文件。** 打开过的证件（`open-*`）、成长册、导出文件和系统选择器的副本都在 `Paths.cache`，只清 `uploads/` 和图片缓存的话，退出后还留在手机上。
+- **RN 的 `fetch` 在 Android 上自带磁盘缓存，接口响应会原样落盘（F-135）。** `NetworkingModule` 用 `OkHttpClientProvider.createClient(context)`，带 10 MB 的 `cache/http-cache`。OkHttp 是私有缓存，带 `Authorization` 的请求照样存，只要是 GET 200、请求和响应都没有 `no-store`。2026-11-05 模拟器上里面有 `/v1/me` 的完整响应（邮箱、用户和家庭 id、家庭名、成员称呼、时区）和十几条 `/v1/sync/wait`，退出登录后都还在。令牌不在里面（`.0` 文件只记 `Vary` 用到的请求头）。响应从没被读出来过（没有 `max-age`、`ETag`，每次回源），所以不能靠“App 没用到它”判断它不存在。expo-file-system 和 expo-image 用的是 `createClient()` / `createClientBuilder()`，不带缓存。现在服务端所有响应 `no-store`、App 请求也带 `no-store`、启动和退出时删目录，三层任何一层在都不会留下。
+- **OkHttp 打开着缓存目录时整个删掉，它不会察觉。** 日志文件的句柄还开着，按 DiskLruCache 的写法，之后写进来的条目不会记进新目录的日志，它自己也不会再删（推断，没有专门复现）。模拟器上看到的是每次冷启动后 OkHttp 重建一个 36 字节、只有文件头的 `journal`。所以 `clearHttpCache` 每次启动都删，而不是只删一次；两边都 `no-store` 后本来也不会再写。
 - **选择器打开时进程被杀，选择结果找不回来。** `expo-modules-core` 只在 `onHostDestroy` 保存发起过的请求，进程被直接杀掉时没保存，新进程收到结果后 `dispatchResult` 对不上就丢弃。`getPendingResultAsync` 只对“Activity 被销毁、进程还在”有用。现象是点“添加”后 App 冷启动、选的图全没了，没有 `FATAL`，用户看到的就是闪退。要真正找回得改原生层，现在只提示用户再选一次。
 - **不要把 `selectionLimit` 当上限用。** `parseResult` 里有 `it.take(selectionLimit)`：没有原生上限的回退选择器上，多选的图会被悄悄截掉。在 JS 里合并并提示数量（`mergePicked`）。传 0 表示不限，也是个坑。
 - **保存时不要同步做缩略图。** `manipulate(uri)` 不带尺寸会整张解码，12 MP 要 48 MB，108 MP 要 430 MB，100 张要等两分钟，这期间记录还没写，被杀就什么都没有。文件挪进 App（同分区是 rename，瞬间完成）就写记录，缩略图放进持久化队列逐张做，并带 `maxWidth`、`maxHeight`。
@@ -299,6 +301,7 @@
 - **带新迁移的分支不要连共用的开发库起服务端。** 服务端启动时会跑迁移，`schema_migrations` 只记序号：这个分支把第 N 条记成已执行，另一个分支也在第 N 条加了不同的迁移，连上同一个库时它的迁移就被跳过了，表现成“列不存在”。走查时另建一个库（`docker exec xiaodouya-dev-postgres-1 psql -U xiaodouya -d xiaodouya -c "CREATE DATABASE xiaodouya_<编号>"`，`DATABASE_URL` 指过去），集成测试本来就每次新建库，不受影响（F-133）。
 - **本地开发库是共用的，别的端口起的服务端也会处理别人留下的队列。** F-126 走查时 8817 上的服务端顺手把别的 Agent 流程 24 留下的排队反馈补发到了自己的假 GitHub（反馈的补发是全库的）。核对假 GitHub 收到的内容时按这次的 `RUN_ID` 找，不要按条数或编号。
 - **8787 端口已有服务时，`e2e.sh` 会直接复用它。** 那可能是别的分支的代码，脚本会打印警告。改了服务端就先停掉旧服务。
+- **走查脚本 `source apps/server/.env.example` 会把 `PORT` 改回 8787。** F-135 走查时先设了 `PORT=8828` 再 `source`，服务端起在了 8787 上（约一分钟后发现停掉），正好是别人 `e2e.sh` 会复用的端口。`PORT`、`DATABASE_URL` 一律在 `source` 之后再设，起来后看日志里打印的端口。
 - **Biome 不要格式化 Markdown。** 它会重新对齐表格列宽，改一行就动到整张表，并行开发时 `PROGRESS.md` 必然冲突。已在 `biome.json` 里排除。
 - **`/tmp` 是按用户限额的内存盘，几个会话共用。** 写满后连命令输出都会丢。大文件（测试图片、APK）放 worktree 的 `.artifacts`。
 - **子 Agent 的 scratchpad 和主会话是同一个目录。** 目录名里是会话 id，不是 Agent 自己的。`/tmp` 配额满时不要清 `scratchpad/*`：里面有别的 Agent 和主会话的文件。自己的临时文件放 worktree 的 `.artifacts/`。
