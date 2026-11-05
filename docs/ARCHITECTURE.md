@@ -316,6 +316,27 @@ App ──POST /v1/shares/timeline {fromAt, toAt, timezone, ttlDays}──> shar
 
 **页面：** `apps/share-web/src/timeline.ts` 按分享者的时区分日期（`zonedParts`），日期贴在顶上；底部用 `IntersectionObserver` 提前 800px 取下一页，也能点“加载更多”；一页太短或者整页是空的回忆时接着取。链接过期时只从那一页的游标（或者那一条回忆）重新取，换上新链接（`mediaSource.ts`）。点开一条是全屏的一层（`momentView.ts`），关掉时先停下音频和视频。
 
+## 分享回忆（F-136）
+
+```
+App ──POST /v1/shares/moments {momentIds, fromAt, toAt, timezone, ttlDays}──> shares 一行，kind = 'moments'，moment_ids
+ │ <base>/#m/<令牌>（一天 #<令牌>、时间线 #t/<令牌> 不变）
+ ▼
+对方的浏览器 ── 和时间线同一个视图（timeline.ts），标题和结尾按 kind 换说法
+     │ POST /v1/public/share/timeline {token, cursor?}        同一个接口，只按选中的 id 查
+     │ POST /v1/public/share/timeline/moment {token, momentId}
+     ▼
+服务端 ── 现查 records（collection = 'moment'、这个家庭、没删、id 在 moment_ids 里）
+```
+
+**一段或几段，都是同一种链接。** 选中的 id 最多 `MAX_SHARE_MOMENTS`（100）个，不重复，存在 `shares.moment_ids`（`UUID[]`，追加的迁移；`kind` 的 CHECK 换成三种，并约束只有 `moments` 的行有 `moment_ids`）。其余和时间线一样：`include_moments = true`、另外两项为假、`units = {}`，创建、列表、撤销、家庭上限、降级和移出后失效都走 `createShare`、`findActiveShare`。
+
+**不核对 id 现在在不在。** 刚记的回忆可能还没传上来，App 先同步（最多等 8 秒），没传完的写在弹层上；服务端收下任何 UUID，公开接口每次现查时只认这个家庭、`collection = 'moment'`、没删的，写成信、证件、别家回忆的 id 都查不出来。之后删掉的会消失，改了时间的照样在。
+
+**不按时间。** 公开接口对 `moments` 的链接不看 `from_at`、`to_at`，只看 id（`inShare`）；分页、游标、每条只签封面、点开时签全部文件都和时间线相同。`from_at`、`to_at` 是手机按选中回忆的头尾算的，只用于列表排序和旧版 App 的显示（v0.7.0 不认识 `moments`，在「已分享的链接」里按一天显示开始那天，撤销照常）。页面顶上的范围由服务端按现在还在的选中回忆重新算（`shareRange`），一段都不在时用存的。
+
+**两个公开接口接受两种 kind（`TIMELINE_KINDS`）。** 一天的令牌照样打不开它们，回忆的令牌打不开一天的接口；回答里的 `kind` 是 `moments`，页面据此把标题写成“…的回忆”，不显示“没有更早的回忆了”，空的时候说“这些回忆已经不在了”。
+
 ## 反馈问题
 
 ```

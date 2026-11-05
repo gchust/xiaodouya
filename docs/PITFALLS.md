@@ -18,6 +18,7 @@
 - **补发服务端版本时要按可读集合过滤。** 否则 viewer 用猜到的 id 提交一次改动，就能读到证件。
 - **被服务端拒绝的记录不能在本地标记删除。** 用户写的内容会悄悄消失。保留数据、标记为已处理，有权威版本时由服务端补发覆盖。
 - **角色变化后游标已经越过当时读不到的记录。** 升级要归零重新拉取，降级要清掉本地无权查看的集合。
+- **迁移里放宽 `ADD COLUMN ... CHECK (...)` 要先知道约束的名字。** 列上写的 CHECK 是 Postgres 自动起名（`表名_列名_check`，F-133 的 `kind` 是 `shares_kind_check`），新迁移只能 `DROP CONSTRAINT` 这个名字再加新的，不能改旧迁移。动手前在已迁移的库上查 `pg_constraint` 确认（F-136 查过），名字猜错的话迁移直接失败，集成测试会先发现。
 - **同一个事务里插入的行 `created_at` 都一样。** `now()` 是事务开始的时间，所以 `ORDER BY created_at, id` 对一次提交的几个反馈附件来说就是按随机 uuid 排，不是手机上的顺序（issue 里的“图片 1、图片 2”和用户加的顺序可能不同）。测试里要按内容找，不能按下标比；要保住顺序得另存序号。
 - **批量同步要按字节分批，不能只按条数。** 200 条长信就是 12 MB，超过 5 MB 的请求体上限后一直 413，退避重试也没用，后面的记录全被堵住。
 - **`looseObject` 校验不挡多余字段。** 一条记录可以塞几 MB 垃圾原样入库，请求体上限挡不住，而数据库是最贵的资源。所以有单条上限和单家总量上限。
@@ -273,6 +274,7 @@
 - **`adb input swipe` 太快时查看器不一定翻页。** 150 ms 的滑动在 main 和新分支上都有丢，400 ms 的不丢。看模拟器走查的结果时先看滑动是不是真的到位，别把这当成翻页的 Bug。
 - **响应之后才写库的内容，测试里要先 `bg.flush()` 再做下一步。** “重发次数有上限”曾偶发失败（期望 429，实际 200）：验证码在响应后才写，写入如果落在下一轮的 `skipCooldown` 和请求之间，这次请求就在冷却期里，不计数也返回 200。平时失败率低，多跑几次未必看得到；要在写入前等 30ms、`skipCooldown` 后等 100ms 才能稳定复现。
 - **网页走查不用装 Playwright。** 仓库里没有它，`npx` 要临时下载。本机的 `/usr/bin/chromium --headless=new --remote-debugging-port=…` 加 Node 自带的 `WebSocket` 发 DevTools 协议就够了：`Emulation.setTimezoneOverride` 设时区、`Emulation.setDeviceMetricsOverride` 设 390×844、`Runtime.evaluate` 点按钮和读文字、`Page.captureScreenshot` 截图，`Runtime.consoleAPICalled` 和 `Log.entryAdded` 收控制台报错。语言用启动参数 `--lang`（F-133 的走查脚本约 100 行）。
+- **本机浏览器看分享页时，服务端的签名链接要指向 `localhost`。** `.env.example` 的 `S3_PUBLIC_ENDPOINT` 是给模拟器的 `10.0.2.2:59000`，宿主机上连不到：造数据时传文件直接失败（`fetch failed`、`other side closed`），页面上的图片也打不开。F-136 走查另起一个服务端（同一个库，`S3_PUBLIC_ENDPOINT=http://localhost:59000`、另一个端口），造数据和分享页都连它，模拟器仍连原来那个。
 - **页面的日期和钟点要写明按谁的时区算。** shared 里的格式化函数都读运行环境的时区，服务端和对方的浏览器都不是分享者的时区。本机时区和分享者相同时什么都看不出来，走查要把浏览器设成另一个时区（`timezoneId`）。
 - **`testID` 不能用翻译后的文字生成。** `self-妈妈`、`milestone-第一次抬头` 都是从文字来的，英文下就变了。固定用中文原文（`messagesFor('zh')` 或数据里的 `id`）。
 - **脚本里 `process.exit` 会截断管道里还没写完的输出。** `check-i18n` 报几百条时，`| grep` 只收到前面一部分，看起来问题比实际少。用 `process.exitCode`。
@@ -287,7 +289,7 @@
 - **只给测试用的服务端变量不用写进 `.env.example`。** `e2e.sh` 启动服务端时在进程环境里给（比如 `FEEDBACK_*` 指向假 GitHub）：`node --env-file` 遇到进程环境里已有的变量不覆盖，以进程环境为准。写进 `.env.example` 的话，集成测试和本地开发也全都带上了。
 - **本机连着真机时，adb 和 Maestro 都要指定模拟器。** 无线调试的手机会自己连上（`adb devices` 里多一台），裸 `adb` 报 `more than one device`，Maestro 自己挑设备，`launchApp: clearState` 落到真机上会清掉家里正在用的数据。手动走查一律 `adb -s emulator-5554`、`maestro --device emulator-5554 test`，看 `maestro.log` 的 `Selected device` 确认。
 - **换包走查的 APK 不要放在 `/tmp`。** 这台机器的 `/tmp` 是 tmpfs，Claude Code 的临时目录有配额，一个 E2E APK 就 46 MB，复制、去签名、对齐、重签各一份，几个 Agent 叠起来就满了：`zip -d` 写到一半失败，留下一个 31 MB 的坏 APK，之后连命令输出都写不进去（F-127 走查时遇到）。放到 worktree 的 `.artifacts/` 下（已忽略），用完删掉。
-- **`pnpm e2e` 里的 adb 和 Maestro 没有指定设备。** `scripts/e2e.sh` 用的是裸 `adb`（安装、卸载、关飞行模式）和不带 `--device` 的 `maestro test`，真机连着时（`adb devices` 里有 `adb-…._adb-tls-connect._tcp`）不能直接跑。F-130 本地验证时照着 e2e.sh 的步骤另写了脚本，`adb -s emulator-5554`、`maestro --device emulator-5554`，同样先拿模拟器的锁、启动 8787 上的服务端、调 `fake-release.sh`。
+- **`pnpm e2e` 里的 adb 和 Maestro 没有指定设备。** `scripts/e2e.sh` 用的是裸 `adb`（安装、卸载、关飞行模式）和不带 `--device` 的 `maestro test`，真机连着时（`adb devices` 里有 `adb-…._adb-tls-connect._tcp`）不能直接跑。F-130 本地验证时照着 e2e.sh 的步骤另写了脚本，`adb -s emulator-5554`、`maestro --device emulator-5554`，同样先拿模拟器的锁、启动 8787 上的服务端、调 `fake-release.sh`。 `pnpm emulator`（`emulator.sh`）也是裸 `adb`：真机连着时它照样把模拟器拉起来，但 `adb wait-for-device` 报 `more than one device/emulator` 后脚本退出，模拟器还在开机（F-136 遇到），自己用 `adb -s emulator-5554 shell getprop sys.boot_completed` 等。
 - **同一台模拟器上不能同时跑两个 `maestro test`。** 前一个还在跑流程 18 时又起了一个，新的那个每条流程几毫秒就失败，日志是 `DeviceServerDiedException ... during 'deviceInfo'`，看起来像模拟器坏了。自己手动跑之前先 `pgrep -f maestro.cli`，后台跑的命令要等它真的退出（等待脚本超时不等于 Maestro 结束了）。
 - **机器忙时 `scrollUntilVisible` 30 秒滚不到疫苗本底部。** 几个 Agent 同时编译、跑模拟器时宿主机负载到 27，每次点击要 20 秒，流程 17a 滚到三十多行免疫规划表下面的自费疫苗卡片时超时，紧接着流程 18 启动 30 秒还停在开屏。滚到页面很下面的元素给 90 秒，失败时先看 `uptime`，别急着怀疑代码。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
