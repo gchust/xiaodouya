@@ -487,6 +487,43 @@ export async function readSmallObject(
   }
 }
 
+/**
+ * 读一个二进制小文件。不存在返回 null，超过 maxBytes 返回 'tooLarge'（不把整个文件读进内存）。
+ * 其他错误照常抛出，不能当成“没有”。
+ */
+export async function readObjectBytes(
+  s: ResolvedStorage,
+  key: string,
+  maxBytes: number,
+): Promise<Uint8Array | null | 'tooLarge'> {
+  try {
+    const r = await client(s, s.endpoint).send(
+      new GetObjectCommand({ Bucket: s.bucket, Key: key }),
+    );
+    if ((r.ContentLength ?? 0) > maxBytes) {
+      await r.Body?.transformToWebStream().cancel();
+      return 'tooLarge';
+    }
+    return (await r.Body?.transformToByteArray()) ?? new Uint8Array();
+  } catch (error) {
+    const e = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+    if (e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+}
+
+/** 服务端自己写一个对象（App 的上传都走预签名链接，不经过这里）。 */
+export async function putObjectBytes(
+  s: ResolvedStorage,
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  await client(s, s.endpoint).send(
+    new PutObjectCommand({ Bucket: s.bucket, Key: key, Body: body, ContentType: contentType }),
+  );
+}
+
 export async function deleteObject(s: ResolvedStorage, key: string): Promise<void> {
   await client(s, s.endpoint).send(new DeleteObjectCommand({ Bucket: s.bucket, Key: key }));
 }

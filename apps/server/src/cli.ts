@@ -25,6 +25,10 @@
  * 加 --download 把附件存到这个目录（文件名是附件 id 加扩展名），不打印链接。
  * 要 S3_*，不需要 APP_SECRET 和 GitHub 的配置。
  *   pnpm --filter @xiaodouya/server cli feedback [反馈 id] [--download 目录]
+ *
+ * 一次性回填（F-134）：把旧证件宽 720 的缩略图缩到长边 256，写回原来的对象。先 --dry-run 看数量，
+ * 跑之前先备份数据库。要 S3_*；APP_SECRET 可选，没有时家庭自带存储里的跳过并计数。可以重复执行。
+ *   pnpm --filter @xiaodouya/server cli shrink-document-thumbs [--dry-run] [--limit N] [--family 家庭 id]
  */
 
 import { Buffer } from 'node:buffer';
@@ -56,6 +60,28 @@ const downloadDir = rest[0] === '--download' && rest.length === 2 ? rest[1] : un
 const feedbackArgsOk =
   email === undefined || (UUID.test(email) && (rest.length === 0 || downloadDir !== undefined));
 
+/** `shrink-document-thumbs` 的选项。认不出的一律报错：拼错了 --dry-run 就会真的写。 */
+function parseShrinkArgs(
+  args: readonly string[],
+): { dryRun: boolean; limit?: number; familyId?: string } | null {
+  const options: { dryRun: boolean; limit?: number; familyId?: string } = { dryRun: false };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--dry-run') {
+      options.dryRun = true;
+    } else if (arg === '--limit' && /^[1-9]\d*$/.test(args[i + 1] ?? '')) {
+      options.limit = Number(args[++i]);
+    } else if (arg === '--family' && UUID.test(args[i + 1] ?? '')) {
+      options.familyId = args[++i];
+    } else {
+      return null;
+    }
+  }
+  return options;
+}
+const shrinkArgs =
+  command === 'shrink-document-thumbs' ? parseShrinkArgs(process.argv.slice(3)) : null;
+
 if (
   command !== 'migrate' &&
   command !== 'maintenance' &&
@@ -63,10 +89,11 @@ if (
   command !== 'check-upload-size' &&
   command !== 'check-multipart' &&
   !(command === 'feedback' && feedbackArgsOk) &&
+  !(command === 'shrink-document-thumbs' && shrinkArgs) &&
   !(command === 'reset-password' && email)
 ) {
   console.error(
-    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli feedback [反馈 id [--download 目录]] | cli reset-password <邮箱>',
+    '用法：cli migrate | cli maintenance | cli purge-objects | cli check-upload-size | cli check-multipart | cli feedback [反馈 id [--download 目录]] | cli shrink-document-thumbs [--dry-run] [--limit N] [--family 家庭 id] | cli reset-password <邮箱>',
   );
   process.exit(1);
 }
@@ -137,6 +164,20 @@ try {
       result.ok ? result.message : `不通过，请设置 S3_MULTIPART_ENABLED=false：${result.message}`,
     );
     ok = result.ok;
+  } else if (command === 'shrink-document-thumbs' && shrinkArgs) {
+    const { shrinkDocumentThumbs } = await import('./documentThumbs');
+    const report = await shrinkDocumentThumbs(sql, storageConfig(), {
+      ...shrinkArgs,
+      customStorage: hasAppSecret,
+    });
+    // 只有计数和翻译过的失败原因，没有 id、object key 和地址：CI 日志是公开的。
+    console.log(JSON.stringify(report));
+    if (report.waitingForSecret > 0) {
+      console.log(
+        `还有 ${report.waitingForSecret} 张证件缩略图在家庭自带的存储里，要设置 APP_SECRET 才能处理`,
+      );
+    }
+    ok = report.failed === 0;
   } else if (command === 'feedback') {
     const { downloadFeedbackAttachments, feedbackDetails, recentFeedback } = await import(
       './feedback'

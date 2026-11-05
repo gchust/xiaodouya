@@ -1,0 +1,79 @@
+name: 缩小旧证件缩略图
+
+# 一次性回填（F-134，cli shrink-document-thumbs）：把旧版 App 传的宽 720 的证件缩略图缩到长边 256，写回原来的对象。
+# 只手动触发、只从 main 运行，PR 碰不到这些 Secret。默认只统计不写；勾选“真的写入”才会改，写之前先备份数据库。
+# 公开仓库的日志谁都能看：命令只输出计数和翻译过的失败原因，不打印 id、object key、地址和链接。不要打开 set -x。
+# 说明见 docs/DEPLOYMENT.md 的“缩小旧证件的缩略图”。
+on:
+  workflow_dispatch:
+    inputs:
+      write:
+        description: 真的写入（不勾只统计，什么都不改）
+        type: boolean
+        default: false
+      limit:
+        description: 这次最多缩小几张（留空表示全部）
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# 和定时清理同一组：两边都会读写 media 和存储，不要同时跑。
+concurrency:
+  group: maintenance
+
+jobs:
+  shrink:
+    name: 缩小证件缩略图
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Session pooler（5432），和备份用同一条。
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      DB_SSL: require
+      S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
+      S3_BUCKET: ${{ secrets.S3_BUCKET }}
+      S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+      S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+      S3_REGION: auto
+      S3_FORCE_PATH_STYLE: "true"
+    steps:
+      - name: 检查参数
+        env:
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          if [ -n "$LIMIT" ] && ! printf '%s' "$LIMIT" | grep -Eq '^[1-9][0-9]*$'; then
+            echo "::error::limit 要是正整数或留空"
+            exit 1
+          fi
+      # 这个任务能改生产文件，全部用 commit 固定版本，标签可以被改动。
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.21.0"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 旧的 720 缩略图写回后就没有了（原图不动），media 的大小也会改。先留一份数据库。
+      - name: 写入前备份
+        if: inputs.write
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+          BACKUP_PG_IMAGE: postgres:17
+        run: deploy/cloud-backup.sh backup
+      - name: 缩小
+        env:
+          WRITE: ${{ inputs.write }}
+          LIMIT: ${{ inputs.limit }}
+          # 可选，和函数里的相同。只有家庭自带存储里的证件才用到，没设置时那部分跳过（日志写明张数）。
+          APP_SECRET: ${{ secrets.APP_SECRET }}
+        run: |
+          args=()
+          [ "$WRITE" = "true" ] || args+=(--dry-run)
+          [ -z "$LIMIT" ] || args+=(--limit "$LIMIT")
+          pnpm --filter @xiaodouya/server cli shrink-document-thumbs "${args[@]}"
