@@ -43,6 +43,8 @@ export interface ShareRow {
   include_daily: boolean;
   include_health: boolean;
   units: unknown;
+  /** 只有 `kind = 'moments'` 的行有。 */
+  moment_ids: string[] | null;
   expires_at: Date;
   created_at: Date;
 }
@@ -60,7 +62,8 @@ export const shareInclude = (row: ShareRow): ShareInclude => ({
 export async function findActiveShare(sql: Sql, token: string): Promise<ShareRow | null> {
   const [row] = await sql<ShareRow[]>`
     SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
-           s.include_moments, s.include_daily, s.include_health, s.units, s.expires_at, s.created_at
+           s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
+           s.expires_at, s.created_at
     FROM shares s
     JOIN memberships m ON m.family_id = s.family_id AND m.user_id = s.created_by AND m.role <> 'viewer'
     WHERE s.token_hash = ${sha256(token)} AND s.revoked_at IS NULL AND s.expires_at > now()`;
@@ -298,9 +301,6 @@ export async function buildPublicShare(
 
 // ─── 分享时间线（F-133） ─────────────────────────────────
 
-/** 比任何 UUID 都大：第一页的游标，配合 `at < toAt` 等于不加条件。 */
-const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
-
 function parseCursor(cursor: string): { at: number; id: string } {
   const dot = cursor.indexOf('.');
   return { at: Number(cursor.slice(0, dot)), id: cursor.slice(dot + 1) };
@@ -309,10 +309,45 @@ function parseCursor(cursor: string): { at: number; id: string } {
 /** 回忆的 at 不是数字时是 NULL，不进到类型转换里。 */
 const momentAt = (row: { at: number | null }) => row.at ?? 0;
 
+/** 回忆的 at 是数字时取出来，不是时为 NULL：不让它进到类型转换里。 */
+const momentsOf = (sql: Sql, share: ShareRow) => sql`
+  SELECT id, data,
+         CASE WHEN jsonb_typeof(data->'at') = 'number'
+              THEN (data->>'at')::double precision END AS at
+  FROM records
+  WHERE family_id = ${share.family_id} AND collection = 'moment' AND NOT deleted
+    ${share.kind === 'moments' ? sql`AND id = ANY(${share.moment_ids ?? []}::uuid[])` : sql``}`;
+
+/**
+ * 链接能看到哪些回忆：时间线是 [from, to) 里的，选中回忆的链接（F-136）只认选中的 id，
+ * 不管它们现在的时间。家庭、`collection = 'moment'`、没删由 `momentsOf` 管。
+ */
+function inShare(sql: Sql, share: ShareRow) {
+  return share.kind === 'moments'
+    ? sql`at IS NOT NULL`
+    : sql`at >= ${Number(share.from_at)}::double precision
+          AND at < ${Number(share.to_at)}::double precision`;
+}
+
+/**
+ * 页面顶上的范围。选中回忆的链接用现在还在的那几段的头尾（改了时间、删掉一段都会跟着变），
+ * 一段都不在了时用创建时手机算的。
+ */
+async function shareRange(sql: Sql, share: ShareRow): Promise<{ fromAt: number; toAt: number }> {
+  const stored = { fromAt: Number(share.from_at), toAt: Number(share.to_at) };
+  if (share.kind !== 'moments') return stored;
+  const [row] = await sql<{ first: number | null; last: number | null }[]>`
+    SELECT min(at) AS first, max(at) AS last FROM (${momentsOf(sql, share)}) moments
+    WHERE ${inShare(sql, share)}`;
+  return row?.first != null && row.last != null
+    ? { fromAt: Number(row.first), toAt: Number(row.last) + 1 }
+    : stored;
+}
+
 /**
  * 时间线的一页。新的在前，按 (at, id) 倒序用游标翻，同一毫秒的回忆不会漏也不会重复。
  * 每条只签封面，点开时再取全部文件（`buildPublicTimelineMoment`），一页的签名数因此有上限。
- * 调用前要确认 `share.kind === 'timeline'`，游标要先过 `PublicTimelineRequest`。
+ * 调用前要确认 `share.kind` 是 `timeline` 或 `moments`，游标要先过 `PublicTimelineRequest`。
  */
 export async function buildPublicTimeline(
   sql: Sql,
@@ -320,20 +355,16 @@ export async function buildPublicTimeline(
   share: ShareRow,
   cursor: string | undefined,
 ): Promise<PublicTimelineResponse> {
-  const fromAt = Number(share.from_at);
-  const toAt = Number(share.to_at);
-  const after = cursor ? parseCursor(cursor) : { at: toAt, id: MAX_UUID };
+  const after = cursor ? parseCursor(cursor) : null;
   const rows = await sql<{ id: string; data: unknown; at: number | null }[]>`
-    SELECT id, data, at FROM (
-      SELECT id, data,
-             CASE WHEN jsonb_typeof(data->'at') = 'number'
-                  THEN (data->>'at')::double precision END AS at
-      FROM records
-      WHERE family_id = ${share.family_id} AND collection = 'moment' AND NOT deleted
-    ) moments
-    WHERE at >= ${fromAt}::double precision AND at < ${toAt}::double precision
-      AND (at < ${after.at}::double precision
-           OR (at = ${after.at}::double precision AND id < ${after.id}::uuid))
+    SELECT id, data, at FROM (${momentsOf(sql, share)}) moments
+    WHERE ${inShare(sql, share)}
+      ${
+        after
+          ? sql`AND (at < ${after.at}::double precision
+                     OR (at = ${after.at}::double precision AND id < ${after.id}::uuid))`
+          : sql``
+      }
     ORDER BY at DESC, id DESC
     LIMIT ${TIMELINE_PAGE_SIZE + 1}`;
   const page = rows.slice(0, TIMELINE_PAGE_SIZE);
@@ -398,9 +429,10 @@ export async function buildPublicTimeline(
     })
     .filter(hasTimelineContent);
 
+  const { fromAt, toAt } = await shareRange(sql, share);
   const rangeAge = baby ? shareDayAge(baby.birthAt, toAt, share.timezone).age : null;
   return {
-    kind: 'timeline',
+    kind: share.kind === 'moments' ? 'moments' : 'timeline',
     baby: {
       name: baby?.name ?? '',
       age: rangeAge ? { months: rangeAge.months, days: rangeAge.days } : null,
@@ -414,7 +446,8 @@ export async function buildPublicTimeline(
 
 /**
  * 点开时间线上的一条回忆：它的全部文件。`momentId` 是对方传来的，
- * 必须是这个家庭、没删、在这个链接范围里的回忆，否则返回 null（和失效一样的回答）。
+ * 必须是这个家庭、没删、在这个链接里的回忆（时间线看范围，选中回忆的链接看选中的 id），
+ * 否则返回 null（和失效一样的回答）。
  */
 export async function buildPublicTimelineMoment(
   sql: Sql,
@@ -423,13 +456,8 @@ export async function buildPublicTimelineMoment(
   momentId: string,
 ): Promise<PublicTimelineMomentResponse | null> {
   const [row] = await sql<{ data: unknown }[]>`
-    SELECT data FROM records
-    WHERE id = ${momentId}::uuid AND family_id = ${share.family_id}
-      AND collection = 'moment' AND NOT deleted
-      AND CASE WHEN jsonb_typeof(data->'at') = 'number'
-               THEN (data->>'at')::double precision >= ${Number(share.from_at)}::double precision
-                AND (data->>'at')::double precision < ${Number(share.to_at)}::double precision
-               ELSE false END`;
+    SELECT data FROM (${momentsOf(sql, share)}) moments
+    WHERE id = ${momentId}::uuid AND ${inShare(sql, share)}`;
   const parsed = MomentData.safeParse(row?.data);
   if (!parsed.success) return null;
   const { urls, signed, omitted } = await signMedia(

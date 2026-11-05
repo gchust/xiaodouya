@@ -75,7 +75,7 @@ export interface CreateShareResponse {
   expiresAt: number;
 }
 
-export type ShareKind = 'day' | 'timeline';
+export type ShareKind = 'day' | 'timeline' | 'moments';
 
 export interface ShareSummary {
   id: string;
@@ -87,6 +87,8 @@ export interface ShareSummary {
   include: ShareInclude;
   expiresAt: number;
   createdAt: number;
+  /** 只有选中回忆的链接（F-136）有：选了哪几段。 */
+  momentIds?: string[];
   /** 创建者在家庭里的称呼。 */
   byLabel: string;
   canRevoke: boolean;
@@ -374,17 +376,23 @@ export const TIMELINE_SHARE_INCLUDE: ShareInclude = { moments: true, daily: fals
 export const SHARE_TIMELINE_MAX_AHEAD_MS = 2 * 24 * 3_600_000;
 
 const SHARE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
-const TIMELINE_PREFIX = 't/';
+const FRAGMENT_PREFIX: Record<Exclude<ShareKind, 'day'>, string> = {
+  timeline: 't/',
+  moments: 'm/',
+};
 
 /** 链接的片段。一天的链接一直是 `#令牌`，旧版 App 发出去的链接要照常打开。 */
 export function shareFragment(kind: ShareKind, token: string): string {
-  return kind === 'timeline' ? `${TIMELINE_PREFIX}${token}` : token;
+  return kind === 'day' ? token : `${FRAGMENT_PREFIX[kind]}${token}`;
 }
 
 export function parseShareFragment(hash: string): { kind: ShareKind; token: string } | null {
   const fragment = hash.replace(/^#/, '');
-  const kind: ShareKind = fragment.startsWith(TIMELINE_PREFIX) ? 'timeline' : 'day';
-  const token = kind === 'timeline' ? fragment.slice(TIMELINE_PREFIX.length) : fragment;
+  const prefixed = (Object.entries(FRAGMENT_PREFIX) as [ShareKind, string][]).find(([, prefix]) =>
+    fragment.startsWith(prefix),
+  );
+  const kind = prefixed?.[0] ?? 'day';
+  const token = prefixed ? fragment.slice(prefixed[1].length) : fragment;
   return SHARE_TOKEN.test(token) ? { kind, token } : null;
 }
 
@@ -433,7 +441,8 @@ export const PublicTimelineEntry = z.object({
 export type PublicTimelineEntry = z.infer<typeof PublicTimelineEntry>;
 
 export const PublicTimelineResponse = z.object({
-  kind: z.literal('timeline'),
+  /** 选中回忆的链接（F-136）用同一个回答，`range` 是现在还在的那几段的头尾。 */
+  kind: z.enum(['timeline', 'moments']),
   baby: z.object({
     name: z.string(),
     /** 范围最后一天的月龄，服务端算好，不发出生时间。 */
@@ -509,3 +518,31 @@ export function timelineRangeText(
   if (format(first) === format(last)) return format(first);
   return t().share.rangeText(format(first), format(last));
 }
+
+// ─── 分享回忆（F-136） ───────────────────────────────
+
+/**
+ * 一个链接最多选几段。只看 id 不看时间，翻页和封面签名都和时间线一样（一页 20 条），
+ * 这里只是让请求体和库里的数组有个边。
+ */
+export const MAX_SHARE_MOMENTS = 100;
+
+/**
+ * 选一段或几段回忆。公开接口只按这些 id 查，不按时间；`fromAt`、`toAt` 是手机按选中的回忆算的
+ * 头尾，只用来在「已分享的链接」里排序和给旧版 App 显示日期（旧版不认识这种链接，按一天显示）。
+ * 还没传到服务器的回忆也收：传上来以后页面上就有，弹层会说明现在还缺什么。
+ */
+export const CreateMomentsShareRequest = z
+  .object({
+    momentIds: z
+      .array(z.uuid())
+      .min(1)
+      .max(MAX_SHARE_MOMENTS)
+      .refine((ids) => new Set(ids).size === ids.length),
+    fromAt: z.number().int().nonnegative(),
+    toAt: z.number().int().positive(),
+    timezone: z.string().min(1).max(64).refine(isValidTimeZone),
+    ttlDays: z.union(SHARE_TTL_DAYS.map((days) => z.literal(days))).default(DEFAULT_SHARE_TTL_DAYS),
+  })
+  .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
+export type CreateMomentsShareRequest = z.input<typeof CreateMomentsShareRequest>;

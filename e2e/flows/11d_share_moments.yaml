@@ -1,0 +1,204 @@
+# 分享回忆（issue #87，F-136）：一段回忆从 ⋯ 和全屏查看都能单独分享；时间线标题右边 `选几段` 进入选择模式，
+# 勾选两段后从底部的按钮一起分享。链接是 #m/令牌，「已分享的链接」里写着“回忆 · …”，撤销后消失。
+# E2E 构建不打开系统分享面板，这里只检查链接本身；对方打开网页那一半由 share-web 的测试和服务端集成测试覆盖。
+# 自己记两段回忆（一段带照片），用完就删。跑完留下的变化：无，链接撤销了（照片还留在存储里，等宽限期清理）。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-recall }
+    timeout: 30000
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+# 两段回忆：第一段带照片（全屏查看要用），第二段只有文字。
+- tapOn: { id: recall-fab }
+- tapOn: { id: pick-media }
+- extendedWaitUntil:
+    visible: { id: selected-media }
+    timeout: 15000
+- tapOn: { id: moment-title }
+- inputText: Pick A ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Pick A ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: upload-card }
+    timeout: 60000
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Pick B ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Pick B ${RUN_ID}
+    timeout: 15000
+
+# ─── 一段：从 ⋯ 分享 ───────────────────────────────
+- tapOn: Pick A ${RUN_ID}的更多操作
+- assertVisible: { id: moment-share }
+- assertVisible: { id: moment-select }
+- takeScreenshot: .artifacts/e2e-11d-actions
+- tapOn: { id: moment-share }
+- extendedWaitUntil:
+    visible: { id: share-moments-title }
+    timeout: 10000
+- assertVisible:
+    id: share-moments-title
+    text: Pick A ${RUN_ID}
+- assertVisible:
+    id: share-moments-counts
+    text: 1 段回忆、1 个文件
+- assertVisible:
+    text: 对方只能看到选中的回忆.*
+- takeScreenshot: .artifacts/e2e-11d-share-one
+- scrollUntilVisible:
+    element: { id: share-create }
+- waitForAnimationToEnd
+- tapOn: { id: share-ttl-1 }
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+# 回忆的令牌在 #m/ 后面，一天和时间线的链接不变。
+- assertVisible:
+    id: share-link
+    text: https://share\.example\.test/#m/[A-Za-z0-9_-]{43}
+- assertVisible: 回忆 · Pick A ${RUN_ID}
+- takeScreenshot: .artifacts/e2e-11d-link-one
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+
+# ─── 一段：从全屏查看分享 ──────────────────────────
+- tapOn:
+    id: moment-cover-.*
+- extendedWaitUntil:
+    visible: { id: viewer-screen }
+    timeout: 10000
+- assertVisible: { id: viewer-share }
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: .artifacts/e2e-11d-viewer
+- tapOn: { id: viewer-share }
+- extendedWaitUntil:
+    visible: { id: share-moments-title }
+    timeout: 10000
+- assertVisible:
+    id: share-moments-title
+    text: Pick A ${RUN_ID}
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-moments-title }
+    timeout: 10000
+- tapOn: { id: viewer-close }
+- extendedWaitUntil:
+    notVisible: { id: viewer-screen }
+    timeout: 10000
+
+# ─── 几段：选择模式 ────────────────────────────────
+- assertVisible: { id: share-select }
+- tapOn: { id: share-select }
+- assertVisible: { id: share-select-cancel }
+- assertNotVisible: { id: recall-fab }
+- assertVisible:
+    id: share-selected
+    text: 先选几段回忆
+- tapOn: 选择「Pick A ${RUN_ID}」
+# 点标题也能选。
+- tapOn: Pick B ${RUN_ID}
+- assertVisible:
+    id: share-selected-count
+    text: 已选 2 段
+- takeScreenshot: .artifacts/e2e-11d-selecting
+# 再点一下取消，再选回来。
+- tapOn: Pick B ${RUN_ID}
+- assertVisible:
+    id: share-selected-count
+    text: 已选 1 段
+- tapOn: 选择「Pick B ${RUN_ID}」
+- assertVisible:
+    id: share-selected
+    text: 分享 2 段回忆
+- tapOn: { id: share-selected }
+- extendedWaitUntil:
+    visible: { id: share-moments-title }
+    timeout: 10000
+- assertVisible:
+    id: share-moments-title
+    text: 2 段回忆
+- assertVisible:
+    id: share-moments-counts
+    text: 2 段回忆、1 个文件
+- takeScreenshot: .artifacts/e2e-11d-share-many
+- scrollUntilVisible:
+    element: { id: share-create }
+- waitForAnimationToEnd
+- tapOn: { id: share-ttl-1 }
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+- assertVisible:
+    id: share-link
+    text: https://share\.example\.test/#m/[A-Za-z0-9_-]{43}
+- assertVisible: 回忆 · 2 段回忆
+- takeScreenshot: .artifacts/e2e-11d-link-many
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+# 建好链接后退出选择模式。
+- assertVisible: { id: share-select }
+- assertVisible: { id: recall-fab }
+
+# ─── 已分享的链接：写着回忆，撤销后消失 ────────────
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-shares }
+- waitForAnimationToEnd
+- tapOn: { id: open-shares }
+- extendedWaitUntil:
+    visible: { id: share-row-1 }
+    timeout: 15000
+- assertVisible: 回忆 · Pick A ${RUN_ID}
+- assertVisible: 回忆 · 2 段回忆
+- takeScreenshot: .artifacts/e2e-11d-shared-links
+- tapOn: { id: share-revoke-0 }
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    notVisible: { id: share-row-1 }
+    timeout: 15000
+- tapOn: { id: share-revoke-0 }
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    visible: { id: shares-empty }
+    timeout: 15000
+- assertNotVisible: 回忆 · .*
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: shares-empty }
+    timeout: 10000
+
+# ─── 删掉测试用的回忆 ──────────────────────────────
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: Pick B ${RUN_ID}
+    timeout: 10000
+- tapOn: Pick B ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: Pick B ${RUN_ID}
+    timeout: 15000
+- tapOn: Pick A ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: Pick A ${RUN_ID}
+    timeout: 15000
+- tapOn: { id: tab-today }

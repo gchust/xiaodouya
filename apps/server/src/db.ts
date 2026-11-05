@@ -285,6 +285,16 @@ export const migrations: readonly string[] = [
   `
   ALTER TABLE shares ADD COLUMN kind TEXT NOT NULL DEFAULT 'day' CHECK (kind IN ('day', 'timeline'));
   `,
+  // 分享回忆（F-136）：选中的几段回忆，公开接口只按这些 id 查。只有 moments 的行有值。
+  // 上一条迁移的 CHECK 是 Postgres 自动起的名字（表名_列名_check）。
+  `
+  ALTER TABLE shares DROP CONSTRAINT shares_kind_check;
+  ALTER TABLE shares ADD CONSTRAINT shares_kind_check
+    CHECK (kind IN ('day', 'timeline', 'moments'));
+  ALTER TABLE shares ADD COLUMN moment_ids UUID[];
+  ALTER TABLE shares ADD CONSTRAINT shares_moment_ids_check
+    CHECK ((kind = 'moments') = (moment_ids IS NOT NULL));
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

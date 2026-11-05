@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   CreateFeedbackRequest,
   CreateFeedbackResponse,
+  CreateMomentsShareRequest,
   CreateShareRequest,
   CreateShareResponse,
   CreateTimelineShareRequest,
@@ -249,6 +250,9 @@ export class Api {
   }
   createTimelineShare(body: CreateTimelineShareRequest) {
     return this.request<CreateShareResponse>('POST', '/v1/shares/timeline', body);
+  }
+  createMomentsShare(body: CreateMomentsShareRequest) {
+    return this.request<CreateShareResponse>('POST', '/v1/shares/moments', body);
   }
   listShares() {
     return this.request<ShareListResponse>('GET', '/v1/shares');

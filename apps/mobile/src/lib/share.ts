@@ -2,6 +2,7 @@ import {
   type EventData,
   formatDateHeader,
   formatFullDate,
+  MAX_SHARE_MOMENTS,
   type MomentData,
   pendingShareFiles,
   type Role,
@@ -83,8 +84,17 @@ export function shareTimelinePending(
   return shareDayPending(source, range, TIMELINE_SHARE_INCLUDE, uploadingIds);
 }
 
-/** “已分享的链接”里每一行的标题，写明是一天还是时间线。 */
-export function shareLinkTitle(share: ShareSummary, now: number): string {
+/** “已分享的链接”里每一行的标题，写明是一天、时间线还是选中的回忆。 */
+export function shareLinkTitle(
+  share: ShareSummary,
+  now: number,
+  moments: readonly TitledMoment[] = [],
+): string {
+  if (share.kind === 'moments') {
+    return share.momentIds?.length
+      ? t().share.linkTitleMoments(shareMomentsTitle(share.momentIds, moments))
+      : t().share.linkTitleMomentsBare;
+  }
   if (share.kind === 'timeline') {
     // 按创建时的时区：和对方打开的页面上写的一样。
     const calendar = (ms: number) => zonedCalendarDate(ms, share.timezone).getTime();
@@ -100,7 +110,7 @@ export function shareDayTitle(at: number, now: number): string {
 
 interface PendingSource {
   events: readonly { data: EventData; dirty: boolean }[];
-  moments: readonly { data: MomentData; dirty: boolean }[];
+  moments: readonly { id?: string; data: MomentData; dirty: boolean }[];
 }
 
 /** 这一天选中的内容里，现在打开页面还看不到多少。要明说，不能悄悄缺内容。 */
@@ -117,4 +127,59 @@ export function shareDayPending(
   if (!include.moments) return { records, files: 0 };
   records += moments.filter((m) => m.dirty && inRange(m.data.at)).length;
   return { records, files: pendingShareFiles(moments, range, uploadingIds) };
+}
+
+// ─── 分享回忆（F-136） ───────────────────────────────
+
+interface TitledMoment {
+  id: string;
+  data: Pick<MomentData, 'title' | 'at'>;
+}
+
+/**
+ * 选中回忆的头尾，只用来在「已分享的链接」里排序和给旧版 App 显示日期：
+ * 公开接口按 id 查，不按这个范围。
+ */
+export function shareMomentsRange(moments: readonly { data: Pick<MomentData, 'at'> }[]): {
+  fromAt: number;
+  toAt: number;
+} {
+  const times = moments.map((m) => m.data.at);
+  return { fromAt: Math.max(0, Math.min(...times)), toAt: Math.max(...times) + 1 };
+}
+
+/** 一段写它的标题（没有标题是“这一刻”），几段写段数。手机上找不到的（家人刚删掉）只算数。 */
+export function shareMomentsTitle(
+  ids: readonly string[],
+  moments: readonly TitledMoment[],
+): string {
+  if (ids.length === 1) {
+    const found = moments.find((m) => m.id === ids[0]);
+    if (found) return found.data.title.trim() || t().ui.thisMoment;
+  }
+  return t().share.momentsCount(ids.length);
+}
+
+/** 选中的回忆里，现在打开页面还看不到的回忆和文件。 */
+export function shareMomentsPending(
+  source: PendingSource,
+  ids: readonly string[],
+  uploadingIds: ReadonlySet<string>,
+): { records: number; files: number } {
+  const chosen = new Set(ids);
+  const moments = source.moments.filter((m) => m.id !== undefined && chosen.has(m.id));
+  return {
+    records: moments.filter((m) => m.dirty).length,
+    files: moments.reduce(
+      (count, m) => count + m.data.media.filter((file) => uploadingIds.has(file.id)).length,
+      0,
+    ),
+  };
+}
+
+/** 选择模式里点一段：没选的加到后面，选了的拿掉。选满了不再加，原样返回。 */
+export function toggleSelection(selected: readonly string[], id: string): readonly string[] {
+  if (selected.includes(id)) return selected.filter((item) => item !== id);
+  if (selected.length >= MAX_SHARE_MOMENTS) return selected;
+  return [...selected, id];
 }

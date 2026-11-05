@@ -8,7 +8,7 @@ import {
   timelineRangeText,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Share, StyleSheet, Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords } from '../lib/app';
 import { IS_E2E, SHARE_BASE_URL } from '../lib/config';
@@ -22,8 +22,8 @@ import {
 } from '../lib/share';
 import { colors, fonts } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
-import { useFeedback, useSheet } from '../ui/overlays';
-import { Button, Chip, Mono, Muted } from '../ui/primitives';
+import { Button, Chip, Muted } from '../ui/primitives';
+import { ShareCreated } from './shareCreated';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -44,8 +44,6 @@ const sameCalendar = (ms: number) => ms;
  */
 export function ShareTimelineSheet() {
   const app = useApp();
-  const sheet = useSheet();
-  const { toast } = useFeedback();
   const { events, moments } = useRecords();
   const [preset, setPreset] = useState<TimelinePreset>('month');
   const [customFrom, setCustomFrom] = useState(
@@ -57,7 +55,6 @@ export function ShareTimelineSheet() {
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string; title: string } | null>(null);
   const [pending, setPending] = useState({ records: 0, files: 0 });
-  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
 
   const now = Date.now();
   const range = shareTimelineRange(preset, now, {
@@ -104,67 +101,15 @@ export function ShareTimelineSheet() {
     }
   };
 
-  const revokeCreated = async () => {
-    if (!created) return;
-    if (!confirmingRevoke) {
-      setConfirmingRevoke(true);
-      return;
-    }
-    setBusy(true);
-    try {
-      await app.api.revokeShare(created.id);
-      sheet.close();
-      toast(t().share.revoked);
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : t().share.revokeFailed);
-      setBusy(false);
-    }
-  };
-
   if (created) {
     return (
-      <>
-        <Text style={s.title} testID="share-created">
-          {t().share.createdTitle}
-        </Text>
-        <Muted style={s.line}>{t().share.linkTitleTimeline(created.title)}</Muted>
-        <View style={s.linkBox}>
-          <Mono style={s.link} testID="share-link" selectable numberOfLines={2}>
-            {created.url}
-          </Mono>
-        </View>
-        {pending.records > 0 || pending.files > 0 ? (
-          <View style={s.warning} testID="share-pending">
-            {pending.records > 0 ? (
-              <Text style={s.warningText}>{t().share.pendingRecords(pending.records)}</Text>
-            ) : null}
-            {pending.files > 0 ? (
-              <Text style={s.warningText}>{t().share.pendingFiles(pending.files)}</Text>
-            ) : null}
-          </View>
-        ) : null}
-        <Muted style={s.line}>{t().share.notice}</Muted>
-        {problem ? <Text style={s.problem}>{problem}</Text> : null}
-        {confirmingRevoke ? <Muted style={s.line}>{t().share.revokeNote}</Muted> : null}
-        <Button
-          testID="share-send"
-          label={t().share.send}
-          disabled={busy}
-          onPress={() => send(created.url, created.title)}
-        />
-        <Pressable
-          testID="share-revoke-created"
-          accessibilityRole="button"
-          accessibilityLabel={t().share.revokeThis}
-          disabled={busy}
-          onPress={() => void revokeCreated()}
-          style={s.textButton}
-        >
-          <Text style={s.textButtonLabel}>
-            {confirmingRevoke ? t().share.revoke : t().share.revokeThis}
-          </Text>
-        </Pressable>
-      </>
+      <ShareCreated
+        id={created.id}
+        url={created.url}
+        title={t().share.linkTitleTimeline(created.title)}
+        pending={pending}
+        onSend={() => send(created.url, created.title)}
+      />
     );
   }
 
@@ -258,8 +203,4 @@ const s = StyleSheet.create({
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   ttlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ttlLabel: { fontSize: 13, marginRight: 'auto' },
-  linkBox: { backgroundColor: colors.paper, borderRadius: 12, padding: 12 },
-  link: { fontSize: 12, lineHeight: 18, color: colors.inkSoft },
-  textButton: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
-  textButtonLabel: { fontSize: 13, color: colors.danger },
 });
