@@ -122,6 +122,8 @@ export async function upload(
   app: App,
   token: string,
   overrides: Record<string, unknown> = {},
+  /** 文件内容，默认是一串虚构的字节。 */
+  bytes: Uint8Array = BYTES,
 ): Promise<string> {
   const id = (overrides.id as string | undefined) ?? randomUUID();
   const variant = (overrides.variant as string) ?? 'original';
@@ -136,13 +138,18 @@ export async function upload(
         scope: 'memory',
         variant,
         mime: 'image/jpeg',
-        size: BYTES.length,
+        size: bytes.length,
         ...overrides,
       },
     },
   );
   if (status !== 200) throw new Error(`取上传链接失败：${text}`);
-  const put = await fetch(json.url, { method: 'PUT', headers: json.headers, body: BYTES });
+  const put = await fetch(json.url, {
+    method: 'PUT',
+    headers: json.headers,
+    // 复制一份：fetch 的类型只收 ArrayBuffer 上的视图，Buffer 可能在共享的池上。
+    body: new Uint8Array(bytes),
+  });
   if (put.status !== 200) throw new Error(`PUT 失败：${put.status}`);
   const done = await call(app, 'POST', `/v1/media/${id}/complete`, { token, body: { variant } });
   if (done.status !== 200) throw new Error(`完成上传失败：${done.text}`);

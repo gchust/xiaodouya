@@ -87,6 +87,12 @@ if (bundle.includes('new DOMParser')) {
   process.exit(1);
 }
 
+// jpeg-js 只给 `cli shrink-document-thumbs` 用（F-134）。函数里解码图片会耗尽 CPU 时间，这是它解码器里的报错文字。
+if (bundle.includes('SOI not found')) {
+  console.error('Edge 产物里不应该有 jpeg-js：不要从 app.ts 引用 documentThumbs.ts');
+  process.exit(1);
+}
+
 const { size } = statSync(outfile);
 // 服务端打包的上限是 5 MB，本地打包是 20 MB。留出余量，超了就在这里发现，不要等部署。
 const LIMIT = 5 * 1024 * 1024;
