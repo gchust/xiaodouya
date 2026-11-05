@@ -270,6 +270,29 @@ S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCE
 
 `rescued` 不是 0 说明同步时的标记有 Bug（文件没被删，已经救回来了），要查。`failed` 或 `deletionsFailed` 不是 0 时命令退出码是 1，下次会重试。`deletionsWaitingForSecret` 不是 0 不算失败，但这些文件要设置 `APP_SECRET` 才会删。
 
+**缩小旧证件的缩略图（F-134，一次性，可选）：** F-131 之前的 App 传的证件缩略图宽 720，看得清证件号；F-131 起新传的长边 256。`cli shrink-document-thumbs` 把已有的证件缩略图缩到长边 256（JPEG 质量 0.8，去掉 EXIF），**写回原来的对象**，同时改 `media` 的大小。只动证件（`scope = 'document'`）的 `thumb`：原图、回忆、头像不读也不写；PDF 本来就没有缩略图，不补做；没有缩略图的证件照也不补做（记录里没有 `hasThumb`，补了 App 也不显示）。已经不超过 256 的跳过，可以重复执行，中途断了重跑就行。
+
+- **旧的 720 缩略图写回后就没有了。** 原图不受影响，但覆盖后存储里不留旧版本（除非 Bucket 自己开了版本控制），数据库备份里也没有文件。仓库所有者 2026-11-05 决定证件缩略图不用兼容旧版 App，所以不另存一份。
+- **已经在手机上看过的证件**，expo-image 的磁盘缓存里还是那张 720 的，要等缓存被清掉（退出登录、系统回收）才换成新的。服务端改不了手机上的缓存。
+- 旧版 App 以后再传证件，缩略图仍是 720，需要时再跑一次。
+
+用手动工作流最省事：Actions 页面运行“缩小旧证件缩略图”（`.github/workflows/shrink-document-thumbs.yml`），只能从 `main` 运行，用备份和定时清理已有的 Secret（`BACKUP_DATABASE_URL`、`BACKUP_PASSPHRASE`、`S3_*`，可选 `APP_SECRET`），不用新加。
+
+1. **先不勾“真的写入”运行一次**：只读、只统计，日志里是一行计数，比如 `{"dryRun":true,"examined":12,"shrunk":9,"alreadySmall":3,...}`。`shrunk` 是会缩小的张数，`bytesBefore`、`bytesAfter` 是这些缩略图缩之前和之后的总字节数。
+2. 想先小范围试，在 `limit` 填 `1`，勾选“真的写入”运行；在 App 里打开那张证件看卡片和详情页没问题。
+3. 再勾选“真的写入”、`limit` 留空运行。勾选后会**先备份数据库**（和“部署后端”同一个脚本），备份失败就不写。和定时清理同一个并发组，不会同时跑。
+4. 再运行一次不勾写入的：`shrunk` 应该是 0。
+
+计数的意思：`repaired` 是上次写完对象、没来得及改记录大小的，这次补上了；`unsupported` 是不是 JPEG、带着不是 1 的 EXIF 方向、太大或解不开的，原样留着；`missing` 是 `media` 里有记录、存储里没有对象的；`waitingForSecret` 是家庭自带存储里的，没有 `APP_SECRET` 时跳过，不算失败；`failed` 不是 0 时退出码是 1，`failures` 里只有翻译过的原因（比如“连接不上存储地址”），重跑会再试。日志里没有 id、object key 和链接。
+
+也可以在本机执行（先按第 8 步备份）：
+
+```bash
+DATABASE_URL='<Session pooler 连接串>' DB_SSL=require APP_SECRET='<和函数相同，可选>' \
+S3_ENDPOINT=... S3_REGION=auto S3_BUCKET=... S3_ACCESS_KEY_ID=... S3_SECRET_ACCESS_KEY=... S3_FORCE_PATH_STYLE=true \
+  pnpm --filter @xiaodouya/server cli shrink-document-thumbs --dry-run   # 去掉 --dry-run 才写；--limit N 最多缩 N 张；--family <家庭 id> 只处理一家
+```
+
 **给单个家庭调配额**（默认值见下面的参数表）：
 
 ```sql
@@ -451,6 +474,11 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec ser
 # 想马上清掉账号删除留下的文件时手动执行。平时由下面的定时清理处理。
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T server \
   node dist/cli.mjs purge-objects
+
+# 一次性：把旧证件宽 720 的缩略图缩到长边 256（F-134，说明见 Supabase 方案的“缩小旧证件的缩略图”）。
+# 先按第 6 步备份，先 --dry-run 看数量，去掉它才写
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env exec -T server \
+  node dist/cli.mjs shrink-document-thumbs --dry-run
 ```
 
 每天清理一次，这是唯一要配置的定时任务。它清理默认存储（`S3_*`）里放弃的上传和删除满 30 天的文件，也处理账号删除后留下的文件。只用 App 里配置的存储时也要配：还在用的家庭的 Bucket 它不碰，但已删除账号的文件要靠它删。容器里有 `APP_SECRET`，两种存储都能处理：
