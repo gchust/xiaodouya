@@ -108,6 +108,7 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - tapOn: Timeline ${RUN_ID}的更多操作
 - tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: Timeline ${RUN_ID}
     timeout: 15000
