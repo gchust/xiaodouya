@@ -154,6 +154,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: region-row }
     direction: UP
+    # 不居中的话会停在只露出一条边的位置，点了打不开地区弹层（main 的 CI run 41998674929 这样失败过）
+    centerElement: true
     timeout: 90000
 # 向上滚了很长一段，列表还带着惯性，马上点会点空，地区弹层没打开（PR #73 的 CI run 41836513091 这样失败过）
 - waitForAnimationToEnd
