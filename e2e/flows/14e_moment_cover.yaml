@@ -127,6 +127,7 @@ appId: com.gchust.xiaodouya
 
 - tapOn: Cover ${RUN_ID}的更多操作
 - tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: Cover ${RUN_ID}
     timeout: 15000

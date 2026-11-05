@@ -52,7 +52,18 @@ appId: com.gchust.xiaodouya
 - takeScreenshot: .artifacts/e2e-11a-doc-files
 - scrollUntilVisible:
     element: { id: doc-file-remove-sample-certificate.pdf }
+# 移除文件要确认：先取消，文件还在；再移除并确认。
 - tapOn: { id: doc-file-remove-sample-certificate.pdf }
+- assertVisible: 从这份资料里移除sample-certificate.pdf？
+- takeScreenshot: .artifacts/e2e-11a-doc-remove-confirm
+- tapOn: { id: delete-sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-cancel }
+    timeout: 10000
+- assertVisible: 2 个
+- assertVisible: sample-certificate.pdf
+- tapOn: { id: doc-file-remove-sample-certificate.pdf }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     visible: 1 个
     timeout: 10000

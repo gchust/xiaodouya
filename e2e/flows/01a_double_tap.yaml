@@ -87,17 +87,20 @@ appId: com.gchust.xiaodouya
 - tapOn:
     text: 睡了.*
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
 - tapOn: 换尿布 · 尿尿
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
 - tapOn:
     text: 喂奶 \d+ml
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
