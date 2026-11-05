@@ -54,6 +54,30 @@ export const share: Catalog['share'] = {
     "After this, opening the link won't show anything. A page that is already open can still show photos and videos for up to 1 hour.",
   revoked: 'Revoked',
   revokeFailed: "Couldn't revoke it. Please try again later.",
+  // ─── 分享时间线（App） ─────────────────────────
+  shareTimelineLink: 'Share timeline',
+  shareTimelineA11y: 'Share moments from a period of time',
+  timelineSheetTitle: 'Share timeline',
+  timelineRangeWeek: 'Last 7 days',
+  timelineRangeMonth: 'Last 30 days',
+  timelineRangeAll: 'All',
+  timelineRangeCustom: 'Custom',
+  timelineFrom: 'From',
+  timelineTo: 'To',
+  timelineBadRange: 'The start date needs to be before the end date.',
+  timelineCounts: (moments, files) =>
+    moments
+      ? `This period has ${plural(moments, 'moment', 'moments')}${files ? `, ${plural(files, 'file', 'files')}` : ''}`
+      : 'No moments in this period yet',
+  timelineWhat:
+    "They can see every moment in this period: text, milestones, photos, videos and recordings, including any added to this period later. Feeds, diapers, sleep and other records, health records, letters to your baby and the time of birth aren't included.",
+  timelineLocation:
+    'Photos are shared as compressed previews without the location they were taken. Videos, recordings and older photos without a preview are the original files and can include where they were taken.',
+  timelineShareMessage: (range, url) => `Baby's timeline, ${range}: ${url}`,
+  linkTitleDay: (date) => `Day · ${date}`,
+  linkTitleTimeline: (range) => `Timeline · ${range}`,
+  rangeText: (from, to) => `${from} – ${to}`,
+  rangeAllUntil: (date) => `All moments, up to ${date}`,
   // ─── 网页 ──────────────────────────────────────
   pageTitleBefore: (name, days) => `${name}, ${plural(Number(days), 'day', 'days')} before birth`,
   fallbackName: 'Baby',
@@ -91,4 +115,16 @@ export const share: Catalog['share'] = {
   nextPhoto: 'Next',
   footer: 'Xiaodouya · Baby journal',
   footerNote: 'A family shared this private page with you. Please do not forward it.',
+  // ─── 网页：时间线 ──────────────────────────────
+  timelinePageTitle: (name) => `${name}'s timeline`,
+  timelineEmptyTitle: 'No moments in this period yet',
+  loadMore: 'Load more',
+  loadingMore: 'Loading…',
+  loadMoreFailed: "Couldn't load. Tap to try again",
+  timelineEnd: 'No earlier moments',
+  openMoment: (title) => `See everything in “${title}”`,
+  openMomentUntitled: 'See everything in this moment',
+  itemsTotal: (count) => plural(count, 'item', 'items'),
+  audioCount: (count) => plural(count, 'recording', 'recordings'),
+  closeMoment: 'Close',
 };

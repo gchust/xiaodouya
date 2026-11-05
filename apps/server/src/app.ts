@@ -14,6 +14,7 @@ import {
   CreateInviteRequest,
   CreateShareRequest,
   type CreateShareResponse,
+  CreateTimelineShareRequest,
   canReadCollection,
   canReadMediaScope,
   canWriteCollection,
@@ -66,6 +67,10 @@ import {
   type PublicConfig,
   PublicShareRequest,
   type PublicShareResponse,
+  PublicTimelineMomentRequest,
+  type PublicTimelineMomentResponse,
+  PublicTimelineRequest,
+  type PublicTimelineResponse,
   PushTokenRequest,
   parseCollectionData,
   RELEASE_MANIFEST_NAME,
@@ -75,6 +80,8 @@ import {
   type Role,
   type SendEmailCodeResponse,
   type ServerRecord,
+  SHARE_TIMELINE_MAX_AHEAD_MS,
+  type ShareKind,
   type ShareListResponse,
   StorageConfigInput,
   type StorageConfigView,
@@ -82,6 +89,7 @@ import {
   SYNC_PAGE_SIZE,
   SyncRequest,
   type SyncResponse,
+  TIMELINE_SHARE_INCLUDE,
   UpdateMemberRequest,
   UploadUrlRequest,
   type UploadUrlResponse,
@@ -141,7 +149,14 @@ import {
   RESERVATION_HOURS,
   uuidsIn,
 } from './quota';
-import { buildPublicShare, findActiveShare, type ShareRow, shareInclude } from './share';
+import {
+  buildPublicShare,
+  buildPublicTimeline,
+  buildPublicTimelineMoment,
+  findActiveShare,
+  type ShareRow,
+  shareInclude,
+} from './share';
 import {
   abortMultipart,
   activeStorage,
@@ -167,6 +182,8 @@ import {
 } from './storage';
 
 const PUBLIC_SHARE_PATH = '/v1/public/share';
+const PUBLIC_TIMELINE_PATH = '/v1/public/share/timeline';
+const PUBLIC_TIMELINE_MOMENT_PATH = '/v1/public/share/timeline/moment';
 const SESSION_DAYS = 365;
 const INVITE_DAYS = 7;
 const UPLOAD_URL_TTL = 3600;
@@ -413,22 +430,24 @@ export function createApp({
   // ─── 分享页的公开接口 ──────────────────────────────────
 
   /**
-   * 整个服务只有这一个接口开 CORS：分享页是别的域名上的静态页面。`*` 不带凭据，
+   * 整个服务只有分享页的这三个接口开 CORS：分享页是别的域名上的静态页面。`*` 不带凭据，
    * 令牌在请求体里，App 用的登录接口都不受影响。注册在 v1 之前：v1 的中间件会要求登录，预检也过不去。
    */
-  app.use(
-    PUBLIC_SHARE_PATH,
-    cors({
-      origin: '*',
-      allowMethods: ['POST', 'OPTIONS'],
-      allowHeaders: ['content-type', 'x-region'],
-      maxAge: 86_400,
-    }),
-    async (c, next) => {
-      await next();
-      c.header('cache-control', 'no-store');
-    },
-  );
+  for (const path of [PUBLIC_SHARE_PATH, PUBLIC_TIMELINE_PATH, PUBLIC_TIMELINE_MOMENT_PATH]) {
+    app.use(
+      path,
+      cors({
+        origin: '*',
+        allowMethods: ['POST', 'OPTIONS'],
+        allowHeaders: ['content-type', 'x-region'],
+        maxAge: 86_400,
+      }),
+      async (c, next) => {
+        await next();
+        c.header('cache-control', 'no-store');
+      },
+    );
+  }
 
   /** 不存在、格式不对、过期、撤销都是它，不透露是哪一种。不走 fail：那会把原因写进日志。 */
   const shareMiss = (c: Context) =>
@@ -437,35 +456,68 @@ export function createApp({
       404,
     );
 
-  app.post(PUBLIC_SHARE_PATH, bodyLimit({ maxSize: 1024, onError: shareMiss }), async (c) => {
-    const { sharePublicPerIp, sharePublicPerToken } = config.limits;
-    const tooMany = () =>
-      c.json<ApiError>(
-        { error: { code: 'rate_limited', message: '打开的次数有点多，等一会儿再试' } },
-        429,
-      );
-    const ip = clientIp(c);
-    if (
-      ip &&
-      sharePublicPerIp > 0 &&
-      !(await allowAttempt(sql, `share-ip:${ip}`, sharePublicPerIp, 15 * 60_000))
-    ) {
-      return tooMany();
-    }
-    const parsed = PublicShareRequest.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return shareMiss(c);
-    const { token } = parsed.data;
-    // 查之前就计数：链接不存在时也一样，不能靠 429 判断它存不存在。allowAttempt 只存键的哈希。
-    if (
-      sharePublicPerToken > 0 &&
-      !(await allowAttempt(sql, `share-token:${token}`, sharePublicPerToken, HOUR_MS))
-    ) {
-      return tooMany();
-    }
-    const share = await findActiveShare(sql, token);
-    if (!share) return shareMiss(c);
-    return c.json<PublicShareResponse>(await buildPublicShare(sql, config, share));
-  });
+  /**
+   * 三个公开接口共用的门：按来源和按令牌限流都在查库之前，链接的类型对不上和失效是同一个回答
+   * （一天的令牌打不开时间线，反过来也一样）。一个链接的翻页、点开和打开算同一个计数。
+   */
+  function publicShareRoute<T extends { token: string }>(
+    path: string,
+    schema: z.ZodType<T>,
+    kind: ShareKind,
+    respond: (c: Context, share: ShareRow, body: T) => Promise<Response>,
+  ) {
+    app.post(path, bodyLimit({ maxSize: 1024, onError: shareMiss }), async (c) => {
+      const { sharePublicPerIp, sharePublicPerToken } = config.limits;
+      const tooMany = () =>
+        c.json<ApiError>(
+          { error: { code: 'rate_limited', message: '打开的次数有点多，等一会儿再试' } },
+          429,
+        );
+      const ip = clientIp(c);
+      if (
+        ip &&
+        sharePublicPerIp > 0 &&
+        !(await allowAttempt(sql, `share-ip:${ip}`, sharePublicPerIp, 15 * 60_000))
+      ) {
+        return tooMany();
+      }
+      const parsed = schema.safeParse(await c.req.json().catch(() => null));
+      if (!parsed.success) return shareMiss(c);
+      const { token } = parsed.data;
+      // 查之前就计数：链接不存在时也一样，不能靠 429 判断它存不存在。allowAttempt 只存键的哈希。
+      if (
+        sharePublicPerToken > 0 &&
+        !(await allowAttempt(sql, `share-token:${token}`, sharePublicPerToken, HOUR_MS))
+      ) {
+        return tooMany();
+      }
+      const share = await findActiveShare(sql, token);
+      if (!share || share.kind !== kind) return shareMiss(c);
+      return respond(c, share, parsed.data);
+    });
+  }
+
+  publicShareRoute(PUBLIC_SHARE_PATH, PublicShareRequest, 'day', async (c, share) =>
+    c.json<PublicShareResponse>(await buildPublicShare(sql, config, share)),
+  );
+
+  publicShareRoute(
+    PUBLIC_TIMELINE_PATH,
+    PublicTimelineRequest,
+    'timeline',
+    async (c, share, body) =>
+      c.json<PublicTimelineResponse>(await buildPublicTimeline(sql, config, share, body.cursor)),
+  );
+
+  publicShareRoute(
+    PUBLIC_TIMELINE_MOMENT_PATH,
+    PublicTimelineMomentRequest,
+    'timeline',
+    async (c, share, body) => {
+      const moment = await buildPublicTimelineMoment(sql, config, share, body.momentId);
+      return moment ? c.json<PublicTimelineMomentResponse>(moment) : shareMiss(c);
+    },
+  );
 
   // ─── 反馈附件的公开链接 ─────────────────────────────────
   // issue 正文里嵌的就是它（F-126）。不用登录，GitHub 的图片代理和看 issue 的人直接打开。
@@ -1416,15 +1468,25 @@ export function createApp({
              WHERE family_id = ${familyId} AND created_by = ${userId}::uuid AND revoked_at IS NULL`;
   }
 
-  // ─── 分享一天 ───────────────────────────────────────────
+  // ─── 分享一天、分享时间线 ───────────────────────────────
 
-  v1.post('/shares', async (c) => {
+  /** 一天和时间线共用：同样的角色要求、同样的家庭上限、同样的令牌。 */
+  async function createShare(
+    c: Context<Env>,
+    share: {
+      kind: ShareKind;
+      fromAt: number;
+      toAt: number;
+      timezone: string;
+      include: { moments: boolean; daily: boolean; health: boolean };
+      units: Record<string, string>;
+      ttlDays: number;
+    },
+  ) {
     const m = requireFamily(c);
-    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
-    const body = await parseBody(c, CreateShareRequest);
     const id = crypto.randomUUID();
     const token = newToken();
-    const expires = new Date(Date.now() + body.ttlDays * DAY_MS);
+    const expires = new Date(Date.now() + share.ttlDays * DAY_MS);
     await sql.begin(async (tx) => {
       // 数和写要在同一把锁里，否则并行创建会一起通过检查。
       await tx`SELECT 1 FROM families WHERE id = ${m.familyId} FOR UPDATE`;
@@ -1437,19 +1499,47 @@ export function createApp({
         });
       }
       await tx`
-        INSERT INTO shares (id, family_id, created_by, token_hash, from_at, to_at, timezone,
+        INSERT INTO shares (id, family_id, created_by, token_hash, kind, from_at, to_at, timezone,
                             include_moments, include_daily, include_health, units, expires_at)
-        VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${body.fromAt}, ${body.toAt}, ${body.timezone},
-                ${body.include.moments}, ${body.include.daily}, ${body.include.health}, ${tx.json(body.units)}, ${expires})`;
+        VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${share.kind},
+                ${share.fromAt}, ${share.toAt}, ${share.timezone},
+                ${share.include.moments}, ${share.include.daily}, ${share.include.health},
+                ${tx.json(share.units)}, ${expires})`;
     });
     return c.json<CreateShareResponse>({ id, token, expiresAt: expires.getTime() }, 201);
+  }
+
+  v1.post('/shares', async (c) => {
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    const body = await parseBody(c, CreateShareRequest);
+    return createShare(c, { ...body, kind: 'day' });
+  });
+
+  v1.post('/shares/timeline', async (c) => {
+    const m = requireFamily(c);
+    if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
+    const body = await parseBody(c, CreateTimelineShareRequest);
+    // 结束定在创建这天：链接不会一直跟着往后看，之后新记的回忆不会自己跑进已经发出去的链接。
+    if (body.toAt > Date.now() + SHARE_TIMELINE_MAX_AHEAD_MS) {
+      fail(400, 'invalid_input', '输入有误：toAt 不能晚于明天', {
+        field: 'toAt',
+        detail: 'too far ahead',
+      });
+    }
+    return createShare(c, {
+      ...body,
+      kind: 'timeline',
+      include: TIMELINE_SHARE_INCLUDE,
+      units: {},
+    });
   });
 
   v1.get('/shares', async (c) => {
     const m = requireFamily(c);
     if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const rows = await sql<(ShareRow & { label: string })[]>`
-      SELECT s.id, s.family_id, s.created_by, s.from_at, s.to_at, s.timezone,
+      SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
              s.include_moments, s.include_daily, s.include_health, s.units, s.expires_at, s.created_at,
              mem.label
       FROM shares s
@@ -1460,6 +1550,7 @@ export function createApp({
     return c.json<ShareListResponse>({
       shares: rows.map((row) => ({
         id: row.id,
+        kind: row.kind,
         fromAt: Number(row.from_at),
         toAt: Number(row.to_at),
         timezone: row.timezone,

@@ -4,6 +4,7 @@ import type {
   CreateFeedbackResponse,
   CreateShareRequest,
   CreateShareResponse,
+  CreateTimelineShareRequest,
   FamilyExport,
   FeedbackAttachmentUrlResponse,
   FeedbackInboxItem,
@@ -242,6 +243,9 @@ export class Api {
   }
   createShare(body: CreateShareRequest) {
     return this.request<CreateShareResponse>('POST', '/v1/shares', body);
+  }
+  createTimelineShare(body: CreateTimelineShareRequest) {
+    return this.request<CreateShareResponse>('POST', '/v1/shares/timeline', body);
   }
   listShares() {
     return this.request<ShareListResponse>('GET', '/v1/shares');

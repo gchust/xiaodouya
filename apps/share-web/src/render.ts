@@ -41,7 +41,7 @@ export interface RenderContext {
   onMediaRetry(slot: MediaSlot): void;
 }
 
-function el<K extends keyof HTMLElementTagNameMap>(
+export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
   text?: string,
@@ -94,7 +94,7 @@ function slotShell(id: string, frame: HTMLElement, content: HTMLElement, ctx: Re
   return slot;
 }
 
-function imageTile(
+export function imageTile(
   media: PublicMedia,
   frame: HTMLElement,
   alt: string,
@@ -142,7 +142,7 @@ function imageTile(
   return slot;
 }
 
-function videoFrame(
+export function videoFrame(
   media: PublicMedia,
   ctx: RenderContext,
 ): { node: HTMLElement; slot: MediaSlot } {
@@ -181,7 +181,7 @@ function videoFrame(
   return { node: frame, slot };
 }
 
-function audioPlayer(
+export function audioPlayer(
   media: PublicMedia,
   ctx: RenderContext,
 ): { node: HTMLElement; slot: MediaSlot } {
@@ -263,6 +263,36 @@ function daySummary(data: PublicShareResponse, now: number): HTMLElement | null 
   return card;
 }
 
+/** 照片和视频排成相册（`layoutGallery`）。点照片在这些照片里放大翻看，视频在格子里播放。 */
+export function galleryGrid(
+  files: PublicMedia[],
+  altOf: (file: PublicMedia) => string,
+  ctx: RenderContext,
+  slots: MediaSlot[],
+): HTMLElement {
+  const photos = files.filter((file) => file.kind === 'image');
+  const gallery = el('div', 'gallery');
+  for (const row of layoutGallery(files)) {
+    const rowNode = el('div', `gallery-row gallery-row-${row.kind}`);
+    for (const file of row.items) {
+      if (file.kind === 'video') {
+        const { node, slot } = videoFrame(file, ctx);
+        rowNode.append(node);
+        slots.push(slot);
+        continue;
+      }
+      const frame = el('div', 'frame');
+      if (row.kind === 'full') frame.style.aspectRatio = String(fullRowAspect(file));
+      rowNode.append(frame);
+      slots.push(
+        imageTile(file, frame, altOf(file), ctx, () => ctx.onPhoto(photos, photos.indexOf(file))),
+      );
+    }
+    gallery.append(rowNode);
+  }
+  return gallery;
+}
+
 function gallerySection(
   data: PublicShareResponse,
   ctx: RenderContext,
@@ -274,32 +304,9 @@ function gallerySection(
   if (items.length === 0 && data.omittedMedia === 0) return null;
   const section = el('section', 'photos');
   const files = items.map((item) => item.file);
-  const photos = files.filter((file) => file.kind === 'image');
   const altOf = new Map(items.map(({ file, moment }) => [file, moment.title]));
-  if (files.length > 0) {
-    const gallery = el('div', 'gallery');
-    for (const row of layoutGallery(files)) {
-      const rowNode = el('div', `gallery-row gallery-row-${row.kind}`);
-      for (const file of row.items) {
-        if (file.kind === 'video') {
-          const { node, slot } = videoFrame(file, ctx);
-          rowNode.append(node);
-          slots.push(slot);
-          continue;
-        }
-        const frame = el('div', 'frame');
-        if (row.kind === 'full') frame.style.aspectRatio = String(fullRowAspect(file));
-        rowNode.append(frame);
-        slots.push(
-          imageTile(file, frame, altOf.get(file) ?? '', ctx, () =>
-            ctx.onPhoto(photos, photos.indexOf(file)),
-          ),
-        );
-      }
-      gallery.append(rowNode);
-    }
-    section.append(gallery);
-  }
+  if (files.length > 0)
+    section.append(galleryGrid(files, (file) => altOf.get(file) ?? '', ctx, slots));
   if (data.omittedMedia > 0) {
     section.append(el('p', 'note', t().share.omittedMedia(data.omittedMedia)));
   }
@@ -383,7 +390,7 @@ function timelineSection(
   return section;
 }
 
-function pageFooter(): HTMLElement {
+export function pageFooter(): HTMLElement {
   const footer = el('footer', 'foot');
   footer.append(el('p', 'foot-note', t().share.footerNote));
   footer.append(el('p', 'foot-brand', t().share.footer));

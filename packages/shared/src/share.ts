@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type Age, ageParts, dayNumber } from './domain/age';
+import { type Age, ageParts, dayNumber, formatFullDate, formatShortDate } from './domain/age';
 import { describeEvent } from './domain/events';
 import { FORGOTTEN_SLEEP_MS } from './domain/feeding';
 import {
@@ -75,8 +75,12 @@ export interface CreateShareResponse {
   expiresAt: number;
 }
 
+export type ShareKind = 'day' | 'timeline';
+
 export interface ShareSummary {
   id: string;
+  /** 新服务端一直带。旧服务端没有这个字段，按一天处理。 */
+  kind?: ShareKind;
   fromAt: number;
   toAt: number;
   timezone: string;
@@ -353,4 +357,155 @@ export function pendingShareFiles(
     for (const file of data.media) if (pendingIds.has(file.id)) count += 1;
   }
   return count;
+}
+
+// ─── 分享时间线（F-133） ─────────────────────────────────
+
+/**
+ * 时间线每页几条回忆。列表上每条只签封面（预览或原文件加缩略图，最多 2 个签名），
+ * 一页最多 40 个签名；点开一条回忆时再取它的全部文件，那一次最多 `MAX_PUBLIC_MEDIA` 个。
+ */
+export const TIMELINE_PAGE_SIZE = 20;
+/** “全部”从 0 开始，结束仍是创建那天：之后新记的回忆不会自己跑进已经发出去的链接。 */
+export const SHARE_TIMELINE_ALL_FROM = 0;
+/** 时间线只有回忆。喂奶、尿布这些记录和健康记录都不发，比分享一天暴露得少。 */
+export const TIMELINE_SHARE_INCLUDE: ShareInclude = { moments: true, daily: false, health: false };
+/** 结束最晚是创建时之后这么久。手机算的是当地今天的结尾，任何时区都在两天以内。 */
+export const SHARE_TIMELINE_MAX_AHEAD_MS = 2 * 24 * 3_600_000;
+
+const SHARE_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+const TIMELINE_PREFIX = 't/';
+
+/** 链接的片段。一天的链接一直是 `#令牌`，旧版 App 发出去的链接要照常打开。 */
+export function shareFragment(kind: ShareKind, token: string): string {
+  return kind === 'timeline' ? `${TIMELINE_PREFIX}${token}` : token;
+}
+
+export function parseShareFragment(hash: string): { kind: ShareKind; token: string } | null {
+  const fragment = hash.replace(/^#/, '');
+  const kind: ShareKind = fragment.startsWith(TIMELINE_PREFIX) ? 'timeline' : 'day';
+  const token = kind === 'timeline' ? fragment.slice(TIMELINE_PREFIX.length) : fragment;
+  return SHARE_TOKEN.test(token) ? { kind, token } : null;
+}
+
+export const CreateTimelineShareRequest = z
+  .object({
+    fromAt: z.number().int().nonnegative(),
+    toAt: z.number().int().positive(),
+    timezone: z.string().min(1).max(64).refine(isValidTimeZone),
+    ttlDays: z.union(SHARE_TTL_DAYS.map((days) => z.literal(days))).default(DEFAULT_SHARE_TTL_DAYS),
+  })
+  .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
+export type CreateTimelineShareRequest = z.input<typeof CreateTimelineShareRequest>;
+
+/** 游标是上一页最后一条的 `at.回忆 id`，按 (at, id) 倒序翻页：同一毫秒的两条也不会漏。 */
+export const TIMELINE_CURSOR =
+  /^\d{1,16}\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export const PublicTimelineRequest = z.object({
+  token: PublicShareRequest.shape.token,
+  cursor: z.string().regex(TIMELINE_CURSOR).optional(),
+});
+
+export const PublicTimelineMomentRequest = z.object({
+  token: PublicShareRequest.shape.token,
+  momentId: z.uuid(),
+});
+
+const PublicAge = z.object({ months: z.number(), days: z.number() });
+
+export const PublicTimelineEntry = z.object({
+  /** 回忆的 id，点开时用它取全部文件。和文件 id 一样是客户端生成的 UUID，不靠它授权。 */
+  id: z.string(),
+  at: z.number(),
+  title: z.string(),
+  text: z.string(),
+  milestone: z.boolean(),
+  byName: z.string().optional(),
+  dayNumber: z.number().nullable(),
+  age: PublicAge.nullable(),
+  /** F-119 设置的封面；没设、没传完或者是录音时是第一个能显示的照片或视频。 */
+  cover: PublicMedia.nullable(),
+  /** 能显示的照片和视频有几个，包括封面。 */
+  visualCount: z.number(),
+  audioCount: z.number(),
+});
+export type PublicTimelineEntry = z.infer<typeof PublicTimelineEntry>;
+
+export const PublicTimelineResponse = z.object({
+  kind: z.literal('timeline'),
+  baby: z.object({
+    name: z.string(),
+    /** 范围最后一天的月龄，服务端算好，不发出生时间。 */
+    age: PublicAge.nullable(),
+  }),
+  range: z.object({ fromAt: z.number(), toAt: z.number(), timezone: z.string() }),
+  /** 新的在前，和 App 的时间线一样。 */
+  entries: z.array(PublicTimelineEntry),
+  /** 没有更早的了是 null。一页可能因为跳过空的回忆而不满，只要它不是 null 就还有。 */
+  nextCursor: z.string().nullable(),
+  mediaExpiresIn: z.number(),
+});
+export type PublicTimelineResponse = z.infer<typeof PublicTimelineResponse>;
+
+export const PublicTimelineMomentResponse = z.object({
+  media: z.array(PublicMedia),
+  omittedMedia: z.number(),
+  mediaExpiresIn: z.number(),
+});
+export type PublicTimelineMomentResponse = z.infer<typeof PublicTimelineMomentResponse>;
+
+export function hasTimelineContent(entry: PublicTimelineEntry): boolean {
+  return Boolean(
+    entry.title.trim() || entry.text.trim() || entry.visualCount > 0 || entry.audioCount > 0,
+  );
+}
+
+/** 一条回忆在分享者的时区里是第几天、多大。孕期的回忆没有月龄。 */
+export function shareMomentAge(
+  birthAt: number,
+  at: number,
+  timeZone: string,
+): { dayNumber: number; age: Age | null } {
+  // 按日历日比：出生当天、早于出生时刻的回忆也是第 1 天。
+  const birth = zonedCalendarDate(birthAt, timeZone).getTime();
+  const day = zonedCalendarDate(at, timeZone).getTime();
+  return { dayNumber: dayNumber(birth, day), age: day < birth ? null : ageParts(birth, day) };
+}
+
+/**
+ * 时间线上的封面，规则和 App 的 `momentCover` 一样，只是“能显示”以服务端的 media 表为准：
+ * 设置的封面没传完、被移除或者其实是录音时，回到第一个能显示的。
+ */
+export function shareCoverId(
+  media: readonly { id: string }[],
+  coverMediaId: string | undefined,
+  visualIds: ReadonlySet<string>,
+): string | null {
+  const visible = media.filter((file) => visualIds.has(file.id));
+  return (visible.find((file) => file.id === coverMediaId) ?? visible[0])?.id ?? null;
+}
+
+/**
+ * 时间线范围的文字。`calendar` 把时刻换成本地日历上的那一天：App 里用手机的时区（原样返回），
+ * 网页里用分享者的时区（`zonedCalendarDate`）。
+ */
+export function timelineRangeText(
+  range: { fromAt: number; toAt: number },
+  now: number,
+  calendar: (ms: number) => number,
+): string {
+  const year = (ms: number) => new Date(ms).getFullYear();
+  const thisYear = year(calendar(now));
+  const last = calendar(range.toAt - 1);
+  if (range.fromAt === SHARE_TIMELINE_ALL_FROM) {
+    return t().share.rangeAllUntil(
+      year(last) === thisYear ? formatShortDate(last) : formatFullDate(last),
+    );
+  }
+  const first = calendar(range.fromAt);
+  const format =
+    year(first) === thisYear && year(last) === thisYear ? formatShortDate : formatFullDate;
+  if (format(first) === format(last)) return format(first);
+  return t().share.rangeText(format(first), format(last));
 }

@@ -18,12 +18,17 @@ import { gridItemWidth } from '../lib/layout';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
+import { useCanShare } from '../sheets/shareSheets';
+import { ShareTimelineSheet } from '../sheets/shareTimelineSheet';
 import { colors, fonts, spacing } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/primitives';
 
 type SubTab = 'timeline' | 'photos' | 'milestones' | 'letters';
+
+/** 链接文字只有 18 高，上下各扩 13 才到 44。 */
+const LINK_HIT_SLOP = { top: 13, bottom: 13, left: 12, right: 12 };
 
 const tabs = (): { key: SubTab; label: string }[] => [
   { key: 'timeline', label: t().recall.timeline },
@@ -41,6 +46,7 @@ export function RecallScreen() {
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
   const scroll = useTabScrollRef('recall');
+  const canShare = useCanShare();
 
   // 新内容排在最前面，切到对应子标签后还要回到顶部才看得到。
   const showSaved = (kind: MomentKind) => {
@@ -51,7 +57,20 @@ export function RecallScreen() {
   return (
     <View style={s.root} testID="recall-screen">
       <View style={[s.header, { paddingTop: insets.top + 12 }]}>
-        <PageTitle>{t().recall.title}</PageTitle>
+        <View style={s.titleRow}>
+          <PageTitle>{t().recall.title}</PageTitle>
+          {tab === 'timeline' && canShare ? (
+            <Pressable
+              testID="share-timeline"
+              accessibilityRole="button"
+              accessibilityLabel={t().share.shareTimelineA11y}
+              hitSlop={LINK_HIT_SLOP}
+              onPress={() => sheet.open(t().share.timelineSheetTitle, () => <ShareTimelineSheet />)}
+            >
+              <Text style={s.shareLink}>{t().share.shareTimelineLink}</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <View style={s.tabs}>
           {tabs().map((t) => {
             const on = tab === t.key;
@@ -466,6 +485,13 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   // zIndex：子标签的点击区伸到了头部下方，要压过后面的滚动区。
   header: { paddingHorizontal: spacing.page, gap: 12, zIndex: 1 },
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  shareLink: { fontSize: 13, color: colors.accent },
   // 上下各 9 的内边距把点击区撑到 44，负外边距抵消，看起来位置不变。
   tabs: { flexDirection: 'row', gap: 18, marginVertical: -9 },
   tab: { minHeight: 44, paddingVertical: 9, justifyContent: 'center' },

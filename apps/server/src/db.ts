@@ -280,6 +280,11 @@ export const migrations: readonly string[] = [
   CREATE UNIQUE INDEX feedback_attachments_public_token ON feedback_attachments(public_token)
     WHERE public_token IS NOT NULL;
   `,
+  // 分享时间线（F-133）。和一天的链接共用这张表和失效规则，kind 分开两种公开接口。
+  // 已有的行都是一天。时间线只有回忆：include_moments 为真、另外两项为假，units 不用（存空对象）。
+  `
+  ALTER TABLE shares ADD COLUMN kind TEXT NOT NULL DEFAULT 'day' CHECK (kind IN ('day', 'timeline'));
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {
