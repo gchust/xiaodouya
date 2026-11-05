@@ -870,8 +870,7 @@ async function publicShare(base: string) {
   });
   check(chosenRevoked.status === 200, '撤销选中回忆的链接');
   check(
-    (await post('/v1/public/share/timeline', { token: chosen.json.token })).response.status ===
-      404,
+    (await post('/v1/public/share/timeline', { token: chosen.json.token })).response.status === 404,
     '撤销后打不开',
   );
 }
