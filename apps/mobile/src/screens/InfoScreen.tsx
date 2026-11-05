@@ -3,6 +3,8 @@ import {
   type BabyData,
   birthMeasuresFromInput,
   birthMeasureText,
+  type DocumentData,
+  documentCover,
   doseStatus,
   dosesToBackfill,
   type EventData,
@@ -36,6 +38,7 @@ import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { fileBadge } from '../lib/mediaUtils';
+import { DocumentThumb } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets';
@@ -67,7 +70,7 @@ export function InfoScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('info');
   const { baby, documents, events, vaccinePlans } = useRecords();
-  const { role } = useApp();
+  const { role, prefs } = useApp();
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();
@@ -186,7 +189,6 @@ export function InfoScreen() {
         ) : (
           <View style={s.docGrid}>
             {documents.map((d) => {
-              const first = d.data.files[0];
               return (
                 <PressScale
                   key={d.id}
@@ -196,11 +198,7 @@ export function InfoScreen() {
                   style={[s.docCard, { width: docWidth }]}
                   onPress={() => router.push({ pathname: '/doc/[id]', params: { id: d.id } })}
                 >
-                  <Stripes style={s.docThumb}>
-                    <Mono weight="medium" style={{ fontSize: 10, color: colors.muted }}>
-                      {first ? fileBadge(first) : t().info.emptyDoc}
-                    </Mono>
-                  </Stripes>
+                  <DocCover name={d.data.name} files={d.data.files} locked={prefs.documentLock} />
                   <Text style={s.docName} numberOfLines={1}>
                     {d.data.name}
                   </Text>
@@ -362,6 +360,42 @@ export function InfoScreen() {
         <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.knowledgeNote}</Muted>
       </View>
     </ScrollView>
+  );
+}
+
+/**
+ * 证件卡片的上半部分：第一张照片的缩略图，一眼认得出是哪张证件。PDF 和拿不到缩略图时是类型标记，PDF 再加文件名。
+ * 打开了证件夹指纹锁时只显示标记：资料页不在锁后面，不能在这里露出证件的样子。
+ */
+function DocCover({
+  name,
+  files,
+  locked,
+}: {
+  name: string;
+  files: DocumentData['files'];
+  locked: boolean;
+}) {
+  const cover = documentCover(files);
+  const pdfName = cover?.media.kind === 'pdf' ? cover.media.name : undefined;
+  return (
+    <Stripes style={s.docThumb}>
+      <Mono weight="medium" style={{ fontSize: 10, color: colors.muted }}>
+        {cover ? fileBadge(cover.media) : t().info.emptyDoc}
+      </Mono>
+      {pdfName ? (
+        <Text numberOfLines={1} style={s.docFileName}>
+          {pdfName}
+        </Text>
+      ) : null}
+      {cover?.kind === 'thumb' && !locked ? (
+        <DocumentThumb
+          media={cover.media}
+          testID={`doc-thumb-${name}`}
+          style={StyleSheet.absoluteFill}
+        />
+      ) : null}
+    </Stripes>
   );
 }
 
@@ -794,7 +828,16 @@ const s = StyleSheet.create({
     padding: 12,
     gap: 6,
   },
-  docThumb: { height: 56, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  docThumb: {
+    height: 88,
+    borderRadius: 8,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+  },
+  docFileName: { fontSize: 10, color: colors.muted, maxWidth: '100%' },
   docName: { fontSize: 13, color: colors.ink },
   chart: {
     flexDirection: 'row',

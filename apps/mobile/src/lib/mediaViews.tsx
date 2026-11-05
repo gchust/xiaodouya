@@ -135,11 +135,24 @@ function useUrlRetry(settled: boolean) {
   return { retry, schedule, succeeded };
 }
 
-/** 解析一个文件的显示地址：先用本地副本，否则取签名链接。 */
-export function useMediaSource(media: MediaRef, variant: MediaVariant) {
+/**
+ * 解析一个文件的显示地址：先用本地副本，否则取签名链接。
+ * thumbOnly：只用缩略图（证件卡片）。拿不到时不退回服务端的原图，返回 null 由调用方显示占位；
+ * 离线时用看过之后留在 expo-image 磁盘缓存里的那份（退出登录时清掉）。
+ */
+export function useMediaSource(
+  media: MediaRef,
+  variant: MediaVariant,
+  options?: { thumbOnly?: boolean },
+) {
   const { api, uploads } = useApp();
   const [source, setSource] = useState<MediaSource | null>(null);
-  const effective = variant === 'thumb' && !media.hasThumb ? 'original' : variant;
+  const thumbOnly = options?.thumbOnly === true;
+  const effective = thumbOnly
+    ? 'thumb'
+    : variant === 'thumb' && !media.hasThumb
+      ? 'original'
+      : variant;
   const pendingUpload = uploads.pendingIds().has(media.id);
   const { retry, schedule, succeeded } = useUrlRetry(source !== null);
 
@@ -163,12 +176,19 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
     }
     const resolve = async () => {
       const batcher = mediaUrlBatcher(api);
-      const url = await batcher.get(media.id, effective);
+      const url = await batcher.lookup(media.id, effective);
       if (!alive) return;
       if (url) {
         // 签名链接每次都变，用文件 id 做缓存键，否则同一张图会反复下载。
         succeeded();
         setSource({ uri: url, cacheKey: `${media.id}/${effective}` });
+        return;
+      }
+      if (thumbOnly) {
+        const cached = url === undefined ? await cachedImageUri(`${media.id}/thumb`) : null;
+        if (!alive) return;
+        if (cached) setSource({ uri: cached, cacheKey: `${media.id}/thumb` });
+        else timer = schedule();
         return;
       }
       // 缩略图可能还没传到，或这是家人刚传的：退回原图。
@@ -188,8 +208,20 @@ export function useMediaSource(media: MediaRef, variant: MediaVariant) {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [api, media.id, effective, pendingUpload, retry]);
+  }, [api, media.id, effective, thumbOnly, pendingUpload, retry]);
   return source;
+}
+
+/** expo-image 磁盘缓存里这个缓存键对应的文件。没有或读不到时是 null。 */
+async function cachedImageUri(cacheKey: string): Promise<string | null> {
+  try {
+    const path = await Image.getCachePathAsync(cacheKey);
+    if (!path) return null;
+    const uri = path.startsWith('file:') ? path : `file://${path}`;
+    return new File(uri).exists ? uri : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface PhotoSources {
@@ -301,6 +333,33 @@ export function MediaImage({
         />
       ) : null}
     </View>
+  );
+}
+
+/**
+ * 证件卡片上的缩略图。只用缩略图，拿不到时什么都不画，下面的类型标记露出来。
+ * 磁盘缓存在 App 的缓存目录，退出登录和删除账号时随 clearLocalMedia 清掉。
+ */
+export function DocumentThumb({
+  media,
+  testID,
+  style,
+}: {
+  media: MediaRef;
+  testID: string;
+  style?: StyleProp<ImageStyle>;
+}) {
+  const source = useMediaSource(media, 'thumb', { thumbOnly: true });
+  if (!source) return null;
+  return (
+    <Image
+      testID={testID}
+      source={source}
+      style={style}
+      contentFit="cover"
+      transition={200}
+      cachePolicy="disk"
+    />
   );
 }
 

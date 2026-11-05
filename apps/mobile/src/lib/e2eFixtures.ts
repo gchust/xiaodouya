@@ -19,6 +19,10 @@ const AVATAR_PNG_BASE64 =
 const EXIF_JPEG_BASE64 =
   '/9j/4QC/RXhpZgAASUkqAAgAAAADAA4BAgAfAAAAMgAAABIBAwABAAAABgAAACWIBAABAAAAUQAAAAAAAABYSUFPRE9VWUEgRklDVElPTkFMIFRFU1QgSU1BR0UABAABAAIAAgAAAE4AAAACAAUAAwAAAIcAAAADAAIAAgAAAEUAAAAEAAUAAwAAAJ8AAAAAAAAADAAAAAEAAAAiAAAAAQAAADgAAAABAAAAewAAAAEAAAAtAAAAAQAAAAYAAAABAAAA/+AAEEpGSUYAAQEAAAEAAQAA/9sAQwAKBwcIBwYKCAgICwoKCw4YEA4NDQ4dFRYRGCMfJSQiHyIhJis3LyYpNCkhIjBBMTQ5Oz4+PiUuRElDPEg3PT47/9sAQwEKCwsODQ4cEBAcOygiKDs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7/8AAEQgAMABAAwEiAAIRAQMRAf/EABYAAQEBAAAAAAAAAAAAAAAAAAAEB//EABYQAQEBAAAAAAAAAAAAAAAAAAATYf/EABcBAQADAAAAAAAAAAAAAAAAAAACAwX/xAAWEQEBAQAAAAAAAAAAAAAAAAAAERL/2gAMAwEAAhEDEQA/ANFqVR1Ks2tLKypVHUqUysqVR1KlMrKlUdSpTKOuldR1Ko1dlZXSuo6lSmVldK6jqVKZWV0rqOpUplHUqjqVQq/KypVHUqUysqVR1KlMrKlUdSpTL//Z';
 
+// 600×400 的虚构证件：色块和灰条，没有文字。比证件缩略图的长边（256）大，verify-uploads 才能核对缩小过。由 ImageMagick 生成。
+const DOCUMENT_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAlgAAAGQCAMAAABF6+6qAAAAD1BMVEXAb0/07OC5sqaPh3taVEwSZ2inAAADbUlEQVR42u3cyxEAEBBEQb/8Y3aSgEIt+qWgjztSkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiRJkiSdKEsbAktgCSyBJYElsASWBJbAElgSWAJLYElgCSyBJYElsASWBJbAElgSWAJLYElgCSyBJYElsASWBJbAElgSWAJLYElg6SJYJXreESywwAJLYAkssMACS2AJLLDAAktgCayjsKpmAgsssMACCyywwAILLLDAAgsssMACCyywwAILLLDAAgsssMACCyywwAILLLDAAgsssMACCyywwAILLLCsdASWwAILLLAElsACCyywBJbAAgsssASWwAILLLAElsACCyywBJbAAgsssASWwAILLLAElsACCyywBJbAAgsssASWwFoCy48xYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGCBBRZYYIHlglRgCSywwAJLYAkssMACS2AJLLDAAktgCSywwAILLLAEFlhggQUWWAILLLDAAgssgQUWWGCBBZbAsiuMvT8ES2CBBRZYYIElsMACCyywwBJYYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGC5IHVBChZYYAkssMACCyywBBZYYIEFFlgCCyywwAILLIElsMACCyyBJbDAAgssgSWwwAILLIElsMACy67wzfUfWGCBBRZYYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGCBBRZYYIEFFlhggQUWWGC5IP0ysAQWWGCBBRZYAgsssMACCyyBBRZYYIEFlsACCyywwAJLYIEFFlhggSWwwAILLLDAElhggQUWWGAJLLDAAgsssAQWWGCBBRZYAktggQUWWAJLYIEFFlgCS2CBBRZYAktggQUWWAJLYIEFFlgCS2CBBRZYAktggQUWWAJLYIEFFlgCS5FhSWAJLIElgSWwBJYElsASWBJYAktgSWAJLIElgSWwBJYElsASWBJYAktgSWAJLIElgaVgsJo0AktgCSyBBZbAElgCCyyBJbAEFlgCS2AJLLAElsASWGAJLIElsNy8y5hCYElgCSyBJYElsASWBJbAElgSWAJLYElgCSyBJYElsASWBJbAElgCSwJLYAksCSyBJbCklXUiRZKh5yzfogAAAABJRU5ErkJggg==';
+
 // 最小的合法 PDF，能被系统阅读器打开。
 const PDF_TEXT = `%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
@@ -157,6 +161,22 @@ export async function e2ePickFiles(
       },
     ];
   }
+  if (purpose === 'document-photo') {
+    const file = await fixture('e2e-document-photo.png', (f) =>
+      f.write(DOCUMENT_PNG_BASE64, { encoding: 'base64' }),
+    );
+    return [
+      {
+        uri: file.uri,
+        kind: 'image',
+        mime: 'image/png',
+        size: file.size ?? 0,
+        name: 'e2e-sample.png',
+        width: 600,
+        height: 400,
+      },
+    ];
+  }
   const file = await fixture(`e2e-${purpose}.png`, (f) =>
     f.write(PNG_BASE64, { encoding: 'base64' }),
   );
@@ -167,7 +187,7 @@ export async function e2ePickFiles(
       mime: 'image/png',
       size: file.size ?? 0,
       // 回忆用非 ASCII 的名字，流程 14b 要确认它能原样进相册（见 galleryUri）。
-      name: purpose === 'moment' ? '小豆芽 笑脸.png' : 'e2e-sample.png',
+      name: '小豆芽 笑脸.png',
       width: 64,
       height: 64,
     },

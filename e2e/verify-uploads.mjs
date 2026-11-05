@@ -96,6 +96,10 @@ if (expected('document')) {
     rows.some((r) => r.scope === 'document' && r.mime === 'application/pdf'),
     '没有证件 PDF',
   );
+  need(
+    rows.some((r) => r.scope === 'document' && r.variant === 'thumb'),
+    '没有证件照片的缩略图',
+  );
 }
 if (expected('avatar')) {
   need(
@@ -116,6 +120,7 @@ const avatar = babyRow?.data?.avatar;
 if (expected('avatar')) need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
 const avatarSizes = new Map();
 const metadata = new Map();
+const documentThumbSizes = [];
 
 for (const row of rows) {
   need(row.status === 'ready', `${row.object_key} 状态是 ${row.status}`);
@@ -142,6 +147,9 @@ for (const row of rows) {
     need(found.isJpeg, `${row.object_key} 不是 JPEG`);
     need(!found.exif && !found.gps && !found.xmp, `${row.object_key} 带着元数据`);
     need(found.appSegments === 0, `${row.object_key} 还有 ${found.appSegments} 个 APP 段`);
+  }
+  if (row.scope === 'document' && row.variant === 'thumb') {
+    documentThumbSizes.push(jpegSize(bytes));
   }
   if (row.scope === 'avatar' && row.variant === 'original' && row.mime === 'image/jpeg') {
     avatarSizes.set(row.id, jpegSize(bytes));
@@ -199,6 +207,17 @@ if (expected('feedback')) {
 }
 await sql.end();
 
+// 证件的缩略图长边不超过 256，看不清证件号这类小字（F-131）。旧版 App 传的是宽 720，这组的都是新传的。
+for (const size of documentThumbSizes) {
+  need(size && Math.max(size.width, size.height) <= 256, `证件缩略图太大：${JSON.stringify(size)}`);
+}
+// 流程 04 的样例照片是 600×400：缩小到长边正好 256 才说明真的按长边缩了，不是没处理的小图。
+if (expected('document')) {
+  need(
+    documentThumbSizes.some((size) => size && Math.max(size.width, size.height) === 256),
+    `没有缩小到长边 256 的证件缩略图：${JSON.stringify(documentThumbSizes)}`,
+  );
+}
 // 流程 14a：320×160 旋转后是 160×320，再裁成 160×160。
 if (expected('avatar')) {
   const edited = [...avatarSizes.values()];

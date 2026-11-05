@@ -90,9 +90,11 @@ appId: com.gchust.xiaodouya
     text: 未到时间
 
 # ── 给计划加一个疫苗：从“＋ 其他疫苗”切到“加进计划”，一个名字加一个日期 ──
+# 停在只露一条边的位置时点了也打不开弹层（PR #81 的 CI run 41966067331），滚到屏幕中间再点，和 17a 一样。
 - scrollUntilVisible:
     element: { id: vaccine-add-custom }
     direction: UP
+    centerElement: true
     timeout: 30000
 # 向上滚完列表还带着惯性，马上点会点空，弹层没打开（PR #72 的 CI 这样失败过）
 - waitForAnimationToEnd

@@ -1,4 +1,4 @@
-# 证件夹：创建、上传 PDF、证件号默认打码。
+# 证件夹：创建、上传 PDF、证件号默认打码，资料页的卡片显示照片的缩略图。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
@@ -42,4 +42,8 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: { id: doc-back }
 - assertVisible: 2 个文件
+# 卡片上是照片的缩略图，一眼认得出是哪张证件。PDF 排在前面，照片在后面，也要用照片。
+- extendedWaitUntil:
+    visible: { id: doc-thumb-护照 }
+    timeout: 15000
 - takeScreenshot: .artifacts/e2e-04-info-with-doc
