@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   consentSegments,
   exportFileName,
+  HTTP_CACHE_DIRECTORY,
   isPersonalCacheDirectory,
   shouldOfferVerifyStep,
 } from '../src/lib/accountLogic';
@@ -80,6 +81,10 @@ describe('清除手机上的数据', () => {
   });
   it('别的库的缓存目录不动', () => {
     expect(isPersonalCacheDirectory('image_manager_disk_cache')).toBe(false);
+  });
+  it('RN 网络库的 HTTP 缓存要清：里面有 /v1/me 的响应', () => {
+    expect(HTTP_CACHE_DIRECTORY).toBe('http-cache');
+    expect(isPersonalCacheDirectory(HTTP_CACHE_DIRECTORY)).toBe(true);
   });
 });
 
@@ -168,5 +173,17 @@ describe('账号接口', () => {
       ['http://x/v1/me/email/verify', 'POST'],
       ['http://x/v1/family/export', 'GET'],
     ]);
+  });
+
+  it('每个请求都要求不缓存响应：旧服务器没有 no-store 时也不写进 http-cache', async () => {
+    const fetchMock = stub(200, {});
+    await api().me();
+    await api().storageUsage();
+    await new Api().publicConfig();
+    for (const call of fetchMock.mock.calls) {
+      const headers = call[1]?.headers as Record<string, string>;
+      expect(headers['cache-control'], call[0]).toBe('no-store');
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

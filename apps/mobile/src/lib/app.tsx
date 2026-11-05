@@ -44,7 +44,7 @@ import { deviceTimezone } from './device';
 import { clearDownloads } from './downloads';
 import { clearFeedbackDraft } from './feedbackDraft';
 import { applyLocale, deviceLanguageTag } from './locale';
-import { clearLocalMedia } from './media';
+import { clearHttpCache, clearLocalMedia } from './media';
 import { scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
@@ -165,6 +165,8 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      // 旧版本留在 cache/http-cache 里的 /v1/me 等响应，升级后第一次打开就清掉。
+      clearHttpCache();
       // 小工具的后台任务和界面在同一个 JS 运行环境，必须共用这一份，否则界面看不到小工具的写入。
       const { db, api, store, engine, syncEvents } = await getCoreServices();
       // 活得比界面长：从最近任务划掉后界面卸载了，上传还在继续，再打开时要接上同一个队列。

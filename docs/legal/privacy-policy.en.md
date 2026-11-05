@@ -151,7 +151,7 @@ Except for the files described below, we currently have no rule that deletes dat
 | Database backups | One a day, encrypted, kept for 30 days. So content you delete may remain in backups for up to 30 days. Backups do not include the files themselves |
 | Feedback | The text stays in the GitHub issue and is not deleted automatically when you delete your account. Photos and videos are deleted `[Feedback attachment days]` days after sending, or right away when you delete your account; GitHub's image cache may keep them for a while |
 | Provider logs | Set by each provider `〔To do: find out and add here〕` |
-| Copies on your phone | Cleared when you sign out or delete your account on that phone, including file copies and image cache. Kept if your sign-in expires or you are removed from the family, so you can carry on if you return to the same family. If you delete your account on another phone, the copy on this phone stays until someone signs in with a different account |
+| Copies on your phone | Cleared when you sign out or delete your account on that phone, including file copies, image cache and network cache. Kept if your sign-in expires or you are removed from the family, so you can carry on if you return to the same family. If you delete your account on another phone, the copy on this phone stays until someone signs in with a different account |
 
 ## 9. Deletion
 
