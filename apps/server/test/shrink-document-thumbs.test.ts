@@ -1,3 +1,5 @@
+import { createServer, request, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { MediaUrlsResponse } from '@xiaodouya/shared';
 import jpeg from 'jpeg-js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -323,6 +325,63 @@ describe('cli shrink-document-thumbs', () => {
     await db.sql`UPDATE storage_configs SET endpoint = ${process.env.TEST_S3_ENDPOINT ?? 'http://localhost:59000'} WHERE family_id = ${family.id}`;
     expect(await rowOf(other, 'thumb')).toMatchObject({ size: String(thumb.length) });
     expect(await run(family.id)).toMatchObject({ shrunk: 1, alreadySmall: 1, failed: 0 });
+  });
+
+  it('自带存储写的时候不回应：超时算失败，放开家庭锁，记录不动', async () => {
+    const s3 = new URL(process.env.TEST_S3_ENDPOINT ?? 'http://localhost:59000');
+    // 读照常转给 SeaweedFS（原样带着 Host 头，签名对得上），写就一直挂着不回。
+    const hung: Server = createServer((incoming, outgoing) => {
+      if (incoming.method === 'PUT') return;
+      const forward = request(
+        {
+          host: s3.hostname,
+          port: s3.port,
+          method: incoming.method,
+          path: incoming.url,
+          headers: incoming.headers,
+        },
+        (answer) => {
+          outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
+          answer.pipe(outgoing);
+        },
+      );
+      incoming.pipe(forward);
+    });
+    await new Promise<void>((resolve) => hung.listen(0, '127.0.0.1', resolve));
+    try {
+      const { admin, family } = await newFamily(app);
+      const saved = await call(app, 'PUT', '/v1/storage', {
+        token: admin.token,
+        body: {
+          provider: 'other',
+          endpoint: s3.origin,
+          region: 'us-east-1',
+          bucket: 'xiaodouya-dev',
+          accessKeyId: 'devaccesskey',
+          secretAccessKey: 'devsecretkey',
+        },
+      });
+      expect(saved.status).toBe(200);
+      const thumb = fakeJpeg(720, 480);
+      const id = await documentPhoto(admin.token, thumb);
+      const { port } = hung.address() as AddressInfo;
+      await db.sql`UPDATE storage_configs SET endpoint = ${`http://127.0.0.1:${port}`}
+        WHERE family_id = ${family.id}`;
+
+      const started = Date.now();
+      const report = await run(family.id, { objectTimeoutMs: 1_000 });
+      expect(Date.now() - started).toBeLessThan(10_000);
+      expect(report).toMatchObject({ examined: 1, shrunk: 0, failed: 1 });
+      expect(report.failures).toEqual({ 存储长时间没有响应: 1 });
+      expect(await rowOf(id, 'thumb')).toMatchObject({ size: String(thumb.length) });
+      // 锁已经放开：同步要的那把锁马上拿得到。
+      const [locked] = await db.sql<{ ok: number }[]>`
+        SELECT 1 AS ok FROM families WHERE id = ${family.id} FOR UPDATE NOWAIT`;
+      expect(locked?.ok).toBe(1);
+    } finally {
+      hung.closeAllConnections();
+      await new Promise<void>((resolve) => hung.close(() => resolve()));
+    }
   });
 
   it('缩完以后权限不变：家人拿到的是 256 的那份，只看回忆的家人仍然拿不到', async () => {

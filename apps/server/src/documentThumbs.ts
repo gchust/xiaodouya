@@ -34,6 +34,17 @@ const QUALITY = 80;
 /** 旧缩略图宽 720、长边最多 1440，几百 KB。比这大得多的不是 App 传的，不解码。 */
 const MAX_THUMB_BYTES = 8 * 1024 * 1024;
 const BATCH = 50;
+/**
+ * 存储的一次读写最多等这么久。写的时候拿着家庭锁：家庭自带存储的地址如果连上了却一直不回，
+ * 不能把那家的同步卡到工作流超时。超时后事务回滚；对象要是其实写进去了，重跑时按 repaired 补上大小。
+ */
+const OBJECT_TIMEOUT_MS = 15_000;
+
+const withTimeout = <T>(task: Promise<T>, ms: number): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('存储长时间没有响应')), ms);
+    task.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
 
 export interface ShrinkReport {
   dryRun: boolean;
@@ -69,6 +80,8 @@ export interface ShrinkOptions {
   customStorage?: boolean;
   /** 只处理这个家庭，先拿一家试的时候用。 */
   familyId?: string;
+  /** 一次读写存储最多等多久，默认 15 秒。 */
+  objectTimeoutMs?: number;
 }
 
 interface ThumbRow {
@@ -218,7 +231,13 @@ function failureReason(error: unknown): string {
 export async function shrinkDocumentThumbs(
   sql: Sql,
   config: Config,
-  { dryRun = false, limit, customStorage = true, familyId }: ShrinkOptions = {},
+  {
+    dryRun = false,
+    limit,
+    customStorage = true,
+    familyId,
+    objectTimeoutMs = OBJECT_TIMEOUT_MS,
+  }: ShrinkOptions = {},
 ): Promise<ShrinkReport> {
   const report: ShrinkReport = {
     dryRun,
@@ -278,7 +297,7 @@ export async function shrinkDocumentThumbs(
       }
       report.examined += 1;
       try {
-        await shrinkOne(sql, row, await storageFor(row), dryRun, report);
+        await shrinkOne(sql, row, await storageFor(row), { dryRun, objectTimeoutMs }, report);
       } catch (error) {
         fail(failureReason(error));
       }
@@ -291,10 +310,13 @@ async function shrinkOne(
   sql: Sql,
   row: ThumbRow,
   storage: ResolvedStorage,
-  dryRun: boolean,
+  { dryRun, objectTimeoutMs }: { dryRun: boolean; objectTimeoutMs: number },
   report: ShrinkReport,
 ): Promise<void> {
-  const bytes = await readObjectBytes(storage, row.object_key, MAX_THUMB_BYTES);
+  const bytes = await withTimeout(
+    readObjectBytes(storage, row.object_key, MAX_THUMB_BYTES),
+    objectTimeoutMs,
+  );
   if (bytes === null) {
     report.missing += 1;
     return;
@@ -341,7 +363,10 @@ async function shrinkOne(
       if (!current || current.object_key !== row.object_key || current.size !== row.size) {
         return false;
       }
-      await putObjectBytes(storage, row.object_key, shrunk, 'image/jpeg');
+      await withTimeout(
+        putObjectBytes(storage, row.object_key, shrunk, 'image/jpeg'),
+        objectTimeoutMs,
+      );
       await tx`UPDATE media SET size = ${shrunk.length}, mime = 'image/jpeg'
         WHERE id = ${row.id} AND variant = 'thumb'`;
       return true;
