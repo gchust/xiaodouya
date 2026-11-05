@@ -406,6 +406,14 @@ export function createApp({
     c.json<ApiError>({ error: { code: 'not_found', message: '接口不存在' } }, 404),
   );
 
+  // 每个响应都禁止缓存（F-135）。Android 上 RN 的 fetch 走 OkHttp，自带 `cache/http-cache`，
+  // 没有这个头的 GET 响应（`/v1/me` 里有邮箱、家庭名和成员）会原样写进手机，退出登录后还在。
+  // 放在 next() 之后：抛出的错误在 next() 里已经变成响应，401、404、500 也带上。
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('cache-control', 'no-store');
+  });
+
   app.get('/healthz', async (c) => {
     await sql`SELECT 1`;
     return c.json({ ok: true });

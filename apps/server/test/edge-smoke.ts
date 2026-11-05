@@ -179,7 +179,7 @@ async function request<T>(
   method: string,
   path: string,
   options: { token?: string; body?: unknown; signal?: AbortSignal } = {},
-): Promise<{ status: number; json: T; ms: number }> {
+): Promise<{ status: number; json: T; ms: number; headers: Headers }> {
   const started = Date.now();
   const response = await fetch(`${base}${path}`, {
     method,
@@ -194,6 +194,7 @@ async function request<T>(
     status: response.status,
     json: (await response.json()) as T,
     ms: Date.now() - started,
+    headers: response.headers,
   };
 }
 
@@ -215,6 +216,7 @@ async function mainFlow(runtime: Runtime) {
     body: { email, password: 'correct horse', displayName: '虚构用户' },
   });
   check(registered.status === 201, `注册（${registered.ms} ms）`);
+  check(registered.headers.get('cache-control') === 'no-store', '带令牌的响应禁止缓存');
   const [row] = await sql<{ password_hash: string }[]>`
     SELECT password_hash FROM users WHERE email = ${email}`;
   check(
@@ -280,6 +282,7 @@ async function mainFlow(runtime: Runtime) {
     woken.json.changed === true && Date.now() - started < 5000,
     `写入后长轮询被唤醒（${Date.now() - started} ms）`,
   );
+  check(woken.headers.get('cache-control') === 'no-store', '长轮询的响应禁止缓存');
 
   const controller = new AbortController();
   const abandoned = request(base, 'GET', '/v1/sync/wait?cursor=99999', {
@@ -855,6 +858,8 @@ async function accountLifecycle(base: string) {
   const token = auth.token;
   const me = await request<{ emailVerified: boolean }>(base, 'GET', '/v1/me', { token });
   check(me.json.emailVerified === true, '没有邮件时算作已验证，App 跳过这一步');
+  // F-135：不禁止的话 Android 的 OkHttp 会把 /v1/me 写进 cache/http-cache。
+  check(me.headers.get('cache-control') === 'no-store', '/v1/me 禁止缓存');
   await request(base, 'POST', '/v1/families', {
     token,
     body: { name: '虚构一家', label: '爸爸' },
