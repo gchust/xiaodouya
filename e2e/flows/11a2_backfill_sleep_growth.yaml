@@ -41,6 +41,7 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - tapOn: 睡了 1小时
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 睡了 1小时
     timeout: 15000
@@ -73,6 +74,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: 体重 3.8kg · 身长 50.5cm
 - tapOn: 体重 3.9kg · 身长 50.5cm
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 体重 3.9kg · 身长 50.5cm
     timeout: 15000

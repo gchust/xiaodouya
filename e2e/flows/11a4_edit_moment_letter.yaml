@@ -86,6 +86,7 @@ appId: com.gchust.xiaodouya
     element: Edited ${RUN_ID}的更多操作
 - tapOn: Edited ${RUN_ID}的更多操作
 - tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: Edited ${RUN_ID}
     timeout: 15000
@@ -119,6 +120,7 @@ appId: com.gchust.xiaodouya
 - takeScreenshot: .artifacts/e2e-11a-letters
 - tapOn: Letter ${RUN_ID}的更多操作
 - tapOn: { id: letter-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: Letter ${RUN_ID}
     timeout: 15000

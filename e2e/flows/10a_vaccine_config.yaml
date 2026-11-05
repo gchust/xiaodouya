@@ -146,6 +146,7 @@ appId: com.gchust.xiaodouya
     element: Flu Plan
 - tapOn: Flu Plan
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
@@ -158,7 +159,10 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: Flu Plan
 - tapOn: Flu Plan
+# 自己加的是“移除”，要确认；内置剂次的“隐藏”能随时恢复，不用确认（上面那一段）。
 - tapOn: { id: vaccine-plan-hide }
+- assertVisible: 从计划里移除Flu Plan？
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: vaccine-plan-hide }
     timeout: 10000
@@ -236,6 +240,7 @@ appId: com.gchust.xiaodouya
 - takeScreenshot: .artifacts/e2e-10a-backfill-done
 - tapOn: { id: vaccine-row-5in1-2 }
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
@@ -244,6 +249,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: { id: vaccine-row-6in1-1 }
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000

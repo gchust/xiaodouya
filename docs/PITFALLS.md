@@ -280,6 +280,7 @@
 - **机器忙时 `scrollUntilVisible` 30 秒滚不到疫苗本底部。** 几个 Agent 同时编译、跑模拟器时宿主机负载到 27，每次点击要 20 秒，流程 17a 滚到三十多行免疫规划表下面的自费疫苗卡片时超时，紧接着流程 18 启动 30 秒还停在开屏。滚到页面很下面的元素给 90 秒，失败时先看 `uptime`，别急着怀疑代码。
 - **模拟器睡眠时 Maestro 的截图全黑，第一步就找不到元素。** 日志里 App 正常启动（`Running "main"`），看起来像 JS 包坏了。先 `adb shell input keyevent KEYCODE_WAKEUP`、`wm dismiss-keyguard`，`dumpsys power` 里 `mWakefulness=Awake` 再跑。
 - **E2E 里要在服务端配置里写死的账号，邮箱只能是固定的。** `e2e.sh` 启动服务端时还没有 `RUN_ID`，`FEEDBACK_VIEWER_EMAILS` 只能写 `feedback-maintainer@example.test`。本地开发库跨次保留，上一次留下的同名账号还在别的家庭里，邀请会失败；`feedback-maintainer.js` 先登录、用密码正常删除这个账号，再注册、加入这次的家庭。
+- **弹层换成确认之后，“删除按钮不见了”的断言马上就成立。** 很多流程点了删除就等 `notVisible: { id: event-delete }` 或弹层标题消失，加了确认弹层（F-132）后，内容一换这些等待就过了，记录其实还在，后面的步骤才失败或者看到的是错的状态。点删除后要先点 `delete-sheet-confirm`（找不到就失败），再等记录本身不见了；取消的断言要等 `delete-sheet-cancel` 消失后再看记录还在。
 
 ## 并行开发
 

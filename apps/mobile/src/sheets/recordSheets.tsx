@@ -46,6 +46,7 @@ import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { colors, fonts, spacing } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput, Toggle } from '../ui/primitives';
 import {
@@ -1187,6 +1188,8 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
   const { toast } = useFeedback();
   const birthAt = useRecords().baby?.data.birthAt ?? 0;
   const isOpenSleep = event.type === 'sleep' && !event.endAt;
+  const units = useUnits();
+  const confirmDelete = useDeleteConfirm();
   const editor = eventEditor(id, event, birthAt);
   const remove = async () => {
     await app.remove(id);
@@ -1195,6 +1198,7 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
       undo: () => void app.write('event', event, id),
     });
   };
+  const summary = `${describeEvent(event, Date.now(), units)} · ${eventTimeText(event)}`;
   return (
     <>
       <Muted testID="event-detail" style={{ fontSize: 13, lineHeight: 20 }}>
@@ -1227,7 +1231,7 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
         testID="event-delete"
         tone="ghost"
         label={t().records.deleteRecord}
-        onPress={() => void remove()}
+        onPress={() => confirmDelete({ kind: 'event', event, summary }, remove)}
       />
     </>
   );

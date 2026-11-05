@@ -1,0 +1,38 @@
+import type { Catalog } from '../zh';
+
+export const confirm: Catalog['confirm'] = {
+  delete: 'Delete',
+  remove: 'Remove',
+  removeMember: 'Remove from family',
+  undoHint: ' You can undo right after.',
+  removeUndoHint: ' You can undo right after.',
+  event: {
+    feed: 'Delete this feed?',
+    diaper: 'Delete this diaper change?',
+    sleep: 'Delete this sleep?',
+    temp: 'Delete this temperature reading?',
+    med: 'Delete this medicine entry?',
+    bath: 'Delete this bath?',
+    solids: 'Delete this solids entry?',
+    growth: 'Delete this height and weight entry?',
+  },
+  vaccine: (name) => `Delete this ${name} record?`,
+  eventBody: 'Once deleted, no one in the family will see it.',
+  moment: 'Delete this memory?',
+  momentNamed: (title) => `Delete the memory "${title}"?`,
+  momentBody: 'Once deleted, no one in the family will see this memory or its photos and videos.',
+  letter: 'Delete this letter?',
+  letterNamed: (title) => `Delete the letter "${title}"?`,
+  letterBody: 'Once deleted, no one in the family will see this letter.',
+  document: (name) => `Delete ${name}?`,
+  documentBody: 'Once deleted, no one in the family will see this document or its files.',
+  documentFile: (name) => `Remove ${name}?`,
+  documentFileBody: 'It will be taken out of this document, and no one in the family will see it.',
+  formula: (name) => `Delete the formula "${name}"?`,
+  formulaBody: "Feeds you already logged aren't affected. It just won't be offered for new feeds.",
+  vaccinePlan: (name) => `Remove ${name} from the plan?`,
+  vaccinePlanBody: "Only the plan entry goes. Doses you already recorded aren't affected.",
+  member: (name) => `Remove ${name} from the family?`,
+  memberBody: (name) =>
+    `${name} will be signed out right away and won't see this family anymore. Links ${name} created will stop working. What ${name} recorded stays. Coming back takes a new invite.`,
+};

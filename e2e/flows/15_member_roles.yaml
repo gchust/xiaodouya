@@ -32,14 +32,21 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - assertVisible: 一起记录
 - assertNotVisible: 只看回忆和照片
-# 移出家庭要点两次
+# 移出家庭要在确认弹层里再点一次，取消就什么都不变
 - tapOn: { id: member-妈妈 }
 - tapOn: { id: member-remove }
-- assertVisible: 确定把妈妈移出家庭？
+- assertVisible: 把妈妈移出家庭？
 - takeScreenshot: .artifacts/e2e-15-remove-confirm
-- tapOn: { id: member-remove }
+- tapOn: { id: delete-sheet-cancel }
 - extendedWaitUntil:
-    notVisible: { id: member-remove }
+    notVisible: { id: delete-sheet-cancel }
+    timeout: 10000
+- assertVisible: { id: member-妈妈 }
+- tapOn: { id: member-妈妈 }
+- tapOn: { id: member-remove }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-confirm }
     timeout: 15000
 - assertNotVisible: { id: member-妈妈 }
 - takeScreenshot: .artifacts/e2e-15-removed

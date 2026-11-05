@@ -67,6 +67,7 @@ appId: com.gchust.xiaodouya
     id: moment-more-.*
     index: 0
 - tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: Control ${RUN_ID}
     timeout: 10000

@@ -1,4 +1,4 @@
-# 点时间线的一条记录：改奶量和备注，删除后撤销，再删除并确认重启后不会回来。
+# 点时间线的一条记录：改奶量和备注，删除时取消，删除后撤销，再删除并确认重启后不会回来。
 # 行的 testID 带随机 id，只能按文字选。文字是整串匹配，不会选到喂奶卡片和 Toast。
 appId: com.gchust.xiaodouya
 ---
@@ -42,9 +42,21 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     text: Spit up.*
 - takeScreenshot: .artifacts/e2e-11-after-edit
-# 删除后撤销。Toast 只有 3.6 秒，这中间不能插别的步骤。
+# 删除要确认（issue #78）：点了删除先弹确认，取消后记录还在。
 - tapOn: 喂奶 140ml
 - tapOn: { id: event-delete }
+- assertVisible: 删除这条喂奶记录？
+- assertVisible: { id: delete-sheet-body }
+- takeScreenshot: .artifacts/e2e-11-delete-confirm
+- tapOn: { id: delete-sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-cancel }
+    timeout: 10000
+- assertVisible: 喂奶 140ml
+# 删除后撤销。确认之后 Toast 只有几秒，确认和撤销之间不能插别的步骤。
+- tapOn: 喂奶 140ml
+- tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - tapOn: { id: toast-undo }
 # 弹层的标题和这一行文字相同，先等弹层收起，下面的断言才说明记录真的回来了。
 - extendedWaitUntil:
@@ -57,6 +69,7 @@ appId: com.gchust.xiaodouya
 # 删除，不撤销
 - tapOn: 喂奶 140ml
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 喂奶 140ml
     timeout: 15000

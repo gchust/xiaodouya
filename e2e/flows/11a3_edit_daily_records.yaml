@@ -31,6 +31,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: 换尿布 · 便便
 - tapOn: 换尿布 · 尿尿 + 便便
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 换尿布 · 尿尿 + 便便
     timeout: 15000
@@ -61,6 +62,7 @@ appId: com.gchust.xiaodouya
 - tapOn:
     text: 睡了.*
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
@@ -89,6 +91,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: 体温 36.9℃
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 体温 36.9℃
     timeout: 15000
@@ -123,6 +126,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: 吃药 · Edit med 2 ml
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 吃药 · Edit med 2 ml
     timeout: 15000
@@ -155,6 +159,7 @@ appId: com.gchust.xiaodouya
 - tapOn:
     text: Warm bath.*
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible:
       text: Warm bath.*

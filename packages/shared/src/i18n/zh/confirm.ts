@@ -1,0 +1,39 @@
+type Text = string | number;
+
+/** 删除和移除已保存内容前的确认弹层（`domain/deleteConfirm.ts` 组装）。 */
+export const confirm = {
+  delete: '删除',
+  remove: '移除',
+  removeMember: '移出家庭',
+  undoHint: '删完可以马上撤销。',
+  removeUndoHint: '可以马上撤销。',
+  event: {
+    feed: '删除这条喂奶记录？',
+    diaper: '删除这条换尿布记录？',
+    sleep: '删除这条睡眠记录？',
+    temp: '删除这条体温记录？',
+    med: '删除这条吃药记录？',
+    bath: '删除这条洗澡记录？',
+    solids: '删除这条辅食记录？',
+    growth: '删除这条身高体重记录？',
+  },
+  vaccine: (name: Text) => `删除${name}的接种记录？`,
+  eventBody: '删除后，全家都看不到这条记录了。',
+  moment: '删除这条回忆？',
+  momentNamed: (title: Text) => `删除回忆“${title}”？`,
+  momentBody: '删除后，全家都看不到这条回忆和里面的照片、视频了。',
+  letter: '删除这封信？',
+  letterNamed: (title: Text) => `删除信“${title}”？`,
+  letterBody: '删除后，全家都看不到这封信了。',
+  document: (name: Text) => `删除${name}？`,
+  documentBody: '删除后，全家都看不到这份资料和里面的文件了。',
+  documentFile: (name: Text) => `移除${name}？`,
+  documentFileBody: '移除后，这份资料里就没有这个文件了，全家都看不到。',
+  formula: (name: Text) => `删除奶粉“${name}”？`,
+  formulaBody: '已经记下的喂奶不受影响，以后记喂奶时选不到它了。',
+  vaccinePlan: (name: Text) => `从计划里移除${name}？`,
+  vaccinePlanBody: '只从疫苗本里拿掉这一项，已经记下的接种不受影响。',
+  member: (name: Text) => `把${name}移出家庭？`,
+  memberBody: (name: Text) =>
+    `${name}会马上退出登录，之后看不到这个家庭的内容，${name}创建的分享链接也会失效。记过的内容会留下。要回来需要重新邀请。`,
+};

@@ -34,6 +34,7 @@ import { useTabScrollRef } from '../lib/tabScroll';
 import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
 import { UpdateSheet, updateRowSub } from '../sheets/updateSheet';
 import { colors, fonts, spacing } from '../theme';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
   Button,
@@ -652,7 +653,7 @@ function MemberSheet({ member }: { member: FamilyMember }) {
   const sheet = useSheet();
   const { toast } = useFeedback();
   const [role, setRole] = useState<Role>(member.role);
-  const [confirming, setConfirming] = useState(false);
+  const confirmDelete = useDeleteConfirm();
   const run = async (action: () => Promise<unknown>, message: string) => {
     try {
       await action();
@@ -677,14 +678,12 @@ function MemberSheet({ member }: { member: FamilyMember }) {
       <Button
         testID="member-remove"
         tone="ghost"
-        label={confirming ? t().family.removeQ(member.label) : t().family.removeMember}
-        onPress={() => {
-          if (!confirming) {
-            setConfirming(true);
-            return;
-          }
-          void run(() => app.api.removeMember(member.userId), t().family.removed(member.label));
-        }}
+        label={t().family.removeMember}
+        onPress={() =>
+          confirmDelete({ kind: 'member', name: member.label }, () =>
+            run(() => app.api.removeMember(member.userId), t().family.removed(member.label)),
+          )
+        }
       />
     </>
   );

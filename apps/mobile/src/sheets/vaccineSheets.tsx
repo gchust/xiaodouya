@@ -25,6 +25,7 @@ import {
 } from '../lib/dates';
 import { colors, fonts } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Mono, Muted, SoftInput } from '../ui/primitives';
 import { DayChips, TimeCheckText } from '../ui/TimeField';
@@ -55,17 +56,23 @@ function useVaccinePlans() {
     },
     [app, sheet, toast],
   );
+  const confirmDelete = useDeleteConfirm();
+  // 隐藏内置剂次不用确认：只是一个开关，`已隐藏 N 剂` 里随时能恢复。自己加的移除了就没有了，要确认。
   const removeCustom = useCallback(
-    async (dose: VaccineDose) => {
-      const current = planFor(app.store.getSnapshot().vaccinePlans, dose.id);
-      if (!current) return;
-      await app.remove(current.id);
-      sheet.close();
-      toast(t().records.removedFromPlan(dose.name), {
-        undo: () => void app.write('event', current.data, current.id),
-      });
-    },
-    [app, sheet, toast],
+    (dose: VaccineDose) =>
+      confirmDelete({ kind: 'vaccinePlan', name: dose.name }, async () => {
+        const current = planFor(app.store.getSnapshot().vaccinePlans, dose.id);
+        if (!current) {
+          sheet.close();
+          return;
+        }
+        await app.remove(current.id);
+        sheet.close();
+        toast(t().records.removedFromPlan(dose.name), {
+          undo: () => void app.write('event', current.data, current.id),
+        });
+      }),
+    [app, sheet, toast, confirmDelete],
   );
   return { change, removeCustom };
 }
@@ -102,7 +109,7 @@ export function DosePlanBar({ dose }: { dose: VaccineDose }) {
         hitSlop={LINK_HIT_SLOP}
         onPress={() =>
           custom
-            ? void removeCustom(dose)
+            ? removeCustom(dose)
             : void change(dose.id, { hidden: true }, t().records.hidden(dose.name))
         }
       >
@@ -323,7 +330,7 @@ export function VaccinePlanForm({
           testID="vaccine-plan-remove"
           tone="ghost"
           label={t().records.removeFromPlan}
-          onPress={() => void removeCustom(dose)}
+          onPress={() => removeCustom(dose)}
         />
       ) : null}
     </>

@@ -54,7 +54,6 @@ export const family: Catalog['family'] = {
   createInvite: 'Create invite code',
   actionFailed: "That didn't work",
   updated: 'Updated',
-  removeQ: (name) => `Remove ${name} from the family?`,
   removeMember: 'Remove from family',
   removed: (name) => `Removed ${name} from the family`,
   labelSuggestions: ['Mom', 'Dad', 'Grandma', 'Grandpa', 'Aunt', 'Uncle', 'Nanny'],

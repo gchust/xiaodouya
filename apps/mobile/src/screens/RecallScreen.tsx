@@ -19,6 +19,7 @@ import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { colors, fonts, spacing } from '../theme';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/primitives';
 
@@ -131,6 +132,7 @@ function Timeline({ birthAt }: { birthAt: number }) {
   const sheet = useSheet();
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();
+  const confirmDelete = useDeleteConfirm();
   if (moments.length === 0) {
     return <Empty title={t().recall.emptyTitle} sub={t().recall.emptySub} />;
   }
@@ -148,18 +150,19 @@ function Timeline({ birthAt }: { birthAt: number }) {
             ))
           }
         />
-        <Muted style={{ fontSize: 13 }}>{t().recall.deleteMomentWarn}</Muted>
         <Button
           testID="moment-delete"
           tone="ghost"
           label={t().recall.deleteMoment}
-          onPress={() => {
-            void app.remove(m.id);
-            sheet.close();
-            toast(t().recall.momentDeleted, {
-              undo: () => void app.write('moment', m.data, m.id),
-            });
-          }}
+          onPress={() =>
+            confirmDelete({ kind: 'moment', title: m.data.title }, () => {
+              void app.remove(m.id);
+              sheet.close();
+              toast(t().recall.momentDeleted, {
+                undo: () => void app.write('moment', m.data, m.id),
+              });
+            })
+          }
         />
       </>
     ));
@@ -394,6 +397,7 @@ function Letters() {
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
+  const confirmDelete = useDeleteConfirm();
   if (letters.length === 0) {
     return <Empty title={t().recall.noLetters} sub={t().recall.noLettersSub} />;
   }
@@ -411,18 +415,19 @@ function Letters() {
             ))
           }
         />
-        <Muted style={{ fontSize: 13 }}>{t().recall.deleteLetterWarn}</Muted>
         <Button
           testID="letter-delete"
           tone="ghost"
           label={t().recall.deleteLetter}
-          onPress={() => {
-            void app.remove(l.id);
-            sheet.close();
-            toast(t().recall.letterDeleted, {
-              undo: () => void app.write('letter', l.data, l.id),
-            });
-          }}
+          onPress={() =>
+            confirmDelete({ kind: 'letter', title: l.data.title }, () => {
+              void app.remove(l.id);
+              sheet.close();
+              toast(t().recall.letterDeleted, {
+                undo: () => void app.write('letter', l.data, l.id),
+              });
+            })
+          }
         />
       </>
     ));

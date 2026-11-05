@@ -71,6 +71,7 @@ appId: com.gchust.xiaodouya
     timeout: 15000
 - tapOn: 喂奶 50ml
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: { id: event-delete }
     timeout: 10000
@@ -118,6 +119,7 @@ appId: com.gchust.xiaodouya
     element: 喂奶 150ml
 - tapOn: 喂奶 150ml
 - tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
     notVisible: 喂奶 150ml
     timeout: 15000

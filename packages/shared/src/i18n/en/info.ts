@@ -96,9 +96,6 @@ export const info: Catalog['info'] = {
   fileTypesNote:
     "JPG, PNG, HEIC and PDF are supported. Stored in a private folder, and won't appear in Memories.",
   deleteDoc: 'Delete this document',
-  deleteNamed: (name) => `Delete ${name}?`,
-  deleteDocWarn: 'Once deleted, no one in the family can see this document.',
-  confirmDelete: 'Delete',
   deletedNamed: (name) => `Deleted ${name}`,
   descPlaceholder: 'Description, e.g. ICA digital copy',
   issueDatePlaceholder: 'Issue date, e.g. 2026.10.06',

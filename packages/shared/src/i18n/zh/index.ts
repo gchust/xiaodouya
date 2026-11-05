@@ -1,6 +1,7 @@
 import { account } from './account';
 import { auth } from './auth';
 import { common } from './common';
+import { confirm } from './confirm';
 import { domain } from './domain';
 import { family } from './family';
 import { feedback } from './feedback';
@@ -19,6 +20,7 @@ import { widgetUi } from './widgetUi';
 /** 中文是基准：英文目录的类型就是这个对象的类型，缺键或参数不一样都编译不过。 */
 export const zh = {
   common,
+  confirm,
   widgetUi,
   storageUi,
   family,

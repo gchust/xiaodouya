@@ -19,6 +19,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
 import { colors } from '../theme';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback } from '../ui/overlays';
 import { Button, Chip, Field, Muted, SectionTitle } from '../ui/primitives';
 
@@ -195,6 +196,7 @@ export function FormulaEditor({
 }) {
   const app = useApp();
   const { toast } = useFeedback();
+  const confirmDelete = useDeleteConfirm();
   const [form, setForm] = useState<FormulaForm>(
     () => initialForm ?? (existing ? formulaFormFromData(existing) : emptyFormulaForm()),
   );
@@ -312,12 +314,12 @@ export function FormulaEditor({
         </Text>
       ) : null}
       <Button testID="formula-save" label={t().common.save} onPress={() => void save()} />
-      {id ? (
+      {id && existing ? (
         <Button
           testID="formula-delete"
           tone="ghost"
           label={t().nutritionUi.deleteFormula}
-          onPress={() => void remove()}
+          onPress={() => confirmDelete({ kind: 'formula', name: existing.name }, remove)}
         />
       ) : null}
     </>
