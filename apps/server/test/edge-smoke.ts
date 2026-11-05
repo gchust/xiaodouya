@@ -737,7 +737,9 @@ async function publicShare(base: string) {
     }
   ).entries;
   check(
-    entries.length === 3 && !firstPage.text.includes('"events"') && !firstPage.text.includes('不该出现'),
+    entries.length === 3 &&
+      !firstPage.text.includes('"events"') &&
+      !firstPage.text.includes('不该出现'),
     '时间线只有回忆，没有喂奶记录',
   );
   check(
