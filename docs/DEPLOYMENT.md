@@ -700,6 +700,8 @@ Worker 只出静态文件（`apps/share-web/wrangler.toml` 没有 `main`），�
 
 当前项目的 GitHub Actions 已设置 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`、`SHARE_PAGE_ENABLED=true`、`SHARE_PAGE_DOMAIN=xdy.nfvd.net` 和 `EXPO_PUBLIC_SHARE_BASE_URL=https://xdy.nfvd.net`。合并后的[自动发布流程](https://github.com/gchust/xiaodouya/actions/runs/41595897162)已通过，日志显示新旧两个触发器，线上均返回 200；以后 `apps/share-web/**` 变化会自动发布。后端仍在 Supabase 新加坡项目，网页通过 HTTPS 调用它。真实 Supabase 网关从该网页 Origin 发出的 OPTIONS 预检已返回 204，并允许 `content-type,x-region`。
 
+**分享时间线（F-133）用同一个 Worker：** 页面按链接的片段分两种视图（`#令牌` 是一天，`#t/令牌` 是时间线），没有新的配置和变量。后端多一条迁移（`shares.kind`）和三个接口（`POST /v1/shares/timeline`，公开的 `/v1/public/share/timeline` 和 `/v1/public/share/timeline/moment`，后两个和 `/v1/public/share` 一样开 CORS、按来源和令牌限流）。上线顺序：合并后分享页随 main 自动发布，一天的链接走的还是原来的接口，不受影响；再手动运行“部署后端”（会先备份、再迁移）；最后发 APK，入口在新 APK 里才有。后端部署之前，新页面打开时间线链接会显示“暂时打不开”，但那时还没有 App 能建时间线链接。
+
 ### 发布顺序
 
 **不能反：**

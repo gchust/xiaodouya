@@ -23,7 +23,7 @@ We do not control the data in these cases, and this policy does not cover that d
 
 - **You changed the "server address" on the sign-in screen to another server.** Your data goes to that server, and its operator is responsible for it.
 - **Your family's admin set up their own storage under Family → Storage.** Photos, videos, recordings and document files go to the provider the admin chose. Other records stay in our database.
-- **Content you choose to share yourselves.** For example, a growth book PDF you export and send to someone, or a link to one day that you send to someone (see section 6).
+- **Content you choose to share yourselves.** For example, a growth book PDF you export and send to someone, or a link to one day or to a period of moments that you send to someone (see section 6).
 
 ## 2. You provide information on your child's behalf
 
@@ -108,6 +108,14 @@ Admins and caregivers can create a link to one day and send it to someone. **Any
 - **What comes along technically:** file links contain the storage address and the file path, and the path contains a random family identifier. It can't be used to sign in or read anything else.
 - **How long:** links expire after the 1, 7 or 30 days you choose. You (or an admin) can revoke one at any time. They also stop working when their creator is removed from the family, changed to view-only, or deletes their account. After revoking, opening the link shows nothing, but a page that is already open can still show photos and videos for up to 1 hour, and we can't take back anything they saved themselves.
 - **Who it passes through:** the page is hosted on Cloudflare. When it opens, the viewer's IP address and browser details are processed by Cloudflare, Supabase and the storage provider (retention not confirmed). The page loads no third-party analytics, ads or fonts.
+
+### Sharing a timeline of moments
+
+Admins and caregivers can also turn the moments timeline into a link: the last 7 days, the last 30 days, everything, or dates they pick. As with a link to one day, **anyone who has the link can open it**, and the rules for expiry, revoking, when it stops working and who it passes through are the same as above.
+
+- **What they can see:** the baby's name and age, **every moment** in that period (text, milestones, photos, videos and recordings), the day number of each moment and the name of whoever recorded it. Moments added to that period later also appear and deleted ones disappear; a link to everything only goes up to the day it was created, so moments recorded after that don't appear. Photos are shared as compressed previews; older photos without a preview, videos and recordings are the original files and **can include where they were taken**.
+- **What they can't see:** feeds, diapers, sleep, temperature, medicine, growth and vaccine records, documents, letters to the baby, the time of birth, email addresses and other account details.
+- **What comes along technically:** besides the file links described above, each moment carries a random identifier (used to open that moment). It can't be used to sign in or read anything outside this link.
 
 ### Sending feedback
 

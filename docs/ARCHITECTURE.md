@@ -284,6 +284,35 @@ App ──POST /v1/shares──> 服务端（只存令牌的 SHA-256）──> �
 
 **限流：** 按来源（`RATE_PUBLIC_SHARE_PER_IP_15MIN`，取不到来源时跳过）和按令牌（`RATE_PUBLIC_SHARE_PER_TOKEN_HOUR`）。在查库之前计数，所以链接存不存在表现一样。
 
+## 分享时间线（F-133）
+
+```
+App ──POST /v1/shares/timeline {fromAt, toAt, timezone, ttlDays}──> shares 一行，kind = 'timeline'
+ │ <base>/#t/<令牌>（一天的链接还是 <base>/#<令牌>，旧链接照常打开）
+ ▼
+对方的浏览器 ── 同一个静态页面，按片段分两种视图
+     │ POST /v1/public/share/timeline {token, cursor?}        一页 20 条回忆，新的在前，每条只签封面
+     │ POST /v1/public/share/timeline/moment {token, momentId} 点开一条时取它的全部文件（最多 200 个）
+     ▼
+服务端 ── 现查 records（只有 collection = 'moment'）── 白名单 JSON + 1 小时的签名链接
+```
+
+**和一天共用 `shares`：** 迁移只加了 `kind`（默认 `day`，旧行都是一天）。时间线存 `include_moments = true`、另外两项为假、`units = {}`。创建、列表、撤销、家庭 50 个的上限、移出和降级时写 `revoked_at`、公开接口核对创建者还是能读记录的成员，全部和一天走同一段代码（`createShare`、`findActiveShare`、`revokeSharesBy`）。三个公开接口共用一个入口函数：限流在查库之前，令牌的类型和接口对不上（一天的令牌打时间线，或者反过来）和失效是同一个 404。
+
+**范围：** 手机按自己的时区算日历日，`fromAt` 是第一天的 0 点，`toAt` 是今天的结尾（含今天的最近 7 天、30 天，或者自定义的两天）；“全部”的 `fromAt` 是 0。服务端不收晚于创建时 + 2 天的 `toAt`：链接不会一直往后看，之后新记的回忆不会自己跑进已经发出去的链接。范围里之后补记的会出现，删掉的会消失（现查）。
+
+**只有回忆：** 不查 `event`、`letter`、`document`，所以喂奶、尿布、健康记录、信、证件一条都不会出现。回忆的字段同样逐个写出来，多了每条的 `dayNumber`、`age`（服务端按分享者的时区算，`shareMomentAge`），不发出生时间。
+
+**分页：** 按 `(at, id)` 倒序用游标翻，游标是上一页最后一条的 `at.回忆 id`（zod 校验格式，格式不对和失效同一个回答），同一毫秒的回忆不会漏也不会重复。`at` 的类型转换包在 `CASE` 里，`at` 不是数字的行不进转换。每页取 21 行判断后面还有没有；没有标题、文字、能显示的文件的回忆不发，但游标照样往后走，所以一页可能不满甚至是空的，页面看 `nextCursor` 是不是 `null`。总条数没有上限，翻页靠游标，每次翻页和点开都算按令牌限流的一次（默认每小时 600 次）。
+
+**签名有上限：** 一页只签封面（照片是预览加缩略图，视频是原文件加缩略图，最多 2 个），一页最多 40 个签名；点开一条回忆才签它的全部文件，和一天一样最多 `MAX_PUBLIC_MEDIA`（200）个，超出的数量写在 `omittedMedia`。Deno 上本地量过：第一页 3 条 5 个签名 94 ms，点开一条 100 张的回忆 200 个签名 521 ms（`pnpm test:edge`，总时间，不是 Supabase 上的 CPU 时间）。
+
+**封面：** `shareCoverId` 和 App 的 `momentCover` 规则一样（设置的 `coverMediaId`，找不到就第一个），只是“能显示”以 `media` 表为准：没传完、证件或别家的 id、其实是录音的都不算。
+
+**回忆的 id 会发给页面：** 点开一条时要用。它和文件 id 一样是客户端生成的 UUID，任何接口都不靠它授权；点开接口要求这条回忆属于这个链接的家庭、没删、`at` 在链接的范围里，否则和失效同一个回答。
+
+**页面：** `apps/share-web/src/timeline.ts` 按分享者的时区分日期（`zonedParts`），日期贴在顶上；底部用 `IntersectionObserver` 提前 800px 取下一页，也能点“加载更多”；一页太短或者整页是空的回忆时接着取。链接过期时只从那一页的游标（或者那一条回忆）重新取，换上新链接（`mediaSource.ts`）。点开一条是全屏的一层（`momentView.ts`），关掉时先停下音频和视频。
+
 ## 反馈问题
 
 ```
