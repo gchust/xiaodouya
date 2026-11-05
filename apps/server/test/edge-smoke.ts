@@ -827,6 +827,53 @@ async function publicShare(base: string) {
       404,
     '撤销后时间线打不开',
   );
+
+  // 同样的回忆选两段分享（F-136）：走时间线的两个公开接口，只按选中的 id 查。
+  console.log('分享回忆（F-136）：公开接口');
+  const notChosen = entries.find((entry) => entry !== many && entry !== withPreview);
+  const chosen = await request<{ id: string; token: string }>(base, 'POST', '/v1/shares/moments', {
+    token: owner,
+    body: {
+      momentIds: [many?.id ?? '', withPreview?.id ?? ''],
+      fromAt: Date.UTC(2026, 5, 14, 16),
+      toAt: Date.UTC(2026, 5, 15, 16),
+      timezone: 'Asia/Singapore',
+    },
+  });
+  check(chosen.status === 201, '创建选中回忆的链接');
+  const chosenPage = await post('/v1/public/share/timeline', { token: chosen.json.token });
+  const chosenBody = chosenPage.response.ok
+    ? (JSON.parse(chosenPage.text) as { kind: string; entries: { id: string }[] })
+    : { kind: '', entries: [] };
+  check(
+    chosenPage.response.status === 200 &&
+      chosenPage.response.headers.get('access-control-allow-origin') === '*' &&
+      chosenBody.kind === 'moments' &&
+      chosenBody.entries.length === 2 &&
+      !chosenPage.text.includes(notChosen?.id ?? 'none'),
+    '只有选中的两段，kind 是 moments',
+  );
+  const chosenOpened = await post('/v1/public/share/timeline/moment', {
+    token: chosen.json.token,
+    momentId: many?.id ?? '',
+  });
+  check(chosenOpened.response.status === 200, '点开选中的一段');
+  const notChosenOpened = await post('/v1/public/share/timeline/moment', {
+    token: chosen.json.token,
+    momentId: notChosen?.id ?? '',
+  });
+  check(notChosenOpened.response.status === 404, '没选的那段打不开');
+  const chosenAsDay = await post('/v1/public/share', { token: chosen.json.token });
+  check(chosenAsDay.response.status === 404, '选中回忆的令牌打不开一天');
+  const chosenRevoked = await request(base, 'DELETE', `/v1/shares/${chosen.json.id}`, {
+    token: owner,
+  });
+  check(chosenRevoked.status === 200, '撤销选中回忆的链接');
+  check(
+    (await post('/v1/public/share/timeline', { token: chosen.json.token })).response.status ===
+      404,
+    '撤销后打不开',
+  );
 }
 
 async function customStorage(base: string, token: string) {
