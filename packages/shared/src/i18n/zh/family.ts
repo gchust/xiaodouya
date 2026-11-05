@@ -51,7 +51,6 @@ export const family = {
   createInvite: '生成邀请码',
   actionFailed: '操作失败',
   updated: '已更新',
-  removeQ: (name: Text) => `确定把${name}移出家庭？`,
   removeMember: '移出家庭',
   removed: (name: Text) => `已把${name}移出家庭`,
   labelSuggestions: ['妈妈', '爸爸', '奶奶', '爷爷', '外婆', '外公', '阿姨'] as readonly string[],

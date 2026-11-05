@@ -1,6 +1,7 @@
 export * from './account';
 export * from './appUpdate';
 export * from './domain/age';
+export * from './domain/deleteConfirm';
 export * from './domain/edit';
 export * from './domain/events';
 export * from './domain/feeding';

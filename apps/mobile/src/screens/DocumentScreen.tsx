@@ -24,6 +24,7 @@ import {
 } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { colors, fonts, spacing } from '../theme';
+import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
   Button,
@@ -53,6 +54,7 @@ export function DocumentScreen({ id }: { id: string }) {
   const [unlocked, setUnlocked] = useState(!app.prefs.documentLock);
   const [authFailed, setAuthFailed] = useState(false);
   const [preparing, setPreparing] = useState<'scan' | 'upload' | null>(null);
+  const confirmDelete = useDeleteConfirm();
   const entry = documents.find((d) => d.id === id);
 
   const authenticate = async () => {
@@ -135,17 +137,19 @@ export function DocumentScreen({ id }: { id: string }) {
   };
 
   // 这里只从记录里摘掉。服务端发现没有记录再用它，才在宽限期后清理，撤销就不会清理。
-  const removeFile = async (file: MediaRef) => {
-    const current = latest();
-    const files = current.files.filter((f) => f.id !== file.id);
-    await app.write('document', { ...current, files }, id);
-    toast(t().info.removedFile(file.name ?? t().info.aFile), {
-      undo: () => {
-        const now = latest();
-        void app.write('document', { ...now, files: [...now.files, file] }, id);
-      },
+  const removeFile = (file: MediaRef) =>
+    confirmDelete({ kind: 'documentFile', name: file.name ?? t().info.aFile }, async () => {
+      sheet.close();
+      const current = latest();
+      const files = current.files.filter((f) => f.id !== file.id);
+      await app.write('document', { ...current, files }, id);
+      toast(t().info.removedFile(file.name ?? t().info.aFile), {
+        undo: () => {
+          const now = latest();
+          void app.write('document', { ...now, files: [...now.files, file] }, id);
+        },
+      });
     });
-  };
 
   const guard = (kind: 'scan' | 'upload', run: () => Promise<PickedFile[]>) => async () => {
     setPreparing(kind);
@@ -329,23 +333,18 @@ export function DocumentScreen({ id }: { id: string }) {
           height={44}
           label={t().info.deleteDoc}
           onPress={() =>
-            sheet.open(t().info.deleteNamed(data.name), () => (
-              <>
-                <Muted style={{ fontSize: 13 }}>{t().info.deleteDocWarn}</Muted>
-                <Button
-                  testID="doc-delete-confirm"
-                  label={t().info.confirmDelete}
-                  onPress={() => {
-                    void app.remove(id);
-                    sheet.close();
-                    router.back();
-                    toast(t().info.deletedNamed(data.name), {
-                      undo: () => void app.write('document', data, id),
-                    });
-                  }}
-                />
-              </>
-            ))
+            confirmDelete(
+              { kind: 'document', name: data.name },
+              () => {
+                void app.remove(id);
+                sheet.close();
+                router.back();
+                toast(t().info.deletedNamed(data.name), {
+                  undo: () => void app.write('document', data, id),
+                });
+              },
+              { confirmTestID: 'doc-delete-confirm' },
+            )
           }
         />
       </ScrollView>

@@ -151,7 +151,7 @@ export function Row({
   );
 }
 
-type ButtonTone = 'accent' | 'dark' | 'green' | 'outline' | 'ghost';
+type ButtonTone = 'accent' | 'dark' | 'green' | 'danger' | 'outline' | 'ghost';
 
 export function Button({
   label,
@@ -178,6 +178,7 @@ export function Button({
     accent: { bg: colors.accent, ink: colors.white },
     dark: { bg: colors.ink, ink: colors.paper },
     green: { bg: colors.green, ink: colors.white },
+    danger: { bg: colors.danger, ink: colors.white },
     outline: { bg: 'transparent', ink: colors.ink, border: colors.ink },
     ghost: { bg: 'transparent', ink: colors.muted },
   };

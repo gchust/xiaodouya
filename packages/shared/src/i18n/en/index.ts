@@ -2,6 +2,7 @@ import type { Catalog } from '../zh';
 import { account } from './account';
 import { auth } from './auth';
 import { common } from './common';
+import { confirm } from './confirm';
 import { domain } from './domain';
 import { family } from './family';
 import { feedback } from './feedback';
@@ -19,6 +20,7 @@ import { widgetUi } from './widgetUi';
 
 export const en: Catalog = {
   common,
+  confirm,
   widgetUi,
   storageUi,
   family,
