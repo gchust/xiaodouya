@@ -15,6 +15,8 @@ export type DeleteTarget =
   | { kind: 'documentFile'; name: string }
   | { kind: 'formula'; name: string }
   | { kind: 'vaccinePlan'; name: string }
+  /** `summary` 由界面按币种写好（`压岁钱 · 爷爷 · ¥600`）。 */
+  | { kind: 'money'; summary: string }
   | { kind: 'member'; name: string };
 
 export interface DeleteConfirmText {
@@ -64,6 +66,12 @@ export function deleteConfirmText(target: DeleteTarget): DeleteConfirmText {
       return deleting(text.formula(target.name), text.formulaBody);
     case 'vaccinePlan':
       return removing(text.vaccinePlan(target.name), text.vaccinePlanBody);
+    case 'money':
+      return {
+        title: text.money,
+        body: `${target.summary}\n${text.moneyBody}${text.undoHint}`,
+        confirm: text.delete,
+      };
     case 'member':
       // 移出家庭在服务端立刻生效，没有撤销，所以不提撤销。
       return {

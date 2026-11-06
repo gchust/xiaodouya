@@ -1,0 +1,47 @@
+type Text = string | number;
+
+/** 小金库（issue #90）。只是记账，文案不能让人以为 App 在经手真实的钱。 */
+export const money = {
+  title: '小金库',
+  flowIn: '收到',
+  flowOut: '拿出',
+  balance: '余额',
+  totals: (received: Text, taken: Text) => `收到 ${received} · 拿出 ${taken}`,
+  addLink: '＋ 记一笔',
+  addA11y: '在小金库记一笔',
+  addTitle: '记一笔',
+  editTitle: '修改这一笔',
+  openA11y: (balance: Text) => `打开小金库，余额 ${balance}`,
+  empty: '家人给宝宝的红包、生日礼金，谁给的、给了多少，都可以记在这里。',
+  amount: '金额',
+  currency: '币种',
+  currencyA11y: (code: Text) => `币种 ${code}，点一下换`,
+  from: '谁给的',
+  fromPlaceholder: '比如 爷爷',
+  occasion: '场合',
+  purpose: '去向',
+  date: '日期',
+  note: '备注（可选）',
+  save: '记下',
+  deleteEntry: '删除这一笔',
+  logged: (text: Text) => `已记下 · ${text}`,
+  saved: (text: Text) => `已保存 · ${text}`,
+  deleted: '已删除这一笔',
+  byGiver: '谁给的',
+  byOccasion: '按场合',
+  history: '明细',
+  count: (n: Text) => `${n} 笔`,
+  unknownGiver: '没写是谁',
+  noOccasion: '没选场合',
+  rowA11y: (text: Text, date: Text) => `${text}，${date}，点一下修改`,
+  footer:
+    '这里只是记账，不连接银行，也不经手真实的钱。一起记录的家人都能看到和修改，只看回忆的家人看不到。',
+  errors: {
+    empty: '请填金额',
+    invalid: '金额只能填数字',
+    zero: '金额要大于 0',
+    tooLarge: '金额太大了',
+    decimals: (code: Text, digits: number) =>
+      digits === 0 ? `${code} 不能有小数` : `${code} 最多 ${digits} 位小数`,
+  },
+};

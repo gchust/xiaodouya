@@ -136,6 +136,18 @@ describe('event 集合里不是记录的内容', () => {
     expect(summarize([record(MOM, formula)])).toBeNull();
   });
 
+  it('家人记了一笔小金库不提示，哪怕带着 at', () => {
+    const money = {
+      type: 'money',
+      flow: 'in',
+      amountMinor: 100,
+      currency: 'SGD',
+      happenedAt: NOW,
+    };
+    expect(summarize([record(MOM, money)])).toBeNull();
+    expect(summarize([record(MOM, { ...money, at: NOW })])).toBeNull();
+  });
+
   it('也不算进条数', () => {
     expect(summarize([record(MOM, feed(75)), record(MOM, plan)])?.message).toBe(
       '妈妈 记录了 喂奶 75ml',

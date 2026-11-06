@@ -47,4 +47,13 @@ export interface RegionDefinition {
   nutrition: NutritionReferenceUse;
   defaultUnits: Units;
   paperSize: PaperSize;
+  money: RegionMoney;
+}
+
+/** 小金库在这个地区的默认值。 */
+export interface RegionMoney {
+  /** 新记一笔时默认的币种（ISO 4217）。没有的地区按手机的国家猜，见 defaultMoneyCurrency。 */
+  currency?: string;
+  /** 收到时可选的场合，按常用程度排，最后是 `other`。id 在 regions/moneyCategories.ts。 */
+  categories: readonly string[];
 }

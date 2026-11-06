@@ -1,6 +1,9 @@
 import type { Units } from '../domain/units';
 import type { UnitPrefs } from '../schemas';
 import { CN } from './cn';
+
+export * from './moneyCategories';
+
 import { OTHER } from './other';
 import { SG } from './sg';
 import type { RegionDefinition } from './types';
@@ -10,6 +13,7 @@ export type {
   OptionalVaccines,
   PaperSize,
   RegionDefinition,
+  RegionMoney,
   ReviewStatus,
   VaccineSource,
 } from './types';

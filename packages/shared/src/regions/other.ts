@@ -1,6 +1,7 @@
 import { metricUnits } from '../domain/units';
 import { nutritionReferenceFallback } from '../health/nutritionReferences';
 import { L, localized } from '../i18n';
+import { genericMoneyInCategoryIds } from './moneyCategories';
 import type { RegionDefinition } from './types';
 
 /** 用户选了“其他地区”，或者地区这个版本还不认识。没有疫苗表就不做提醒，宁可不提示，也不套用别国的方案。 */
@@ -35,4 +36,5 @@ export const OTHER: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  money: { categories: genericMoneyInCategoryIds },
 });

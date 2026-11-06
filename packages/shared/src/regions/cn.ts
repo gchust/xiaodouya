@@ -507,4 +507,16 @@ export const CN: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  money: {
+    currency: 'CNY',
+    categories: [
+      'lunar-new-year',
+      'red-packet',
+      'full-month',
+      'hundred-days',
+      'birthday',
+      'gift',
+      'other',
+    ],
+  },
 });
