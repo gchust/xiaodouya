@@ -68,6 +68,10 @@ appId: com.gchust.xiaodouya
     id: share-link
     text: https://share\.example\.test/#m/[A-Za-z0-9_-]{43}
 - assertVisible: 回忆 · Pick A ${RUN_ID}
+# 和分享一天同一块（F-139）：常用 App、更多、复制链接。
+- assertVisible: { id: share-target-e2e }
+- assertVisible: { id: share-more }
+- assertVisible: { id: share-copy }
 - takeScreenshot: .artifacts/e2e-11d-link-one
 - tapOn: { id: sheet-cancel }
 - extendedWaitUntil:
