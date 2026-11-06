@@ -101,6 +101,8 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#c0714f',
     },
     softwareKeyboardLayoutMode: 'resize',
+    // 在抖音、B站等 App 里点“分享”能选小豆芽，存成育儿资料（issue #98）。只收文字，读取在 modules/share-intent。
+    intentFilters: [{ action: 'SEND', category: ['DEFAULT'], data: [{ mimeType: 'text/plain' }] }],
     // 配置了才启用远程推送；没有也能正常构建，见 docs/DEPLOYMENT.md。
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
     permissions: [

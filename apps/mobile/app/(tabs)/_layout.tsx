@@ -2,6 +2,7 @@ import { t } from '@xiaodouya/shared';
 import { Redirect, Tabs } from 'expo-router';
 import { useApp } from '../../src/lib/app';
 import { PendingPickRecovery } from '../../src/lib/pendingPick';
+import { ShareReceiver } from '../../src/lib/ShareReceiver';
 import { colors } from '../../src/theme';
 import { StatusBarScrim } from '../../src/ui/StatusBarScrim';
 import { TabBar } from '../../src/ui/TabBar';
@@ -30,6 +31,7 @@ export default function TabsLayout() {
       </Tabs>
       <StatusBarScrim />
       {viewer ? null : <PendingPickRecovery />}
+      <ShareReceiver />
     </>
   );
 }
