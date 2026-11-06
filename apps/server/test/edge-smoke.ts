@@ -141,7 +141,9 @@ async function startRuntime(env: Record<string, string>, port: number): Promise<
 }
 
 const example = exampleEnv();
-const config = loadConfig({ ...example, S3_PUBLIC_ENDPOINT: 'http://localhost:59000' });
+// 和集成测试一样可以换一个 S3（开发用的 SeaweedFS 卷位满了时，见 PITFALLS）。
+const S3 = process.env.TEST_S3_ENDPOINT ?? 'http://localhost:59000';
+const config = loadConfig({ ...example, S3_ENDPOINT: S3, S3_PUBLIC_ENDPOINT: S3 });
 const admin = connect(process.env.DATABASE_URL ?? config.databaseUrl);
 const database = `xiaodouya_edge_${process.pid}_${Date.now()}`;
 await admin.unsafe(`CREATE DATABASE ${database}`);
@@ -161,8 +163,8 @@ const functionEnv: Record<string, string> = {
   // 本地 Postgres 没有 TLS。线上默认是 require，TLS 单独用开了 SSL 的容器验证。
   DB_SSL: process.env.EDGE_SMOKE_DB_SSL ?? '',
   APP_SECRET: example.APP_SECRET ?? '',
-  S3_ENDPOINT: 'http://localhost:59000',
-  S3_PUBLIC_ENDPOINT: 'http://localhost:59000',
+  S3_ENDPOINT: S3,
+  S3_PUBLIC_ENDPOINT: S3,
   S3_REGION: example.S3_REGION ?? '',
   S3_BUCKET: example.S3_BUCKET ?? '',
   S3_ACCESS_KEY_ID: example.S3_ACCESS_KEY_ID ?? '',
@@ -952,6 +954,38 @@ async function publicShare(base: string) {
     (await post('/v1/public/share/timeline', { token: chosen.json.token })).response.status === 404,
     '撤销后打不开',
   );
+
+  // 分享设置（F-141）：称呼由服务端换好，回答里没有真实名字；没有头像时不发链接。
+  console.log('分享设置（F-141）：公开接口按链接的设置换名字');
+  const nicknamed = await request<{ id: string; token: string }>(
+    base,
+    'POST',
+    '/v1/shares/moments',
+    {
+      token: owner,
+      body: {
+        momentIds: [withPreview?.id ?? ''],
+        fromAt: Date.UTC(2026, 5, 14, 16),
+        toAt: Date.UTC(2026, 5, 15, 16),
+        timezone: 'Asia/Singapore',
+        display: { showName: true, nickname: '小宝', showAvatar: true },
+      },
+    },
+  );
+  check(nicknamed.status === 201, '创建带称呼的链接');
+  const nicknamedPage = await post('/v1/public/share/timeline', { token: nicknamed.json.token });
+  const nicknamedBaby = nicknamedPage.response.ok
+    ? (JSON.parse(nicknamedPage.text) as { baby: { name: string; avatarUrl?: string | null } }).baby
+    : null;
+  check(
+    nicknamedBaby?.name === '小宝' &&
+      nicknamedBaby.avatarUrl === null &&
+      !nicknamedPage.text.includes('测试豆'),
+    '名字是称呼，回答里没有真实名字，没有头像时不发链接',
+  );
+  const served = await request<{ shareDisplay?: boolean }>(base, 'GET', '/v1/config');
+  check(served.json.shareDisplay === true, '/v1/config 写着 shareDisplay');
+  await request(base, 'DELETE', `/v1/shares/${nicknamed.json.id}`, { token: owner });
 }
 
 async function customStorage(base: string, token: string) {
@@ -960,7 +994,7 @@ async function customStorage(base: string, token: string) {
     token,
     body: {
       provider: 'other',
-      endpoint: 'http://localhost:59000',
+      endpoint: S3,
       bucket: example.S3_BUCKET,
       accessKeyId: example.S3_ACCESS_KEY_ID,
       secretAccessKey: example.S3_SECRET_ACCESS_KEY,

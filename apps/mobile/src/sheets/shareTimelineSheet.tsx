@@ -1,8 +1,9 @@
 import {
   type CreateTimelineShareRequest,
   countShareDay,
-  DEFAULT_SHARE_TTL_DAYS,
   SHARE_TTL_DAYS,
+  type ShareDisplay,
+  type ShareTtlDays,
   TIMELINE_SHARE_INCLUDE,
   t,
   timelineRangeText,
@@ -15,6 +16,7 @@ import { SHARE_BASE_URL } from '../lib/config';
 import { localDayBounds } from '../lib/dates';
 import { deviceTimezone } from '../lib/device';
 import {
+  nicknameProblem,
   shareLinkUrl,
   shareTimelinePending,
   shareTimelineRange,
@@ -24,6 +26,7 @@ import { colors, fonts } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { Button, Chip, Muted } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
+import { ShareDisplayRow, useSharePrefs } from './shareDisplay';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -45,12 +48,15 @@ const sameCalendar = (ms: number) => ms;
 export function ShareTimelineSheet() {
   const app = useApp();
   const { events, moments } = useRecords();
-  const [preset, setPreset] = useState<TimelinePreset>('month');
+  const prefs = useSharePrefs();
+  const [preset, setPreset] = useState<TimelinePreset>(prefs.timeline);
   const [customFrom, setCustomFrom] = useState(
     () => new Date(localDayBounds(Date.now(), -6).start),
   );
   const [customTo, setCustomTo] = useState(() => new Date());
-  const [ttlDays, setTtlDays] = useState<(typeof SHARE_TTL_DAYS)[number]>(DEFAULT_SHARE_TTL_DAYS);
+  const [ttlDays, setTtlDays] = useState<ShareTtlDays>(prefs.ttlDays);
+  // 从账号的默认值开始，这里改的只用于这一次（F-141）。
+  const [display, setDisplay] = useState<ShareDisplay>(prefs.display);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string; title: string } | null>(null);
@@ -82,6 +88,7 @@ export function ShareTimelineSheet() {
       ...range,
       timezone: deviceTimezone() ?? app.prefs.timezone,
       ttlDays,
+      display,
     };
     try {
       const share = await app.api.createTimelineShare(body);
@@ -158,6 +165,7 @@ export function ShareTimelineSheet() {
         <Text style={s.warningText}>{t().share.timelineWhat}</Text>
         <Text style={s.warningText}>{t().share.timelineLocation}</Text>
       </View>
+      <ShareDisplayRow value={display} onChange={setDisplay} />
       <View style={s.ttlRow}>
         <Muted style={s.ttlLabel}>{t().share.ttlTitle}</Muted>
         {SHARE_TTL_DAYS.map((days) => (
@@ -181,7 +189,7 @@ export function ShareTimelineSheet() {
       <Button
         testID="share-create"
         label={busy ? t().share.creating : t().share.create}
-        disabled={busy || !range}
+        disabled={busy || !range || Boolean(nicknameProblem(display.nickname))}
         onPress={() => void create()}
       />
     </>

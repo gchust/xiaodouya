@@ -162,4 +162,35 @@ export const share: Catalog['share'] = {
   momentsPageTitle: (name) => `Moments with ${name}`,
   momentsEmptyTitle: 'These moments are no longer here',
   momentsEmptyBody: 'They may have been deleted. You could ask the person who sent you this link.',
+  // ─── Share settings (app, F-141) ──────────────
+  settingsRow: 'Sharing settings',
+  settingsRowSub: (days, shown, avatar) =>
+    `Expires in ${plural(days, 'day', 'days')} · ${shown}${avatar ? ' · with photo' : ''}`,
+  settingsTtl: 'Default expiry',
+  settingsTimeline: 'Default timeline range',
+  settingsNote:
+    'These are your defaults for new links and follow your account. Links you already sent stay as they are, and you can still change them while sharing.',
+  settingsSave: 'Save',
+  settingsSaved: 'Saved',
+  displayTitle: 'What they see',
+  showName: "Show your baby's name",
+  showNameOffSub: 'The page says "Baby" instead',
+  nickname: 'Nickname',
+  nicknamePlaceholder: "Leave empty to use your baby's name",
+  nicknameBad: (max) => `Up to ${max} characters, on one line.`,
+  showAvatar: "Show your baby's photo",
+  showAvatarSub: 'At the top of the page, as a small compressed image',
+  showAvatarNone: 'No profile photo yet. It will show once you add one',
+  displayNote:
+    "Only the name at the top of the page changes. Names written in your moments' titles and text stay as they are.",
+  shownAs: (name) => `Shown as "${name}"`,
+  shownHidden: 'Name hidden',
+  shownReal: 'Name shown',
+  summaryLine: (shown, avatar) => `They see: ${shown}${avatar ? ' · with photo' : ''}`,
+  displayEdit: 'Change',
+  displayEditA11y: 'Change the name and photo they see',
+  displayUnsupported:
+    "The server doesn't support sharing settings yet. This link will show your baby's real name and no photo.",
+  // ─── Web page: profile photo ───────────────────
+  avatarAlt: "Baby's photo",
 };

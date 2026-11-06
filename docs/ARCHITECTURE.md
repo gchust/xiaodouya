@@ -339,6 +339,31 @@ App ──POST /v1/shares/moments {momentIds, fromAt, toAt, timezone, ttlDays}�
 
 **两个公开接口接受两种 kind（`TIMELINE_KINDS`）。** 一天的令牌照样打不开它们，回忆的令牌打不开一天的接口；回答里的 `kind` 是 `moments`，页面据此把标题写成“…的回忆”，不显示“没有更早的回忆了”，空的时候说“这些回忆已经不在了”。
 
+## 分享设置（F-141）
+
+```
+App 偏好 prefs.share {ttlDays, timeline, display}   ← 跟着账号，家人页“分享设置”
+ │ 弹层从它开始，这一次可以改
+ ▼
+POST /v1/shares{,/timeline,/moments} {..., display: {showName, nickname, showAvatar}}
+ ▼
+shares 一行：show_name、baby_nickname、show_avatar（追加的迁移，可空）
+ ▼
+公开接口每次按这一行生成 baby：name = publicBabyName(真实名字, 设置)，avatarUrl 只在 show_avatar 时签
+```
+
+**按链接执行，不按账号现在的设置。** 名字和头像在创建时存进 `shares`，公开接口只读这一行，之后改账号的分享设置、改宝宝的名字都不影响已经发出去的链接里的称呼（隐藏名字的链接也不会因为改了名字而露出来）。规则在 `packages/shared/src/shareSettings.ts`：隐藏时 `name` 是空字符串，有称呼时是称呼，否则是真实名字；页面把空名字写成“宝宝”/“Baby”。真实名字和没选的头像都不出服务端，测试查的是回答的原文（`share-settings.test.ts`）。
+
+**旧行为不变。** 三列都可空。旧行、旧版 App 不带 `display` 时都是空值，按 `defaultShareDisplay` 处理：真实名字、不带头像，和以前一模一样（以前的分享页没有头像）。`ShareSummary.display` 和两个公开回答的 `baby.avatarUrl` 都是可选的，新旧服务端和页面互相读得懂。
+
+**头像只发缩略图。** 选了头像的链接每次回答多签一个（时间线一页最多 41 个签名）。`media` 表里这个家庭、`scope = 'avatar'`、`status = 'ready'`、`variant = 'thumb'`、图片类型的那一行才签，有效期和回忆的文件一样 1 小时。缩略图是从位图重新编码的，没有原图的 EXIF 和拍摄地点；没有缩略图时不发，绝不退回原图。档案是客户端写的，头像 id 写成回忆或别家的文件时查不到。
+
+**只换页面顶上的名字。** 回忆的标题、正文、记录的备注是用户写的内容，原样发（AGENTS 第 5 节），里面写到的名字不会被换掉，设置页上写明了。`byName` 是记录人的称呼（爸爸、妈妈），不是宝宝的名字。
+
+**设置跟着账号，不跟家庭、不只在这台手机。** 分享是一个人做的事，称呼也是这个人的习惯；跟着账号，换手机、重装后还在。代价是家里每个人各设各的，爸爸设了“小宝”，妈妈分享时还是真实名字。存在 `users.prefs.share`，`Prefs.share` 是 `optional().catch(undefined)`，每一项坏了只退回那一项。v0.8.0 及以前的 App 解析 `/v1/me` 时会丢掉 `share`，写回偏好时也就没有它；`PUT /v1/me/prefs` 没带 `share` 时保留库里原来的，不然一台旧手机改个提醒开关就把称呼清掉，下次分享又是真实名字。新版 App 只要设置过就一直带着它。
+
+**旧服务端会悄悄丢掉选项。** zod 默认去掉不认识的字段，旧服务端照样建链接、照样发真实名字。所以服务端在 `/v1/config` 写 `shareDisplay: true`，App 问到才显示设置行和弹层里的那一行；确定不支持、又改过默认值时，弹层上说明这次是真实名字。
+
 ## 反馈问题
 
 ```

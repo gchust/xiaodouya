@@ -9,8 +9,10 @@ appId: com.gchust.xiaodouya
     visible: { id: tab-family }
     timeout: 30000
 - tapOn: { id: tab-family }
+# 设置里多了“分享设置”（F-141）后，这一行会停在底部标签栏后面，说明文字被盖住（run 42222130108），所以滚到中间。
 - scrollUntilVisible:
     element: { id: check-update }
+    centerElement: true
 - assertVisible: 当前版本 .*
 - tapOn: { id: check-update }
 - extendedWaitUntil:
