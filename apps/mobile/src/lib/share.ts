@@ -2,16 +2,21 @@ import {
   type EventData,
   formatDateHeader,
   formatFullDate,
+  isDefaultShareDisplay,
   MAX_SHARE_MOMENTS,
   type MomentData,
   pendingShareFiles,
   type Role,
+  SHARE_NICKNAME_MAX,
   SHARE_TIMELINE_ALL_FROM,
+  ShareDisplay,
   type ShareInclude,
   type ShareKind,
+  type SharePrefs,
   type ShareSummary,
   shareFragment,
   shareIncludesEvent,
+  sharePrefsOf,
   TIMELINE_SHARE_INCLUDE,
   t,
   timelineRangeText,
@@ -182,4 +187,39 @@ export function toggleSelection(selected: readonly string[], id: string): readon
   if (selected.includes(id)) return selected.filter((item) => item !== id);
   if (selected.length >= MAX_SHARE_MOMENTS) return selected;
   return [...selected, id];
+}
+
+// ─── 分享设置（F-141） ───────────────────────────────
+
+/** 名字这一项的说法：显示为“小宝” / 不显示名字 / 显示名字。 */
+export function shareDisplayShown(display: ShareDisplay): string {
+  if (!display.showName) return t().share.shownHidden;
+  const nickname = display.nickname.trim();
+  return nickname ? t().share.shownAs(nickname) : t().share.shownReal;
+}
+
+/** 分享弹层上收起时的一行：对方看到：显示为“小宝” · 带头像。 */
+export function shareDisplaySummary(display: ShareDisplay): string {
+  return t().share.summaryLine(shareDisplayShown(display), display.showAvatar);
+}
+
+/** 家人页“分享设置”那一行的副标题。 */
+export function shareSettingsSub(prefs: SharePrefs | undefined): string {
+  const { ttlDays, display } = sharePrefsOf(prefs);
+  return t().share.settingsRowSub(ttlDays, shareDisplayShown(display), display.showAvatar);
+}
+
+/** 称呼不合规时的说明，和服务端用同一个规则（`ShareDisplay`）。 */
+export function nicknameProblem(nickname: string): string | null {
+  return ShareDisplay.shape.nickname.safeParse(nickname).success
+    ? null
+    : t().share.nicknameBad(SHARE_NICKNAME_MAX);
+}
+
+/**
+ * 确定服务端不认识这些选项、而这次又改过名字或头像时要提醒：旧服务端会悄悄丢掉选项，
+ * 页面上照样是真实名字。还不知道（离线、还没问到）时不提醒，那时也建不了链接。
+ */
+export function shareDisplayUnsupported(display: ShareDisplay, supported: boolean | null): boolean {
+  return supported === false && !isDefaultShareDisplay(display);
 }

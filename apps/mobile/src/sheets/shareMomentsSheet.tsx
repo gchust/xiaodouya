@@ -1,7 +1,8 @@
 import {
   type CreateMomentsShareRequest,
-  DEFAULT_SHARE_TTL_DAYS,
   SHARE_TTL_DAYS,
+  type ShareDisplay,
+  type ShareTtlDays,
   t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
@@ -11,6 +12,7 @@ import { useApp, useRecords } from '../lib/app';
 import { SHARE_BASE_URL } from '../lib/config';
 import { deviceTimezone } from '../lib/device';
 import {
+  nicknameProblem,
   shareLinkUrl,
   shareMomentsPending,
   shareMomentsRange,
@@ -19,6 +21,7 @@ import {
 import { colors, fonts } from '../theme';
 import { Button, Chip, Muted } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
+import { ShareDisplayRow, useSharePrefs } from './shareDisplay';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -36,7 +39,10 @@ export function ShareMomentsSheet({
 }) {
   const app = useApp();
   const { moments } = useRecords();
-  const [ttlDays, setTtlDays] = useState<(typeof SHARE_TTL_DAYS)[number]>(DEFAULT_SHARE_TTL_DAYS);
+  const prefs = useSharePrefs();
+  const [ttlDays, setTtlDays] = useState<ShareTtlDays>(prefs.ttlDays);
+  // 从账号的默认值开始，这里改的只用于这一次（F-141）。
+  const [display, setDisplay] = useState<ShareDisplay>(prefs.display);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string; title: string } | null>(null);
@@ -64,6 +70,7 @@ export function ShareMomentsSheet({
       ...shareMomentsRange(chosen),
       timezone: deviceTimezone() ?? app.prefs.timezone,
       ttlDays,
+      display,
     };
     try {
       const share = await app.api.createMomentsShare(body);
@@ -109,6 +116,7 @@ export function ShareMomentsSheet({
         <Text style={s.warningText}>{t().share.momentsWhat}</Text>
         <Text style={s.warningText}>{t().share.timelineLocation}</Text>
       </View>
+      <ShareDisplayRow value={display} onChange={setDisplay} />
       <View style={s.ttlRow}>
         <Muted style={s.ttlLabel}>{t().share.ttlTitle}</Muted>
         {SHARE_TTL_DAYS.map((days) => (
@@ -132,7 +140,7 @@ export function ShareMomentsSheet({
       <Button
         testID="share-create"
         label={busy ? t().share.creating : t().share.create}
-        disabled={busy || chosen.length === 0}
+        disabled={busy || chosen.length === 0 || Boolean(nicknameProblem(display.nickname))}
         onPress={() => void create()}
       />
     </>

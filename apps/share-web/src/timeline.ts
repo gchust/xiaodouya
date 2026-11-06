@@ -19,6 +19,7 @@ import { createMediaSource, type MediaSource } from './mediaSource';
 import { openMomentView } from './momentView';
 import {
   el,
+  heroAvatar,
   imageTile,
   type MediaSlot,
   pageFooter,
@@ -66,9 +67,15 @@ const dayKey = (at: number, timezone: string) => {
   return `${year}-${month}-${day}`;
 };
 
-function pageHeader(data: PublicTimelineResponse, now: number): HTMLElement {
+function pageHeader(
+  data: PublicTimelineResponse,
+  now: number,
+  allowLocalHttp: boolean,
+): HTMLElement {
   const { timezone } = data.range;
   const header = el('header', 'hero');
+  const avatar = heroAvatar(data.baby.avatarUrl, allowLocalHttp);
+  if (avatar) header.append(avatar);
   header.append(
     el(
       'p',
@@ -371,7 +378,7 @@ export function createTimelinePage({
     lastDay = null;
     moreFailed = false;
     root.replaceChildren();
-    root.append(pageHeader(data, now()));
+    root.append(pageHeader(data, now(), allowLocalHttp));
     list = el('div', 'tl');
     root.append(list);
     more = el('div', 'tl-more');

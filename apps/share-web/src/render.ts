@@ -213,8 +213,28 @@ export function audioPlayer(
 
 // ─── 页面各部分 ─────────────────────────────────────────
 
-function pageHeader(data: PublicShareResponse, now: number): HTMLElement {
+/**
+ * 页面顶上的宝宝头像（F-141）。只有分享的人选了显示头像，接口才会给链接；
+ * 加载不出来（过期、被删）时整个去掉，不留一个破图。
+ */
+export function heroAvatar(
+  url: string | null | undefined,
+  allowLocalHttp: boolean,
+): HTMLImageElement | null {
+  const src = safeMediaUrl(url, allowLocalHttp);
+  if (!src) return null;
+  const img = el('img', 'hero-avatar');
+  img.alt = t().share.avatarAlt;
+  img.decoding = 'async';
+  img.addEventListener('error', () => img.remove());
+  img.src = src;
+  return img;
+}
+
+function pageHeader(data: PublicShareResponse, now: number, allowLocalHttp: boolean): HTMLElement {
   const header = el('header', 'hero');
+  const avatar = heroAvatar(data.baby.avatarUrl, allowLocalHttp);
+  if (avatar) header.append(avatar);
   const { fromAt, timezone } = data.range;
   const day = zonedCalendarDate(fromAt, timezone).getTime();
   const sameYear = new Date(day).getFullYear() === new Date(now).getFullYear();
@@ -223,7 +243,8 @@ function pageHeader(data: PublicShareResponse, now: number): HTMLElement {
   const name = data.baby.name || t().share.fallbackName;
   const { dayNumber, age } = data.baby;
   let title = name;
-  if (dayNumber !== null && data.baby.name) {
+  // 分享的人选了不显示名字时 name 是空的，照样写第几天：“宝宝的第 15 天”。
+  if (dayNumber !== null) {
     title =
       dayNumber > 0
         ? t().today.title(name, dayNumber)
@@ -407,7 +428,7 @@ export function renderShare(
 ): MediaSlot[] {
   const slots: MediaSlot[] = [];
   root.replaceChildren();
-  root.append(pageHeader(data, ctx.now));
+  root.append(pageHeader(data, ctx.now, ctx.allowLocalHttp));
   const summary = daySummary(data, ctx.now);
   if (summary) root.append(summary);
   const gallery = gallerySection(data, ctx, slots);
