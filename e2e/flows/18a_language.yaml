@@ -19,6 +19,9 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     notVisible: { id: lang-en }
     timeout: 10000
+# 重新挂载后回到页面顶部。家人页多了“家人的证件”（F-137）之后，语言这一行在第一屏下面，要滚下去看。
+- scrollUntilVisible:
+    element: { id: open-language }
 - assertVisible: { id: open-language }
 - assertVisible: Language
 - assertVisible: Settings
