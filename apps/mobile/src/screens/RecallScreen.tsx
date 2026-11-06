@@ -24,9 +24,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
+import { useFavorites } from '../lib/library';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
 import { toggleSelection } from '../lib/share';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { FolderPicker } from '../sheets/librarySheets';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
 import { useCanShare } from '../sheets/shareSheets';
@@ -35,6 +37,7 @@ import { colors, fonts, spacing } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/primitives';
+import { StarButton } from '../ui/ResourceRow';
 
 type SubTab = 'timeline' | 'photos' | 'milestones' | 'letters';
 
@@ -260,6 +263,7 @@ function Timeline({
   const { toast } = useFeedback();
   const { width } = useWindowDimensions();
   const confirmDelete = useDeleteConfirm();
+  const favorites = useFavorites();
   if (moments.length === 0) {
     return <Empty title={t().recall.emptyTitle} sub={t().recall.emptySub} />;
   }
@@ -274,6 +278,16 @@ function Timeline({
           onPress={() =>
             sheet.replace(t().recall.editMoment, () => (
               <MomentSheet editMoment={{ id: m.id, data: m.data }} />
+            ))
+          }
+        />
+        <Button
+          testID="moment-folders"
+          tone="outline"
+          label={t().library.addToFolder}
+          onPress={() =>
+            sheet.replace(t().library.addToFolder, () => (
+              <FolderPicker target="moment" targetId={m.id} />
             ))
           }
         />
@@ -362,15 +376,23 @@ function Timeline({
                   </View>
                 </Pressable>
               ) : canDelete ? (
-                <Pressable
-                  testID={`moment-more-${m.id}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={t().recall.moreActions(m.data.title || t().ui.thisMoment)}
-                  hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
-                  onPress={() => openActions(m)}
-                >
-                  <Text style={s.momentMore}>⋯</Text>
-                </Pressable>
+                <View style={s.momentActions}>
+                  <StarButton
+                    testID={`moment-star-${m.id}`}
+                    on={Boolean(favorites.find(m.id))}
+                    title={name}
+                    onPress={() => void favorites.toggle('moment', m.id)}
+                  />
+                  <Pressable
+                    testID={`moment-more-${m.id}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={t().recall.moreActions(m.data.title || t().ui.thisMoment)}
+                    hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+                    onPress={() => openActions(m)}
+                  >
+                    <Text style={s.momentMore}>⋯</Text>
+                  </Pressable>
+                </View>
               ) : null}
             </View>
             {found && cover ? (
@@ -666,6 +688,7 @@ const s = StyleSheet.create({
   momentTitle: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   momentMeta: { fontSize: 12, color: colors.muted },
   momentMore: { fontSize: 16, lineHeight: 26, color: colors.muted },
+  momentActions: { flexDirection: 'row', alignItems: 'center', marginTop: -7 },
   milestoneTag: {
     borderWidth: 1,
     borderColor: colors.accent,

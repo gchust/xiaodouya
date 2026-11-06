@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   type EventData,
   estimateNextFeed,
+  favoriteIdFor,
   type MediaRef,
   type MomentData,
   mergeEdit,
@@ -509,6 +510,89 @@ describe('离线优先的记录和同步', () => {
     server.hideEvents = true;
     await a.engine.syncNow();
     expect(a.store.getSnapshot().money).toEqual([]);
+    a.engine.stop();
+  });
+
+  it('育儿资料、收藏、收藏夹不进时间线，各在各的列表里，能同步，两台手机收藏同一条只有一条', async () => {
+    const a = device(server);
+    const b = device(server);
+    await a.engine.start();
+    await b.engine.start();
+    const older = randomUUID();
+    const newer = randomUUID();
+    const folderId = randomUUID();
+    const resource = (title: string, addedAt: number) => ({
+      type: 'resource' as const,
+      url: 'https://b23.tv/AbC1234',
+      title,
+      addedAt,
+    });
+    await a.store.write('event', older, resource('虚构的旧资料', 1000));
+    await a.store.write('event', newer, resource('虚构的新资料', 5000));
+    await a.store.write('event', folderId, {
+      type: 'favorite-folder',
+      name: '睡眠',
+      createdAt: 1000,
+    });
+    await a.store.write('event', randomUUID(), feed());
+    // 先写进本地，立刻看得到，不等网络
+    expect(a.store.getSnapshot().resources.map((r) => r.id)).toEqual([newer, older]);
+    // 两台手机离线时都收藏了同一条
+    const favorite = (addedAt: number, folders: string[]) => ({
+      type: 'favorite' as const,
+      target: 'resource',
+      targetId: newer,
+      addedAt,
+      folders,
+    });
+    await a.store.write('event', favoriteIdFor(newer), favorite(2000, [folderId]));
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    await b.store.write('event', favoriteIdFor(newer), favorite(3000, []));
+    await b.engine.syncNow();
+    await a.engine.syncNow();
+    for (const d of [a, b]) {
+      const snapshot = d.store.getSnapshot();
+      expect(snapshot.events).toHaveLength(1);
+      expect(snapshot.events[0]?.data.type).toBe('feed');
+      expect(snapshot.resources.map((r) => r.id)).toEqual([newer, older]);
+      expect(snapshot.favoriteFolders.map((f) => f.data.name)).toEqual(['睡眠']);
+      expect(snapshot.favorites).toHaveLength(1);
+      expect(snapshot.favorites[0]?.data.addedAt).toBe(3000);
+    }
+
+    // 取消收藏是软删除，同步给家人
+    await a.store.remove(favoriteIdFor(newer));
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    expect(b.store.getSnapshot().favorites).toEqual([]);
+    expect(b.db.records.get(favoriteIdFor(newer))?.deleted).toBe(true);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('降级成 viewer 时育儿资料和收藏和喂奶一起清掉', async () => {
+    const a = device(server);
+    await a.engine.start();
+    const id = randomUUID();
+    await a.store.write('event', id, {
+      type: 'resource',
+      url: 'https://youtu.be/x',
+      title: '虚构',
+      addedAt: 1000,
+    });
+    await a.store.write('event', favoriteIdFor(id), {
+      type: 'favorite',
+      target: 'resource',
+      targetId: id,
+      addedAt: 1000,
+    });
+    await a.engine.syncNow();
+    server.role = 'viewer';
+    server.hideEvents = true;
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().resources).toEqual([]);
+    expect(a.store.getSnapshot().favorites).toEqual([]);
     a.engine.stop();
   });
 

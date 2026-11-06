@@ -69,6 +69,7 @@ export const library = {
 
   favorites: '收藏',
   favoritesEmpty: '时间线里的回忆和育儿资料，点 ☆ 就能收藏。还可以建收藏夹，比如“辅食”“睡眠”。',
+  allFavorites: '全部收藏',
   favoritesCount: (n: Text) => `${n} 项`,
   favoritesOpenA11y: (n: Text) => `打开收藏，共 ${n} 项`,
   starA11y: (title: Text) => `收藏“${title}”`,

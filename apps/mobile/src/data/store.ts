@@ -5,15 +5,21 @@ import {
   compareMoneyEntries,
   type DocumentData,
   type EventData,
+  type FavoriteData,
+  type FavoriteFolderData,
   type FormulaData,
+  isFavoriteData,
+  isFavoriteFolderData,
   isFormulaData,
   isMoneyData,
   isNewerVersion,
+  isResourceData,
   isVaccinePlanData,
   type LetterData,
   type MomentData,
   type MoneyData,
   parseCollectionData,
+  type ResourceData,
   type ServerRecord,
   t,
   type VaccinePlanData,
@@ -61,6 +67,12 @@ export interface Snapshot {
   formulas: RecordEntry<FormulaData>[];
   /** 小金库，按发生的日子倒序。存在 event 集合里，但不是照护记录，不进时间线。 */
   money: RecordEntry<MoneyData>[];
+  /** 育儿资料，新存的在前。和下面两个一样存在 event 集合里，但不是照护记录，不进时间线。 */
+  resources: RecordEntry<ResourceData>[];
+  /** 收藏（回忆和资料），一个目标一条。 */
+  favorites: RecordEntry<FavoriteData>[];
+  /** 收藏夹，按建的先后。 */
+  favoriteFolders: RecordEntry<FavoriteFolderData>[];
   moments: Entry<'moment'>[];
   letters: Entry<'letter'>[];
   documents: Entry<'document'>[];
@@ -73,6 +85,9 @@ const emptySnapshot: Snapshot = {
   vaccinePlans: [],
   formulas: [],
   money: [],
+  resources: [],
+  favorites: [],
+  favoriteFolders: [],
   moments: [],
   letters: [],
   documents: [],
@@ -117,6 +132,9 @@ export class RecordStore {
       vaccinePlans: [],
       formulas: [],
       money: [],
+      resources: [],
+      favorites: [],
+      favoriteFolders: [],
       moments: [],
       letters: [],
       documents: [],
@@ -138,6 +156,9 @@ export class RecordStore {
           if (isFormulaData(data)) next.formulas.push({ ...base, data });
           else if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
           else if (isMoneyData(data)) next.money.push({ ...base, data });
+          else if (isResourceData(data)) next.resources.push({ ...base, data });
+          else if (isFavoriteData(data)) next.favorites.push({ ...base, data });
+          else if (isFavoriteFolderData(data)) next.favoriteFolders.push({ ...base, data });
           else next.events.push({ ...base, data: data as EventData });
           break;
         case 'moment':
@@ -158,6 +179,10 @@ export class RecordStore {
     next.documents.sort((a, b) => a.updatedAt - b.updatedAt);
     next.formulas.sort((a, b) => a.data.name.localeCompare(b.data.name));
     next.money.sort(compareMoneyEntries);
+    next.resources.sort((a, b) => b.data.addedAt - a.data.addedAt || a.id.localeCompare(b.id));
+    next.favoriteFolders.sort(
+      (a, b) => a.data.createdAt - b.data.createdAt || a.id.localeCompare(b.id),
+    );
     this.snapshot = next;
     for (const listener of this.listeners) listener();
   }

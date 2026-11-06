@@ -71,7 +71,8 @@ export const library: Catalog['library'] = {
   favorites: 'Favorites',
   favoritesEmpty:
     'Tap ☆ on a memory or a parenting link to save it here. You can also make folders, like "Solids" or "Sleep".',
-  favoritesCount: (n) => `${n}`,
+  allFavorites: 'All favorites',
+  favoritesCount: (n) => (Number(n) === 1 ? '1 item' : `${n} items`),
   favoritesOpenA11y: (n) => `Open favorites, ${n} in total`,
   starA11y: (title) => `Add "${title}" to favorites`,
   unstarA11y: (title) => `Remove "${title}" from favorites`,

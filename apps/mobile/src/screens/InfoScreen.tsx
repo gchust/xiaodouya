@@ -58,6 +58,7 @@ import {
 } from '../ui/primitives';
 import { RegionPicker } from '../ui/RegionPicker';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+import { LibrarySection } from './LibrarySection';
 
 const DOC_GAP = 8;
 /** 链接文字只有 16 高，上下各扩 14 才到 44。 */
@@ -169,6 +170,8 @@ export function InfoScreen() {
           />
         </ListCard>
       </View>
+
+      <LibrarySection />
 
       <View style={s.section}>
         <View style={s.sectionHead}>
