@@ -1,6 +1,6 @@
 import { t } from '@xiaodouya/shared';
 import { Image } from 'expo-image';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { useApp, useRegion } from '../lib/app';
 import { IS_E2E } from '../lib/config';
@@ -14,9 +14,6 @@ import {
 import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Mono, Muted, PressScale } from '../ui/primitives';
-
-/** “已复制”留这么久再变回“复制链接”。 */
-const COPIED_MS = 2_000;
 
 /** 系统分享面板：iOS 一直用它，Android 上是“更多”。 */
 export const openSystemShare = (message: string) => {
@@ -62,13 +59,9 @@ export function ShareCreated({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmingRevoke, setConfirmingRevoke] = useState(false);
+  // 复制过就一直写“已复制”，不定时变回去：Android 13 起系统自己也会在左下角提示一下，
+  // 按钮上的字只是让人确认刚才那一下生效了，再点还是会复制。
   const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), COPIED_MS);
-    return () => clearTimeout(timer);
-  }, [copied]);
 
   const revoke = async () => {
     if (!confirmingRevoke) {
