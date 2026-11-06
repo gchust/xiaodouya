@@ -1,6 +1,7 @@
 import type { Units } from '../domain/units';
 import type { OptionalVaccine, VaccineDose } from '../domain/vaccines';
 import type { NutritionReferenceUse } from '../health/nutritionReferences';
+import type { ShareTargetId } from './shareTargets';
 
 export type PaperSize = 'A4' | 'Letter';
 
@@ -50,6 +51,11 @@ export interface RegionDefinition {
   defaultUnits: Units;
   paperSize: PaperSize;
   money: RegionMoney;
+  /**
+   * 分享链接时直接列出来的聊天 App，按当地常用程度排（issue #94）。只显示手机上装了的，最多 4 个，
+   * 其余的在“更多”（系统分享面板）里。目录在 regions/shareTargets.ts。
+   */
+  shareTargets: readonly ShareTargetId[];
 }
 
 /** 小金库在这个地区的默认值。 */

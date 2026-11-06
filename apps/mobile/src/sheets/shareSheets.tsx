@@ -10,10 +10,10 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
-import { Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords, useUnits } from '../lib/app';
-import { DEFAULT_API_URL, IS_E2E, SHARE_BASE_URL } from '../lib/config';
+import { DEFAULT_API_URL, SHARE_BASE_URL } from '../lib/config';
 import { deviceTimezone } from '../lib/device';
 import {
   canShare,
@@ -24,8 +24,8 @@ import {
   shareLinkUrl,
 } from '../lib/share';
 import { colors, fonts } from '../theme';
-import { useFeedback, useSheet } from '../ui/overlays';
-import { Button, Chip, Mono, Muted, Toggle } from '../ui/primitives';
+import { Button, Chip, Muted, Toggle } from '../ui/primitives';
+import { ShareCreated, shareRightAway } from './shareCreated';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -40,20 +40,8 @@ export function useCanShare(): boolean {
   });
 }
 
-function PendingNotes({ records, files }: { records: number; files: number }) {
-  if (records === 0 && files === 0) return null;
-  return (
-    <View style={s.warning} testID="share-pending">
-      {records > 0 ? <Text style={s.warningText}>{t().share.pendingRecords(records)}</Text> : null}
-      {files > 0 ? <Text style={s.warningText}>{t().share.pendingFiles(files)}</Text> : null}
-    </View>
-  );
-}
-
 export function ShareDaySheet({ at }: { at: number }) {
   const app = useApp();
-  const sheet = useSheet();
-  const { toast } = useFeedback();
   const { events, moments } = useRecords();
   const units = useUnits();
   const [include, setInclude] = useState<ShareInclude>(defaultShareInclude);
@@ -62,16 +50,13 @@ export function ShareDaySheet({ at }: { at: number }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
   const [pending, setPending] = useState({ records: 0, files: 0 });
-  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
 
   const range = shareDayRange(at);
   const title = shareDayTitle(range.fromAt, Date.now());
   const counts = countShareDay(events, moments, range, include);
   const nothingSelected = !include.moments && !include.daily && !include.health;
 
-  const send = (url: string) => {
-    void Share.share({ message: t().share.shareMessage(title, url) });
-  };
+  const messageFor = (url: string) => t().share.shareMessage(title, url);
 
   const create = async () => {
     setBusy(true);
@@ -99,9 +84,7 @@ export function ShareDaySheet({ at }: { at: number }) {
       );
       setPending(left);
       setCreated({ id: share.id, url });
-      // 还有内容没传完时先让人看到说明，由 TA 决定现在发还是等等。
-      // E2E 打不开系统分享面板，流程直接检查链接。
-      if (left.records === 0 && left.files === 0 && !IS_E2E) send(url);
+      shareRightAway(messageFor(url), left);
     } catch (error) {
       if (error instanceof ApiFailure && error.status === 0) setProblem(t().share.offline);
       else setProblem(error instanceof Error ? error.message : t().share.createFailed);
@@ -110,58 +93,15 @@ export function ShareDaySheet({ at }: { at: number }) {
     }
   };
 
-  const revokeCreated = async () => {
-    if (!created) return;
-    if (!confirmingRevoke) {
-      setConfirmingRevoke(true);
-      return;
-    }
-    setBusy(true);
-    try {
-      await app.api.revokeShare(created.id);
-      sheet.close();
-      toast(t().share.revoked);
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : t().share.revokeFailed);
-      setBusy(false);
-    }
-  };
-
   if (created) {
     return (
-      <>
-        <Text style={s.title} testID="share-created">
-          {t().share.createdTitle}
-        </Text>
-        <Muted style={s.line}>{title}</Muted>
-        <View style={s.linkBox}>
-          <Mono style={s.link} testID="share-link" selectable numberOfLines={2}>
-            {created.url}
-          </Mono>
-        </View>
-        <PendingNotes {...pending} />
-        <Muted style={s.line}>{t().share.notice}</Muted>
-        {problem ? <Text style={s.problem}>{problem}</Text> : null}
-        {confirmingRevoke ? <Muted style={s.line}>{t().share.revokeNote}</Muted> : null}
-        <Button
-          testID="share-send"
-          label={t().share.send}
-          disabled={busy}
-          onPress={() => send(created.url)}
-        />
-        <Pressable
-          testID="share-revoke-created"
-          accessibilityRole="button"
-          accessibilityLabel={t().share.revokeThis}
-          disabled={busy}
-          onPress={() => void revokeCreated()}
-          style={s.textButton}
-        >
-          <Text style={s.textButtonLabel}>
-            {confirmingRevoke ? t().share.revoke : t().share.revokeThis}
-          </Text>
-        </Pressable>
-      </>
+      <ShareCreated
+        id={created.id}
+        url={created.url}
+        title={t().share.linkTitleDay(title)}
+        message={messageFor(created.url)}
+        pending={pending}
+      />
     );
   }
 
@@ -322,10 +262,6 @@ const s = StyleSheet.create({
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   ttlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ttlLabel: { fontSize: 13, marginRight: 'auto' },
-  linkBox: { backgroundColor: colors.paper, borderRadius: 12, padding: 12 },
-  link: { fontSize: 12, lineHeight: 18, color: colors.inkSoft },
-  textButton: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
-  textButtonLabel: { fontSize: 13, color: colors.danger },
   shareRow: { paddingVertical: 12, gap: 6 },
   shareRowLine: { borderBottomWidth: 1, borderBottomColor: colors.rule },
   shareRowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },

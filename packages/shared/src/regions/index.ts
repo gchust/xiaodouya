@@ -3,6 +3,7 @@ import type { UnitPrefs } from '../schemas';
 import { CN } from './cn';
 
 export * from './moneyCategories';
+export * from './shareTargets';
 
 import { OTHER } from './other';
 import { SG } from './sg';

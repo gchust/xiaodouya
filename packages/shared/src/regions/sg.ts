@@ -142,5 +142,6 @@ export const SG: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  shareTargets: ['whatsapp', 'telegram', 'wechat', 'messages', 'line'],
   money: { currency: 'SGD', categories: ['red-packet', 'birthday', 'holiday', 'gift', 'other'] },
 });

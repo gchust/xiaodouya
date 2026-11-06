@@ -517,6 +517,8 @@ export const CN: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  // 微信、QQ 是 issue #94 点名的。在国外生活的家庭也常用 WhatsApp、Telegram，没装就不显示。
+  shareTargets: ['wechat', 'qq', 'whatsapp', 'telegram'],
   money: {
     currency: 'CNY',
     categories: [

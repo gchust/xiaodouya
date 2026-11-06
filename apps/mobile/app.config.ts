@@ -9,6 +9,8 @@ const versionCode = Number(process.env.APP_VERSION_CODE ?? 1);
  */
 const SELF_UPDATE = process.env.EXPO_PUBLIC_SELF_UPDATE === '1';
 const INSTALL_PACKAGES = 'android.permission.REQUEST_INSTALL_PACKAGES';
+// E2E 构建多一个“聊天 App”给分享按钮用（F-139），正式构建没有。
+const E2E = process.env.EXPO_PUBLIC_E2E === '1';
 // 小工具上有宝宝的名字和记录。Android 16 QPR2 起第三方小工具默认可以放到锁屏，这里明确不要。
 const WIDGET_CATEGORY = 'home_screen|not_keyguard';
 
@@ -164,6 +166,7 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
     ['expo-local-authentication', { faceIDPermission: 'Verify your identity to view documents.' }],
     ['expo-notifications', { color: '#c0714f', icon: './assets/notification-icon.png' }],
     './plugins/with-latest-intent',
+    ...(E2E ? ['./plugins/with-e2e-share-target'] : []),
     // 只生成 Android 的 receiver 和资源，iOS 上这个插件什么都不做。
     [
       'react-native-android-widget',
