@@ -40,5 +40,18 @@ export const OTHER: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  // 不知道在哪个国家：常见的都列上，按全球用户量大致排，只显示装了的。
+  shareTargets: [
+    'whatsapp',
+    'messenger',
+    'telegram',
+    'wechat',
+    'line',
+    'viber',
+    'kakaotalk',
+    'signal',
+    'qq',
+    'messages',
+  ],
   money: { categories: genericMoneyInCategoryIds },
 });

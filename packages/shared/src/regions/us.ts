@@ -358,5 +358,6 @@ export const US: RegionDefinition = localized({
   ),
   defaultUnits: { volume: 'oz', temperature: 'f', weight: 'lb', length: 'in' },
   paperSize: 'Letter',
+  shareTargets: ['messages', 'whatsapp', 'messenger', 'telegram', 'signal'],
   money: { currency: 'USD', categories: genericMoneyInCategoryIds },
 });
