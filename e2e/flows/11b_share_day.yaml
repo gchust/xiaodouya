@@ -48,6 +48,10 @@ appId: com.gchust.xiaodouya
 # Android 上直接列出装了的常用聊天 App，最后是“更多”。CI 的模拟器上什么聊天 App 都没有，
 # E2E 构建里 App 自己登记了一个测试用的目标（plugins/with-e2e-share-target.js）。
 # 装了才显示：名单里的 App 这台模拟器上一个都没装，按钮都不出现。
+# 装了什么是建好链接后再查的，还要画图标，CI 的模拟器慢，先等它出来。
+- extendedWaitUntil:
+    visible: { id: share-target-e2e }
+    timeout: 10000
 - assertVisible: { id: share-targets }
 - assertVisible: { id: share-target-e2e }
 - assertVisible: { id: share-more }

@@ -69,6 +69,10 @@ appId: com.gchust.xiaodouya
     text: https://share\.example\.test/#m/[A-Za-z0-9_-]{43}
 - assertVisible: 回忆 · Pick A ${RUN_ID}
 # 和分享一天同一块（F-139）：常用 App、更多、复制链接。
+# 装了什么是建好链接后再查的，还要画图标，CI 的模拟器慢，先等它出来。
+- extendedWaitUntil:
+    visible: { id: share-target-e2e }
+    timeout: 10000
 - assertVisible: { id: share-target-e2e }
 - assertVisible: { id: share-more }
 - assertVisible: { id: share-copy }
