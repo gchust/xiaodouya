@@ -303,6 +303,7 @@
 - **模拟器只有一台。** `scripts/e2e.sh` 用文件锁排队，手动用 `adb-ui.py` 前先确认没有 E2E 在跑。
 - **带新迁移的分支不要连共用的开发库起服务端。** 服务端启动时会跑迁移，`schema_migrations` 只记序号：这个分支把第 N 条记成已执行，另一个分支也在第 N 条加了不同的迁移，连上同一个库时它的迁移就被跳过了，表现成“列不存在”。走查时另建一个库（`docker exec xiaodouya-dev-postgres-1 psql -U xiaodouya -d xiaodouya -c "CREATE DATABASE xiaodouya_<编号>"`，`DATABASE_URL` 指过去），集成测试本来就每次新建库，不受影响（F-133）。
 - **本地开发库是共用的，别的端口起的服务端也会处理别人留下的队列。** F-126 走查时 8817 上的服务端顺手把别的 Agent 流程 24 留下的排队反馈补发到了自己的假 GitHub（反馈的补发是全库的）。核对假 GitHub 收到的内容时按这次的 `RUN_ID` 找，不要按条数或编号。
+- **换包走查想连独立端口的服务端，要在打 JS 包时改地址。** E2E 构建的服务端地址 `EXPO_PUBLIC_API_URL`（`10.0.2.2:8787`）是打包时写进 JS 的，装好之后改不了。F-138 走查时 `expo export:embed` 前设 `EXPO_PUBLIC_API_URL=http://10.0.2.2:8838`（其余照 `scripts/e2e-build-env.sh`），服务端起在 8838、连独立的库，就不碰别人 `e2e.sh` 复用的 8787。
 - **8787 端口已有服务时，`e2e.sh` 会直接复用它。** 那可能是别的分支的代码，脚本会打印警告。改了服务端就先停掉旧服务。
 - **走查脚本 `source apps/server/.env.example` 会把 `PORT` 改回 8787。** F-135 走查时先设了 `PORT=8828` 再 `source`，服务端起在了 8787 上（约一分钟后发现停掉），正好是别人 `e2e.sh` 会复用的端口。`PORT`、`DATABASE_URL` 一律在 `source` 之后再设，起来后看日志里打印的端口。
 - **Biome 不要格式化 Markdown。** 它会重新对齐表格列宽，改一行就动到整张表，并行开发时 `PROGRESS.md` 必然冲突。已在 `biome.json` 里排除。
