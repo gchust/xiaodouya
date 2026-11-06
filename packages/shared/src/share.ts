@@ -12,9 +12,8 @@ import {
 import { isCustomVaccineId } from './domain/vaccines';
 import { t } from './i18n';
 import { EventData, type MomentData } from './schemas';
+import { DEFAULT_SHARE_TTL_DAYS, ShareDisplay, ShareTtlDays } from './shareSettings';
 
-export const SHARE_TTL_DAYS = [1, 7, 30] as const;
-export const DEFAULT_SHARE_TTL_DAYS = 7;
 /** 夏令时结束那天是 25 小时。边界要算在内，否则那一天永远分享不了。 */
 export const SHARE_MAX_RANGE_MS = 25 * 3_600_000;
 export const MAX_ACTIVE_SHARES = 50;
@@ -58,7 +57,9 @@ export const CreateShareRequest = z
     timezone: z.string().min(1).max(64).refine(isValidTimeZone),
     include: ShareInclude.default(defaultShareInclude),
     units: ShareUnits,
-    ttlDays: z.union(SHARE_TTL_DAYS.map((days) => z.literal(days))).default(DEFAULT_SHARE_TTL_DAYS),
+    ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
+    /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
+    display: ShareDisplay.optional(),
   })
   .refine((v) => v.toAt > v.fromAt && v.toAt - v.fromAt <= SHARE_MAX_RANGE_MS, {
     path: ['toAt'],
@@ -89,6 +90,8 @@ export interface ShareSummary {
   createdAt: number;
   /** 只有选中回忆的链接（F-136）有：选了哪几段。 */
   momentIds?: string[];
+  /** 创建时定下的名字和头像（F-141）。旧服务端没有这个字段。 */
+  display?: ShareDisplay;
   /** 创建者在家庭里的称呼。 */
   byLabel: string;
   canRevoke: boolean;
@@ -128,9 +131,17 @@ export const PublicMoment = z.object({
 });
 export type PublicMoment = z.infer<typeof PublicMoment>;
 
+/**
+ * 宝宝头像的签名链接（F-141）。只有创建链接时选了显示头像才有；旧服务端没有这个字段。
+ * 只发缩略图（重新编码过，没有原图的 EXIF 和位置），没有缩略图时不发。
+ */
+const PublicAvatarUrl = z.string().nullable().optional();
+
 export const PublicShareResponse = z.object({
   baby: z.object({
+    /** 按链接的设置换过：隐藏时是空字符串，有称呼时是称呼。 */
     name: z.string(),
+    avatarUrl: PublicAvatarUrl,
     /** 服务端算好的第几天和月龄，不下发出生时间。没有档案或者还没出生时是 null。 */
     dayNumber: z.number().nullable(),
     age: z.object({ months: z.number(), days: z.number() }).nullable(),
@@ -401,7 +412,9 @@ export const CreateTimelineShareRequest = z
     fromAt: z.number().int().nonnegative(),
     toAt: z.number().int().positive(),
     timezone: z.string().min(1).max(64).refine(isValidTimeZone),
-    ttlDays: z.union(SHARE_TTL_DAYS.map((days) => z.literal(days))).default(DEFAULT_SHARE_TTL_DAYS),
+    ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
+    /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
+    display: ShareDisplay.optional(),
   })
   .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
 export type CreateTimelineShareRequest = z.input<typeof CreateTimelineShareRequest>;
@@ -445,6 +458,7 @@ export const PublicTimelineResponse = z.object({
   kind: z.enum(['timeline', 'moments']),
   baby: z.object({
     name: z.string(),
+    avatarUrl: PublicAvatarUrl,
     /** 范围最后一天的月龄，服务端算好，不发出生时间。 */
     age: PublicAge.nullable(),
   }),
@@ -542,7 +556,9 @@ export const CreateMomentsShareRequest = z
     fromAt: z.number().int().nonnegative(),
     toAt: z.number().int().positive(),
     timezone: z.string().min(1).max(64).refine(isValidTimeZone),
-    ttlDays: z.union(SHARE_TTL_DAYS.map((days) => z.literal(days))).default(DEFAULT_SHARE_TTL_DAYS),
+    ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
+    /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
+    display: ShareDisplay.optional(),
   })
   .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
 export type CreateMomentsShareRequest = z.input<typeof CreateMomentsShareRequest>;

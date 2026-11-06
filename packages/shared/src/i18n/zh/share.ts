@@ -152,4 +152,33 @@ export const share = {
   momentsPageTitle: (name: Text) => `${name}的回忆`,
   momentsEmptyTitle: '这些回忆已经不在了',
   momentsEmptyBody: '可能已经被删掉了，可以问问发给你的人。',
+  // ─── 分享设置（App，F-141） ────────────────────
+  settingsRow: '分享设置',
+  settingsRowSub: (days: number, shown: Text, avatar: boolean) =>
+    `有效期 ${days} 天 · ${shown}${avatar ? ' · 带头像' : ''}`,
+  settingsTtl: '默认有效期',
+  settingsTimeline: '分享时间线默认范围',
+  settingsNote:
+    '这些是你以后新建链接时的默认值，跟着你的账号走。已经发出去的链接不变；分享时也可以临时改。',
+  settingsSave: '保存',
+  settingsSaved: '已保存',
+  displayTitle: '对方看到的宝宝',
+  showName: '显示宝宝的名字',
+  showNameOffSub: '页面上写“宝宝”',
+  nickname: '称呼',
+  nicknamePlaceholder: '留空就用宝宝的名字',
+  nicknameBad: (max: number) => `称呼最多 ${max} 个字，只能写一行。`,
+  showAvatar: '显示宝宝的头像',
+  showAvatarSub: '放在页面顶上，发的是压缩过的小图',
+  showAvatarNone: '还没有设置头像，设置后才会显示',
+  displayNote: '只换页面顶上的名字。回忆的标题和文字里写到的名字不会被换掉。',
+  shownAs: (name: Text) => `显示为“${name}”`,
+  shownHidden: '不显示名字',
+  shownReal: '显示名字',
+  summaryLine: (shown: Text, avatar: boolean) => `对方看到：${shown}${avatar ? ' · 带头像' : ''}`,
+  displayEdit: '修改',
+  displayEditA11y: '修改对方看到的名字和头像',
+  displayUnsupported: '服务器还不支持分享设置，这次的链接会显示宝宝的真实名字、不带头像。',
+  // ─── 网页：头像 ────────────────────────────────
+  avatarAlt: '宝宝的头像',
 };

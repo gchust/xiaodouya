@@ -314,6 +314,14 @@ export const migrations: readonly string[] = [
     CHECK ((scope = 'personal') = (owner_id IS NOT NULL));
   CREATE INDEX media_owner ON media(owner_id) WHERE owner_id IS NOT NULL;
   `,
+  // 分享设置（F-141）：创建链接时定下的名字和头像，公开接口按这一行执行。
+  // 旧行和旧版 App 建的行都是空值，表示和以前一样：真实名字、不带头像。
+  `
+  ALTER TABLE shares ADD COLUMN show_name BOOLEAN, ADD COLUMN baby_nickname TEXT,
+    ADD COLUMN show_avatar BOOLEAN;
+  ALTER TABLE shares ADD CONSTRAINT shares_baby_nickname_check
+    CHECK (baby_nickname IS NULL OR char_length(baby_nickname) <= 40);
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

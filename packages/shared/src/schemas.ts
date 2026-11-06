@@ -4,6 +4,7 @@ import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domai
 import type { FeedbackConfig } from './feedback';
 import { t } from './i18n';
 import { locales } from './i18n/locale';
+import { SharePrefs } from './shareSettings';
 
 /** 所有时间都是毫秒时间戳（UTC）。 */
 const timestamp = z.number().int().nonnegative();
@@ -460,6 +461,8 @@ export const Prefs = z.object({
   units: UnitPrefs.optional().catch(undefined),
   /** 没有时跟随手机。不认识的值同样只丢掉这一项，新版本加了语言也不影响旧版本的其他偏好。 */
   locale: z.enum(locales).optional().catch(undefined),
+  /** 分享的默认值（F-141）。没有时用默认值；旧版 App 写偏好时不带它，服务端保留原来的。 */
+  share: SharePrefs.optional().catch(undefined),
 });
 export type Prefs = z.infer<typeof Prefs>;
 
@@ -635,6 +638,11 @@ export interface PublicConfig {
    * 所以 App 只有看到它才让人新建自己的证件。
    */
   personalDocuments?: boolean;
+  /**
+   * 服务端按创建时的设置换掉名字、决定带不带头像（F-141）。旧服务端会悄悄丢掉这些选项、
+   * 照样发真实名字，所以 App 只有看到它才显示分享设置。
+   */
+  shareDisplay?: boolean;
 }
 
 export interface ApiError {

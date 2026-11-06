@@ -91,6 +91,7 @@ describe('邮件配置', () => {
       emailVerification: true,
       feedback,
       personalDocuments: true,
+      shareDisplay: true,
     });
     const off = await call<PublicConfig>(plainApp, 'GET', '/v1/config');
     expect(off.status).toBe(200);
@@ -100,6 +101,7 @@ describe('邮件配置', () => {
       emailVerification: false,
       feedback,
       personalDocuments: true,
+      shareDisplay: true,
     });
   });
 
