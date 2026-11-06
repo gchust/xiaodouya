@@ -183,6 +183,8 @@
 - **`adb emu network speed` 限不住模拟器走 Wi-Fi 的下载。** 设成 `edge` 后 44 MB 还是几秒下完，看不到进度，也来不及点取消。要慢下来就在宿主机开一个限速的 TCP 转发，让服务端的 `S3_PUBLIC_ENDPOINT` 指向它：SigV4 签的是 Host，转发不改 Host 就能过签名。
 - **界面一直在刷新时 `uiautomator dump` 会卡住。** 下载进度每次回调都重画，`scripts/adb-ui.py` 的 `ids`、`tap=` 等不到空闲就超时。这时用截图加坐标点。
 - **在仓库外的目录里调 `apksigner` 会报 `mise ERROR No version is set for shim: java`。** mise 的 shim 按当前目录找 `.mise.toml`，scratchpad 里找不到。用 `env PATH=$(mise where java)/bin:/usr/bin:/bin apksigner …`，或者先回到仓库目录。
+- **本机模拟器和 CI 的模拟器装的 App 不一样，“装了才显示”的界面两边看到的不同。** 本机是 `google_apis` 镜像，有 Google Messages、Gmail、Chrome；CI 是 `default`（AOSP），没有任何聊天 App，短信也不一定有。分享按钮（F-139）的 E2E 不能指望模拟器自带的 App，E2E 构建里由 `plugins/with-e2e-share-target.js` 让 App 自己登记一个收文字分享的测试 Activity。
+- **别的库可能已经在合并后的清单里声明了 `<queries>`。** expo-sharing 自带 `ACTION_SEND */*` 的查询，所以不写也能查到收文字分享的 App；`share-targets` 模块还是自己声明了 `text/plain` 那一条，换掉 expo-sharing 时不会悄悄失效。看合并结果用 `android/app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml`。
 
 ## 依赖和环境
 
@@ -306,6 +308,7 @@
 - **E2E 里要在服务端配置里写死的账号，邮箱只能是固定的。** `e2e.sh` 启动服务端时还没有 `RUN_ID`，`FEEDBACK_VIEWER_EMAILS` 只能写 `feedback-maintainer@example.test`。本地开发库跨次保留，上一次留下的同名账号还在别的家庭里，邀请会失败；`feedback-maintainer.js` 先登录、用密码正常删除这个账号，再注册、加入这次的家庭。
 - **弹层换成确认之后，“删除按钮不见了”的断言马上就成立。** 很多流程点了删除就等 `notVisible: { id: event-delete }` 或弹层标题消失，加了确认弹层（F-132）后，内容一换这些等待就过了，记录其实还在，后面的步骤才失败或者看到的是错的状态。点删除后要先点 `delete-sheet-confirm`（找不到就失败），再等记录本身不见了；取消的断言要等 `delete-sheet-cancel` 消失后再看记录还在。
 - **E2E 脚本里写死的记录 id 不能和别的脚本撞。** `mom-joins.js`、`mom-logs-two.js` 用了 `11111111…`、`22222222…`、`33333333…` 开头加 `RUN_ID` 的 id，新脚本照着写成 `33333333…` 的证件，服务端发现这个 id 已经是别的集合，按规则拒绝（`forbidden`），脚本不看 `rejected` 就当成成功，App 里等 40 秒等不到（F-137 第一次本地走查）。新脚本换一段前缀，并且检查同步响应的 `rejected` 是空的。
+- **Maestro 不要断言几秒后自己消失的状态。** “复制链接”原来点了变成“已复制”、两秒后变回来，Maestro 点完要等界面稳定（Android 13 起系统还弹出剪贴板提示），断言时字已经变回去了，流程失败。界面上的确认要么一直留着，要么断言更持久的结果。
 
 ## 并行开发
 
@@ -322,3 +325,4 @@
 - **子 Agent 的 scratchpad 和主会话是同一个目录。** 目录名里是会话 id，不是 Agent 自己的。`/tmp` 配额满时不要清 `scratchpad/*`：里面有别的 Agent 和主会话的文件。自己的临时文件放 worktree 的 `.artifacts/`。
 - **`flock` 排队不等于拿到锁。** 后台挂着 `flock ... sleep` 时要确认它下面已经有 `sleep` 子进程，别的会话可能抢在前面。长任务要算好时间，不要跑到锁到期之后；收尾的命令直接用 `flock` 包住。
 - **杀掉 `flock` 进程不会释放模拟器锁。** `flock 锁文件 sleep 3600` 里的 `sleep` 继承了锁的文件描述符，只杀 `flock` 锁还在，别人一直排队。要杀 `sleep`（或整个进程组），再用 `stat -c %i 锁文件` 得到 inode，`grep :<inode> /proc/locks` 确认已经放掉。
+- **两次拿锁之间，模拟器上的 App 可能已经被别的 Agent 换掉。** 包名都是 `com.gchust.xiaodouya`，F-139 走查时第二次拿锁不重装、接着跑，打开的是别人刚装的构建（深色主题、没有新按钮），差点当成自己的 Bug 去查。每次拿锁都重装自己的 APK、从建账号开始跑；`setsid npx …` 起的服务端要按端口找进程杀掉，只杀记下的 pid 可能留下 node，下一次同端口起不来，就连上了旧的那个。

@@ -8,10 +8,10 @@ import {
   timelineRangeText,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Share, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords } from '../lib/app';
-import { IS_E2E, SHARE_BASE_URL } from '../lib/config';
+import { SHARE_BASE_URL } from '../lib/config';
 import { localDayBounds } from '../lib/dates';
 import { deviceTimezone } from '../lib/device';
 import {
@@ -23,7 +23,7 @@ import {
 import { colors, fonts } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { Button, Chip, Muted } from '../ui/primitives';
-import { ShareCreated } from './shareCreated';
+import { ShareCreated, shareRightAway } from './shareCreated';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -66,9 +66,8 @@ export function ShareTimelineSheet() {
     ? countShareDay(events, moments, range, TIMELINE_SHARE_INCLUDE)
     : { records: 0, moments: 0, files: 0 };
 
-  const send = (url: string, rangeTitle: string) => {
-    void Share.share({ message: t().share.timelineShareMessage(rangeTitle, url) });
-  };
+  const messageFor = (url: string, rangeTitle: string) =>
+    t().share.timelineShareMessage(rangeTitle, url);
 
   const create = async () => {
     if (!range) return;
@@ -90,9 +89,7 @@ export function ShareTimelineSheet() {
       const left = shareTimelinePending(app.store.getSnapshot(), range, app.uploads.pendingIds());
       setPending(left);
       setCreated({ id: share.id, url, title });
-      // 还有内容没传完时先让人看到说明，由 TA 决定现在发还是等等。
-      // E2E 打不开系统分享面板，流程直接检查链接。
-      if (left.records === 0 && left.files === 0 && !IS_E2E) send(url, title);
+      shareRightAway(messageFor(url, title), left);
     } catch (error) {
       if (error instanceof ApiFailure && error.status === 0) setProblem(t().share.offline);
       else setProblem(error instanceof Error ? error.message : t().share.createFailed);
@@ -107,8 +104,8 @@ export function ShareTimelineSheet() {
         id={created.id}
         url={created.url}
         title={t().share.linkTitleTimeline(created.title)}
+        message={messageFor(created.url, created.title)}
         pending={pending}
-        onSend={() => send(created.url, created.title)}
       />
     );
   }

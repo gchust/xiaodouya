@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Android 11 起要声明才看得到别的 App。只要“能收文字分享的”，这样不用 QUERY_ALL_PACKAGES，
+    新增地区和 App 也不用改清单。合并进 App 的清单，见 F-139。
+  -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.SEND" />
+      <data android:mimeType="text/plain" />
+    </intent>
+  </queries>
+</manifest>

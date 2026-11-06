@@ -1,6 +1,7 @@
 # 分享一天：今天页和全部记录都能进，弹层里能看到条数和提醒，健康记录默认关，
 # 创建链接后在“已分享的链接”里看得到，撤销后消失。
-# E2E 构建不打开系统分享面板（面板是系统画的，每台机器都不一样），这里只检查链接本身。
+# 链接建好后：常用 App 那一排（F-139）、复制链接、点了直接打开目标 App、“更多”打开系统分享面板。
+# 建好时不自动打开系统分享面板（Android 上本来就不自动打开，见 shareRightAway）。
 # 对方打开网页那一半由 share-web 的测试和服务端集成测试覆盖。
 # 用前面流程今天记下的内容，这里不写新记录。跑完留下的变化：无，链接撤销了。
 appId: com.gchust.xiaodouya
@@ -43,8 +44,47 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     id: share-link
     text: https://share\.example\.test/#[A-Za-z0-9_-]{43}
-- assertVisible: { id: share-send }
+# ─── 发到常用 App（F-139） ───────────────────────
+# Android 上直接列出装了的常用聊天 App，最后是“更多”。CI 的模拟器上什么聊天 App 都没有，
+# E2E 构建里 App 自己登记了一个测试用的目标（plugins/with-e2e-share-target.js）。
+# 装了才显示：名单里的 App 这台模拟器上一个都没装，按钮都不出现。
+# 装了什么是建好链接后再查的，还要画图标，CI 的模拟器慢，先等它出来。
+- extendedWaitUntil:
+    visible: { id: share-target-e2e }
+    timeout: 10000
+- assertVisible: { id: share-targets }
+- assertVisible: { id: share-target-e2e }
+- assertVisible: { id: share-more }
+- assertNotVisible: { id: share-target-wechat }
+- assertNotVisible: { id: share-target-whatsapp }
+# 有可以直接发的 App 时，不再显示一整行的“发送给别人”。
+- assertNotVisible: { id: share-send }
 - takeScreenshot: .artifacts/e2e-11b-link-created
+- tapOn: { id: share-copy }
+- assertVisible: 已复制
+- takeScreenshot: .artifacts/e2e-11b-link-copied
+# 点了直接打开目标 App，带着整段文字（日期、说明和链接）。
+- tapOn: { id: share-target-e2e }
+- extendedWaitUntil:
+    visible: E2E share target
+    timeout: 10000
+- assertVisible:
+    text: .*的成长记录：https://share\.example\.test/#[A-Za-z0-9_-]{43}
+- takeScreenshot: .artifacts/e2e-11b-target-opened
+- back
+- extendedWaitUntil:
+    visible: { id: share-more }
+    timeout: 10000
+# “更多”打开系统分享面板。面板是系统画的，每台机器都不一样，只确认它盖住了弹层，返回后弹层还在。
+- tapOn: { id: share-more }
+- extendedWaitUntil:
+    notVisible: { id: share-more }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-11b-system-share
+- back
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 10000
 - tapOn: { id: sheet-cancel }
 - extendedWaitUntil:
     notVisible: { id: share-link }

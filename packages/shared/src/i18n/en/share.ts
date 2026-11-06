@@ -30,6 +30,13 @@ export const share: Catalog['share'] = {
   createdTitle: 'Link created',
   send: 'Send to someone',
   sendAgain: 'Send again',
+  sendToTitle: 'Send to',
+  sendTo: (app) => `Send to ${app}`,
+  more: 'More',
+  moreA11y: 'Send with another app',
+  copy: 'Copy link',
+  copied: 'Copied',
+  sendFailed: "Couldn't open that app. Try More, or copy the link.",
   revokeThis: 'Revoke this link',
   shareMessage: (date, url) => `Baby's day, ${date}: ${url}`,
   pendingRecords: (count) =>
