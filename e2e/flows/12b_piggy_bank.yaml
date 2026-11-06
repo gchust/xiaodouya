@@ -1,0 +1,178 @@
+# 小金库（issue #90）：资料页的入口、记一笔收到的红包、拿出一笔存银行、余额和按人汇总、修改、删除先确认。
+# 地区是新加坡（前置 onboard），默认币种 SGD，自己的币种显示成 $。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- scrollUntilVisible:
+    element: { id: piggy-add }
+    centerElement: true
+- waitForAnimationToEnd
+- assertVisible: 小金库
+- assertVisible: { id: piggy-empty }
+- takeScreenshot: .artifacts/e2e-12b-info-empty
+- tapOn: { id: piggy-add }
+- extendedWaitUntil:
+    visible: { id: money-save }
+    timeout: 10000
+# 默认是收到（有“谁给的”），币种跟着地区
+- assertVisible: { id: money-from }
+- assertVisible:
+    id: money-currency-code
+    text: SGD
+# 没填金额不能存
+- tapOn: { id: money-save }
+- assertVisible:
+    id: money-error
+    text: 请填金额
+- tapOn: { id: money-amount }
+- inputText: "600"
+- hideKeyboard
+- tapOn: { id: money-from }
+- inputText: 爷爷
+- hideKeyboard
+- tapOn: { id: money-category-red-packet }
+- takeScreenshot: .artifacts/e2e-12b-sheet-in
+- tapOn: { id: money-save }
+- extendedWaitUntil:
+    notVisible: { id: money-save }
+    timeout: 10000
+- assertVisible:
+    text: .*已记下 · 红包 · 爷爷 · \$600.*
+- extendedWaitUntil:
+    visible:
+      id: piggy-entry-balance
+      text: \$600
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: piggy-entry }
+- extendedWaitUntil:
+    visible: { id: piggy-screen }
+    timeout: 10000
+- assertVisible:
+    id: piggy-balance
+    text: \$600
+# 拿出一笔存进银行，金额带小数
+- tapOn: { id: piggy-add-page }
+- extendedWaitUntil:
+    visible: { id: money-save }
+    timeout: 10000
+- tapOn: { id: money-flow-out }
+- assertNotVisible: { id: money-from }
+- assertNotVisible: { id: money-category-red-packet }
+- tapOn: { id: money-amount }
+- inputText: "150.5"
+- hideKeyboard
+- tapOn: { id: money-category-bank }
+- takeScreenshot: .artifacts/e2e-12b-sheet-out
+- tapOn: { id: money-save }
+- extendedWaitUntil:
+    notVisible: { id: money-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: piggy-balance
+      text: \$449\.50
+    timeout: 10000
+- assertVisible:
+    id: piggy-totals
+    text: 收到 \$600 · 拿出 \$150\.50
+- assertVisible:
+    id: piggy-giver-爷爷-amount
+    text: \$600
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-12b-page
+# 修改：同一天记的，后记的排在前面
+- scrollUntilVisible:
+    element: { id: money-row-0 }
+    centerElement: true
+- waitForAnimationToEnd
+- assertVisible:
+    id: money-row-0-title
+    text: 存进银行
+- tapOn: { id: money-row-0 }
+- extendedWaitUntil:
+    visible: { id: money-save }
+    timeout: 10000
+- assertVisible:
+    id: money-amount
+    text: "150.50"
+# 拿出的没有“谁给的”
+- assertNotVisible: { id: money-from }
+- tapOn: { id: money-amount }
+- eraseText: 10
+- inputText: "100"
+- hideKeyboard
+- tapOn: { id: money-save }
+- extendedWaitUntil:
+    notVisible: { id: money-save }
+    timeout: 10000
+- assertVisible:
+    text: .*已保存 · 存进银行 · \$100.*
+- scrollUntilVisible:
+    element: { id: piggy-balance }
+    direction: UP
+- assertVisible:
+    id: piggy-balance
+    text: \$500
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+# 删除先确认，取消什么都不变
+- scrollUntilVisible:
+    element: { id: money-row-0 }
+    centerElement: true
+- waitForAnimationToEnd
+- tapOn: { id: money-row-0 }
+- extendedWaitUntil:
+    visible: { id: money-delete }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: money-delete }
+- tapOn: { id: money-delete }
+- extendedWaitUntil:
+    visible: 删除这一笔？
+    timeout: 10000
+- assertVisible:
+    id: delete-sheet-body
+    text: 存进银行 · \$100[\s\S]*撤销.*
+- takeScreenshot: .artifacts/e2e-12b-delete-confirm
+- tapOn: { id: delete-sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-cancel }
+    timeout: 10000
+- assertVisible:
+    id: money-row-0-title
+    text: 存进银行
+- tapOn: { id: money-row-0 }
+- extendedWaitUntil:
+    visible: { id: money-delete }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: money-delete }
+- tapOn: { id: money-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-confirm }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: piggy-balance }
+    direction: UP
+- extendedWaitUntil:
+    visible:
+      id: piggy-balance
+      text: \$600
+    timeout: 10000
+- assertNotVisible: 存进银行
+- takeScreenshot: .artifacts/e2e-12b-after-delete
+- tapOn: { id: piggy-back }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000

@@ -10,9 +10,11 @@ import {
   type EventData,
   formatBirthMeasures,
   formatFullDate,
+  formatMoney,
   formatMonthDay,
   inertPlanCount,
   knowledgeForAge,
+  moneyTotals,
   normalizeVaccineId,
   type OptionalVaccines,
   optionalRecordedText,
@@ -40,6 +42,7 @@ import { gridItemWidth } from '../lib/layout';
 import { fileBadge } from '../lib/mediaUtils';
 import { DocumentThumb } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { openMoneySheet, useLocalCurrency } from '../sheets/moneySheets';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets';
 import { colors, spacing } from '../theme';
@@ -220,6 +223,8 @@ export function InfoScreen() {
         <Muted style={{ fontSize: 11 }}>{t().info.docsPrivate}</Muted>
       </View>
 
+      <PiggyBankSection />
+
       <View style={s.section}>
         <View style={s.sectionHead}>
           <SectionTitle>
@@ -360,6 +365,59 @@ export function InfoScreen() {
         <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.knowledgeNote}</Muted>
       </View>
     </ScrollView>
+  );
+}
+
+/**
+ * 资料页上的小金库（issue #90）：一行余额，点进去看明细。放在资料页而不是今天页：
+ * 不是每天要记的东西，不能挤占喂奶、尿布、睡眠的快捷按钮。只看回忆的家人没有资料页。
+ */
+function PiggyBankSection() {
+  const { money } = useRecords();
+  const sheet = useSheet();
+  const router = useRouter();
+  const localCurrency = useLocalCurrency();
+  const balance = moneyTotals(money.map((m) => m.data))
+    .map((total) => formatMoney(total.balanceMinor, total.currency, { localCurrency }))
+    .join(' · ');
+  return (
+    <View testID="piggy-section" style={s.section}>
+      <View style={s.sectionHead}>
+        <SectionTitle>{t().money.title}</SectionTitle>
+        <Pressable
+          testID="piggy-add"
+          accessibilityRole="button"
+          accessibilityLabel={t().money.addA11y}
+          hitSlop={LINK_HIT_SLOP}
+          onPress={() => openMoneySheet(sheet)}
+        >
+          <Text style={s.link}>{t().money.addLink}</Text>
+        </Pressable>
+      </View>
+      {money.length === 0 ? (
+        <Muted testID="piggy-empty" style={{ fontSize: 13, lineHeight: 20 }}>
+          {t().money.empty}
+        </Muted>
+      ) : (
+        <ListCard>
+          <Row
+            testID="piggy-entry"
+            label={t().money.balance}
+            accessibilityLabel={t().money.openA11y(balance)}
+            onPress={() => router.push('/piggy-bank')}
+            value={
+              <View style={s.piggyValue}>
+                <Mono testID="piggy-entry-balance" style={s.piggyBalance} numberOfLines={1}>
+                  {balance}
+                </Mono>
+                <Text style={s.chevron}>›</Text>
+              </View>
+            }
+            last
+          />
+        </ListCard>
+      )}
+    </View>
   );
 }
 
@@ -815,6 +873,9 @@ const s = StyleSheet.create({
     zIndex: 1,
   },
   link: { fontSize: 12, color: colors.accent },
+  piggyValue: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  piggyBalance: { fontSize: 15, color: colors.ink, flexShrink: 1 },
+  chevron: { fontSize: 16, color: colors.muted },
   linkMuted: { fontSize: 12, color: colors.muted },
   headLinks: { flexDirection: 'row', gap: 18 },
   hiddenLink: { alignSelf: 'flex-end', paddingVertical: 2 },

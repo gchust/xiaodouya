@@ -458,6 +458,60 @@ describe('离线优先的记录和同步', () => {
     a.engine.stop();
   });
 
+  it('小金库的记录不进时间线，按发生日期倒序，能同步给家人，删除后两边都没有了', async () => {
+    const a = device(server);
+    const b = device(server);
+    await a.engine.start();
+    await b.engine.start();
+    const money = (amountMinor: number, happenedAt: number) => ({
+      type: 'money' as const,
+      flow: 'in' as const,
+      amountMinor,
+      currency: 'SGD',
+      happenedAt,
+      from: '虚构的爷爷',
+    });
+    const older = randomUUID();
+    const newer = randomUUID();
+    await a.store.write('event', older, money(100, 1000));
+    await a.store.write('event', newer, money(200, 5000));
+    await a.store.write('event', randomUUID(), feed());
+    // 先写进本地，立刻看得到，不等网络
+    expect(a.store.getSnapshot().money.map((m) => m.id)).toEqual([newer, older]);
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    const snapshot = b.store.getSnapshot();
+    expect(snapshot.money.map((m) => m.id)).toEqual([newer, older]);
+    expect(snapshot.events).toHaveLength(1);
+    expect(snapshot.events[0]?.data.type).toBe('feed');
+
+    await a.store.remove(newer);
+    await a.engine.syncNow();
+    await b.engine.syncNow();
+    expect(b.store.getSnapshot().money.map((m) => m.id)).toEqual([older]);
+    expect(b.db.records.get(newer)?.deleted).toBe(true);
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('降级成 viewer 时小金库和喂奶一起清掉', async () => {
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('event', randomUUID(), {
+      type: 'money',
+      flow: 'out',
+      amountMinor: 100,
+      currency: 'SGD',
+      happenedAt: 1000,
+    });
+    await a.engine.syncNow();
+    server.role = 'viewer';
+    server.hideEvents = true;
+    await a.engine.syncNow();
+    expect(a.store.getSnapshot().money).toEqual([]);
+    a.engine.stop();
+  });
+
   it('退出登录时清空本地数据', async () => {
     const a = device(server);
     await a.store.write('event', randomUUID(), feed());
