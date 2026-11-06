@@ -10,8 +10,10 @@ appId: com.gchust.xiaodouya
     visible: { id: tab-family }
     timeout: 30000
 - tapOn: { id: tab-family }
+# 家人页多了“家人的证件”（F-137）后，这一行可能停在屏幕底边，说明文字被切掉，所以滚到中间。
 - scrollUntilVisible:
     element: { id: pref-auto-update }
+    centerElement: true
 - assertVisible: 自动下载新版本
 - assertVisible: 有新版本时在后台下载好，再提醒你安装
 # 默认关，子选项不出现
