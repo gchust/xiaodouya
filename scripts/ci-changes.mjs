@@ -5,10 +5,12 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+// 纯文档，和 ci.yml 的 paths-ignore（docs/**、**/*.md）一致。自动发版（release-plan.mjs）也按它判断。
+export const DOCS = [/^docs\//, /\.md$/];
+
 /** 确定不进 APK、也不影响 E2E 环境的文件。 */
 const NO_APP_IMPACT = [
-  /^docs\//,
-  /\.md$/,
+  ...DOCS,
   /^LICENSE$/,
   /^\.gitignore$/,
   /^\.dockerignore$/,
@@ -21,7 +23,8 @@ const NO_APP_IMPACT = [
   /^supabase\//,
   // 分享网页：App 只拿它的地址，E2E 不打开它，它自己的测试在 pnpm test 里。
   /^apps\/share-web\//,
-  /^scripts\/(adb-ui\.py|android-signing(\.test)?\.mjs|build-edge\.mjs|check-i18n\.mjs|screenshot\.sh|subset-fonts\.py)$/,
+  // 发版用的脚本只在 release.yml 和 auto-release.yml 里跑。
+  /^scripts\/(adb-ui\.py|android-signing(\.test)?\.mjs|build-edge\.mjs|check-i18n\.mjs|release-(apk|plan)(\.test)?\.mjs|screenshot\.sh|subset-fonts\.py)$/,
 ];
 
 /** 没有改动列表时也要跑：多半是取差异出错了，不能当成没改。 */
