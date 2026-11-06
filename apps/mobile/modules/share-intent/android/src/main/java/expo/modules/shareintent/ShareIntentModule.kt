@@ -5,7 +5,7 @@ import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 /**
- * 从别的 App 分享过来的一段文字（ACTION_SEND，text/*），用来存育儿资料（issue #98）。
+ * 从别的 App 分享过来的一段文字（ACTION_SEND，text 类型），用来存育儿资料（issue #98）。
  * 清单里的 intent-filter 写在 app.config.ts。只收文字，不收文件。
  *
  * 取过一次就清掉：Activity 重建时 getIntent() 还是那个分享的 Intent，不清的话每次都会再弹一次。

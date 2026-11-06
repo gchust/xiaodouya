@@ -123,6 +123,7 @@
 
 ## React Native 和 Expo
 
+- **Kotlin 的块注释可以嵌套。** 注释里写 `text/*`，`/*` 会开一层新的注释，整个文件报 `Unclosed comment`。本地没有构建，推上去 CI 才发现（F-143）。注释里写 MIME 通配符要换个说法。
 - **React Native 的 `URL` 不是 WHATWG 的。** 它是 `Libraries/Blob/URL.js` 里的几条正则：`new URL('not a url')` 不抛错，`protocol` 不转小写，`hostname` 按字符串截。`packages/shared` 的校验在手机和服务端各跑一遍，用 `URL` 判断的话同一条记录可能手机上合法、服务端拒收，卡在手机上。F-143 的资料链接改用自己的一条正则（`parseWebUrl`），两边结果一样。
 - **换行布局里，子元素全是绝对定位时，`aspectRatio` 算出的高度是 0。** 照片墙因此显示“1 项”却一片空白，也没有任何报错。给格子明确的宽和高。
 - **截图存了就要打开看。** 照片墙这个 Bug 的截图一直在，是 E2E 失败后才发现的。
