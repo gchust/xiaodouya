@@ -13,6 +13,7 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: open-share-settings }
+    centerElement: true
 - waitForAnimationToEnd
 - assertVisible: 有效期 7 天 · 显示名字
 - tapOn: { id: open-share-settings }
@@ -97,6 +98,7 @@ appId: com.gchust.xiaodouya
 # ─── 改回默认值 ───────────────────────────────────
 - scrollUntilVisible:
     element: { id: open-share-settings }
+    centerElement: true
 - tapOn: { id: open-share-settings }
 - extendedWaitUntil:
     visible: { id: share-default-ttl-7 }

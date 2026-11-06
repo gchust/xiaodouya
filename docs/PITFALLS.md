@@ -310,6 +310,7 @@
 - **E2E 脚本里写死的记录 id 不能和别的脚本撞。** `mom-joins.js`、`mom-logs-two.js` 用了 `11111111…`、`22222222…`、`33333333…` 开头加 `RUN_ID` 的 id，新脚本照着写成 `33333333…` 的证件，服务端发现这个 id 已经是别的集合，按规则拒绝（`forbidden`），脚本不看 `rejected` 就当成成功，App 里等 40 秒等不到（F-137 第一次本地走查）。新脚本换一段前缀，并且检查同步响应的 `rejected` 是空的。
 - **Maestro 不要断言几秒后自己消失的状态。** “复制链接”原来点了变成“已复制”、两秒后变回来，Maestro 点完要等界面稳定（Android 13 起系统还弹出剪贴板提示），断言时字已经变回去了，流程失败。界面上的确认要么一直留着，要么断言更持久的结果。
 - **开发机磁盘剩下不到 1% 时，SeaweedFS 一个新卷都不建，所有上传 500。** 日志是 `disk free 0.84% < required 1.00%`、`Not enough data nodes found`、`No writable volumes`，和卷位用满的报错很像，新起一个容器也一样（它看的是宿主机的磁盘）。2026-11-06 根分区 99% 满时遇到。不去动别人共用的容器，自己起一个：`docker run -d -p 59110:9000 -v <tmpfs 上的目录>:/data -v deploy/dev/s3.json:/etc/seaweedfs/s3.json:ro chrislusf/seaweedfs server -dir=/data -volume.max=100 -volume.minFreeSpace=200MiB -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json`，再用 `TEST_S3_ENDPOINT=http://localhost:59110` 跑 `pnpm test:server` 和 `pnpm test:edge`（`edge-smoke.ts` 从 F-141 起也认这个变量）。`cloud-backup.test.ts` 的脚本和读回用的都是 `.env.example` 里的 59000，换不了，这时它的 5 条会失败（`curl: (22) … 500`），要等磁盘空出来或者看 CI。
+- **被底部标签栏盖住的行，Maestro 也算“看得见”。** `scrollUntilVisible` 找到一行就停，这一行可能正好在标签栏后面，接着断言它的说明文字就失败。家人页设置里每多一行，下面那些行的位置都会变（F-141 加了“分享设置”后，流程 23 的 `检查更新` 在 run 42222130108 这样失败）。要读一行的说明文字或点它，滚动时加 `centerElement: true`。
 
 ## 并行开发
 
