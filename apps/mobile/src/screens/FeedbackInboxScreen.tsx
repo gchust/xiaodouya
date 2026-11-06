@@ -31,7 +31,7 @@ import {
   inboxStatusText,
   shortFeedbackId,
 } from '../lib/feedbackInbox';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import {
   Button,
   Empty,
@@ -186,7 +186,7 @@ export function FeedbackInboxScreen() {
                   <Text
                     style={{
                       fontSize: 11,
-                      color: item.status === 'sent' ? colors.green : colors.muted,
+                      color: item.status === 'sent' ? colors.greenText : colors.muted,
                     }}
                   >
                     {inboxStatusText(item.status)}
@@ -366,7 +366,7 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
                   <Text
                     style={{
                       fontSize: 13,
-                      color: item.status === 'sent' ? colors.green : colors.muted,
+                      color: item.status === 'sent' ? colors.greenText : colors.muted,
                     }}
                   >
                     {inboxStatusText(item.status)}
@@ -384,7 +384,7 @@ export function FeedbackDetailScreen({ id }: { id: string }) {
                   accessibilityLabel={t().feedback.detailOpenIssueA11y(item.issueNumber ?? '')}
                   onPress={() => void Linking.openURL(item.issueUrl!).catch(() => {})}
                   value={
-                    <Mono style={[s.value, { color: colors.accent }]}>
+                    <Mono style={[s.value, { color: colors.accentText }]}>
                       {item.issueNumber ? `#${item.issueNumber}` : '↗'}
                     </Mono>
                   }
@@ -523,7 +523,7 @@ export function FeedbackMediaScreen() {
           <Image
             testID="feedback-media-image"
             source={{ uri: url }}
-            style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: colors.black }]}
             contentFit="contain"
             transition={200}
             // 别人家的照片不留在磁盘缓存里。
@@ -560,7 +560,7 @@ export function FeedbackMediaScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -571,7 +571,7 @@ const s = StyleSheet.create({
     paddingVertical: 12,
   },
   hintText: { fontSize: 12, lineHeight: 19, color: colors.inkSoft },
-  error: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  error: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   itemRow: { paddingVertical: 12, gap: 4 },
   itemText: { fontSize: 14, lineHeight: 21, color: colors.ink, fontFamily: fonts.serifMedium },
   itemMeta: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
@@ -591,7 +591,7 @@ const s = StyleSheet.create({
   value: { fontSize: 12, color: colors.ink },
   idText: { fontSize: 12, color: colors.inkSoft },
   note: { fontSize: 11, lineHeight: 17 },
-  viewer: { flex: 1, backgroundColor: '#000' },
+  viewer: { flex: 1, backgroundColor: colors.black },
   center: {
     position: 'absolute',
     left: 0,
@@ -603,7 +603,7 @@ const s = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 32,
   },
-  viewerText: { color: colors.paper, fontSize: 13, textAlign: 'center', lineHeight: 20 },
+  viewerText: { color: colors.white, fontSize: 13, textAlign: 'center', lineHeight: 20 },
   pill: {
     minHeight: 36,
     paddingHorizontal: 16,
@@ -622,8 +622,8 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: colors.mediaChip,
   },
   close: { color: colors.white, fontSize: 28, lineHeight: 30, paddingHorizontal: 6 },
   title: { flex: 1, color: colors.white, fontSize: 14 },
-});
+}));

@@ -12,7 +12,7 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords, useUnits } from '../lib/app';
 import { DEFAULT_API_URL, SHARE_BASE_URL } from '../lib/config';
@@ -27,7 +27,7 @@ import {
   shareLinkTitle,
   shareLinkUrl,
 } from '../lib/share';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { Button, Chip, Muted, Toggle } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
 import { ShareDisplayRow, useSharePrefs } from './shareDisplay';
@@ -268,11 +268,11 @@ export function SharedLinksSheet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   title: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   line: { fontSize: 13, lineHeight: 20 },
   notice: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
-  problem: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  problem: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   warning: { backgroundColor: colors.sand, borderRadius: 12, padding: 12, gap: 6 },
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   ttlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -282,4 +282,4 @@ const s = StyleSheet.create({
   shareRowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   shareDate: { fontSize: 14, color: colors.ink },
   shareSub: { fontSize: 12, lineHeight: 18 },
-});
+}));

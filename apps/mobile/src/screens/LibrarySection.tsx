@@ -1,9 +1,9 @@
 import { favoriteFolderCounts, favoriteItems, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useRecords } from '../lib/app';
 import { openResourceSheet } from '../sheets/librarySheets';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { ListCard, Muted, Row, SectionTitle } from '../ui/primitives';
 import { ResourceRow } from '../ui/ResourceRow';
@@ -125,14 +125,14 @@ function Value({ text }: { text: string }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   section: { gap: 10 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  link: { fontSize: 12, color: colors.accent },
+  link: { fontSize: 12, color: colors.accentText },
   linkMuted: { fontSize: 12, color: colors.muted },
   allLink: { alignSelf: 'flex-end', paddingVertical: 2 },
   empty: { fontSize: 13, lineHeight: 20 },
   value: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   valueText: { fontSize: 13, color: colors.ink },
   chevron: { fontSize: 16, color: colors.muted },
-});
+}));

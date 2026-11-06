@@ -17,7 +17,6 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
@@ -27,7 +26,7 @@ import { Api } from '../lib/api';
 import { useApp } from '../lib/app';
 import { PRIVACY_URL, TERMS_URL } from '../lib/config';
 import { deviceRegionCode } from '../lib/device';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { Button, Chip, Field, Muted, Serif } from '../ui/primitives';
 import { RegionPicker } from '../ui/RegionPicker';
@@ -724,7 +723,7 @@ export function BabySetup() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   page: { flexGrow: 1, paddingHorizontal: spacing.page, gap: 24 },
   brand: { flex: 1, justifyContent: 'center', gap: 12, minHeight: 320 },
@@ -732,11 +731,11 @@ const s = StyleSheet.create({
   tagline: { fontSize: 16, lineHeight: 28, color: colors.inkSoft },
   title: { fontFamily: fonts.serifBold, fontSize: 26, lineHeight: 34, color: colors.ink },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
-  error: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  error: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   note: { fontSize: 11, lineHeight: 18, textAlign: 'center' },
-  notice: { fontSize: 13, lineHeight: 20, color: colors.green },
-  consentLink: { color: colors.accent },
+  notice: { fontSize: 13, lineHeight: 20, color: colors.greenText },
+  consentLink: { color: colors.accentText },
   chips: { flexDirection: 'row', gap: 8 },
   bigChip: { flex: 1, paddingVertical: 14, backgroundColor: colors.card },
   dateRow: { flexDirection: 'row', gap: 8 },
-});
+}));

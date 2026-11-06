@@ -1,10 +1,10 @@
 import { quotaStatus, t } from '@xiaodouya/shared';
 import { usePathname, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, motion } from '../theme';
+import { colors, motion, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Mono } from '../ui/primitives';
 import { useApp, useUploadProgress } from './app';
@@ -102,7 +102,7 @@ export function UploadCard() {
             hitSlop={14}
             onPress={() => void uploads.retryFailed()}
           >
-            <Text style={{ fontSize: 12, color: colors.accent }}>{t().common.retry}</Text>
+            <Text style={{ fontSize: 12, color: colors.accentText }}>{t().common.retry}</Text>
           </Pressable>
         ) : null}
         <Pressable
@@ -119,7 +119,7 @@ export function UploadCard() {
         {progress.failedReason ? (
           <Text
             testID="upload-reason"
-            style={{ fontSize: 11, color: colors.danger }}
+            style={{ fontSize: 11, color: colors.dangerText }}
             numberOfLines={2}
           >
             {progress.failedReason}
@@ -141,7 +141,7 @@ export function UploadCard() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   card: {
     position: 'absolute',
     left: 16,
@@ -164,6 +164,6 @@ const s = StyleSheet.create({
   main: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   speedLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
   dismiss: { fontSize: 15, lineHeight: 16, color: colors.muted },
-  track: { height: 4, borderRadius: 2, backgroundColor: '#efe7dc', overflow: 'hidden' },
+  track: { height: 4, borderRadius: 2, backgroundColor: colors.track, overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.accent },
-});
+}));

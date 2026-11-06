@@ -1,7 +1,7 @@
 import { t } from '@xiaodouya/shared';
 import { Image } from 'expo-image';
 import { type ReactNode, useState } from 'react';
-import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, Share, Text, View } from 'react-native';
 import { ShareTargetsNative } from '../../modules/share-targets';
 import { useApp, useRegion } from '../lib/app';
 import { IS_E2E } from '../lib/config';
@@ -12,7 +12,7 @@ import {
   sendTextTo,
   useShareTargets,
 } from '../lib/shareTargets';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Mono, Muted, PressScale } from '../ui/primitives';
 
@@ -234,10 +234,10 @@ function TargetTile({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   title: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   line: { fontSize: 13, lineHeight: 20 },
-  problem: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  problem: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   warning: { backgroundColor: colors.sand, borderRadius: 12, padding: 12, gap: 6 },
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   linkBox: { backgroundColor: colors.paper, borderRadius: 12, padding: 12 },
@@ -261,5 +261,5 @@ const s = StyleSheet.create({
   moreDots: { fontSize: 18, lineHeight: 20, color: colors.inkSoft, letterSpacing: 1 },
   tileLabel: { fontSize: 11, color: colors.inkSoft, maxWidth: 64 },
   textButton: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 12 },
-  textButtonLabel: { fontSize: 13, color: colors.danger },
-});
+  textButtonLabel: { fontSize: 13, color: colors.dangerText },
+}));

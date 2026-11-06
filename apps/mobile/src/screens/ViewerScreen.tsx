@@ -37,7 +37,7 @@ import { MediaImage, type MediaSource, useMediaSource, usePhotoSources } from '.
 import { canDecodeFull, type OriginalControl, photoPlan } from '../lib/photoPreview';
 import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
 import { useCanShare } from '../sheets/shareSheets';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { AvatarEditor } from '../ui/AvatarEditor';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Stripes } from '../ui/primitives';
@@ -171,7 +171,7 @@ export function ViewerScreen() {
                 media={item}
                 variant="original"
                 contentFit="contain"
-                style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}
+                style={[StyleSheet.absoluteFill, { backgroundColor: colors.black }]}
               />
             </ZoomableImage>
           )}
@@ -426,7 +426,7 @@ function PreviewPhoto({
   return (
     <>
       <ZoomableImage media={media} onZoomChange={onZoomChange}>
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#000' }]}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.black }]}>
           {!sources.thumb && !base ? <Stripes style={StyleSheet.absoluteFill} /> : null}
           {sources.thumb ? <PhotoLayer source={sources.thumb} label={label} /> : null}
           {base ? (
@@ -543,8 +543,8 @@ export function VideoPlayer({ uri }: { uri: string }) {
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
+const s = themedStyles(() => ({
+  root: { flex: 1, backgroundColor: colors.black },
   top: {
     position: 'absolute',
     left: 0,
@@ -555,7 +555,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: colors.mediaChip,
   },
   close: { color: colors.white, fontSize: 28, lineHeight: 30, paddingHorizontal: 6 },
   title: { flex: 1, color: colors.white, fontSize: 14 },
@@ -582,7 +582,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
   },
-  loading: { color: colors.paper, fontSize: 13 },
+  loading: { color: colors.white, fontSize: 13 },
   originalBar: {
     position: 'absolute',
     left: 16,
@@ -596,8 +596,8 @@ const s = StyleSheet.create({
     minHeight: 40,
     paddingHorizontal: 16,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.mediaChipStrong,
   },
   originalPillActive: { borderWidth: StyleSheet.hairlineWidth, borderColor: colors.white },
   originalText: { flexShrink: 1, color: colors.white, fontSize: 13, textAlign: 'center' },
-});
+}));

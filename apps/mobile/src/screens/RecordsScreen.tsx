@@ -1,13 +1,13 @@
 import { describeEvent, type EventData, eventsByDay, startOfLocalDay, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SectionList, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords, useUnits } from '../lib/app';
 import { shareDayTitle } from '../lib/share';
 import { EventActionsSheet, MoreSheet } from '../sheets/recordSheets';
 import { ShareDaySheet, useCanShare } from '../sheets/shareSheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Chip, Empty, PageTitle } from '../ui/primitives';
 import { TimelineRow } from './TodayScreen';
@@ -148,12 +148,12 @@ export function RecordsScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.page, gap: 8 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
-  link: { fontSize: 13, color: colors.accent, padding: 4 },
+  link: { fontSize: 13, color: colors.accentText, padding: 4 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   filterOff: { backgroundColor: colors.card },
   dayRow: {
@@ -166,6 +166,6 @@ const s = StyleSheet.create({
     gap: 12,
   },
   dayTitle: { flexShrink: 1, fontSize: 12, color: colors.muted, letterSpacing: 1 },
-  dayShare: { fontSize: 12, color: colors.accent },
+  dayShare: { fontSize: 12, color: colors.accentText },
   item: { marginHorizontal: spacing.page },
-});
+}));

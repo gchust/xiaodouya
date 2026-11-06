@@ -33,7 +33,7 @@ import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
 import { useCanShare } from '../sheets/shareSheets';
 import { ShareTimelineSheet } from '../sheets/shareTimelineSheet';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, PressScale, Serif } from '../ui/primitives';
@@ -651,7 +651,7 @@ function Letters() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   // zIndex：子标签的点击区伸到了头部下方，要压过后面的滚动区。
   header: { paddingHorizontal: spacing.page, gap: 12, zIndex: 1 },
@@ -661,7 +661,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  shareLink: { fontSize: 13, color: colors.accent },
+  shareLink: { fontSize: 13, color: colors.accentText },
   headerLinks: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   selectedCount: { fontSize: 13 },
   checkBox: { paddingTop: 3 },
@@ -674,8 +674,8 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.green, borderColor: colors.green },
-  checkMark: { fontSize: 13, lineHeight: 15, color: colors.card },
+  checkOn: { backgroundColor: colors.greenFill, borderColor: colors.greenFill },
+  checkMark: { fontSize: 13, lineHeight: 15, color: colors.onGreen },
   coverSelected: { borderWidth: 2, borderColor: colors.green },
   selectBar: { position: 'absolute', left: spacing.page, right: spacing.page, bottom: 16 },
   // 上下各 9 的内边距把点击区撑到 44，负外边距抵消，看起来位置不变。
@@ -696,7 +696,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 1,
   },
-  milestoneTagText: { fontSize: 10, color: colors.accent },
+  milestoneTagText: { fontSize: 10, color: colors.accentText },
   cover: { height: 200, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.line },
   morePill: {
     position: 'absolute',
@@ -705,7 +705,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,253,249,0.92)',
+    backgroundColor: colors.cardGlass,
   },
   photos: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 20 },
   groupHead: {
@@ -728,7 +728,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 999,
-    backgroundColor: 'rgba(43,38,34,0.6)',
+    backgroundColor: colors.veil,
   },
   milestones: { paddingHorizontal: spacing.page, paddingTop: 14 },
   milestoneRow: {
@@ -737,11 +737,11 @@ const s = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#efe7dc',
+    borderBottomColor: colors.track,
   },
   milestoneDotColumn: { width: 22 },
   milestoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
-  milestoneAction: { fontSize: 12, color: colors.accent },
+  milestoneAction: { fontSize: 12, color: colors.accentText },
   letters: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 12 },
   letter: {
     padding: 16,
@@ -773,4 +773,4 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   fabLabel: { fontSize: 14, color: colors.paper },
-});
+}));

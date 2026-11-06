@@ -1,11 +1,11 @@
 import { documentKind, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords } from '../lib/app';
 import { gridItemWidth } from '../lib/layout';
 import { DocAddSheet, readersText } from '../sheets/documentSheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { DocumentCard } from '../ui/DocumentCard';
 import { useSheet } from '../ui/overlays';
 import { Muted, SectionTitle } from '../ui/primitives';
@@ -93,7 +93,7 @@ export function FamilyDocumentsSection() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   section: { gap: 8 },
   // zIndex 让链接的热区压过下面紧挨着的卡片。
   head: {
@@ -102,6 +102,6 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     zIndex: 1,
   },
-  link: { fontSize: 12, color: colors.accent },
+  link: { fontSize: 12, color: colors.accentText },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
-});
+}));

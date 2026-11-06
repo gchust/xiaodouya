@@ -5,10 +5,10 @@ import {
   resourceSourceLabel,
   t,
 } from '@xiaodouya/shared';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { openResourceUrl, useFavorites } from '../lib/library';
 import { ResourceActions } from '../sheets/librarySheets';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useFeedback, useSheet } from './overlays';
 import { Muted } from './primitives';
 
@@ -119,7 +119,7 @@ export function ResourceRow({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 10 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
   main: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -138,4 +138,4 @@ const s = StyleSheet.create({
   starGlyph: { fontSize: 18 },
   more: { width: 28, height: 40, alignItems: 'center', justifyContent: 'center' },
   moreGlyph: { fontSize: 18, color: colors.muted },
-});
+}));

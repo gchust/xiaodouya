@@ -19,11 +19,11 @@ import {
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { deviceRegionCode } from '../lib/device';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -295,7 +295,7 @@ export function MoneySheet({ id, existing }: { id?: string; existing?: MoneyData
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   label: { fontSize: 12 },
   amountRow: {
@@ -324,5 +324,5 @@ const s = StyleSheet.create({
     color: colors.ink,
     paddingVertical: 4,
   },
-  error: { fontSize: 13, color: colors.danger },
-});
+  error: { fontSize: 13, color: colors.dangerText },
+}));

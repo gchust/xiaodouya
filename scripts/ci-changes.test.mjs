@@ -54,6 +54,8 @@ for (const file of [
   'scripts/build-edge.mjs',
   'scripts/android-signing.mjs',
   'scripts/check-i18n.mjs',
+  'scripts/check-colors.mjs',
+  'scripts/codemod-themed-styles.mjs',
   'docs/PROGRESS.md',
   'AGENTS.md',
   'e2e/README.md',

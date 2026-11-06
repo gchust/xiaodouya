@@ -24,7 +24,7 @@ const NO_APP_IMPACT = [
   // 分享网页：App 只拿它的地址，E2E 不打开它，它自己的测试在 pnpm test 里。
   /^apps\/share-web\//,
   // 发版用的脚本只在 release.yml 和 auto-release.yml 里跑。
-  /^scripts\/(adb-ui\.py|android-signing(\.test)?\.mjs|build-edge\.mjs|check-i18n\.mjs|release-(apk|plan)(\.test)?\.mjs|screenshot\.sh|subset-fonts\.py)$/,
+  /^scripts\/(adb-ui\.py|android-signing(\.test)?\.mjs|build-edge\.mjs|check-(?:i18n|colors)\.mjs|codemod-themed-styles\.mjs|release-(apk|plan)(\.test)?\.mjs|screenshot\.sh|subset-fonts\.py)$/,
 ];
 
 /** 没有改动列表时也要跑：多半是取差异出错了，不能当成没改。 */

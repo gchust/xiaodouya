@@ -49,6 +49,7 @@ import { scheduleFeedReminder, unregisterPushToken } from './notifications';
 import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 import { ME_KEY, OWNER_KEY, SERVER_KEY, TOKEN_KEY } from './storedSession';
+import { useTheme } from './themePref';
 import { getUploadRuntime } from './uploadRuntime';
 
 const SYNCED_KEY = 'synced';
@@ -336,6 +337,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   }, []);
   // 必须在渲染子组件之前定下来：下面所有组件渲染时都直接读当前语言。
   const locale = applyLocale(prefs.locale, deviceTag);
+  const theme = useTheme();
   // biome-ignore lint/correctness/useExhaustiveDependencies: 语言变了要刷新小工具上的文字。
   useEffect(() => {
     if (booted) scheduleWidgetRefresh();
@@ -499,11 +501,11 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     // 会覆盖全家的出生时间。所以必须等第一次同步成功。
     else sessionState = hasSynced ? 'noBaby' : 'syncing';
   }
-  // 换语言时整棵界面重新挂载：文字都是渲染时读的，有的还在 useMemo 里，逐个找容易漏。
+  // 换语言或主题时整棵界面重新挂载：文字和颜色都是渲染时读的，有的还在 useMemo 里，逐个找容易漏。
   // 导航状态在容器里，重新挂载后还在原来的页面。
   return (
     <AppContext.Provider value={{ ...value, sessionState }}>
-      <Fragment key={locale}>{children}</Fragment>
+      <Fragment key={`${locale}:${theme.key}`}>{children}</Fragment>
     </AppContext.Provider>
   );
 }

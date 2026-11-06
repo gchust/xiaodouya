@@ -2,7 +2,7 @@ import { type DocumentData, documentCover, t } from '@xiaodouya/shared';
 import { StyleSheet, Text } from 'react-native';
 import { fileBadge } from '../lib/mediaUtils';
 import { DocumentThumb } from '../lib/mediaViews';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { Mono, PressScale, Stripes } from './primitives';
 
 /**
@@ -41,7 +41,7 @@ export function DocumentCard({
       </Text>
       <Text
         numberOfLines={1}
-        style={{ fontSize: 11, color: tone === 'accent' ? colors.accent : colors.muted }}
+        style={{ fontSize: 11, color: tone === 'accent' ? colors.accentText : colors.muted }}
       >
         {line}
       </Text>
@@ -85,7 +85,7 @@ function DocCover({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   card: {
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -105,4 +105,4 @@ const s = StyleSheet.create({
   },
   fileName: { fontSize: 10, color: colors.muted, maxWidth: '100%' },
   name: { fontSize: 13, color: colors.ink },
-});
+}));

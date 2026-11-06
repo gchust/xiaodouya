@@ -18,14 +18,13 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app';
 import { canEditStorage, storagePageMode } from '../lib/storagePage';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import {
   Button,
@@ -91,7 +90,7 @@ export function StorageScreen() {
       <View style={[s.root, s.loading]} testID="storage-screen">
         {loadError ? (
           <>
-            <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text>
+            <Text style={{ color: colors.dangerText, fontSize: 13 }}>{loadError}</Text>
             <Button
               testID="storage-retry"
               tone="outline"
@@ -255,7 +254,7 @@ function CustomStorageForm() {
 
         {loadError ? (
           <View style={{ gap: 8 }}>
-            <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text>
+            <Text style={{ color: colors.dangerText, fontSize: 13 }}>{loadError}</Text>
             <Button
               testID="storage-retry"
               tone="outline"
@@ -282,7 +281,7 @@ function CustomStorageForm() {
                 testID="storage-status"
                 style={{
                   fontSize: 12,
-                  color: config?.source === 'none' ? colors.accent : colors.green,
+                  color: config?.source === 'none' ? colors.accentText : colors.greenText,
                 }}
               >
                 {statusText}
@@ -325,7 +324,7 @@ function CustomStorageForm() {
               style={{
                 fontSize: 12,
                 lineHeight: 18,
-                color: quota.level === 'full' ? colors.danger : colors.accent,
+                color: quota.level === 'full' ? colors.dangerText : colors.warnText,
               }}
             >
               {quota.warning}
@@ -457,7 +456,7 @@ function CustomStorageForm() {
           {test ? (
             <Text
               testID="storage-test-result"
-              style={{ fontSize: 12, color: test.ok ? colors.green : colors.danger }}
+              style={{ fontSize: 12, color: test.ok ? colors.greenText : colors.dangerText }}
             >
               {test.ok
                 ? t().storageUi.testOk(
@@ -496,7 +495,7 @@ function CustomStorageForm() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   loading: {
     alignItems: 'center',
@@ -526,7 +525,7 @@ const s = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: '#efe7dc',
+    backgroundColor: colors.track,
   },
   usageLegend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 6 },
   providers: { flexDirection: 'row', gap: 6 },
@@ -538,4 +537,4 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-});
+}));

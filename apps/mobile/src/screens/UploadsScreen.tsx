@@ -14,7 +14,7 @@ import type { UploadItem } from '../data/uploadQueue';
 import { useApp, useRecords, useUploadProgress } from '../lib/app';
 import { localUriFor } from '../lib/media';
 import { uploadCardStatus, uploadCountsText, uploadSpeedText } from '../lib/uploadStatus';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Empty, Mono, Muted, PageTitle, Stripes } from '../ui/primitives';
@@ -97,7 +97,7 @@ const ItemRow = memo(
           <View style={s.rowProgress}>
             <Text
               testID={`upload-status-${item.id}`}
-              style={[s.status, failed ? { color: colors.danger } : null]}
+              style={[s.status, failed ? { color: colors.dangerText } : null]}
               numberOfLines={failed ? 2 : 1}
             >
               {failed && item.reason ? item.reason : statusLabel(item)}
@@ -309,12 +309,12 @@ export function UploadsScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   header: { paddingHorizontal: spacing.page, gap: 8 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
-  link: { fontSize: 13, color: colors.accent, padding: 4 },
+  link: { fontSize: 13, color: colors.accentText, padding: 4 },
   emptyWrap: { flex: 1, justifyContent: 'center', paddingBottom: 80 },
   summary: {
     marginHorizontal: spacing.page,
@@ -337,7 +337,7 @@ const s = StyleSheet.create({
     marginHorizontal: spacing.page,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#efe7dc',
+    borderBottomColor: colors.track,
   },
   thumb: {
     width: 48,
@@ -354,7 +354,7 @@ const s = StyleSheet.create({
   rowProgress: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, marginTop: 3 },
   status: { fontSize: 11, color: colors.muted, flexShrink: 1 },
   bytes: { fontSize: 11, color: colors.muted },
-  track: { height: 4, borderRadius: 2, backgroundColor: '#efe7dc', overflow: 'hidden' },
+  track: { height: 4, borderRadius: 2, backgroundColor: colors.track, overflow: 'hidden' },
   fill: { height: '100%', backgroundColor: colors.accent },
   cancel: { fontSize: 13, color: colors.muted, padding: 4 },
-});
+}));

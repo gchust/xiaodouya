@@ -7,7 +7,7 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useRecords } from '../lib/app';
 import {
   isDaysAgo,
@@ -17,7 +17,7 @@ import {
   withDate,
   withDaysAgo,
 } from '../lib/dates';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { Chip, Muted } from './primitives';
 
 const HOUR = 3_600_000;
@@ -259,7 +259,7 @@ export function RecordTimeField({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   row: { flexDirection: 'row', gap: 8 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   button: {
@@ -272,6 +272,6 @@ const s = StyleSheet.create({
     paddingVertical: 13,
   },
   buttonText: { fontFamily: fonts.monoRegular, fontSize: 14, color: colors.ink },
-  error: { fontSize: 13, lineHeight: 20, color: colors.danger },
-  notice: { fontSize: 12, lineHeight: 19, color: colors.accent },
-});
+  error: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
+  notice: { fontSize: 12, lineHeight: 19, color: colors.warnText },
+}));

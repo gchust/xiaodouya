@@ -10,10 +10,10 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp, useRecords } from '../lib/app';
 import { nicknameProblem, shareDisplaySummary, shareDisplayUnsupported } from '../lib/share';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Field, Muted, SectionTitle, Toggle } from '../ui/primitives';
 
@@ -217,10 +217,10 @@ export function ShareSettingsSheet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   fields: { gap: 0 },
   nickname: { paddingVertical: 10, gap: 6 },
-  problem: { fontSize: 12, lineHeight: 18, color: colors.danger },
+  problem: { fontSize: 12, lineHeight: 18, color: colors.dangerText },
   note: { fontSize: 12, lineHeight: 19 },
   section: { gap: 10 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -235,7 +235,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.paper,
   },
   summary: { flex: 1, fontSize: 13, lineHeight: 20 },
-  edit: { fontSize: 13, color: colors.accent },
+  edit: { fontSize: 13, color: colors.accentText },
   warning: { backgroundColor: colors.sand, borderRadius: 12, padding: 12, gap: 6 },
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
-});
+}));

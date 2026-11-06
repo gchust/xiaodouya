@@ -23,7 +23,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { colors, fonts, motion } from '../theme';
+import { useTheme } from '../lib/themePref';
+import { colors, fonts, motion, themedStyles } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -175,10 +176,10 @@ export function Button({
   labelStyle?: StyleProp<TextStyle>;
 }) {
   const tones: Record<ButtonTone, { bg: string; ink: string; border?: string }> = {
-    accent: { bg: colors.accent, ink: colors.white },
+    accent: { bg: colors.accentFill, ink: colors.onAccent },
     dark: { bg: colors.ink, ink: colors.paper },
-    green: { bg: colors.green, ink: colors.white },
-    danger: { bg: colors.danger, ink: colors.white },
+    green: { bg: colors.greenFill, ink: colors.onGreen },
+    danger: { bg: colors.dangerFill, ink: colors.onDanger },
     outline: { bg: 'transparent', ink: colors.ink, border: colors.ink },
     ghost: { bg: 'transparent', ink: colors.muted },
   };
@@ -269,8 +270,10 @@ export function Toggle({
     position.value = withTiming(value ? 1 : 0, { duration: 200 });
   }, [value, position]);
   const knob = useAnimatedStyle(() => ({ left: 3 + position.value * 16 }));
+  // worklet 会冻结捕获的对象，先读成局部变量（scripts/check-colors.mjs）。
+  const { off, accent } = colors;
   const track = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(position.value, [0, 1], [colors.off, colors.accent]),
+    backgroundColor: interpolateColor(position.value, [0, 1], [off, accent]),
   }));
   return (
     <Pressable
@@ -334,11 +337,14 @@ export function Stripes({
   style?: StyleProp<ViewStyle>;
   children?: ReactNode;
 }) {
+  // 条纹是一张浅色的图，深色模式下压暗成淡淡的纹理，不然头像和图片占位是一块亮斑。
+  const { scheme } = useTheme();
   return (
     <ImageBackground
       source={require('../../assets/stripes.png')}
       resizeMode="repeat"
       style={[styles.stripes, style]}
+      imageStyle={scheme === 'dark' ? { opacity: 0.12 } : undefined}
     >
       {children}
     </ImageBackground>
@@ -381,7 +387,7 @@ export function Empty({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
-export const styles = StyleSheet.create({
+export const styles = themedStyles(() => ({
   body: { color: colors.ink, fontSize: 14 },
   muted: { color: colors.muted, fontSize: 12 },
   serif: { fontFamily: fonts.serifMedium, color: colors.ink, fontSize: 14, lineHeight: 24.5 },
@@ -439,7 +445,7 @@ export const styles = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: colors.white,
+    backgroundColor: colors.knob,
     elevation: 2,
   },
   field: {
@@ -470,6 +476,6 @@ export const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 20 },
-});
+}));
 
 export { motion };

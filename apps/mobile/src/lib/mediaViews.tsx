@@ -19,7 +19,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Mono, Muted, Stripes } from '../ui/primitives';
 import type { Api } from './api';
@@ -505,9 +505,9 @@ function ActiveAudio({
         else play();
       }}
     >
-      <View style={[s.audioBtn, { backgroundColor: playing ? colors.accent : colors.ink }]}>
+      <View style={[s.audioBtn, { backgroundColor: playing ? colors.accentFill : colors.ink }]}>
         {loading ? (
-          <ActivityIndicator size="small" color={colors.white} />
+          <ActivityIndicator size="small" color={playing ? colors.onAccent : colors.paper} />
         ) : playing ? (
           <View style={{ flexDirection: 'row', gap: 3 }}>
             <View style={s.pauseBar} />
@@ -606,7 +606,7 @@ export function ExistingThumb({
           <View style={s.localAudio}>
             <Mono
               weight="medium"
-              style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}
+              style={{ fontSize: 11, color: colors.sleepText, textAlign: 'center' }}
             >
               {t().ui.recordingLabel(media.durationMs ? formatMediaDuration(media.durationMs) : '')}
             </Mono>
@@ -649,7 +649,10 @@ export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () 
         <Image source={{ uri: file.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
       ) : (
         <View style={s.localAudio}>
-          <Mono weight="medium" style={{ fontSize: 11, color: colors.sleep, textAlign: 'center' }}>
+          <Mono
+            weight="medium"
+            style={{ fontSize: 11, color: colors.sleepText, textAlign: 'center' }}
+          >
             {t().ui.recordingLabel(file.durationMs ? formatMediaDuration(file.durationMs) : '')}
           </Mono>
         </View>
@@ -676,7 +679,7 @@ export function LocalThumb({ file, onRemove }: { file: PickedFile; onRemove: () 
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   playBadge: {
     position: 'absolute',
     left: '50%',
@@ -686,7 +689,7 @@ const s = StyleSheet.create({
     marginLeft: -24,
     marginTop: -24,
     borderRadius: 24,
-    backgroundColor: 'rgba(43,38,34,0.55)',
+    backgroundColor: colors.veilSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -727,11 +730,12 @@ const s = StyleSheet.create({
     borderLeftWidth: 9,
     borderTopWidth: 6,
     borderBottomWidth: 6,
-    borderLeftColor: colors.white,
+    // 在 ink 底的按钮上，深色模式下 ink 是浅色。
+    borderLeftColor: colors.paper,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
   },
-  pauseBar: { width: 3, height: 11, backgroundColor: colors.white, borderRadius: 1 },
+  pauseBar: { width: 3, height: 11, backgroundColor: colors.onAccent, borderRadius: 1 },
   audioMain: { flex: 1, minWidth: 0, gap: 4, overflow: 'hidden' },
   audioDuration: { fontSize: 12, color: colors.muted },
   localThumb: { width: 72, height: 72, borderRadius: 10, overflow: 'hidden' },
@@ -750,7 +754,7 @@ const s = StyleSheet.create({
     bottom: 4,
     paddingHorizontal: 5,
     borderRadius: 999,
-    backgroundColor: 'rgba(43,38,34,0.6)',
+    backgroundColor: colors.veil,
   },
   coverTag: {
     position: 'absolute',
@@ -758,9 +762,9 @@ const s = StyleSheet.create({
     top: 4,
     paddingHorizontal: 5,
     borderRadius: 999,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
   },
-  coverTagText: { fontSize: 9, lineHeight: 14, color: colors.white },
+  coverTagText: { fontSize: 9, lineHeight: 14, color: colors.onAccent },
   remove: {
     position: 'absolute',
     right: 3,
@@ -768,8 +772,8 @@ const s = StyleSheet.create({
     width: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: 'rgba(43,38,34,0.7)',
+    backgroundColor: colors.veilStrong,
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

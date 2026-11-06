@@ -25,7 +25,7 @@ import {
 } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { DocumentReadersSheet, readersText } from '../sheets/documentSheets';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
@@ -264,7 +264,7 @@ export function DocumentScreen({ id, from }: { id: string; from?: 'family' }) {
             onPress={openEdit}
             style={{ marginTop: -12 }}
           >
-            <Text style={{ fontSize: 12, color: colors.accent }}>{t().info.editDocLink}</Text>
+            <Text style={{ fontSize: 12, color: colors.accentText }}>{t().info.editDocLink}</Text>
           </Pressable>
         )}
 
@@ -461,7 +461,7 @@ function DocumentEditSheet({ id, data }: { id: string; data: DocumentData }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -482,4 +482,4 @@ const s = StyleSheet.create({
   pdfBadge: { alignItems: 'center', justifyContent: 'center' },
   actions: { flexDirection: 'row', gap: 8 },
   actionLabel: { fontSize: 14, fontWeight: '400' },
-});
+}));

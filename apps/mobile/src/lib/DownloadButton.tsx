@@ -32,7 +32,7 @@ export function DownloadButton({
   const { toast } = useFeedback();
   const sheet = useSheet();
   const state = useDownloadState(media.id);
-  const ink = tone === 'dark' ? colors.white : colors.accent;
+  const ink = tone === 'dark' ? colors.white : colors.accentText;
 
   const begin = () => {
     // 这里的 toast 属于根布局，页面关掉后结果也能提示。

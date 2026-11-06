@@ -14,6 +14,7 @@ import { recall } from './recall';
 import { records } from './records';
 import { share } from './share';
 import { storageUi } from './storageUi';
+import { themeUi } from './themeUi';
 import { today } from './today';
 import { ui } from './ui';
 import { update } from './update';
@@ -24,6 +25,7 @@ export const zh = {
   common,
   confirm,
   widgetUi,
+  themeUi,
   storageUi,
   family,
   feedback,

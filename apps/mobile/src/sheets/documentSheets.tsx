@@ -2,9 +2,9 @@ import { type DocumentData, documentReaderChoices, effectiveReaders, t } from '@
 import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp, useRegion } from '../lib/app';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, ListCard, Muted, SoftInput } from '../ui/primitives';
 
@@ -123,7 +123,7 @@ export function DocumentReadersSheet({ id, data }: { id: string; data: DocumentD
                   <Dot color={on ? colors.green : colors.off} />
                 </View>
                 <Text style={{ flex: 1, fontSize: 14, color: colors.ink }}>{m.label}</Text>
-                <Text style={{ fontSize: 12, color: on ? colors.green : colors.muted }}>
+                <Text style={{ fontSize: 12, color: on ? colors.greenText : colors.muted }}>
                   {on ? t().info.readerOn : t().info.readerOff}
                 </Text>
               </Pressable>
@@ -137,8 +137,8 @@ export function DocumentReadersSheet({ id, data }: { id: string; data: DocumentD
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 13 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
-});
+}));

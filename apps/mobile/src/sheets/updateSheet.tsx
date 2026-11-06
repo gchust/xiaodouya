@@ -1,6 +1,6 @@
 import { type AppUpdateInfo, formatBytes, getLocale, releaseNotesFor, t } from '@xiaodouya/shared';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import type { UpdateController, UpdatePhase } from '../lib/appUpdate';
 import {
@@ -10,7 +10,7 @@ import {
   useCanInstallPackages,
   useUpdatePhase,
 } from '../lib/appUpdateRuntime';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Body, Button, Dot, Mono, Muted } from '../ui/primitives';
 
@@ -223,7 +223,7 @@ function Actions({
   }
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   versionRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   version: { fontSize: 26, color: colors.ink },
   note: { fontSize: 12, lineHeight: 19 },
@@ -236,5 +236,5 @@ const s = StyleSheet.create({
   bar: { height: 4, borderRadius: 2, backgroundColor: colors.accent },
   tip: { backgroundColor: colors.sand, borderRadius: 12, padding: 12, marginTop: 4 },
   tipText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
-  error: { fontSize: 13, lineHeight: 20, color: colors.danger },
-});
+  error: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
+}));

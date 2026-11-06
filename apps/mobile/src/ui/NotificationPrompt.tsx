@@ -1,10 +1,10 @@
 import { t } from '@xiaodouya/shared';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import { ensureNotificationPermission } from '../lib/notifications';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 
 const DISMISSED_KEY = 'notification-prompt-dismissed';
 
@@ -71,7 +71,7 @@ export function NotificationPrompt({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   card: {
     marginTop: 14,
     marginHorizontal: spacing.page,
@@ -88,5 +88,5 @@ const s = StyleSheet.create({
   text: { flex: 1, fontSize: 13, lineHeight: 20, color: colors.ink },
   actions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
   later: { fontSize: 13, color: colors.muted },
-  enable: { fontSize: 13, color: colors.accent, fontWeight: '500' },
-});
+  enable: { fontSize: 13, color: colors.accentText, fontWeight: '500' },
+}));

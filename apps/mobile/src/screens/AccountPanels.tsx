@@ -46,7 +46,7 @@ export function ResendButton({
         style={{
           fontSize: 13,
           textAlign: 'center',
-          color: left > 0 ? colors.muted : colors.accent,
+          color: left > 0 ? colors.muted : colors.accentText,
         }}
       >
         {label}
@@ -57,7 +57,7 @@ export function ResendButton({
 
 export function FormError({ message }: { message: string | null }) {
   return message ? (
-    <Text testID="form-error" style={{ fontSize: 13, lineHeight: 20, color: colors.danger }}>
+    <Text testID="form-error" style={{ fontSize: 13, lineHeight: 20, color: colors.dangerText }}>
       {message}
     </Text>
   ) : null;
@@ -182,7 +182,7 @@ export function DeleteAccountSheet() {
         {explanation}
       </Muted>
       {unsynced ? (
-        <Muted style={{ fontSize: 13, lineHeight: 21, color: colors.danger }}>
+        <Muted style={{ fontSize: 13, lineHeight: 21, color: colors.dangerText }}>
           {t().account.deleteUnsynced}
         </Muted>
       ) : null}

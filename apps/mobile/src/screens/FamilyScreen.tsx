@@ -16,7 +16,7 @@ import {
 } from '@xiaodouya/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import {
@@ -32,11 +32,12 @@ import { ensureNotificationPermission } from '../lib/notifications';
 import { shareSettingsSub } from '../lib/share';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { useTheme } from '../lib/themePref';
 import { openSystemShare } from '../sheets/shareCreated';
 import { ShareSettingsSheet, useShareDisplaySupported } from '../sheets/shareDisplay';
 import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
 import { UpdateSheet, updateRowSub } from '../sheets/updateSheet';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
@@ -52,6 +53,7 @@ import {
 } from '../ui/primitives';
 import { DeleteAccountSheet, VerifyEmailSheet } from './AccountPanels';
 import { FamilyDocumentsSection } from './FamilyDocuments';
+import { appearanceLabel } from './ThemeScreen';
 
 export function FamilyScreen() {
   const insets = useSafeAreaInsets();
@@ -66,6 +68,7 @@ export function FamilyScreen() {
   // 旧服务端会丢掉这些设置，问到服务端认识它们才显示（F-141）。
   const shareSettings = useShareDisplaySupported() === true;
   const router = useRouter();
+  const theme = useTheme();
   const { toast } = useFeedback();
   const now = useNow(60_000);
   const [storageSummary, setStorageSummary] = useState('');
@@ -200,7 +203,7 @@ export function FamilyScreen() {
               hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
               onPress={() => cancelInvite(invite)}
             >
-              <Text style={{ fontSize: 11, color: colors.accent }}>{t().common.cancel}</Text>
+              <Text style={{ fontSize: 11, color: colors.accentText }}>{t().common.cancel}</Text>
             </Pressable>
           </View>
         ))}
@@ -212,7 +215,7 @@ export function FamilyScreen() {
             style={{ paddingVertical: 12 }}
             onPress={() => sheet.open(t().family.inviteA11y, () => <InviteSheet />)}
           >
-            <Text style={{ fontSize: 13, color: colors.accent }}>{t().family.inviteLink}</Text>
+            <Text style={{ fontSize: 13, color: colors.accentText }}>{t().family.inviteLink}</Text>
           </Pressable>
         ) : null}
       </ListCard>
@@ -286,6 +289,15 @@ export function FamilyScreen() {
             label={t().family.language}
             sub={languageSummary(prefs.locale)}
             onPress={() => sheet.open(t().family.language, () => <LanguageSheet />)}
+          />
+          <NavRow
+            testID="open-theme"
+            label={t().themeUi.row}
+            sub={t().themeUi.rowSub(
+              t().themeUi.name[theme.pref.theme],
+              appearanceLabel(theme.pref.appearance),
+            )}
+            onPress={() => router.push('/theme')}
           />
           {showShares && shareSettings ? (
             <NavRow
@@ -467,7 +479,7 @@ function MemberRow({
         <Text style={{ fontSize: 14, color: colors.ink }}>{member.label}</Text>
         <Muted style={{ fontSize: 11 }}>{roleLabels[member.role]}</Muted>
       </View>
-      <Text style={{ fontSize: 11, color: isMe || seen.online ? colors.green : colors.muted }}>
+      <Text style={{ fontSize: 11, color: isMe || seen.online ? colors.greenText : colors.muted }}>
         {isMe ? t().family.me : seen.text}
       </Text>
     </Pressable>
@@ -580,7 +592,9 @@ function RolePicker({ value, onChange }: { value: Role; onChange: (r: Role) => v
             <Text style={{ fontSize: 14, color: on ? colors.paper : colors.ink }}>
               {roleLabels[o.role]}
             </Text>
-            <Text style={{ fontSize: 11, color: on ? '#bdb3a8' : colors.muted }}>{o.hint}</Text>
+            <Text style={{ fontSize: 11, color: on ? colors.onInkMuted : colors.muted }}>
+              {o.hint}
+            </Text>
           </Pressable>
         );
       })}
@@ -704,7 +718,7 @@ function MemberSheet({ member }: { member: FamilyMember }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   scroll: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, paddingBottom: 28, gap: 24 },
   section: { gap: 8 },
@@ -730,4 +744,4 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   code: { fontSize: 30, letterSpacing: 2 },
-});
+}));
