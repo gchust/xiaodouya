@@ -63,8 +63,8 @@ export function DocumentScreen({ id, from }: { id: string; from?: 'family' }) {
   // 家人自己的证件（F-137）：自己的多一行“谁能看”，别人给我看的只读。只读只是界面，服务端也拒绝别人的修改。
   const kind = entry ? documentKind(entry.data, userId) : from === 'family' ? 'mine' : 'family';
   const readOnly = kind === 'shared';
-  const ownerLabel =
-    members.find((m) => m.userId === entry?.data.owner)?.label ?? entry?.data.owner ?? '';
+  // 成员列表可能还没刷新：找不到称呼时不写名字，不能把账号 id 露出来。
+  const ownerLabel = members.find((m) => m.userId === entry?.data.owner)?.label ?? null;
   const fromFamily = from === 'family' || kind !== 'family';
 
   const authenticate = async () => {
@@ -252,7 +252,7 @@ export function DocumentScreen({ id, from }: { id: string; from?: 'family' }) {
         </ListCard>
         {readOnly ? (
           <Muted testID="doc-read-only" style={{ fontSize: 12, lineHeight: 19, marginTop: -8 }}>
-            {t().info.sharedReadOnly(ownerLabel)}
+            {ownerLabel ? t().info.sharedReadOnly(ownerLabel) : t().info.sharedReadOnlyUnknown}
           </Muted>
         ) : null}
         {readOnly ? null : (

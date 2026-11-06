@@ -114,6 +114,7 @@ export const info = {
   readerOff: '不能看',
   readersSaved: '已保存',
   sharedReadOnly: (name: Text) => `这是${name}的证件，只有${name}能修改。`,
+  sharedReadOnlyUnknown: '这是家人的证件，只能查看。',
   mineNote: '支持 JPG、PNG、HEIC、PDF。只有你和你选的家人能看到，不会出现在回忆里。',
   backToFamily: '返回家人',
   backFamilyLink: '‹ 家人',

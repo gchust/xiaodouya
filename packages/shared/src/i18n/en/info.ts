@@ -121,6 +121,7 @@ export const info: Catalog['info'] = {
   readerOff: "Can't see",
   readersSaved: 'Saved',
   sharedReadOnly: (name) => `This is ${name}'s document. Only ${name} can change it.`,
+  sharedReadOnlyUnknown: "This is a family member's document. You can view it but not change it.",
   mineNote:
     'JPG, PNG, HEIC and PDF are supported. Only you and the people you choose can see them, and they never appear in memories.',
   backToFamily: 'Back to Family',
