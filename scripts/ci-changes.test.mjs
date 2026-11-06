@@ -80,3 +80,20 @@ test('名字相近的文件不会被误放过', () => {
   assert.equal(needsE2e(['docsx/a.ts']).e2e, true);
   assert.equal(needsE2e(['deploy/dev/s3.json']).e2e, true);
 });
+
+for (const file of [
+  'scripts/release-plan.mjs',
+  'scripts/release-plan.test.mjs',
+  'scripts/release-apk.mjs',
+  'scripts/release-apk.test.mjs',
+]) {
+  test(`只改发版脚本 ${file} 跳过`, () => {
+    assert.equal(needsE2e([file]).e2e, false);
+  });
+}
+
+test('发版脚本名字相近的不放过', () => {
+  assert.equal(needsE2e(['scripts/release-plan.sh']).e2e, true);
+  // E2E 的假发布（e2e/helpers/fake-release.sh）用它。
+  assert.equal(needsE2e(['scripts/publish-apk.sh']).e2e, true);
+});

@@ -231,6 +231,8 @@ RESTORE_DATABASE_URL='<Session pooler 连接串>' BACKUP_PG_IMAGE=postgres:17 \
 
 **升级用手动工作流最省事。** 到 Actions 页面运行“部署后端”（`.github/workflows/deploy-backend.yml`），它依次做：备份、确认存储支持把大小签进上传链接、迁移、部署函数、冒烟。任何一步失败都会停下。只能从 `main` 运行。
 
+打开[自动发版](#自动发版)之后，合并到 `main` 的代码最迟约 4 小时后由它调用同一个工作流部署，再发 APK，不用手动点。
+
 第一次要在仓库 Secrets 里添加 `SUPABASE_ACCESS_TOKEN`，在 Supabase 控制台的 [Access Tokens](https://supabase.com/dashboard/account/tokens) 页面创建。这个令牌能操作你账号下的所有项目，用完可以撤销，下次再建。其他都沿用备份已有的 Secret，所以 `BACKUP_DATABASE_URL` 要用能改表结构的账号（Session pooler 连接串）。
 
 新函数有问题时，可以在本机检出旧版本重新部署函数。迁移只增不改，旧函数在新表结构上能继续跑，不需要回滚数据库。
@@ -529,6 +531,43 @@ git push origin v0.1.0
 
 大约 20–30 分钟后，签名 APK 会出现在 GitHub 的 Releases 页面，服务端镜像也会推到 GHCR。
 
+手动打标签只发 APK 和镜像，不部署后端。生产上的顺序是先跑“部署后端”、成功后再打标签，或者交给下面的自动发版。
+
+### 自动发版
+
+`.github/workflows/auto-release.yml` 每 4 小时（UTC 的 0:17、4:17……）看一次 `main`，满足下面全部条件就发一个新版本：
+
+1. 最新的 `vX.Y.Z` 标签之后合并过 PR（看 `main` 上的合并提交，也认 squash 提交标题末尾的 `(#N)`）；直接推到 `main` 的提交不算。
+2. 这段改动不全是文档。文档的范围和 `ci.yml` 的 `paths-ignore` 一样：`docs/` 和 Markdown。所以只合并了发版记录这类 PR 时不发。
+3. CI 测过这份代码并且通过：`main` 上纯文档的推送不跑 CI，所以查的是最后一个有代码改动的提交（和 HEAD 只差文档），要求它在 `push` 事件上的 CI 已经结束、结论是 success、`CI 结果` 这个 job 是 success。还在跑或者失败就这次不发，不等待，4 小时后再看。
+
+发布的步骤和手动时一样，任何一步失败就停：
+
+```
+看要不要发 ──► 部署后端（调用 deploy-backend.yml：备份、存储检查、迁移、部署函数、冒烟）
+                 │ 成功
+                 ▼
+              发布 APK（调用 release.yml）：读上一版 Release 的 APK → 构建 → 核对 versionCode、签名证书
+                 │ 核对通过
+                 ▼
+              创建 Release，这时才打标签 → 核对 Release 上的 APK → 传到存储、读回清单核对 → GHCR 镜像
+```
+
+- **版本号：** 最新标签的次版本号加一（`v0.8.0` → `v0.9.0`），规则在 `scripts/release-plan.mjs`。要发修订版或主版本时手动打标签。
+- **versionCode：** 上一版 Release 的 APK 里的 versionCode 加一（`v0.8.0` 是 11，下一版 12），手动打标签也一样。已经发过更高的版本时发布直接失败，Android 不允许降级安装。以前用的是 `release.yml` 的运行编号，被调用时运行编号是调用方的，会从 1 开始，所以改了。
+- **核对：** 签名证书 SHA-256 必须和上一版 Release 的 APK 一样，包名不变，versionCode 和 versionName 是这次要发的（`scripts/release-apk.mjs`），这些在创建 Release 之前做，不通过就不打标签。之后核对 Release 上下载回来的 APK 和刚构建的 sha256 一致，`publish-apk.sh` 写完清单再读回来核对 versionCode 和 sha256。后两步失败时标签和 Release 已经在了，工作流的“发版结果”是红的，要人工看。
+- **记录：** Release 正文开头写着自动发版的运行、提交、CI 的 run 和包含的 PR，后面是 GitHub 自动生成的 PR 列表。每次运行的摘要（Actions 里这次运行的 Summary）写着发了什么、为什么不发。自动发版**不改** `docs/PROGRESS.md`：每次开文档 PR 会多一轮 CI，记录也只是 Release 正文的重复。需要在 PROGRESS 里写线上核对结果（比如真机更新）时照旧手动补。
+- **并发：** 部署和手动运行的“部署后端”同在 `deploy-backend` 组，发布和手动打标签同在 `release-apk` 组，后一个等前一个。两次自动发版也不会同时跑。
+- **不在 `main` 上不跑：** 定时任务只在默认分支上触发，手动运行时“看要不要发”只认 `main`，别的分支不能借它部署。
+
+**开启：** 默认不开。在仓库 Settings → Secrets and variables → Actions → Variables 添加 `AUTO_RELEASE_ENABLED`，值是 `true`。没有设置或者是别的值时，定时运行只算不发，摘要里写着“会发 vX.Y.Z，但 AUTO_RELEASE_ENABLED 不是 true”。用到的 Secret 和变量就是“部署后端”和上面手动发布已有的，不用新加。
+
+**先看一眼：** Actions → 自动发版 → Run workflow，`dry_run` 默认勾着，只算出要不要发、发哪个版本、包含哪些 PR，写在这次运行的摘要里，不部署也不发布。去掉勾、并且 `AUTO_RELEASE_ENABLED` 是 `true` 时才会真的发，相当于不等定时马上发一次。
+
+**暂停：** 把 `AUTO_RELEASE_ENABLED` 改成 `false`（或删掉），下一次定时运行起生效，正在跑的不受影响，要停就在 Actions 里取消。也可以在 Actions 页面停用这个工作流。注意公开仓库 60 天没有活动时 GitHub 会自动停用定时任务。
+
+**定时运行失败时** GitHub 发邮件给最后修改这个工作流定时设置的人。
+
 > 第一次发布后，确认一下 GitHub 上这个镜像的可见性。如果它不是公开的，服务器拉取时会提示 `denied`，要到包的设置里改成公开，或者在服务器上先执行 `docker login ghcr.io`。这个流程还没有实际跑过。
 
 ### 方式 B：本地构建
@@ -574,9 +613,9 @@ pnpm android:build release --clean
 | Variable | `APP_RELEASE_PREFIX`         | 可选，默认 `releases/android/`。改了的话服务端要一起改（`supabase secrets set APP_RELEASE_PREFIX=...`） |
 | Variable | `RELEASE_MIN_SUPPORTED_CODE` | 可选。低于这个 versionCode 的 App 每次检查都提示“已经停止支持，请尽快更新”。只是提示，不拦着用。服务端不再兼容旧版本时才设 |
 
-versionCode 是发布流程的运行编号（`GITHUB_RUN_NUMBER`），只增不减；`v0.3.2` 之前的发布已经用过的编号都比它小。发布脚本先用 `aapt2` 核对 APK 里的版本号和清单一致，不会把清单换成更低的 versionCode，APK 传完并下载回来核对 sha256 之后才写清单，所以 App 不会看到一个还没传完的版本。
+versionCode 是上一版 Release 的 APK 里的 versionCode 加一（见[自动发版](#自动发版)），只增不减。`v0.8.0` 及以前用的是发布流程的运行编号（`GITHUB_RUN_NUMBER`），`v0.8.0` 是 11。发布脚本先用 `aapt2` 核对 APK 里的版本号和清单一致，不会把清单换成更低的 versionCode，APK 传完并下载回来核对 sha256 之后才写清单，所以 App 不会看到一个还没传完的版本。
 
-**发布后核对：**
+**发布后核对**（发布流程已经自动核对了 versionCode、签名证书、Release 上的 sha256 和读回的清单，下面是人工复核）：
 
 1. Actions 里“上传到存储（应用内更新）”这一步的日志有 `已发布：releases/android/xiaodouya-<版本>-<编号>.apk（N 字节，sha256 …）` 和 `清单：releases/android/latest.json → <版本>（<编号>）`。sha256 应该和 GitHub Release 上那个 APK 的 `sha256sum` 一样。
 2. 在装着上一个带应用内更新版本的手机上：「家人 → 检查更新」看到新版本，更新、安装，打开后同一行写着新的版本号。

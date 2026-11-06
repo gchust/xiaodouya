@@ -13,6 +13,7 @@
 #
 # 顺序不能反：先传 APK，下载回来核对 sha256，最后才写清单。清单写好之前 App 看到的还是上一版，
 # 不会拿到一个还没传完的 APK。不会覆盖成更低的 versionCode：Android 不允许降级安装。
+# 写完再读回清单，核对 versionCode 和 sha256，不一致时失败（自动发版靠它判断这一步真的生效了）。
 #
 # 这是公开仓库：不要加 set -x，日志里只有对象名、大小和哈希。
 set -euo pipefail
@@ -123,6 +124,18 @@ NAME="$NAME" CODE="$CODE" SIZE="$SIZE" SHA="$SHA" KEY="$KEY" MIN_CODE="$MIN_CODE
 s3 "$MANIFEST_KEY" --fail -H 'x-amz-content-sha256: UNSIGNED-PAYLOAD' \
   -H 'content-type: application/json' -T "$WORK/latest.json" >/dev/null \
   || die "写清单失败。APK 已经在 ${KEY}，重新运行这个脚本即可"
+
+# 读回清单核对：App 认的是存储里的这一份，它指的必须就是刚传的 APK。
+s3 "$MANIFEST_KEY" --fail -o "$WORK/readback.json" || die "读回清单失败，先人工核对 ${MANIFEST_KEY}"
+NAME="$NAME" CODE="$CODE" SHA="$SHA" KEY="$KEY" node -e '
+  const e = process.env;
+  const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const ok = m.versionCode === Number(e.CODE) && m.versionName === e.NAME && m.apk?.sha256 === e.SHA && m.apk?.key === e.KEY;
+  if (!ok) {
+    console.error(`清单读回来是 ${m.versionName}（${m.versionCode}）、sha256 ${m.apk?.sha256}，和刚发布的不一样`);
+    process.exit(1);
+  }
+' "$WORK/readback.json" || die "存储里的清单和这次发布的不一致，先人工核对 ${MANIFEST_KEY}"
 
 echo "已发布：${KEY}（${SIZE} 字节，sha256 ${SHA}）"
 echo "清单：${MANIFEST_KEY} → ${NAME}（${CODE}）"
