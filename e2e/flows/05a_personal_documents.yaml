@@ -76,6 +76,7 @@ appId: com.gchust.xiaodouya
 - assertNotVisible: { id: doc-delete }
 - assertNotVisible: { id: doc-edit }
 - assertNotVisible: { id: doc-readers }
+- assertVisible: 还没有文件。
 - takeScreenshot: .artifacts/e2e-05a-shared
 - tapOn: { id: doc-back }
 # 驾照能显示出来，说明管理员“选妈妈能看”已经同步上去了：一次同步先上传本机的改动再拉取。

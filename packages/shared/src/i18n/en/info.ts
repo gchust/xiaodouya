@@ -90,6 +90,7 @@ export const info: Catalog['info'] = {
   files: 'Files',
   filesCount: (n) => `${n}`,
   noFiles: 'No files yet. Take a photo or upload a PDF.',
+  noFilesReadOnly: 'No files yet.',
   removeFileNamed: (name) => `Remove ${name}`,
   takePhoto: 'Photo / scan',
   uploadFile: 'Upload file',

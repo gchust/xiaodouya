@@ -28,8 +28,9 @@ const me = call('GET', '/v1/me', mom.token).json;
 const admin = me.members.filter((m) => m.role === 'admin')[0];
 if (!admin) fail('找不到管理员');
 const suffix = `000000000000${RUN_ID}`.slice(-12);
-const sharedId = `33333333-3333-4333-8333-${suffix}`;
-const privateId = `44444444-4444-4444-8444-${suffix}`;
+// 别的脚本用了 11111111…44444444 开头的 id（mom-joins、mom-logs-two），这里换一段，否则写到别的集合会被拒绝。
+const sharedId = `55555555-5555-4555-8555-${suffix}`;
+const privateId = `66666666-6666-4666-8666-${suffix}`;
 const license = {
   name: '驾照',
   number: 'D0000000M',
@@ -68,8 +69,13 @@ function canFetch(ids) {
   return urls.filter((u) => u.url !== null).length;
 }
 
+function push(body) {
+  const result = call('POST', '/v1/sync', mom.token, body).json;
+  if (result.rejected.length > 0) fail(`被拒绝了：${JSON.stringify(result.rejected)}`);
+}
+
 if (STEP === 'share') {
-  call('POST', '/v1/sync', mom.token, {
+  push({
     cursor: 0,
     changes: [
       {
@@ -103,7 +109,7 @@ if (STEP === 'share') {
   if (canFetch(ids) !== ids.length) fail('妈妈拿不到管理员给她看的文件');
   output.adminFiles = ids.join(',');
 } else if (STEP === 'unshare') {
-  call('POST', '/v1/sync', mom.token, {
+  push({
     cursor: 0,
     changes: [
       { id: sharedId, collection: 'document', data: license, deleted: true, updatedAt: Date.now() },

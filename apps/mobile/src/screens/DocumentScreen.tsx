@@ -275,7 +275,7 @@ export function DocumentScreen({ id, from }: { id: string; from?: 'family' }) {
           </View>
           {data.files.length === 0 ? (
             <Text style={{ fontSize: 13, color: colors.muted, paddingVertical: 14 }}>
-              {t().info.noFiles}
+              {readOnly ? t().info.noFilesReadOnly : t().info.noFiles}
             </Text>
           ) : (
             <View style={s.files}>

@@ -85,6 +85,7 @@ export const info = {
   files: '文件',
   filesCount: (n: Text) => `${n} 个`,
   noFiles: '还没有文件。拍一张或上传 PDF。',
+  noFilesReadOnly: '还没有文件。',
   removeFileNamed: (name: Text) => `移除${name}`,
   takePhoto: '拍照 / 扫描',
   uploadFile: '上传文件',
