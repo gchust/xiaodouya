@@ -295,6 +295,25 @@ export const migrations: readonly string[] = [
   ALTER TABLE shares ADD CONSTRAINT shares_moment_ids_check
     CHECK ((kind = 'moments') = (moment_ids IS NOT NULL));
   `,
+  // 家人自己的证件夹（F-137）。records.owner_id、readers 由服务端从记录的 owner、sharedWith 写入，
+  // 同步、导出、取文件链接都按它们过滤，不再解析 JSON。media.owner_id 是 personal 文件的主人。
+  // owner_id 故意不引用 users：删除账号时 ON DELETE SET NULL 会把私人证件变成全家的。
+  // 回填只为了万一：这之前服务端不认识 owner，但 looseObject 会原样存下客户端写的字段。
+  `
+  ALTER TABLE records ADD COLUMN owner_id UUID, ADD COLUMN readers UUID[];
+  CREATE INDEX records_owned ON records(family_id) WHERE owner_id IS NOT NULL;
+  CREATE INDEX records_owner ON records(owner_id) WHERE owner_id IS NOT NULL;
+  UPDATE records SET owner_id = (data->>'owner')::uuid
+    WHERE collection = 'document' AND jsonb_typeof(data->'owner') = 'string'
+      AND data->>'owner' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  ALTER TABLE media DROP CONSTRAINT media_scope_check;
+  ALTER TABLE media ADD CONSTRAINT media_scope_check
+    CHECK (scope IN ('memory', 'document', 'avatar', 'personal'));
+  ALTER TABLE media ADD COLUMN owner_id UUID;
+  ALTER TABLE media ADD CONSTRAINT media_personal_owner_check
+    CHECK ((scope = 'personal') = (owner_id IS NOT NULL));
+  CREATE INDEX media_owner ON media(owner_id) WHERE owner_id IS NOT NULL;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

@@ -12,7 +12,7 @@ export const DOCUMENT_THUMB_MAX_SIDE = 256;
  * 回忆和头像的缩略图要在时间线上铺满一行，证件的只放在卡片上，而且不能看清小字。
  */
 export function thumbnailSize(scope: MediaScope): { maxSide: number; width?: number } {
-  if (scope === 'document') return { maxSide: DOCUMENT_THUMB_MAX_SIDE };
+  if (scope === 'document' || scope === 'personal') return { maxSide: DOCUMENT_THUMB_MAX_SIDE };
   return { maxSide: 1440, width: 720 };
 }
 

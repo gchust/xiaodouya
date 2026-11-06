@@ -10,6 +10,9 @@ const timestamp = z.number().int().nonnegative();
 const shortText = z.string().max(200);
 const longText = z.string().max(20_000);
 
+/** 一份家人自己的证件最多给多少位家人看（F-137）。 */
+export const MAX_DOCUMENT_READERS = 50;
+
 /** 一条记录最多带多少个文件。改大之前要想到旧版 App：校验不过的记录它们显示不出来。 */
 export const MAX_MEDIA_PER_RECORD = 100;
 
@@ -226,6 +229,13 @@ export const DocumentData = z.looseObject({
   issuedOn: shortText.optional(),
   expiresOn: shortText.optional(),
   files: z.array(MediaRef).max(MAX_MEDIA_PER_RECORD),
+  /**
+   * 家人自己的证件（F-137）：本人的账号 id。没有这个字段的是宝宝的证件。
+   * 不加 catch：格式不对时整条校验失败（不显示、服务端不收），不能把私人证件当成全家的。
+   */
+  owner: z.uuid().optional(),
+  /** 本人选的能看的家人。格式不对只丢这一项，结果是谁都不给看，不会多给人看。 */
+  sharedWith: z.array(z.uuid()).max(MAX_DOCUMENT_READERS).optional().catch(undefined),
 });
 export type DocumentData = z.infer<typeof DocumentData>;
 
@@ -303,12 +313,22 @@ export function canWriteCollection(role: Role, _collection: Collection): boolean
   return role !== 'viewer';
 }
 
-export const mediaScopes = ['memory', 'document', 'avatar'] as const;
+/**
+ * `personal` 是家人自己的证件里的文件（F-137），只有本人和本人选的家人能取链接，见 canReadOwnedMedia。
+ * 旧服务端不认识它，会拒绝上传：服务端要先于新版 App 部署。
+ */
+export const mediaScopes = ['memory', 'document', 'avatar', 'personal'] as const;
 export const MediaScope = z.enum(mediaScopes);
 export type MediaScope = z.infer<typeof MediaScope>;
 
+/** 只看角色。私人证件的文件还要按本人的设置判断，见 canReadOwnedMedia。 */
 export function canReadMediaScope(role: Role, scope: MediaScope): boolean {
-  return role !== 'viewer' || scope !== 'document';
+  return role !== 'viewer' || (scope !== 'document' && scope !== 'personal');
+}
+
+/** 证件类的文件：宝宝的和家人自己的。链接有效期、不走 CDN、缩略图大小都一样。 */
+export function isDocumentScope(scope: MediaScope): boolean {
+  return scope === 'document' || scope === 'personal';
 }
 
 // ─── 同步 ───────────────────────────────────────────────────
@@ -471,7 +491,7 @@ export type MediaVariant = z.infer<typeof MediaVariant>;
 /** 上传白名单：其他类型一律拒绝，避免存储被当成任意文件托管。 */
 export function isAllowedMime(mime: string, scope: MediaScope): boolean {
   const lower = mime.toLowerCase();
-  if (scope === 'document') return lower.startsWith('image/') || lower === 'application/pdf';
+  if (isDocumentScope(scope)) return lower.startsWith('image/') || lower === 'application/pdf';
   if (scope === 'avatar') return lower.startsWith('image/');
   return lower.startsWith('image/') || lower.startsWith('video/') || lower.startsWith('audio/');
 }
@@ -610,6 +630,11 @@ export interface PublicConfig {
   emailVerification: boolean;
   /** 反馈问题。旧服务器没有这个字段，App 当作不可用。 */
   feedback?: FeedbackConfig;
+  /**
+   * 服务端认识家人自己的证件（F-137）。旧服务端不按 owner 过滤，私人证件会发给全家，
+   * 所以 App 只有看到它才让人新建自己的证件。
+   */
+  personalDocuments?: boolean;
 }
 
 export interface ApiError {

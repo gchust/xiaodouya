@@ -6,7 +6,7 @@ export type MediaCategory = 'image' | 'video' | 'audio' | 'document';
 
 /** 证件不管是照片还是 PDF 都算证件，和用量页的分类一致。 */
 export function mediaCategory(mime: string, scope: MediaScope): MediaCategory {
-  if (scope === 'document') return 'document';
+  if (scope === 'document' || scope === 'personal') return 'document';
   const lower = mime.toLowerCase();
   if (lower.startsWith('video/')) return 'video';
   if (lower.startsWith('audio/')) return 'audio';

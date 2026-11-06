@@ -52,6 +52,16 @@ export async function enqueueCancelledUpload(
   );
 }
 
+/** 删除账号时这个人的私人证件文件（F-137）。必须在删除 media 记录的事务里调用，并且在删除之前。 */
+export async function enqueueMediaObjects(
+  tx: Tx,
+  ids: readonly string[],
+  uploadUrlTtlSeconds: number,
+): Promise<void> {
+  if (ids.length === 0) return;
+  await enqueueObjects(tx, tx`m.id = ANY(${[...ids]}::uuid[])`, uploadUrlTtlSeconds);
+}
+
 async function enqueueObjects(
   tx: Tx,
   where: ReturnType<Tx>,
