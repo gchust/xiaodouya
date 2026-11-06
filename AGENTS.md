@@ -122,6 +122,7 @@ App 不是医疗器械，健康内容错了会伤人。
 - 看合并能不能做，看 `CI 结果` 这一个 job：该跑的没跑也是红的。
 - 不要在 CI 运行中推送同一分支，除非已知这轮会失败：新推送会取消正在跑的 Android 流程。
 - E2E 只在模拟器断开时整组从头重跑一次（判断在 `scripts/e2e-env-failure.mjs`，见 `e2e/README.md`），断言失败、找不到元素不重跑。`CI 结果` 的摘要写着每组重跑了几次、adb 断开了几次：重跑了要看原因，不能当没发生，也不能为了变绿放宽这个判断。
+- 自动发版（`.github/workflows/auto-release.yml`，仓库变量 `AUTO_RELEASE_ENABLED` 是 `true` 时生效）每 4 小时看一次：上一个标签之后合并过不全是文档的 PR、CI 通过，就部署后端并发 APK。**开启后合并到 `main` 就等于几小时内上线**，合并前要确认能直接给用户用，也要确认服务端和 App 的上线顺序没问题（同一次发版里总是先部署后端）。不想跟着发的改动先别合并，或者先暂停，见 `docs/DEPLOYMENT.md` 的“自动发版”。
 - **加 E2E 流程时要在 `e2e/groups.json` 里分配分组**，否则 `pnpm check` 失败。规则见 `e2e/README.md`。
 - 加了新的打进 App 的环境变量：`EXPO_PUBLIC_*` 自动进缓存键，其他名字要加进 `scripts/apk-key.mjs` 的 `BUILD_ENV`，否则 `pnpm check` 失败。
 - 提交信息用 Conventional Commits（`feat:`、`fix:`、`docs:`、`test:`、`ci:`、`chore:`），一个提交只做一件事。
