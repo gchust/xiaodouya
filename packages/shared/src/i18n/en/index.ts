@@ -8,6 +8,7 @@ import { family } from './family';
 import { feedback } from './feedback';
 import { health } from './health';
 import { info } from './info';
+import { money } from './money';
 import { nutritionUi } from './nutritionUi';
 import { recall } from './recall';
 import { records } from './records';
@@ -29,6 +30,7 @@ export const en: Catalog = {
   recall,
   auth,
   nutritionUi,
+  money,
   records,
   share,
   today,

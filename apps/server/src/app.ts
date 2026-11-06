@@ -42,6 +42,7 @@ import {
   formatBytes,
   isAllowedMime,
   isFormulaData,
+  isMoneyData,
   isReleaseKey,
   isVaccinePlanData,
   type Locale,
@@ -1831,6 +1832,8 @@ export function createApp({
       if (isFormulaData(r.data)) return false;
       // 配置疫苗本不是一条记录，不通知。
       if (isVaccinePlanData(r.data)) return false;
+      // 小金库记的是钱，不是照护记录，也没有 at；就算以后的版本带上 at 也不通知。
+      if (isMoneyData(r.data)) return false;
       // 补记很久以前的记录不打扰家人。
       return now - (r.data as EventData).at < 3_600_000;
     });

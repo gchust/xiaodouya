@@ -138,4 +138,5 @@ export const SG: RegionDefinition = localized({
   ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
+  money: { currency: 'SGD', categories: ['red-packet', 'birthday', 'holiday', 'gift', 'other'] },
 });

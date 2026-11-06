@@ -30,6 +30,8 @@ export const confirm: Catalog['confirm'] = {
   documentFileBody: 'It will be taken out of this document, and no one in the family will see it.',
   formula: (name) => `Delete the formula "${name}"?`,
   formulaBody: "Feeds you already logged aren't affected. It just won't be offered for new feeds.",
+  money: 'Delete this entry?',
+  moneyBody: 'Once deleted, no one in the family will see it, and the balance will change.',
   vaccinePlan: (name) => `Remove ${name} from the plan?`,
   vaccinePlanBody: "Only the plan entry goes. Doses you already recorded aren't affected.",
   member: (name) => `Remove ${name} from the family?`,

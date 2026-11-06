@@ -456,6 +456,64 @@ describe('同步', () => {
     expect(guessed.json.records).toEqual([]);
   });
 
+  it('小金库的记录能同步，修改后写胜出，删除是软删除；viewer 读不到也不能写', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const id = randomUUID();
+    const data = {
+      type: 'money',
+      flow: 'in',
+      amountMinor: 60_000,
+      currency: 'CNY',
+      happenedAt: 1000,
+      from: '虚构的爷爷',
+      category: 'lunar-new-year',
+      byName: '爸爸',
+    };
+    const change = { id, collection: 'event' as const, data, deleted: false, updatedAt: 1000 };
+    expect((await sync(admin.token, 0, [change])).json.rejected).toEqual([]);
+    // 同一条再提交一次（离线重试）不会多出一条
+    expect((await sync(admin.token, 0, [change])).json.rejected).toEqual([]);
+    const seen = await sync(mom.token, 0);
+    expect(seen.json.records.filter((r) => r.id === id)).toHaveLength(1);
+    expect(seen.json.records.find((r) => r.id === id)?.data).toEqual(data);
+
+    // 一起记录的家人改了金额，后写胜出；旧版本的改动被拒，服务端补发新版本
+    const edited = { ...data, amountMinor: 80_000, future: 'kept' };
+    expect(
+      (await sync(mom.token, 0, [{ ...change, data: edited, updatedAt: 2000 }])).json.rejected,
+    ).toEqual([]);
+    const stale = await sync(admin.token, 0, [{ ...change, updatedAt: 1500 }]);
+    expect(stale.json.records.find((r) => r.id === id)?.data).toEqual(edited);
+
+    const view = await sync(grandma.token, 0);
+    expect(view.json.records).toEqual([]);
+    const forbidden = await sync(grandma.token, 0, [{ ...change, id: randomUUID() }]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+    // 猜到 id 提交改动，也不能把小金库补发出来
+    const guessed = await sync(grandma.token, 0, [{ ...change, updatedAt: 1 }]);
+    expect(guessed.json.records).toEqual([]);
+
+    await sync(admin.token, 0, [{ ...change, data: edited, deleted: true, updatedAt: 3000 }]);
+    const after = await sync(mom.token, 0);
+    expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
+  });
+
+  it('小金库的金额只收整数最小单位，格式不对整条被拒', async () => {
+    const { admin } = await newFamily();
+    const base = { type: 'money', flow: 'in', currency: 'CNY', happenedAt: 1000 };
+    const bad = [12.5, 0, -1].map((amountMinor) => ({
+      id: randomUUID(),
+      collection: 'event' as const,
+      data: { ...base, amountMinor },
+      deleted: false,
+      updatedAt: 1000,
+    }));
+    const result = await sync(admin.token, 0, bad);
+    expect(result.json.rejected.map((r) => r.reason)).toEqual(['invalid', 'invalid', 'invalid']);
+  });
+
   it('删除奶粉是软删除，能同步给其他设备', async () => {
     const { admin } = await newFamily();
     const id = randomUUID();
@@ -1037,6 +1095,28 @@ describe('推送', () => {
         collection: 'event',
         // 就算以后的版本给配置带上了时间，也不能当成一条新记录通知。
         data: { type: 'vaccine-plan', vaccineId: 'sg:hepb-1', hidden: true, at: Date.now() },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await flush();
+    expect(pushes).toEqual([]);
+  });
+  it('记小金库不是一条照护记录，不打扰家人，哪怕带着 at', async () => {
+    const { admin } = await familyWithToken();
+    const money = { type: 'money', flow: 'in', amountMinor: 100, currency: 'SGD' };
+    await sync(admin.token, 0, [
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { ...money, happenedAt: Date.now() },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { ...money, happenedAt: Date.now(), at: Date.now() },
         deleted: false,
         updatedAt: Date.now(),
       },

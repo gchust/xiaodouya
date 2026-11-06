@@ -159,6 +159,43 @@ export function isFormulaData(data: unknown): data is FormulaData {
   return (data as { type?: unknown } | null)?.type === 'formula';
 }
 
+/** 一笔钱最多多少（最小单位）。人民币是 100 亿元，远超家里会记的数，又在安全整数以内。 */
+export const MAX_MONEY_MINOR = 1_000_000_000_000;
+
+export const moneyFlows = ['in', 'out'] as const;
+export type MoneyFlow = (typeof moneyFlows)[number];
+
+/**
+ * 小金库的一笔（issue #90）：谁给了宝宝多少钱，或者拿出多少（存进银行、花掉）。只是记账，不碰真实的钱。
+ *
+ * 放在 `event` 集合而不是新集合，理由和奶粉配置一样（docs/ARCHITECTURE.md 的“小金库”）：旧版 App 校验不过，
+ * 保留但不显示；viewer 和喂奶一样读不到也写不了。日期放在 `happenedAt` 而不是 `at`：旧版 App 的横幅、
+ * 服务端推送和分享页都按 `at` 认“一条记录”，带上 `at` 会提示“记录了 undefined”。
+ *
+ * 金额是币种最小单位的整数（分、美分；日元就是日元），不用浮点。币种是 ISO 4217 代码，这个版本不认识的
+ * 币种也保留，按两位小数显示。`flow` 不认识时整条不显示：不能猜它让余额变多还是变少。
+ * 可选项格式不对只丢这一项。
+ */
+export const MoneyData = z.looseObject({
+  type: z.literal('money'),
+  flow: z.enum(moneyFlows),
+  amountMinor: z.number().int().positive().max(MAX_MONEY_MINOR),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  /** 哪天的事：今天记的是保存那一刻，补记以前的是那天的当地中午（时区差几个小时也还是同一天）。 */
+  happenedAt: timestamp,
+  /** 谁给的，用户填的原文，不翻译。只对收到的有意义。 */
+  from: shortText.optional().catch(undefined),
+  /** 场合或用途的 id（`lunar-new-year`、`bank`），名字在 regions/moneyCategories.ts。不认识的不显示。 */
+  category: z.string().max(64).optional().catch(undefined),
+  note: shortText.optional().catch(undefined),
+  byName: shortText.optional().catch(undefined),
+});
+export type MoneyData = z.infer<typeof MoneyData>;
+
+export function isMoneyData(data: unknown): data is MoneyData {
+  return (data as { type?: unknown } | null)?.type === 'money';
+}
+
 export const MomentData = z.looseObject({
   title: shortText,
   text: longText,
@@ -211,7 +248,7 @@ export type BabyData = z.infer<typeof BabyData>;
 
 export const collectionSchemas = {
   baby: BabyData,
-  event: z.union([EventData, FormulaData, VaccinePlanData]),
+  event: z.union([EventData, FormulaData, VaccinePlanData, MoneyData]),
   moment: MomentData,
   letter: LetterData,
   document: DocumentData,
@@ -222,7 +259,7 @@ export type Collection = (typeof collections)[number];
 
 export interface CollectionData {
   baby: BabyData;
-  event: EventData | FormulaData | VaccinePlanData;
+  event: EventData | FormulaData | VaccinePlanData | MoneyData;
   moment: MomentData;
   letter: LetterData;
   document: DocumentData;

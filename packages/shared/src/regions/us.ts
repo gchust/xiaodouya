@@ -1,6 +1,7 @@
 import { defineSchedule } from '../domain/vaccines';
 import { nutritionReferenceIom } from '../health/nutritionReferences';
 import { L, localized } from '../i18n';
+import { genericMoneyInCategoryIds } from './moneyCategories';
 import type { RegionDefinition } from './types';
 
 /**
@@ -347,4 +348,5 @@ export const US: RegionDefinition = localized({
   ),
   defaultUnits: { volume: 'oz', temperature: 'f', weight: 'lb', length: 'in' },
   paperSize: 'Letter',
+  money: { currency: 'USD', categories: genericMoneyInCategoryIds },
 });

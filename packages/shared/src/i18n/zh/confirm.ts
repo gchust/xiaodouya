@@ -31,6 +31,8 @@ export const confirm = {
   documentFileBody: '移除后，这份资料里就没有这个文件了，全家都看不到。',
   formula: (name: Text) => `删除奶粉“${name}”？`,
   formulaBody: '已经记下的喂奶不受影响，以后记喂奶时选不到它了。',
+  money: '删除这一笔？',
+  moneyBody: '删除后，全家都看不到这一笔了，余额也跟着变。',
   vaccinePlan: (name: Text) => `从计划里移除${name}？`,
   vaccinePlanBody: '只从疫苗本里拿掉这一项，已经记下的接种不受影响。',
   member: (name: Text) => `把${name}移出家庭？`,

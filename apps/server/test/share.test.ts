@@ -438,6 +438,15 @@ describe('公开接口：白名单', () => {
         at: FROM + HOUR,
       }),
       changeOf('event', { type: 'formula', name: '没有时间的配置', basis: 'per100ml', values: {} }),
+      changeOf('event', {
+        type: 'money',
+        flow: 'in',
+        amountMinor: 60_000,
+        currency: 'SGD',
+        happenedAt: FROM + HOUR,
+        from: '虚构的小金库',
+        at: FROM + HOUR,
+      }),
       changeOf('event', { type: 'bath', at: FROM + HOUR }),
     ]);
     const { token } = await shareToken(admin.token, {
@@ -448,6 +457,7 @@ describe('公开接口：白名单', () => {
     expect(result.json.events).toEqual([{ at: FROM + HOUR, type: 'bath' }]);
     expect(result.text).not.toContain('虚构奶粉配置');
     expect(result.text).not.toContain('没有时间的配置');
+    expect(result.text).not.toContain('虚构的小金库');
   });
 });
 
