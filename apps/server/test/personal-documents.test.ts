@@ -351,6 +351,12 @@ describe('文件的签名链接', () => {
     const s = await setup();
     const mine = await urlsFor(s.mom.token, [s.sharedFile, s.privateFile]);
     expect(mine.every((u) => u.url !== null && u.expiresIn > 0 && u.expiresIn <= 600)).toBe(true);
+    // 不只看服务端自己报的数字：签进链接里的有效期也不超过 10 分钟。
+    for (const u of mine) {
+      expect(Number(new URL(u.url ?? '').searchParams.get('X-Amz-Expires'))).toBeLessThanOrEqual(
+        600,
+      );
+    }
     const dad = await urlsFor(s.admin.token, [s.sharedFile, s.privateFile]);
     expect(dad.filter((u) => u.id === s.sharedFile).every((u) => u.url !== null)).toBe(true);
     expect(dad.filter((u) => u.id === s.privateFile).every((u) => u.url === null)).toBe(true);
