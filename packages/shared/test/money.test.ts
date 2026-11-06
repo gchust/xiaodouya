@@ -7,6 +7,7 @@ import {
   describeMoney,
   formatMoney,
   giverSuggestions,
+  isMoneyCategory,
   isMoneyData,
   lastUsedCurrency,
   MAX_MONEY_MINOR,
@@ -254,6 +255,7 @@ describe('场合按地区', () => {
       for (const flow of ['in', 'out'] as const) {
         const ids = moneyCategoriesFor(region, flow);
         expect(ids.at(-1)).toBe('other');
+        for (const id of ids) expect(isMoneyCategory(id, flow)).toBe(true);
         for (const id of ids) {
           expect(withLocale('zh', () => moneyCategoryLabel(id))).toMatch(/\S/);
           expect(withLocale('en', () => moneyCategoryLabel(id))).toMatch(/^[\x20-\x7e]+$/);
