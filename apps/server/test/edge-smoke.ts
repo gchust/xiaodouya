@@ -225,8 +225,9 @@ async function mainFlow(runtime: Runtime) {
   );
 
   const oldEmail = `edge-old-${randomUUID().slice(0, 8)}@example.test`;
+  const memberId = randomUUID();
   await sql`INSERT INTO users (id, email, password_hash, display_name)
-    VALUES (${randomUUID()}, ${oldEmail}, ${await hashPassword('old password')}, '虚构用户')`;
+    VALUES (${memberId}, ${oldEmail}, ${await hashPassword('old password')}, '虚构用户')`;
   const oldLogin = await request<Auth>(base, 'POST', '/v1/auth/login', {
     body: { email: oldEmail, password: 'old password' },
   });
@@ -388,6 +389,84 @@ async function mainFlow(runtime: Runtime) {
     Buffer.from(await docThumbDownload.arrayBuffer()).equals(docThumbBytes),
     '证件缩略图下载内容和上传一致',
   );
+
+  // 家人自己的证件（F-137）：没被选中的人同步只收到删除标记、拿不到文件，本人能拿到。
+  console.log('家人自己的证件：同步过滤、文件权限');
+  const personalId = randomUUID();
+  const personalUpload = await request<{ url: string; headers: Record<string, string> }>(
+    base,
+    'POST',
+    '/v1/media/upload-url',
+    {
+      token: member,
+      body: {
+        id: personalId,
+        scope: 'personal',
+        variant: 'thumb',
+        mime: 'image/jpeg',
+        size: docThumbBytes.length,
+      },
+    },
+  );
+  check(personalUpload.status === 200, '自己的证件文件能申请上传链接');
+  await fetch(personalUpload.json.url, {
+    method: 'PUT',
+    headers: personalUpload.json.headers,
+    body: docThumbBytes,
+  });
+  await request(base, 'POST', `/v1/media/${personalId}/complete`, {
+    token: member,
+    body: { variant: 'thumb' },
+  });
+  const personalDoc = randomUUID();
+  const personalFile = { id: personalId, kind: 'image', mime: 'image/jpeg', size: 1 };
+  const personalWrite = await request<{ rejected: unknown[] }>(base, 'POST', '/v1/sync', {
+    token: member,
+    body: {
+      cursor: 0,
+      changes: [
+        {
+          id: personalDoc,
+          collection: 'document',
+          data: {
+            name: '身份证',
+            number: 'S0000000Z',
+            files: [personalFile],
+            owner: memberId,
+            sharedWith: [],
+          },
+          deleted: false,
+          updatedAt: Date.now(),
+        },
+      ],
+    },
+  });
+  check(
+    personalWrite.status === 200 && personalWrite.json.rejected.length === 0,
+    '本人写入自己的证件',
+  );
+  const ownerPull = await request<{ records: { id: string; deleted: boolean; data: unknown }[] }>(
+    base,
+    'POST',
+    '/v1/sync',
+    { token: owner, body: { cursor: 0, changes: [] } },
+  );
+  const stub = ownerPull.json.records.find((r) => r.id === personalDoc);
+  check(
+    stub?.deleted === true &&
+      stub.data === null &&
+      !JSON.stringify(ownerPull.json).includes('S0000000Z'),
+    '没被选中的家人只收到删除标记',
+  );
+  const personalUrls = async (token: string) =>
+    (
+      await request<{ urls: { url: string | null }[] }>(base, 'POST', '/v1/media/urls', {
+        token,
+        body: { items: [{ id: personalId, variant: 'thumb' }] },
+      })
+    ).json.urls[0]?.url ?? null;
+  check((await personalUrls(owner)) === null, '没被选中的家人拿不到文件链接');
+  check((await personalUrls(member)) !== null, '本人拿得到文件链接');
 
   // 开始、列分片、完成都要解析存储返回的 XML，单个 PUT 用不到这条路径，所以要单独跑一遍。
   console.log('分片上传：开始、断点查询、完成、取消（SDK 解析 XML）');

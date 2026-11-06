@@ -9,6 +9,7 @@ export * from './domain/mediaRefs';
 export * from './domain/milestones';
 export * from './domain/money';
 export * from './domain/multipart';
+export * from './domain/personalDocuments';
 export * from './domain/recordTime';
 export * from './domain/storage';
 export * from './domain/tapGuard';

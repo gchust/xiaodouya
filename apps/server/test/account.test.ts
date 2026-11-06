@@ -90,6 +90,7 @@ describe('邮件配置', () => {
       passwordReset: true,
       emailVerification: true,
       feedback,
+      personalDocuments: true,
     });
     const off = await call<PublicConfig>(plainApp, 'GET', '/v1/config');
     expect(off.status).toBe(200);
@@ -98,6 +99,7 @@ describe('邮件配置', () => {
       passwordReset: false,
       emailVerification: false,
       feedback,
+      personalDocuments: true,
     });
   });
 

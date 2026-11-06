@@ -3,8 +3,6 @@ import {
   type BabyData,
   birthMeasuresFromInput,
   birthMeasureText,
-  type DocumentData,
-  documentCover,
   doseStatus,
   dosesToBackfill,
   type EventData,
@@ -30,7 +28,6 @@ import {
   type VaccineStatus,
   vaccineStatuses,
 } from '@xiaodouya/shared';
-import * as Crypto from 'expo-crypto';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
@@ -39,28 +36,25 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
-import { fileBadge } from '../lib/mediaUtils';
-import { DocumentThumb } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { DocAddSheet } from '../sheets/documentSheets';
 import { openMoneySheet, useLocalCurrency } from '../sheets/moneySheets';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets';
 import { colors, spacing } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
+import { DocumentCard } from '../ui/DocumentCard';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
   Button,
-  Chip,
   Dot,
   ListCard,
   Mono,
   Muted,
   PageTitle,
-  PressScale,
   Row,
   SectionTitle,
   SoftInput,
-  Stripes,
 } from '../ui/primitives';
 import { RegionPicker } from '../ui/RegionPicker';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
@@ -80,6 +74,8 @@ export function InfoScreen() {
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
   if (!baby) return <SyncingPlaceholder />;
+  // 家人自己的证件（F-137）在家人页，这里只有宝宝的。
+  const babyDocs = documents.filter((d) => !d.data.owner);
   const docWidth = gridItemWidth(windowWidth - spacing.page * 2, 2, DOC_GAP);
   const now = Date.now();
   const birthAt = baby.data.birthAt;
@@ -187,37 +183,19 @@ export function InfoScreen() {
             <Text style={s.link}>{t().nutritionUi.addLink}</Text>
           </Pressable>
         </View>
-        {documents.length === 0 ? (
+        {babyDocs.length === 0 ? (
           <Muted style={{ fontSize: 13, lineHeight: 20 }}>{t().info.docsEmpty}</Muted>
         ) : (
           <View style={s.docGrid}>
-            {documents.map((d) => {
-              return (
-                <PressScale
-                  key={d.id}
-                  testID={`doc-card-${d.data.name}`}
-                  accessibilityLabel={d.data.name}
-                  scaleTo={0.97}
-                  style={[s.docCard, { width: docWidth }]}
-                  onPress={() => router.push({ pathname: '/doc/[id]', params: { id: d.id } })}
-                >
-                  <DocCover name={d.data.name} files={d.data.files} locked={prefs.documentLock} />
-                  <Text style={s.docName} numberOfLines={1}>
-                    {d.data.name}
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      color: d.data.files.length ? colors.muted : colors.accent,
-                    }}
-                  >
-                    {d.data.files.length
-                      ? t().info.fileCount(d.data.files.length)
-                      : t().info.toUpload}
-                  </Text>
-                </PressScale>
-              );
-            })}
+            {babyDocs.map((d) => (
+              <DocumentCard
+                key={d.id}
+                data={d.data}
+                width={docWidth}
+                locked={prefs.documentLock}
+                onPress={() => router.push({ pathname: '/doc/[id]', params: { id: d.id } })}
+              />
+            ))}
           </View>
         )}
         <Muted style={{ fontSize: 11 }}>{t().info.docsPrivate}</Muted>
@@ -418,42 +396,6 @@ function PiggyBankSection() {
         </ListCard>
       )}
     </View>
-  );
-}
-
-/**
- * 证件卡片的上半部分：第一张照片的缩略图，一眼认得出是哪张证件。PDF 和拿不到缩略图时是类型标记，PDF 再加文件名。
- * 打开了证件夹指纹锁时只显示标记：资料页不在锁后面，不能在这里露出证件的样子。
- */
-function DocCover({
-  name,
-  files,
-  locked,
-}: {
-  name: string;
-  files: DocumentData['files'];
-  locked: boolean;
-}) {
-  const cover = documentCover(files);
-  const pdfName = cover?.media.kind === 'pdf' ? cover.media.name : undefined;
-  return (
-    <Stripes style={s.docThumb}>
-      <Mono weight="medium" style={{ fontSize: 10, color: colors.muted }}>
-        {cover ? fileBadge(cover.media) : t().info.emptyDoc}
-      </Mono>
-      {pdfName ? (
-        <Text numberOfLines={1} style={s.docFileName}>
-          {pdfName}
-        </Text>
-      ) : null}
-      {cover?.kind === 'thumb' && !locked ? (
-        <DocumentThumb
-          media={cover.media}
-          testID={`doc-thumb-${name}`}
-          style={StyleSheet.absoluteFill}
-        />
-      ) : null}
-    </Stripes>
   );
 }
 
@@ -820,47 +762,6 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
   );
 }
 
-function DocAddSheet() {
-  const app = useApp();
-  const sheet = useSheet();
-  const router = useRouter();
-  const region = useRegion();
-  const [name, setName] = useState('');
-  return (
-    <>
-      <View style={s.docChips}>
-        {region.documentSuggestions.map((v) => (
-          <Chip
-            key={v}
-            label={v}
-            selected={name === v}
-            onPress={() => setName(v)}
-            testID={`doc-chip-${v}`}
-          />
-        ))}
-      </View>
-      <SoftInput
-        testID="doc-name"
-        value={name}
-        onChangeText={setName}
-        placeholder={t().info.docName}
-        maxLength={100}
-      />
-      <Button
-        testID="doc-create"
-        label={t().info.createAndAdd}
-        disabled={!name.trim()}
-        onPress={() => {
-          const id = Crypto.randomUUID();
-          void app.write('document', { name: name.trim(), files: [] }, id);
-          sheet.close();
-          router.push({ pathname: '/doc/[id]', params: { id } });
-        }}
-      />
-    </>
-  );
-}
-
 const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, paddingBottom: 28, gap: 24 },
@@ -881,25 +782,6 @@ const s = StyleSheet.create({
   hiddenLink: { alignSelf: 'flex-end', paddingVertical: 2 },
   subTitle: { fontSize: 13, fontWeight: '500', color: colors.ink, marginTop: 4 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
-  docCard: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 12,
-    gap: 6,
-  },
-  docThumb: {
-    height: 88,
-    borderRadius: 8,
-    overflow: 'hidden',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-  },
-  docFileName: { fontSize: 10, color: colors.muted, maxWidth: '100%' },
-  docName: { fontSize: 13, color: colors.ink },
   chart: {
     flexDirection: 'row',
     backgroundColor: colors.card,
@@ -930,5 +812,4 @@ const s = StyleSheet.create({
     borderRadius: 12,
     gap: 4,
   },
-  docChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 });

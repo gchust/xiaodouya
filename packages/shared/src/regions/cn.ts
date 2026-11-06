@@ -505,6 +505,16 @@ export const CN: RegionDefinition = localized({
       'Medical receipt',
     ],
   ),
+  personalDocumentSuggestions: L<readonly string[]>(
+    ['身份证', '护照', '驾驶证', '医保卡', '户口本'],
+    [
+      'ID card',
+      'Passport',
+      "Driver's license",
+      'Medical insurance card',
+      'Household register (hukou)',
+    ],
+  ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
   money: {

@@ -43,6 +43,8 @@ export interface RegionDefinition {
   /** 没有的地区，接种弹层里不出现这个入口。 */
   optionalVaccines?: OptionalVaccines;
   documentSuggestions: readonly string[];
+  /** 家人自己的证件（F-137）的建议名称：大人常用的当地证件。 */
+  personalDocumentSuggestions: readonly string[];
   /** 每日营养的参考量用哪张表。本地原文没核对时写清楚，界面会显示这句话。 */
   nutrition: NutritionReferenceUse;
   defaultUnits: Units;

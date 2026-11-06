@@ -19,9 +19,11 @@ import {
   canReadCollection,
   canReadMediaScope,
   canWriteCollection,
+  canWriteDocument,
   cleanFeedbackText,
   collections,
   DeleteAccountRequest,
+  type DocumentData,
   defaultPrefs,
   describeEvent,
   EMAIL_CODE_COOLDOWN_SECONDS,
@@ -41,6 +43,7 @@ import {
   feedbackAttachmentLimit,
   formatBytes,
   isAllowedMime,
+  isDocumentScope,
   isFormulaData,
   isMoneyData,
   isReleaseKey,
@@ -80,6 +83,7 @@ import {
   ReleaseManifest,
   ResetPasswordRequest,
   type Role,
+  rawDocumentOwner,
   type SendEmailCodeResponse,
   type ServerRecord,
   SHARE_TIMELINE_MAX_AHEAD_MS,
@@ -141,8 +145,18 @@ import { isQuietHour, type Notifier, noopNotifier, type PushMessage } from './no
 import {
   enqueueCancelledUpload,
   enqueueFamilyObjects,
+  enqueueMediaObjects,
   processPendingDeletions,
 } from './objectDeletions';
+import {
+  eraseOwnedDocuments,
+  type MediaAccessRow,
+  type OwnedRecordRow,
+  projectForViewer,
+  readableOwnedMedia,
+  resequenceOwned,
+  visibleForExport,
+} from './personalDocuments';
 import {
   countedBytes,
   familyQuotaBytes,
@@ -348,15 +362,7 @@ async function allowAttempt(sql: Sql, key: string, limit: number, windowMs: numb
   return (row?.count ?? 0) <= limit;
 }
 
-interface RecordRow {
-  id: string;
-  collection: ServerRecord['collection'];
-  data: unknown;
-  deleted: boolean;
-  updated_at_client: string;
-  seq: string;
-  created_by: string | null;
-}
+type RecordRow = OwnedRecordRow;
 
 const toServerRecord = (r: RecordRow): ServerRecord => ({
   id: r.id,
@@ -434,6 +440,7 @@ export function createApp({
         attachmentDays: config.feedback ? config.feedbackAttachmentDays : null,
         publicAttachments: Boolean(config.feedback && config.serverStorage && config.publicApiUrl),
       },
+      personalDocuments: true,
     }),
   );
 
@@ -1028,6 +1035,24 @@ export function createApp({
         { family_id: string }[]
       >`SELECT family_id FROM memberships WHERE user_id = ${user.id}`;
       if (mine) {
+        await tx`SELECT id FROM families WHERE id = ${mine.family_id} FOR UPDATE`;
+        const members = await tx<{ user_id: string; role: Role }[]>`
+          SELECT user_id, role FROM memberships WHERE family_id = ${mine.family_id}`;
+        if (
+          accountDeletionOutcome(
+            user.id,
+            members.map((m) => ({ userId: m.user_id, role: m.role })),
+          ) === 'blocked_only_admin'
+        ) {
+          return 'blocked_only_admin' as const;
+        }
+      }
+      // 自己的证件（F-137）只属于这个账号，不留给家庭：内容立即删掉，文件进待删除队列。
+      // 被移出过的家庭里的也算。要在删除家庭之前：家庭删了就不知道这些文件是谁的了。
+      const ownFiles = await eraseOwnedDocuments(tx, user.id);
+      await enqueueMediaObjects(tx, ownFiles, UPLOAD_URL_TTL);
+      if (ownFiles.length > 0) await tx`DELETE FROM media WHERE id = ANY(${ownFiles}::uuid[])`;
+      if (mine) {
         // 锁住家庭再看成员：两个人同时删除时，不锁的话都以为对方还在，
         // 会留下没有管理员的家庭，或者没有成员、文件再也删不掉的家庭。
         await tx`SELECT id FROM families WHERE id = ${mine.family_id} FOR UPDATE`;
@@ -1339,10 +1364,16 @@ export function createApp({
     >`SELECT id, name FROM families WHERE id = ${m.familyId}`;
     const members = await sql<{ user_id: string; label: string; role: Role }[]>`
       SELECT user_id, label, role FROM memberships WHERE family_id = ${m.familyId} ORDER BY created_at`;
-    const records = await sql<RecordRow[]>`
-      SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
-      WHERE family_id = ${m.familyId} AND NOT deleted AND collection = ANY(${readable})
-      ORDER BY seq`;
+    const records = await visibleForExport(
+      sql,
+      m.familyId,
+      { userId: user.id, role: m.role },
+      await sql<RecordRow[]>`
+        SELECT id, collection, data, deleted, updated_at_client, seq, created_by, owner_id, readers
+        FROM records
+        WHERE family_id = ${m.familyId} AND NOT deleted AND collection = ANY(${readable})
+        ORDER BY seq`,
+    );
     // 字段逐个列出，不用 SELECT *：object_key 和存储配置不能出现在导出文件里。
     const media = await sql<
       {
@@ -1353,10 +1384,18 @@ export function createApp({
         size: string;
         filename: string | null;
         created_at: Date;
+        owner_id: string | null;
+        uploaded_by: string | null;
       }[]
-    >`SELECT id, variant, scope, mime, size, filename, created_at FROM media
+    >`SELECT id, variant, scope, mime, size, filename, created_at, owner_id, uploaded_by FROM media
       WHERE family_id = ${m.familyId} AND status = 'ready' AND unreferenced_at IS NULL
       ORDER BY created_at, id, variant`;
+    const ownedMedia = await readableOwnedMedia(
+      sql,
+      m.familyId,
+      { userId: user.id, role: m.role },
+      media,
+    );
     const now = new Date();
     const stamp = now.toISOString().slice(0, 10).replaceAll('-', '');
     c.header('content-disposition', `attachment; filename="xiaodouya-export-${stamp}.json"`);
@@ -1378,6 +1417,7 @@ export function createApp({
       })),
       media: media
         .filter((r) => canReadMediaScope(m.role, r.scope))
+        .filter((r) => !isDocumentScope(r.scope) || ownedMedia.has(r.id))
         .map((r) => ({
           id: r.id,
           variant: r.variant,
@@ -1437,6 +1477,9 @@ export function createApp({
       if (!invite) return null;
       await tx`INSERT INTO memberships (family_id, user_id, role, label, last_seen_at)
                VALUES (${invite.family_id}, ${user.id}, ${invite.role}, ${invite.label}, now())`;
+      // 回到原来的家庭：自己的证件（F-137）离开时对别人藏起来了，现在重新发给选过的家人。
+      await tx`SELECT id FROM families WHERE id = ${invite.family_id} FOR UPDATE`;
+      await resequenceOwned(tx, invite.family_id, user.id);
       return invite;
     });
     if (!joined) fail(404, 'invalid_invite', '邀请码无效或已过期');
@@ -1468,7 +1511,11 @@ export function createApp({
     await assertNotLastAdmin(m.familyId, target);
     await sql.begin(async (tx) => {
       await revokeSharesBy(tx, m.familyId, target);
+      await tx`SELECT id FROM families WHERE id = ${m.familyId} FOR UPDATE`;
       await tx`DELETE FROM memberships WHERE family_id = ${m.familyId} AND user_id = ${target}::uuid`;
+      // 离开家庭的人的证件（F-137）谁都看不到了，记录和文件留着（回来后接着用，删除账号时才删）。
+      // 换新的 seq，家人的手机收到删除标记，把缓存的那份删掉。
+      await resequenceOwned(tx, m.familyId, target);
       // 移除后立刻让对方的登录失效，避免继续读取家庭数据的缓存链接。
       await tx`DELETE FROM sessions WHERE user_id = ${target}::uuid`;
     });
@@ -1676,8 +1723,9 @@ export function createApp({
               collection: string;
               deleted: boolean;
               data: unknown;
+              owner_id: string | null;
             }[]
-          >`SELECT family_id, updated_at_client, collection, deleted, data FROM records WHERE id = ${change.id}`;
+          >`SELECT family_id, updated_at_client, collection, deleted, data, owner_id FROM records WHERE id = ${change.id}`;
           if (
             existing &&
             (existing.family_id !== m.familyId || existing.collection !== change.collection)
@@ -1685,6 +1733,26 @@ export function createApp({
             // id 由客户端生成，不能让它覆盖别的家庭或别的集合的数据。
             rejected.push({ id: change.id, reason: 'forbidden' });
             continue;
+          }
+          // 家人自己的证件（F-137）。删除时也要看：删除不校验内容，带着 owner 的删除标记不能当成全家的。
+          let ownerId: string | null = null;
+          let readers: string[] | null = null;
+          if (change.collection === 'document') {
+            const incoming = rawDocumentOwner(data);
+            if (!incoming.ok) {
+              rejected.push({ id: change.id, reason: 'invalid' });
+              conflicted.push(change.id);
+              continue;
+            }
+            if (
+              !canWriteDocument(existing ? existing.owner_id : undefined, incoming.owner, user.id)
+            ) {
+              rejected.push({ id: change.id, reason: 'forbidden' });
+              conflicted.push(change.id);
+              continue;
+            }
+            ownerId = incoming.owner;
+            if (ownerId && !change.deleted) readers = (data as DocumentData).sharedWith ?? [];
           }
           // 时间相同视为同一版本（离线重试），保持幂等。
           if (existing && change.updatedAt <= Number(existing.updated_at_client)) {
@@ -1723,16 +1791,19 @@ export function createApp({
             WHERE id = ${m.familyId} RETURNING seq`;
           const json = tx.json(payload as never);
           const [row] = await tx<RecordRow[]>`
-            INSERT INTO records (id, family_id, collection, data, deleted, updated_at_client, seq, created_by, updated_by)
-            VALUES (${change.id}, ${m.familyId}, ${change.collection}, ${json}, ${change.deleted}, ${change.updatedAt}, ${seq}, ${user.id}, ${user.id})
+            INSERT INTO records (id, family_id, collection, data, deleted, updated_at_client, seq, created_by, updated_by, owner_id, readers)
+            VALUES (${change.id}, ${m.familyId}, ${change.collection}, ${json}, ${change.deleted}, ${change.updatedAt}, ${seq}, ${user.id}, ${user.id}, ${ownerId}, ${readers}::uuid[])
             ON CONFLICT (id) DO UPDATE SET
               data = EXCLUDED.data,
               deleted = EXCLUDED.deleted,
               updated_at_client = EXCLUDED.updated_at_client,
               seq = EXCLUDED.seq,
-              updated_by = EXCLUDED.updated_by
-            RETURNING id, collection, data, deleted, updated_at_client, seq, created_by`;
-          if (row && !existing && !change.deleted) created.push(toServerRecord(row));
+              updated_by = EXCLUDED.updated_by,
+              owner_id = EXCLUDED.owner_id,
+              readers = EXCLUDED.readers
+            RETURNING id, collection, data, deleted, updated_at_client, seq, created_by, owner_id, readers`;
+          if (row && !existing && !change.deleted && !row.owner_id)
+            created.push(toServerRecord(row));
           const nowUsing = change.deleted ? [] : uuidsIn(payloadJson);
           for (const id of nowUsing) referenced.add(id);
           if (existing && !existing.deleted) {
@@ -1772,14 +1843,17 @@ export function createApp({
     // 游标比服务端还新，只可能是从旧备份恢复过：seq 退回去了。从头发一遍，否则这台手机会漏掉之后的记录。
     const fromCursor = body.cursor > upperBound ? 0 : body.cursor;
     const rows = await sql<RecordRow[]>`
-      SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
+      SELECT id, collection, data, deleted, updated_at_client, seq, created_by, owner_id, readers
+      FROM records
       WHERE family_id = ${m.familyId} AND seq > ${fromCursor} AND seq <= ${upperBound}
         AND collection = ANY(${readable})
       ORDER BY seq LIMIT ${SYNC_PAGE_SIZE + 1}`;
     const hasMore = rows.length > SYNC_PAGE_SIZE;
     const page = rows.slice(0, SYNC_PAGE_SIZE);
     const cursor = hasMore ? Number(page[page.length - 1]?.seq ?? fromCursor) : upperBound;
-    const records = page.map(toServerRecord);
+    // 别人的私人证件（F-137）看不到的只发删除标记，见 personalDocuments.ts。旧版 App 也走这里。
+    const viewer = { userId: user.id, role: m.role };
+    const records = await projectForViewer(sql, m.familyId, viewer, page);
     if (conflicted.length > 0) {
       // 客户端手里的版本没有生效，而服务端版本可能已在游标之前，必须显式补发。
       // 一定要按可读集合过滤，否则 viewer 能用猜到的 id 读到证件。
@@ -1787,10 +1861,11 @@ export function createApp({
       const missing = conflicted.filter((id) => !seen.has(id));
       if (missing.length > 0) {
         const extra = await sql<RecordRow[]>`
-          SELECT id, collection, data, deleted, updated_at_client, seq, created_by FROM records
+          SELECT id, collection, data, deleted, updated_at_client, seq, created_by, owner_id, readers
+          FROM records
           WHERE family_id = ${m.familyId} AND id = ANY(${missing}::uuid[])
             AND collection = ANY(${readable})`;
-        records.push(...extra.map(toServerRecord));
+        records.push(...(await projectForViewer(sql, m.familyId, viewer, extra)));
       }
     }
     return c.json<SyncResponse>({ cursor, hasMore, records, rejected, role: m.role });
@@ -1901,7 +1976,7 @@ export function createApp({
   };
 
   /** 单个 PUT 和分片上传共用的准入检查。 */
-  const admitUpload = async (m: { familyId: string }, body: UploadUrlRequest) => {
+  const admitUpload = async (m: { familyId: string }, userId: string, body: UploadUrlRequest) => {
     if (!isAllowedMime(body.mime, body.scope)) fail(400, 'bad_type', '不支持这种文件类型');
     // 分享页拿预览顶替原图发给陌生人，它只能是图片。
     if (body.variant === 'preview' && !body.mime.toLowerCase().startsWith('image/')) {
@@ -1914,10 +1989,22 @@ export function createApp({
     if (body.size > maxBytes) {
       fail(413, 'too_large', `文件太大了，这种文件最大 ${formatBytes(maxBytes)}`, { maxBytes });
     }
-    const [existing] = await sql<
-      { family_id: string; status: string }[]
-    >`SELECT family_id, status FROM media WHERE id = ${body.id} AND variant = ${body.variant}`;
+    // 同一个 id 的几个变体要属于同一个人：别人不能往私人证件的文件 id 下面传东西，也不能抢先占用。
+    const siblings = await sql<
+      {
+        variant: string;
+        family_id: string;
+        status: string;
+        owner_id: string | null;
+        scope: string;
+      }[]
+    >`SELECT variant, family_id, status, owner_id, scope FROM media WHERE id = ${body.id}`;
+    const existing = siblings.find((r) => r.variant === body.variant);
     if (existing && existing.family_id !== m.familyId) fail(403, 'forbidden', '没有权限');
+    const owner = body.scope === 'personal' ? userId : null;
+    if (siblings.some((r) => r.owner_id !== owner || (r.owner_id && r.scope !== body.scope))) {
+      fail(403, 'forbidden', '没有权限');
+    }
     if (existing?.status === 'ready') fail(409, 'already_uploaded', '文件已经上传过了');
 
     const storage = await activeStorage(sql, config, m.familyId);
@@ -1969,8 +2056,8 @@ export function createApp({
       const uploadId = reusable ? previous.upload_id : null;
       const partSize = reusable ? previous.upload_part_size : null;
       await tx`
-        INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by, upload_id, upload_part_size)
-        VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${userId}, ${uploadId}, ${partSize})
+        INSERT INTO media (id, variant, family_id, scope, mime, size, filename, object_key, storage_config_id, uploaded_by, upload_id, upload_part_size, owner_id)
+        VALUES (${body.id}, ${body.variant}, ${m.familyId}, ${body.scope}, ${body.mime}, ${body.size}, ${body.filename ?? null}, ${key}, ${storage.configId}, ${userId}, ${uploadId}, ${partSize}, ${body.scope === 'personal' ? userId : null})
         ON CONFLICT (id, variant) DO UPDATE SET
           mime = EXCLUDED.mime, size = EXCLUDED.size, filename = EXCLUDED.filename,
           object_key = EXCLUDED.object_key, storage_config_id = EXCLUDED.storage_config_id,
@@ -2022,7 +2109,7 @@ export function createApp({
     const m = requireUploader(c);
     await limitUploadUrls(c);
     const body = await parseBody(c, UploadUrlRequest);
-    const { storage, key } = await admitUpload(m, body);
+    const { storage, key } = await admitUpload(m, c.get('user').id, body);
     const { stale } = await reserveUpload(m, c.get('user').id, body, storage, key, {
       keepMultipart: false,
     });
@@ -2094,9 +2181,11 @@ export function createApp({
         object_key: string;
         storage_config_id: string | null;
         status: string;
+        owner_id: string | null;
       }[]
-    >`SELECT family_id, size, object_key, storage_config_id, status FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
+    >`SELECT family_id, size, object_key, storage_config_id, status, owner_id FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
     if (!row || row.family_id !== m.familyId) fail(404, 'not_found', '找不到这个文件');
+    if (row.owner_id && row.owner_id !== c.get('user').id) fail(403, 'forbidden', '没有权限');
     if (row.status === 'ready') return c.json({ ok: true });
     const storage = await reachableStorage(m.familyId, row.storage_config_id);
     return finalizeUpload(c, m, id, variant, row, storage);
@@ -2114,7 +2203,11 @@ export function createApp({
   };
 
   /** 新版接口对别的家庭返回 403，和 upload-url 一致。没有这一行时返回 null。 */
-  const multipartRow = async (m: { familyId: string }, id: string, variant: string) => {
+  const multipartRow = async (
+    m: { familyId: string; userId: string },
+    id: string,
+    variant: string,
+  ) => {
     const [row] = await sql<
       {
         family_id: string;
@@ -2125,11 +2218,14 @@ export function createApp({
         upload_id: string | null;
         upload_part_size: number | null;
         reservation_expired: boolean;
+        owner_id: string | null;
       }[]
     >`SELECT family_id, size, object_key, storage_config_id, status, upload_id, upload_part_size,
-        reserved_at < now() - interval '1 hour' * ${RESERVATION_HOURS} AS reservation_expired
+        reserved_at < now() - interval '1 hour' * ${RESERVATION_HOURS} AS reservation_expired, owner_id
       FROM media WHERE id = ${id}::uuid AND variant = ${variant}`;
     if (row && row.family_id !== m.familyId) fail(403, 'forbidden', '没有权限');
+    // 私人证件的文件只有本人能接着传。
+    if (row?.owner_id && row.owner_id !== m.userId) fail(403, 'forbidden', '没有权限');
     return row ?? null;
   };
 
@@ -2141,7 +2237,7 @@ export function createApp({
     const m = requireUploader(c);
     await limitUploadUrls(c);
     const body = await parseBody(c, MultipartStartRequest);
-    const { storage, key } = await admitUpload(m, body);
+    const { storage, key } = await admitUpload(m, c.get('user').id, body);
     if (!config.multipartEnabled) fail(501, 'multipart_unsupported', '这个存储不支持分片上传');
     const reserved = await reserveUpload(m, c.get('user').id, body, storage, key, {
       keepMultipart: true,
@@ -2171,7 +2267,11 @@ export function createApp({
       RETURNING upload_id`;
     if (claimed) return c.json<MultipartStartResponse>({ uploadId, partSize });
     await abortMultipart(storage, key, uploadId).catch(() => {});
-    const winner = await multipartRow(m, body.id, body.variant);
+    const winner = await multipartRow(
+      { familyId: m.familyId, userId: c.get('user').id },
+      body.id,
+      body.variant,
+    );
     if (!winner?.upload_id || !winner.upload_part_size) return uploadGone();
     return c.json<MultipartStartResponse>({
       uploadId: winner.upload_id,
@@ -2183,7 +2283,7 @@ export function createApp({
     const m = requireUploader(c);
     const id = mediaIdParam(c);
     const { variant, uploadId } = await parseBody(c, MultipartRef);
-    const row = await multipartRow(m, id, variant);
+    const row = await multipartRow({ familyId: m.familyId, userId: c.get('user').id }, id, variant);
     if (!row) return uploadGone();
     if (row.status === 'ready')
       return c.json<MultipartPartsResponse>({ parts: [], complete: true });
@@ -2213,7 +2313,7 @@ export function createApp({
     const m = requireUploader(c);
     const id = mediaIdParam(c);
     const { variant, uploadId, partNumbers } = await parseBody(c, MultipartPartUrlsRequest);
-    const row = await multipartRow(m, id, variant);
+    const row = await multipartRow({ familyId: m.familyId, userId: c.get('user').id }, id, variant);
     if (!row) return uploadGone();
     if (row.status === 'ready') fail(409, 'already_uploaded', '文件已经上传过了');
     if (row.upload_id !== uploadId || !row.upload_part_size) return uploadGone();
@@ -2264,7 +2364,7 @@ export function createApp({
     const m = requireUploader(c);
     const id = mediaIdParam(c);
     const { variant, uploadId } = await parseBody(c, MultipartRef);
-    const row = await multipartRow(m, id, variant);
+    const row = await multipartRow({ familyId: m.familyId, userId: c.get('user').id }, id, variant);
     if (!row) return uploadGone();
     if (row.status === 'ready') return c.json({ ok: true });
     if (row.upload_id !== uploadId || !row.upload_part_size) return uploadGone();
@@ -2308,9 +2408,12 @@ export function createApp({
     const m = requireUploader(c);
     const id = mediaIdParam(c);
     const rows = await sql<
-      { family_id: string }[]
-    >`SELECT family_id FROM media WHERE id = ${id}::uuid`;
+      { family_id: string; owner_id: string | null }[]
+    >`SELECT family_id, owner_id FROM media WHERE id = ${id}::uuid`;
     if (rows.some((r) => r.family_id !== m.familyId)) fail(403, 'forbidden', '没有权限');
+    if (rows.some((r) => r.owner_id && r.owner_id !== c.get('user').id)) {
+      fail(403, 'forbidden', '没有权限');
+    }
     const removed = await sql.begin(async (tx) => {
       await enqueueCancelledUpload(tx, m.familyId, id, UPLOAD_URL_TTL);
       const deleted = await tx`
@@ -2335,21 +2438,30 @@ export function createApp({
     if (body.items.length === 0) return c.json<MediaUrlsResponse>({ urls: [] });
     const ids = [...new Set(body.items.map((i) => i.id))];
     const rows = await sql<
-      {
-        id: string;
+      (MediaAccessRow & {
         variant: MediaVariant;
-        scope: 'memory' | 'document' | 'avatar';
         object_key: string;
         storage_config_id: string | null;
-      }[]
-    >`SELECT id, variant, scope, object_key, storage_config_id FROM media
+      })[]
+    >`SELECT id, variant, scope, object_key, storage_config_id, owner_id, uploaded_by FROM media
       WHERE family_id = ${m.familyId} AND status = 'ready' AND id = ANY(${ids}::uuid[])`;
     const lookup = new Map(rows.map((r) => [`${r.id}/${r.variant}`, r]));
+    // 证件类的文件还要看私人证件（F-137）的设置：每次现查，撤销后马上拿不到新链接。
+    const owned = await readableOwnedMedia(
+      sql,
+      m.familyId,
+      { userId: c.get('user').id, role: m.role },
+      rows,
+    );
     const storages = new Map<string, ResolvedStorage | null>();
     const urls: MediaUrlsResponse['urls'] = [];
     for (const item of body.items) {
       const row = lookup.get(`${item.id}/${item.variant}`);
-      if (!row || !canReadMediaScope(m.role, row.scope)) {
+      if (
+        !row ||
+        !canReadMediaScope(m.role, row.scope) ||
+        (isDocumentScope(row.scope) && !owned.has(row.id))
+      ) {
         urls.push({ ...item, url: null, expiresIn: 0 });
         continue;
       }
@@ -2362,7 +2474,7 @@ export function createApp({
         urls.push({ ...item, url: null, expiresIn: 0 });
         continue;
       }
-      if (row.scope !== 'document' && storage.publicBaseUrl) {
+      if (!isDocumentScope(row.scope) && storage.publicBaseUrl) {
         // 只有回忆走 CDN；证件永远不走公开地址。
         urls.push({
           ...item,
@@ -2371,7 +2483,7 @@ export function createApp({
         });
         continue;
       }
-      const ttl = row.scope === 'document' ? DOCUMENT_URL_TTL : MEMORY_URL_TTL;
+      const ttl = isDocumentScope(row.scope) ? DOCUMENT_URL_TTL : MEMORY_URL_TTL;
       urls.push({
         ...item,
         url: await presignDownload(storage, row.object_key, ttl),
@@ -2496,7 +2608,7 @@ export function createApp({
     if (m.role === 'viewer') fail(403, 'forbidden', '你只能查看回忆和照片', { reason: 'viewer' });
     const rows = await sql<{ category: string; total: string }[]>`
       SELECT CASE
-          WHEN scope = 'document' THEN 'document'
+          WHEN scope IN ('document', 'personal') THEN 'document'
           WHEN mime LIKE 'video/%' THEN 'video'
           WHEN mime LIKE 'audio/%' THEN 'audio'
           ELSE 'image' END AS category,

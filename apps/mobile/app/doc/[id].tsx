@@ -4,10 +4,10 @@ import { DocumentScreen } from '../../src/screens/DocumentScreen';
 import { StatusBarScrim } from '../../src/ui/StatusBarScrim';
 
 export default function DocumentRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
   return (
     <>
-      <DocumentScreen id={id} />
+      <DocumentScreen id={id} from={from === 'family' ? 'family' : undefined} />
       <StatusBarScrim />
     </>
   );

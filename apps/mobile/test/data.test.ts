@@ -1205,3 +1205,44 @@ describe('疫苗本的家庭配置', () => {
     expect(store.getSnapshot().vaccinePlans).toEqual([]);
   });
 });
+
+describe('家人自己的证件（F-137）', () => {
+  const owner = randomUUID();
+  const doc = (data: unknown, id: string, updatedAt: number, deleted = false): ServerRecord => ({
+    id,
+    collection: 'document',
+    data,
+    deleted,
+    updatedAt,
+    seq: 1,
+    createdBy: null,
+  });
+
+  it('不再给我看时服务端发来没有内容的删除标记：缓存的那份马上消失，手机上不留证件号', async () => {
+    const db = new MemoryDb();
+    const store = new RecordStore(db);
+    await store.load();
+    const id = randomUUID();
+    const data = { name: '身份证', number: 'S0000000Z', files: [], owner, sharedWith: [] };
+    await store.applySyncResult([], [doc(data, id, 1000)], new Set(), 1);
+    expect(store.getSnapshot().documents.map((d) => d.data.owner)).toEqual([owner]);
+    await store.applySyncResult([], [doc(null, id, 2000, true)], new Set(), 2);
+    expect(store.getSnapshot().documents).toEqual([]);
+    const reloaded = new RecordStore(db);
+    await reloaded.load();
+    expect(reloaded.getSnapshot().documents).toEqual([]);
+    expect(JSON.stringify(await db.loadAll())).not.toContain('S0000000Z');
+  });
+
+  it('owner 格式不对的整条不显示，不会当成宝宝的证件', async () => {
+    const store = new RecordStore(new MemoryDb());
+    await store.load();
+    await store.applySyncResult(
+      [],
+      [doc({ name: '身份证', files: [], owner: 'nobody' }, randomUUID(), 1000)],
+      new Set(),
+      1,
+    );
+    expect(store.getSnapshot().documents).toEqual([]);
+  });
+});

@@ -34,6 +34,10 @@ export const OTHER: RegionDefinition = localized({
       'Medical receipt',
     ],
   ),
+  personalDocumentSuggestions: L<readonly string[]>(
+    ['身份证件', '护照', '驾照', '保险单', '医疗收据'],
+    ['ID card', 'Passport', 'Driving licence', 'Insurance policy', 'Medical receipt'],
+  ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
   money: { categories: genericMoneyInCategoryIds },

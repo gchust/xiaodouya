@@ -12,8 +12,11 @@ appId: com.gchust.xiaodouya
     visible: { id: tab-family }
     timeout: 30000
 - tapOn: { id: tab-family }
+# 家人页多了“家人的证件”（F-137）后，这一行可能停在屏幕底边、说明文字被切掉。
+# 它下面只有两行，滚不到中间，所以滚到最下面的“删除账号”，整行就都在屏幕里了。
 - scrollUntilVisible:
-    element: { id: open-feedback }
+    element: { id: delete-account }
+- assertVisible: { id: open-feedback }
 - assertVisible: 遇到问题或有想法，告诉开发者
 - tapOn: { id: open-feedback }
 - extendedWaitUntil:

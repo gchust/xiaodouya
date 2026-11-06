@@ -1,5 +1,6 @@
 import {
   type DocumentData,
+  documentKind,
   formatBytes,
   MAX_MEDIA_PER_RECORD,
   type MediaRef,
@@ -23,6 +24,7 @@ import {
   takePhoto,
 } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
+import { DocumentReadersSheet, readersText } from '../sheets/documentSheets';
 import { colors, fonts, spacing } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -41,7 +43,7 @@ import {
 
 const FILE_GAP = 8;
 
-export function DocumentScreen({ id }: { id: string }) {
+export function DocumentScreen({ id, from }: { id: string; from?: 'family' }) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const app = useApp();
@@ -56,6 +58,14 @@ export function DocumentScreen({ id }: { id: string }) {
   const [preparing, setPreparing] = useState<'scan' | 'upload' | null>(null);
   const confirmDelete = useDeleteConfirm();
   const entry = documents.find((d) => d.id === id);
+  const userId = app.me?.user.id ?? null;
+  const members = app.me?.members ?? [];
+  // 家人自己的证件（F-137）：自己的多一行“谁能看”，别人给我看的只读。只读只是界面，服务端也拒绝别人的修改。
+  const kind = entry ? documentKind(entry.data, userId) : from === 'family' ? 'mine' : 'family';
+  const readOnly = kind === 'shared';
+  // 成员列表可能还没刷新：找不到称呼时不写名字，不能把账号 id 露出来。
+  const ownerLabel = members.find((m) => m.userId === entry?.data.owner)?.label ?? null;
+  const fromFamily = from === 'family' || kind !== 'family';
 
   const authenticate = async () => {
     setAuthFailed(false);
@@ -84,11 +94,11 @@ export function DocumentScreen({ id }: { id: string }) {
     <Pressable
       testID="doc-back"
       accessibilityRole="button"
-      accessibilityLabel={t().info.backToInfo}
+      accessibilityLabel={fromFamily ? t().info.backToFamily : t().info.backToInfo}
       hitSlop={12}
       onPress={() => router.back()}
     >
-      <Text style={s.back}>{t().info.backInfoLink}</Text>
+      <Text style={s.back}>{fromFamily ? t().info.backFamilyLink : t().info.backInfoLink}</Text>
     </Pressable>
   );
 
@@ -96,7 +106,10 @@ export function DocumentScreen({ id }: { id: string }) {
     return (
       <View style={[s.root, { paddingTop: insets.top + 8, paddingHorizontal: spacing.page }]}>
         {back}
-        <Empty title={t().info.docGone} sub={t().info.docGoneSub} />
+        <Empty
+          title={t().info.docGone}
+          sub={fromFamily ? t().info.docGoneSharedSub : t().info.docGoneSub}
+        />
       </View>
     );
   }
@@ -126,7 +139,7 @@ export function DocumentScreen({ id }: { id: string }) {
       throw new Error(t().info.docTooMany(MAX_MEDIA_PER_RECORD));
     }
     const { refs, failed } = await queueAllForUpload(app.uploads, files, {
-      scope: 'document',
+      scope: kind === 'mine' ? 'personal' : 'document',
       videoWifiOnly: false,
     });
     if (refs.length > 0) {
@@ -169,6 +182,9 @@ export function DocumentScreen({ id }: { id: string }) {
       ? data.number
       : `${data.number.slice(0, 3)}•••••${data.number.slice(-1)}`
     : t().info.notFilled;
+
+  const openEdit = () =>
+    sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />);
 
   const openFile = (file: MediaRef) => {
     if (file.kind === 'pdf') {
@@ -213,31 +229,44 @@ export function DocumentScreen({ id }: { id: string }) {
             label={t().info.issueDate}
             value={data.issuedOn || t().info.notFilled}
             testID="doc-issued"
-            onPress={() =>
-              sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
-            }
+            onPress={readOnly ? undefined : openEdit}
           />
           <Row
             label={t().info.expiry}
             value={data.expiresOn || t().info.notFilled}
-            last
-            onPress={() =>
-              sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
-            }
+            last={kind !== 'mine'}
+            onPress={readOnly ? undefined : openEdit}
           />
+          {kind === 'mine' ? (
+            <Row
+              label={t().info.whoCanView}
+              testID="doc-readers"
+              accessibilityLabel={t().info.whoCanViewA11y}
+              value={readersText(data, userId, members)}
+              last
+              onPress={() =>
+                sheet.open(t().info.whoCanView, () => <DocumentReadersSheet id={id} data={data} />)
+              }
+            />
+          ) : null}
         </ListCard>
-        <Pressable
-          testID="doc-edit"
-          accessibilityRole="button"
-          accessibilityLabel={t().info.editDoc}
-          hitSlop={{ top: 8, bottom: 20 }}
-          onPress={() =>
-            sheet.open(t().info.editDoc, () => <DocumentEditSheet id={id} data={data} />)
-          }
-          style={{ marginTop: -12 }}
-        >
-          <Text style={{ fontSize: 12, color: colors.accent }}>{t().info.editDocLink}</Text>
-        </Pressable>
+        {readOnly ? (
+          <Muted testID="doc-read-only" style={{ fontSize: 12, lineHeight: 19, marginTop: -8 }}>
+            {ownerLabel ? t().info.sharedReadOnly(ownerLabel) : t().info.sharedReadOnlyUnknown}
+          </Muted>
+        ) : null}
+        {readOnly ? null : (
+          <Pressable
+            testID="doc-edit"
+            accessibilityRole="button"
+            accessibilityLabel={t().info.editDoc}
+            hitSlop={{ top: 8, bottom: 20 }}
+            onPress={openEdit}
+            style={{ marginTop: -12 }}
+          >
+            <Text style={{ fontSize: 12, color: colors.accent }}>{t().info.editDocLink}</Text>
+          </Pressable>
+        )}
 
         <View style={{ gap: 8 }}>
           <View style={s.fileHead}>
@@ -246,7 +275,7 @@ export function DocumentScreen({ id }: { id: string }) {
           </View>
           {data.files.length === 0 ? (
             <Text style={{ fontSize: 13, color: colors.muted, paddingVertical: 14 }}>
-              {t().info.noFiles}
+              {readOnly ? t().info.noFilesReadOnly : t().info.noFiles}
             </Text>
           ) : (
             <View style={s.files}>
@@ -283,18 +312,20 @@ export function DocumentScreen({ id }: { id: string }) {
                         sensitive
                         testID={`doc-file-download-${file.name ?? file.id}`}
                       />
-                      <Pressable
-                        testID={`doc-file-remove-${file.name ?? file.id}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={t().info.removeFileNamed(file.name ?? t().info.aFile)}
-                        // 左边紧挨着下载按钮（它的热区是 12），这边不能再往左扩，否则会点错。
-                        hitSlop={{ top: 14, bottom: 14, left: 4, right: 14 }}
-                        onPress={() => void removeFile(file)}
-                      >
-                        <Text style={{ fontSize: 11, color: colors.muted }}>
-                          {t().common.remove}
-                        </Text>
-                      </Pressable>
+                      {readOnly ? null : (
+                        <Pressable
+                          testID={`doc-file-remove-${file.name ?? file.id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={t().info.removeFileNamed(file.name ?? t().info.aFile)}
+                          // 左边紧挨着下载按钮（它的热区是 12），这边不能再往左扩，否则会点错。
+                          hitSlop={{ top: 14, bottom: 14, left: 4, right: 14 }}
+                          onPress={() => void removeFile(file)}
+                        >
+                          <Text style={{ fontSize: 11, color: colors.muted }}>
+                            {t().common.remove}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 </View>
@@ -303,50 +334,56 @@ export function DocumentScreen({ id }: { id: string }) {
           )}
         </View>
 
-        <View style={s.actions}>
-          <Button
-            testID="doc-scan"
-            tone="outline"
-            height={52}
-            label={t().info.takePhoto}
-            labelStyle={s.actionLabel}
-            busy={preparing === 'scan'}
-            disabled={preparing === 'upload'}
-            style={{ flex: 1, borderRadius: 14 }}
-            onPress={() => void guard('scan', takePhoto)()}
-          />
-          <Button
-            testID="doc-upload"
-            height={52}
-            label={t().info.uploadFile}
-            labelStyle={s.actionLabel}
-            busy={preparing === 'upload'}
-            disabled={preparing === 'scan'}
-            style={{ flex: 1, borderRadius: 14 }}
-            onPress={() => void guard('upload', pickDocument)()}
-          />
-        </View>
-        <Muted style={{ fontSize: 11, lineHeight: 18 }}>{t().info.fileTypesNote}</Muted>
-        <Button
-          testID="doc-delete"
-          tone="ghost"
-          height={44}
-          label={t().info.deleteDoc}
-          onPress={() =>
-            confirmDelete(
-              { kind: 'document', name: data.name },
-              () => {
-                void app.remove(id);
-                sheet.close();
-                router.back();
-                toast(t().info.deletedNamed(data.name), {
-                  undo: () => void app.write('document', data, id),
-                });
-              },
-              { confirmTestID: 'doc-delete-confirm' },
-            )
-          }
-        />
+        {readOnly ? null : (
+          <>
+            <View style={s.actions}>
+              <Button
+                testID="doc-scan"
+                tone="outline"
+                height={52}
+                label={t().info.takePhoto}
+                labelStyle={s.actionLabel}
+                busy={preparing === 'scan'}
+                disabled={preparing === 'upload'}
+                style={{ flex: 1, borderRadius: 14 }}
+                onPress={() => void guard('scan', takePhoto)()}
+              />
+              <Button
+                testID="doc-upload"
+                height={52}
+                label={t().info.uploadFile}
+                labelStyle={s.actionLabel}
+                busy={preparing === 'upload'}
+                disabled={preparing === 'scan'}
+                style={{ flex: 1, borderRadius: 14 }}
+                onPress={() => void guard('upload', pickDocument)()}
+              />
+            </View>
+            <Muted style={{ fontSize: 11, lineHeight: 18 }}>
+              {kind === 'mine' ? t().info.mineNote : t().info.fileTypesNote}
+            </Muted>
+            <Button
+              testID="doc-delete"
+              tone="ghost"
+              height={44}
+              label={t().info.deleteDoc}
+              onPress={() =>
+                confirmDelete(
+                  { kind: 'document', name: data.name },
+                  () => {
+                    void app.remove(id);
+                    sheet.close();
+                    router.back();
+                    toast(t().info.deletedNamed(data.name), {
+                      undo: () => void app.write('document', data, id),
+                    });
+                  },
+                  { confirmTestID: 'doc-delete-confirm' },
+                )
+              }
+            />
+          </>
+        )}
       </ScrollView>
     </View>
   );
