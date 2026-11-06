@@ -1,0 +1,116 @@
+# 分享设置（issue #96，F-141）：家人页设置里的“分享设置”改默认有效期、时间线默认范围、对方看到的名字，
+# 分享弹层从这些默认值开始，弹层里还能临时改；建好的链接按建的时候的设置，「已分享的链接」里写着。
+# 对方打开网页时名字换没换、头像发不发，由服务端集成测试（share-settings.test.ts）和 share-web 的测试覆盖。
+# 跑完留下的变化：无，链接撤销了，设置改回默认。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+
+# ─── 设置页 ─────────────────────────────────────
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-share-settings }
+- waitForAnimationToEnd
+- assertVisible: 有效期 7 天 · 显示名字
+- tapOn: { id: open-share-settings }
+- extendedWaitUntil:
+    visible: { id: share-default-ttl-30 }
+    timeout: 10000
+# 这一组没有设置头像，开关下面说明。
+- assertVisible: 还没有设置头像，设置后才会显示
+- takeScreenshot: .artifacts/e2e-11e-settings-default
+- tapOn: { id: share-default-ttl-30 }
+- tapOn: { id: share-default-range-week }
+- tapOn: { id: share-nickname }
+- inputText: 小宝
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-11e-settings-nickname
+- scrollUntilVisible:
+    element: { id: share-settings-save }
+- tapOn: { id: share-settings-save }
+- extendedWaitUntil:
+    notVisible: { id: share-settings-save }
+    timeout: 10000
+- assertVisible: 有效期 30 天 · 显示为“小宝”
+
+# ─── 分享时间线：从默认值开始，这一次改成不显示名字 ─────
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: share-timeline }
+    timeout: 10000
+- tapOn: { id: share-timeline }
+- extendedWaitUntil:
+    visible: { id: share-display-summary }
+    timeout: 10000
+- assertVisible:
+    id: share-display-summary
+    text: 对方看到：显示为“小宝”
+# 默认范围是最近 7 天：标题是一段日期，不是“全部回忆”。
+- assertNotVisible: 全部回忆，截至 .*
+- takeScreenshot: .artifacts/e2e-11e-sheet-defaults
+- tapOn: { id: share-display-edit }
+- extendedWaitUntil:
+    visible: { id: share-show-name }
+    timeout: 5000
+- tapOn: { id: share-show-name }
+- assertNotVisible: { id: share-nickname }
+- assertVisible: 页面上写“宝宝”
+- takeScreenshot: .artifacts/e2e-11e-sheet-hidden
+- scrollUntilVisible:
+    element: { id: share-create }
+- waitForAnimationToEnd
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+
+# ─── 已分享的链接：按建的时候的设置 ─────────────────
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-shares }
+- waitForAnimationToEnd
+- tapOn: { id: open-shares }
+- extendedWaitUntil:
+    visible: { id: share-row-0 }
+    timeout: 15000
+- assertVisible:
+    id: share-row-display-0
+    text: 对方看到：不显示名字
+- takeScreenshot: .artifacts/e2e-11e-shared-links
+- tapOn: { id: share-revoke-0 }
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    visible: { id: shares-empty }
+    timeout: 15000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: shares-empty }
+    timeout: 10000
+
+# ─── 改回默认值 ───────────────────────────────────
+- scrollUntilVisible:
+    element: { id: open-share-settings }
+- tapOn: { id: open-share-settings }
+- extendedWaitUntil:
+    visible: { id: share-default-ttl-7 }
+    timeout: 10000
+- tapOn: { id: share-default-ttl-7 }
+- tapOn: { id: share-default-range-month }
+- tapOn: { id: share-nickname }
+- eraseText: 10
+- hideKeyboard
+- scrollUntilVisible:
+    element: { id: share-settings-save }
+- tapOn: { id: share-settings-save }
+- extendedWaitUntil:
+    notVisible: { id: share-settings-save }
+    timeout: 10000
+- assertVisible: 有效期 7 天 · 显示名字
+- tapOn: { id: tab-today }
