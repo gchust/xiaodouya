@@ -1,0 +1,120 @@
+# 家人自己的证件（F-137，issue #89）：管理员在家人页建自己的证件、选妈妈能看、再撤销；
+# 妈妈（流程 05 加入的、一起记录的家人）由脚本扮演，走真实接口：给管理员看一份、自己留一份，
+# 并核对撤销前后从同步和文件接口拿到的东西。证件号都是虚构的。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: my-doc-add }
+    direction: DOWN
+- assertVisible: 身份证、医保卡这类自己的证件也可以放在这里，只有你和你选的家人能看到。
+- takeScreenshot: .artifacts/e2e-05a-family-docs-empty
+- tapOn: { id: my-doc-add }
+- takeScreenshot: .artifacts/e2e-05a-add
+- tapOn: { id: doc-chip-护照 }
+- tapOn: { id: doc-create }
+- extendedWaitUntil:
+    visible: { id: document-screen }
+    timeout: 10000
+- assertVisible: ‹ 家人
+- assertVisible: 只有我能看
+- tapOn: { id: doc-edit }
+- tapOn: { id: doc-edit-number }
+- inputText: P1234567X
+- hideKeyboard
+- tapOn: { id: doc-edit-save }
+- assertVisible: P12•••••X
+- tapOn: { id: doc-upload }
+- extendedWaitUntil:
+    visible: sample-certificate.pdf
+    timeout: 15000
+- tapOn: { id: doc-scan }
+- extendedWaitUntil:
+    visible: 2 个
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      text: 文件都上传好了
+    timeout: 60000
+# 谁能看：只列能看证件的家人，只看回忆的外婆还没接受邀请，也不会出现
+- tapOn: { id: doc-readers }
+- extendedWaitUntil:
+    visible: { id: doc-reader-妈妈 }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-05a-readers
+- tapOn: { id: doc-reader-妈妈 }
+- tapOn: { id: doc-readers-save }
+- extendedWaitUntil:
+    visible: 妈妈能看
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-05a-mine
+- tapOn: { id: doc-back }
+# 妈妈给管理员看一份驾照，医保卡谁都不给
+- runScript:
+    file: ../helpers/mom-personal-docs.js
+    env:
+      RUN_ID: ${RUN_ID}
+      STEP: share
+- extendedWaitUntil:
+    visible: { id: doc-card-驾照 }
+    timeout: 40000
+- assertVisible: 妈妈的 · 只能查看
+- assertNotVisible: { id: doc-card-医保卡 }
+- assertVisible: 妈妈能看
+- takeScreenshot: .artifacts/e2e-05a-family-docs
+# 妈妈的证件只能看，没有修改、上传、移除、删除和“谁能看”
+- tapOn: { id: doc-card-驾照 }
+- extendedWaitUntil:
+    visible: { id: doc-read-only }
+    timeout: 10000
+- assertVisible: 这是妈妈的证件，只有妈妈能修改。
+- assertNotVisible: { id: doc-upload }
+- assertNotVisible: { id: doc-delete }
+- assertNotVisible: { id: doc-edit }
+- assertNotVisible: { id: doc-readers }
+- takeScreenshot: .artifacts/e2e-05a-shared
+- tapOn: { id: doc-back }
+# 驾照能显示出来，说明管理员“选妈妈能看”已经同步上去了：一次同步先上传本机的改动再拉取。
+- runScript:
+    file: ../helpers/mom-personal-docs.js
+    env:
+      RUN_ID: ${RUN_ID}
+      STEP: check-shared
+# 撤销
+- tapOn: { id: doc-card-护照 }
+- extendedWaitUntil:
+    visible: { id: doc-readers }
+    timeout: 10000
+- tapOn: { id: doc-readers }
+- tapOn: { id: doc-reader-妈妈 }
+- tapOn: { id: doc-readers-save }
+- extendedWaitUntil:
+    visible: 只有我能看
+    timeout: 10000
+- tapOn: { id: doc-back }
+# 妈妈删掉驾照：App 里的卡片消失时，撤销已经同步上去了。
+- runScript:
+    file: ../helpers/mom-personal-docs.js
+    env:
+      RUN_ID: ${RUN_ID}
+      STEP: unshare
+- extendedWaitUntil:
+    notVisible: { id: doc-card-驾照 }
+    timeout: 40000
+- runScript:
+    file: ../helpers/mom-personal-docs.js
+    env:
+      RUN_ID: ${RUN_ID}
+      STEP: check-revoked
+      ADMIN_FILES: ${output.adminFiles}
+- takeScreenshot: .artifacts/e2e-05a-revoked
+# 资料页的证件夹只有宝宝的
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+- assertNotVisible: { id: doc-card-护照 }

@@ -33,7 +33,7 @@ const s3 = new S3Client({
 });
 
 const rows = await sql`
-  SELECT m.id, m.variant, m.scope, m.mime, m.size, m.status, m.object_key
+  SELECT m.id, m.variant, m.scope, m.mime, m.size, m.status, m.object_key, m.owner_id, m.uploaded_by
   FROM media m
   JOIN memberships ms ON ms.family_id = m.family_id
   JOIN users u ON u.id = ms.user_id
@@ -101,6 +101,20 @@ if (expected('document')) {
     '没有证件照片的缩略图',
   );
 }
+// 家人自己的证件（F-137，流程 05a）：文件是 personal，属于上传的人（服务端按它判断谁能取链接）。
+for (const row of rows.filter((r) => r.scope === 'personal')) {
+  need(row.owner_id && row.owner_id === row.uploaded_by, `${row.object_key} 没有记下是谁的`);
+}
+if (expected('personal')) {
+  need(
+    rows.some((r) => r.scope === 'personal' && r.mime === 'application/pdf'),
+    '没有家人自己的证件 PDF',
+  );
+  need(
+    rows.some((r) => r.scope === 'personal' && r.variant === 'thumb'),
+    '没有家人自己的证件照片的缩略图',
+  );
+}
 if (expected('avatar')) {
   need(
     rows.some((r) => r.scope === 'avatar' && r.variant === 'original'),
@@ -148,7 +162,7 @@ for (const row of rows) {
     need(!found.exif && !found.gps && !found.xmp, `${row.object_key} 带着元数据`);
     need(found.appSegments === 0, `${row.object_key} 还有 ${found.appSegments} 个 APP 段`);
   }
-  if (row.scope === 'document' && row.variant === 'thumb') {
+  if ((row.scope === 'document' || row.scope === 'personal') && row.variant === 'thumb') {
     documentThumbSizes.push(jpegSize(bytes));
   }
   if (row.scope === 'avatar' && row.variant === 'original' && row.mime === 'image/jpeg') {

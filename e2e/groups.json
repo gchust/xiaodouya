@@ -61,6 +61,7 @@
         "03a_bulk_moment",
         "03b_upload_control",
         "05_family_sync",
+        "05a_personal_documents",
         "07_storage",
         "11a4_edit_moment_letter",
         "11a6_edit_document",
@@ -77,6 +78,7 @@
     "11b_share_day": ["02_records"],
     "14_media_viewer": ["03_moment_upload"],
     "14b_media_download": ["03_moment_upload", "04_documents"],
+    "05a_personal_documents": ["05_family_sync"],
     "15_member_roles": ["05_family_sync"],
     "16_region_us": ["09_growth", "10_vaccine|record-bcg"],
     "18_other_region": ["10_vaccine|record-bcg", "17_custom_dose"],
@@ -97,6 +99,7 @@
     "multipart": ["03a_bulk_moment", "03b_upload_control"],
     "preview": ["03a_bulk_moment"],
     "document": ["04_documents"],
+    "personal": ["05a_personal_documents"],
     "avatar": ["14a_avatar"],
     "feedback": ["24_feedback"]
   }
