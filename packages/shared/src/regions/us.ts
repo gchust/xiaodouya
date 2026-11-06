@@ -346,6 +346,16 @@ export const US: RegionDefinition = localized({
       'Medical receipt',
     ],
   ),
+  personalDocumentSuggestions: L<readonly string[]>(
+    ['驾照', '护照', '社会安全卡 SSN', '医疗保险卡', '保险单'],
+    [
+      "Driver's license",
+      'Passport',
+      'Social Security card (SSN)',
+      'Health insurance card',
+      'Insurance policy',
+    ],
+  ),
   defaultUnits: { volume: 'oz', temperature: 'f', weight: 'lb', length: 'in' },
   paperSize: 'Letter',
   money: { currency: 'USD', categories: genericMoneyInCategoryIds },

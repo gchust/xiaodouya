@@ -36,5 +36,5 @@ export const confirm: Catalog['confirm'] = {
   vaccinePlanBody: "Only the plan entry goes. Doses you already recorded aren't affected.",
   member: (name) => `Remove ${name} from the family?`,
   memberBody: (name) =>
-    `${name} will be signed out right away and won't see this family anymore. Links ${name} created will stop working. What ${name} recorded stays. Coming back takes a new invite.`,
+    `${name} will be signed out right away and won't see this family anymore. Links ${name} created will stop working. What ${name} recorded stays. ${name}'s own documents will no longer be visible to the family. Coming back takes a new invite.`,
 };

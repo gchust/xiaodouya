@@ -136,6 +136,10 @@ export const SG: RegionDefinition = localized({
       'Medical receipt',
     ],
   ),
+  personalDocumentSuggestions: L<readonly string[]>(
+    ['NRIC', '护照', '驾照', '保险单', '医疗收据'],
+    ['NRIC', 'Passport', 'Driving licence', 'Insurance policy', 'Medical receipt'],
+  ),
   defaultUnits: metricUnits,
   paperSize: 'A4',
   money: { currency: 'SGD', categories: ['red-packet', 'birthday', 'holiday', 'gift', 'other'] },

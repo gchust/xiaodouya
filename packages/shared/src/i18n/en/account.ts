@@ -49,7 +49,7 @@ export const account: Catalog['account'] = {
   deleteLastMember:
     "You are the last member of this family. Your account, baby profile, and all records, memories, photos, videos and documents will be permanently deleted. This can't be undone. If you want a copy, export first.",
   deleteLeave:
-    "Your account and sign-in details will be permanently deleted. This can't be undone. What you recorded and uploaded stays with the family, and they can still see it. Names and text written in that content won't change.",
+    "Your account and sign-in details will be permanently deleted. This can't be undone. What you recorded and uploaded stays with the family, and they can still see it. Names and text written in that content won't change. Your own documents are deleted right away.",
   deleteUnsynced: "This phone has content that hasn't reached the server. It will be lost too.",
   deletePassword: 'Enter your password to confirm',
   deleteConfirm: 'Permanently delete account',

@@ -48,6 +48,7 @@ import {
   Toggle,
 } from '../ui/primitives';
 import { DeleteAccountSheet, VerifyEmailSheet } from './AccountPanels';
+import { FamilyDocumentsSection } from './FamilyDocuments';
 
 export function FamilyScreen() {
   const insets = useSafeAreaInsets();
@@ -210,6 +211,8 @@ export function FamilyScreen() {
           </Pressable>
         ) : null}
       </ListCard>
+
+      {canRecord ? <FamilyDocumentsSection /> : null}
 
       {canRecord ? (
         <View style={s.section}>
