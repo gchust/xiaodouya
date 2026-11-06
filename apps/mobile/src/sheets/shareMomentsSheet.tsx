@@ -5,10 +5,10 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Share, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords } from '../lib/app';
-import { IS_E2E, SHARE_BASE_URL } from '../lib/config';
+import { SHARE_BASE_URL } from '../lib/config';
 import { deviceTimezone } from '../lib/device';
 import {
   shareLinkUrl,
@@ -18,7 +18,7 @@ import {
 } from '../lib/share';
 import { colors, fonts } from '../theme';
 import { Button, Chip, Muted } from '../ui/primitives';
-import { ShareCreated } from './shareCreated';
+import { ShareCreated, shareRightAway } from './shareCreated';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -46,9 +46,8 @@ export function ShareMomentsSheet({
   const title = shareMomentsTitle(ids, moments);
   const files = chosen.reduce((count, m) => count + m.data.media.length, 0);
 
-  const send = (url: string, linkTitle: string) => {
-    void Share.share({ message: t().share.momentsShareMessage(linkTitle, url) });
-  };
+  const messageFor = (url: string, linkTitle: string) =>
+    t().share.momentsShareMessage(linkTitle, url);
 
   const create = async () => {
     // 选好以后家人可能在别的手机上删掉了全部，这时没有可以分享的。
@@ -77,9 +76,7 @@ export function ShareMomentsSheet({
       setPending(left);
       setCreated({ id: share.id, url, title });
       onCreated?.();
-      // 还有内容没传完时先让人看到说明，由 TA 决定现在发还是等等。
-      // E2E 打不开系统分享面板，流程直接检查链接。
-      if (left.records === 0 && left.files === 0 && !IS_E2E) send(url, title);
+      shareRightAway(messageFor(url, title), left);
     } catch (error) {
       if (error instanceof ApiFailure && error.status === 0) setProblem(t().share.offline);
       else setProblem(error instanceof Error ? error.message : t().share.createFailed);
@@ -94,8 +91,8 @@ export function ShareMomentsSheet({
         id={created.id}
         url={created.url}
         title={t().share.linkTitleMoments(created.title)}
+        message={messageFor(created.url, created.title)}
         pending={pending}
-        onSend={() => send(created.url, created.title)}
       />
     );
   }

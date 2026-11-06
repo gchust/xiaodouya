@@ -30,6 +30,14 @@ export const share = {
   createdTitle: '链接已创建',
   send: '发送给别人',
   sendAgain: '再发一次',
+  // 分享到常用 App（F-139）：Android 上链接建好后的一排按钮。
+  sendToTitle: '发送到',
+  sendTo: (app: Text) => `发送到${app}`,
+  more: '更多',
+  moreA11y: '用别的 App 发送',
+  copy: '复制链接',
+  copied: '已复制',
+  sendFailed: '没能打开这个 App，可以点“更多”或复制链接。',
   revokeThis: '撤销这个链接',
   shareMessage: (date: Text, url: string) => `${date} 的成长记录：${url}`,
   pendingRecords: (count: number) =>
