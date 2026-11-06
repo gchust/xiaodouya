@@ -29,8 +29,10 @@ import { exportGrowthBook } from '../lib/book';
 import { formatLastSeen } from '../lib/dates';
 import { exportFamilyData } from '../lib/familyExport';
 import { ensureNotificationPermission } from '../lib/notifications';
+import { shareSettingsSub } from '../lib/share';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { ShareSettingsSheet, useShareDisplaySupported } from '../sheets/shareDisplay';
 import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
 import { UpdateSheet, updateRowSub } from '../sheets/updateSheet';
 import { colors, fonts, spacing } from '../theme';
@@ -60,6 +62,8 @@ export function FamilyScreen() {
   const pendingFiles = uploadProgress.total + uploadProgress.failedCount;
   const sheet = useSheet();
   const showShares = useCanShare();
+  // 旧服务端会丢掉这些设置，问到服务端认识它们才显示（F-141）。
+  const shareSettings = useShareDisplaySupported() === true;
   const router = useRouter();
   const { toast } = useFeedback();
   const now = useNow(60_000);
@@ -282,6 +286,14 @@ export function FamilyScreen() {
             sub={languageSummary(prefs.locale)}
             onPress={() => sheet.open(t().family.language, () => <LanguageSheet />)}
           />
+          {showShares && shareSettings ? (
+            <NavRow
+              testID="open-share-settings"
+              label={t().share.settingsRow}
+              sub={shareSettingsSub(prefs.share)}
+              onPress={() => sheet.open(t().share.settingsRow, () => <ShareSettingsSheet />)}
+            />
+          ) : null}
           {showShares ? (
             <NavRow
               testID="open-shares"

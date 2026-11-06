@@ -14,6 +14,8 @@ import {
   type PublicTimelineResponse,
   pickEventForShare,
   pickMomentForShare,
+  publicBabyName,
+  type ShareDisplay,
   type ShareInclude,
   type ShareKind,
   ShareUnits,
@@ -45,6 +47,10 @@ export interface ShareRow {
   units: unknown;
   /** 只有 `kind = 'moments'` 的行有。 */
   moment_ids: string[] | null;
+  /** F-141 之前和旧版 App 建的行是空值，见 `shareDisplay`。 */
+  show_name: boolean | null;
+  baby_nickname: string | null;
+  show_avatar: boolean | null;
   expires_at: Date;
   created_at: Date;
 }
@@ -55,6 +61,13 @@ export const shareInclude = (row: ShareRow): ShareInclude => ({
   health: row.include_health,
 });
 
+/** 列都是空值时和以前的链接一样：真实名字、不带头像（以前的分享页没有头像）。 */
+export const shareDisplay = (row: ShareRow): ShareDisplay => ({
+  showName: row.show_name ?? true,
+  nickname: row.baby_nickname ?? '',
+  showAvatar: row.show_avatar ?? false,
+});
+
 /**
  * 不存在、过期、撤销走同一条语句，分不出是哪一种。
  * 创建者还要是能读记录的成员：移出和降级时已经撤销了，这里是第二道，防止以后新增的路径漏掉。
@@ -63,7 +76,7 @@ export async function findActiveShare(sql: Sql, token: string): Promise<ShareRow
   const [row] = await sql<ShareRow[]>`
     SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
            s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
-           s.expires_at, s.created_at
+           s.show_name, s.baby_nickname, s.show_avatar, s.expires_at, s.created_at
     FROM shares s
     JOIN memberships m ON m.family_id = s.family_id AND m.user_id = s.created_by AND m.role <> 'viewer'
     WHERE s.token_hash = ${sha256(token)} AND s.revoked_at IS NULL AND s.expires_at > now()`;
@@ -230,6 +243,49 @@ async function familyBaby(sql: Sql, familyId: string): Promise<BabyData | null> 
 }
 
 /**
+ * 头像的签名链接（F-141）。只在创建链接时选了显示头像才签。
+ * 只签缩略图：它是从位图重新编码的，没有原图的 EXIF 和拍摄地点，也够页面顶上那一小块用；
+ * 没有缩略图（还没传完、旧版本没做出来）时不发，绝不退回原图。
+ * 和回忆的文件一样以 media 表为准：档案是客户端写的，id 可以写成回忆或别家的文件。
+ */
+async function publicAvatarUrl(
+  sql: Sql,
+  config: Config,
+  share: ShareRow,
+  baby: BabyData | null,
+): Promise<string | null> {
+  const avatarId = baby?.avatar?.id;
+  if (!avatarId) return null;
+  const [row] = await sql<MediaRow[]>`
+    SELECT id, variant, mime, object_key, storage_config_id FROM media
+    WHERE family_id = ${share.family_id} AND status = 'ready' AND scope = 'avatar'
+      AND variant = 'thumb' AND id = ${avatarId}::uuid AND mime LIKE 'image/%'`;
+  if (!row) return null;
+  try {
+    const storage = await storageById(sql, config, share.family_id, row.storage_config_id);
+    if (!storage) return null;
+    const [url] = await presignDownloads(storage, [row.object_key], PUBLIC_MEDIA_TTL);
+    return url ?? null;
+  } catch {
+    // 和回忆的文件一样：签不了就不显示头像，整页照常打开。不记原因，错误里可能带着地址。
+    console.warn('分享页：头像签不了链接');
+    return null;
+  }
+}
+
+/**
+ * 公开页面上的宝宝：名字按链接的设置换过，真实名字不出服务端。
+ * 没选头像时连 `avatarUrl` 这个字段都没有，旧链接的回答和以前一模一样。
+ */
+async function publicBaby(sql: Sql, config: Config, share: ShareRow, baby: BabyData | null) {
+  const display = shareDisplay(share);
+  return {
+    name: publicBabyName(baby?.name ?? '', display),
+    ...(display.showAvatar ? { avatarUrl: await publicAvatarUrl(sql, config, share, baby) } : {}),
+  };
+}
+
+/**
  * 公开页面的全部内容，每次现查：之后删掉的记录会从页面上消失。
  * 这里的每个字段都是逐个写出来的。要加字段先想想：拿到链接的人是谁都有可能。
  */
@@ -286,7 +342,7 @@ export async function buildPublicShare(
 
   return {
     baby: {
-      name: baby?.name ?? '',
+      ...(await publicBaby(sql, config, share, baby)),
       dayNumber: dayAge?.dayNumber ?? null,
       age: dayAge?.age ? { months: dayAge.age.months, days: dayAge.age.days } : null,
     },
@@ -434,7 +490,7 @@ export async function buildPublicTimeline(
   return {
     kind: share.kind === 'moments' ? 'moments' : 'timeline',
     baby: {
-      name: baby?.name ?? '',
+      ...(await publicBaby(sql, config, share, baby)),
       age: rangeAge ? { months: rangeAge.months, days: rangeAge.days } : null,
     },
     range: { fromAt, toAt, timezone: share.timezone },

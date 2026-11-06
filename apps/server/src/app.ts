@@ -87,6 +87,7 @@ import {
   type SendEmailCodeResponse,
   type ServerRecord,
   SHARE_TIMELINE_MAX_AHEAD_MS,
+  type ShareDisplay,
   type ShareKind,
   type ShareListResponse,
   StorageConfigInput,
@@ -171,6 +172,7 @@ import {
   buildPublicTimelineMoment,
   findActiveShare,
   type ShareRow,
+  shareDisplay,
   shareInclude,
 } from './share';
 import {
@@ -441,6 +443,7 @@ export function createApp({
         publicAttachments: Boolean(config.feedback && config.serverStorage && config.publicApiUrl),
       },
       personalDocuments: true,
+      shareDisplay: true,
     }),
   );
 
@@ -998,8 +1001,21 @@ export function createApp({
   });
 
   v1.put('/me/prefs', async (c) => {
-    const prefs = await parseBody(c, Prefs);
-    await sql`UPDATE users SET prefs = ${sql.json(prefs)} WHERE id = ${c.get('user').id}`;
+    const body = await parseBody(c, Prefs);
+    // v0.8.0 及以前的 App 不认识 share（F-141），解析 /v1/me 时就丢了，写回来的偏好里没有它。
+    // 照原样存会清掉分享设置，下次分享就又是真实名字。所以没带时保留原来的；新版 App 一直带。
+    const userId = c.get('user').id;
+    const prefs = await sql.begin(async (tx) => {
+      let next: Prefs = body;
+      if (!body.share) {
+        const [row] = await tx<{ prefs: unknown }[]>`
+          SELECT prefs FROM users WHERE id = ${userId} FOR UPDATE`;
+        const stored = Prefs.partial().safeParse(row?.prefs);
+        if (stored.success && stored.data.share) next = { ...body, share: stored.data.share };
+      }
+      await tx`UPDATE users SET prefs = ${tx.json(next)} WHERE id = ${userId}`;
+      return next;
+    });
     return c.json(prefs);
   });
 
@@ -1542,6 +1558,8 @@ export function createApp({
       units: Record<string, string>;
       ttlDays: number;
       momentIds?: string[];
+      /** 旧版 App 不带，存空值，公开接口按以前的样子显示。 */
+      display?: ShareDisplay;
     },
   ) {
     const m = requireFamily(c);
@@ -1562,11 +1580,13 @@ export function createApp({
       await tx`
         INSERT INTO shares (id, family_id, created_by, token_hash, kind, from_at, to_at, timezone,
                             include_moments, include_daily, include_health, units, moment_ids,
-                            expires_at)
+                            show_name, baby_nickname, show_avatar, expires_at)
         VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${share.kind},
                 ${share.fromAt}, ${share.toAt}, ${share.timezone},
                 ${share.include.moments}, ${share.include.daily}, ${share.include.health},
-                ${tx.json(share.units)}, ${share.momentIds ?? null}::uuid[], ${expires})`;
+                ${tx.json(share.units)}, ${share.momentIds ?? null}::uuid[],
+                ${share.display?.showName ?? null}, ${share.display?.nickname ?? null},
+                ${share.display?.showAvatar ?? null}, ${expires})`;
     });
     return c.json<CreateShareResponse>({ id, token, expiresAt: expires.getTime() }, 201);
   }
@@ -1617,7 +1637,7 @@ export function createApp({
     const rows = await sql<(ShareRow & { label: string })[]>`
       SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
              s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
-             s.expires_at, s.created_at, mem.label
+             s.show_name, s.baby_nickname, s.show_avatar, s.expires_at, s.created_at, mem.label
       FROM shares s
       JOIN memberships mem ON mem.family_id = s.family_id AND mem.user_id = s.created_by
       WHERE s.family_id = ${m.familyId} AND s.revoked_at IS NULL AND s.expires_at > now()
@@ -1632,6 +1652,7 @@ export function createApp({
         timezone: row.timezone,
         include: shareInclude(row),
         ...(row.moment_ids ? { momentIds: row.moment_ids } : {}),
+        display: shareDisplay(row),
         expiresAt: row.expires_at.getTime(),
         createdAt: row.created_at.getTime(),
         byLabel: row.label,

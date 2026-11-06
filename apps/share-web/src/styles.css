@@ -90,6 +90,25 @@ button {
 
 /* ─── 标题 ─────────────────────────────── */
 
+/* 头像浮在右上角，日期和标题从它左边绕过去；窄屏上标题长了会换到头像下面。 */
+.hero-avatar {
+  float: right;
+  width: 64px;
+  height: 64px;
+  margin: 0 0 8px 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--line);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.hero::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
 .hero-date {
   font-family: var(--mono);
   font-size: 12px;

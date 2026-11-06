@@ -1,12 +1,14 @@
 import {
   type CreateShareRequest,
   countShareDay,
-  DEFAULT_SHARE_TTL_DAYS,
   defaultShareInclude,
   formatShortDate,
+  isDefaultShareDisplay,
   SHARE_TTL_DAYS,
+  type ShareDisplay,
   type ShareInclude,
   type ShareSummary,
+  type ShareTtlDays,
   t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
@@ -17,15 +19,18 @@ import { DEFAULT_API_URL, SHARE_BASE_URL } from '../lib/config';
 import { deviceTimezone } from '../lib/device';
 import {
   canShare,
+  nicknameProblem,
   shareDayPending,
   shareDayRange,
   shareDayTitle,
+  shareDisplaySummary,
   shareLinkTitle,
   shareLinkUrl,
 } from '../lib/share';
 import { colors, fonts } from '../theme';
 import { Button, Chip, Muted, Toggle } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
+import { ShareDisplayRow, useSharePrefs } from './shareDisplay';
 
 /** 同步最多等这么久。网不好时不能让人一直等：链接还是能建，缺什么会写清楚。 */
 const SYNC_WAIT_MS = 8_000;
@@ -44,8 +49,11 @@ export function ShareDaySheet({ at }: { at: number }) {
   const app = useApp();
   const { events, moments } = useRecords();
   const units = useUnits();
+  const prefs = useSharePrefs();
   const [include, setInclude] = useState<ShareInclude>(defaultShareInclude);
-  const [ttlDays, setTtlDays] = useState<(typeof SHARE_TTL_DAYS)[number]>(DEFAULT_SHARE_TTL_DAYS);
+  const [ttlDays, setTtlDays] = useState<ShareTtlDays>(prefs.ttlDays);
+  // 从账号的默认值开始，这里改的只用于这一次（F-141）。
+  const [display, setDisplay] = useState<ShareDisplay>(prefs.display);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
@@ -72,6 +80,7 @@ export function ShareDaySheet({ at }: { at: number }) {
       include,
       units,
       ttlDays,
+      display,
     };
     try {
       const share = await app.api.createShare(body);
@@ -141,6 +150,7 @@ export function ShareDaySheet({ at }: { at: number }) {
           <Text style={s.warningText}>{t().share.includeHealthOn}</Text>
         </View>
       ) : null}
+      <ShareDisplayRow value={display} onChange={setDisplay} />
       <View style={s.ttlRow}>
         <Muted style={s.ttlLabel}>{t().share.ttlTitle}</Muted>
         {SHARE_TTL_DAYS.map((days) => (
@@ -165,7 +175,7 @@ export function ShareDaySheet({ at }: { at: number }) {
       <Button
         testID="share-create"
         label={busy ? t().share.creating : t().share.create}
-        disabled={busy || nothingSelected}
+        disabled={busy || nothingSelected || Boolean(nicknameProblem(display.nickname))}
         onPress={() => void create()}
       />
     </>
@@ -234,6 +244,11 @@ export function SharedLinksSheet() {
               <Muted style={s.shareSub}>
                 {t().share.linkLine(formatShortDate(share.expiresAt), share.byLabel)}
               </Muted>
+              {share.display && !isDefaultShareDisplay(share.display) ? (
+                <Muted style={s.shareSub} testID={`share-row-display-${index}`}>
+                  {shareDisplaySummary(share.display)}
+                </Muted>
+              ) : null}
             </View>
             {share.canRevoke ? (
               <Chip

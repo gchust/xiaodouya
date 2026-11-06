@@ -27,4 +27,5 @@ export * from './i18n/apiErrors';
 export * from './regions';
 export * from './schemas';
 export * from './share';
+export * from './shareSettings';
 export * from './sync';
