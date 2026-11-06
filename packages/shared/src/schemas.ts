@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { MULTIPART_URL_BATCH } from './domain/multipart';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
+import { parseWebUrl } from './domain/webUrl';
 import type { FeedbackConfig } from './feedback';
 import { t } from './i18n';
 import { locales } from './i18n/locale';
@@ -199,6 +200,83 @@ export function isMoneyData(data: unknown): data is MoneyData {
   return (data as { type?: unknown } | null)?.type === 'money';
 }
 
+/** 一条育儿资料的链接最长多少。分享出来的链接常带一长串跟踪参数，2000 足够，又挡住塞进来的大段文字。 */
+export const MAX_RESOURCE_URL = 2000;
+/** 一条收藏最多放进几个收藏夹。 */
+export const MAX_FAVORITE_FOLDERS = 50;
+
+/** 只收网页链接：这个地址会交给应用内浏览器打开，`javascript:`、`intent:`、`file:` 都不能进来。规则见 `parseWebUrl`。 */
+const webUrl = z
+  .string()
+  .max(MAX_RESOURCE_URL)
+  .refine((value) => parseWebUrl(value) !== null);
+
+/**
+ * 育儿资料（issue #98）：家人自己存的视频或文章链接。只存链接和文字，不抓取、不下载第三方的内容。
+ *
+ * 放在 `event` 集合而不是新集合，理由和奶粉配置一样（docs/ARCHITECTURE.md 的“育儿资料和收藏”）：
+ * v0.1.0 收到不认识的集合会启动崩溃；放在这里旧版校验不过，保留但不显示；viewer 和喂奶一样读不到也写不了。
+ * 没有 `at`：旧版 App 的横幅、服务端推送和分享页都按 `at` 认“一条记录”。来源（抖音、B站……）不存，
+ * 每次按链接的域名算（`resourceSource`），以后改规则旧记录也跟着对。
+ */
+export const ResourceData = z.looseObject({
+  type: z.literal('resource'),
+  url: webUrl,
+  title: shortText.min(1),
+  /** 什么时候存的，列表按它倒序。 */
+  addedAt: timestamp,
+  note: z.string().max(2000).optional().catch(undefined),
+  byName: shortText.optional().catch(undefined),
+});
+export type ResourceData = z.infer<typeof ResourceData>;
+
+export function isResourceData(data: unknown): data is ResourceData {
+  return (data as { type?: unknown } | null)?.type === 'resource';
+}
+
+/** 能收藏的东西。新版本加了别的类型，旧版本保留这条收藏、界面跳过。 */
+export const favoriteTargets = ['moment', 'resource'] as const;
+export type FavoriteTarget = (typeof favoriteTargets)[number];
+
+/**
+ * 收藏一条回忆或资料，全家共用。id 由目标的 id 算出（`favoriteIdFor`），两台手机离线收藏同一条
+ * 是同一条记录，后写胜出；取消收藏是软删除。放进哪些收藏夹记在 `folders` 上，被删掉的收藏夹的 id 留着也无妨。
+ *
+ * 目标被删除时收藏不跟着删：列表跳过找不到的目标，撤销删除后收藏原样回来。
+ */
+export const FavoriteData = z.looseObject({
+  type: z.literal('favorite'),
+  /** 不用枚举：新版本收藏了别的东西，旧版本要能原样保留。界面只显示认识的。 */
+  target: z.string().min(1).max(32),
+  targetId: z.uuid(),
+  addedAt: timestamp,
+  folders: z.array(z.uuid()).max(MAX_FAVORITE_FOLDERS).optional().catch(undefined),
+  byName: shortText.optional().catch(undefined),
+});
+export type FavoriteData = z.infer<typeof FavoriteData>;
+
+export function isFavoriteData(data: unknown): data is FavoriteData {
+  return (data as { type?: unknown } | null)?.type === 'favorite';
+}
+
+/** 收藏夹（“辅食”“睡眠”），全家共用。删除是软删除，里面的收藏还在“全部”里。 */
+export const FavoriteFolderData = z.looseObject({
+  type: z.literal('favorite-folder'),
+  name: z.string().trim().min(1).max(40),
+  createdAt: timestamp,
+  byName: shortText.optional().catch(undefined),
+});
+export type FavoriteFolderData = z.infer<typeof FavoriteFolderData>;
+
+export function isFavoriteFolderData(data: unknown): data is FavoriteFolderData {
+  return (data as { type?: unknown } | null)?.type === 'favorite-folder';
+}
+
+/** 育儿资料、收藏和收藏夹：存在 `event` 集合，但不是照护记录，时间线、提示、推送、分享页都不该看到。 */
+export function isLibraryData(data: unknown): boolean {
+  return isResourceData(data) || isFavoriteData(data) || isFavoriteFolderData(data);
+}
+
 export const MomentData = z.looseObject({
   title: shortText,
   text: longText,
@@ -258,7 +336,15 @@ export type BabyData = z.infer<typeof BabyData>;
 
 export const collectionSchemas = {
   baby: BabyData,
-  event: z.union([EventData, FormulaData, VaccinePlanData, MoneyData]),
+  event: z.union([
+    EventData,
+    FormulaData,
+    VaccinePlanData,
+    MoneyData,
+    ResourceData,
+    FavoriteData,
+    FavoriteFolderData,
+  ]),
   moment: MomentData,
   letter: LetterData,
   document: DocumentData,
@@ -269,7 +355,14 @@ export type Collection = (typeof collections)[number];
 
 export interface CollectionData {
   baby: BabyData;
-  event: EventData | FormulaData | VaccinePlanData | MoneyData;
+  event:
+    | EventData
+    | FormulaData
+    | VaccinePlanData
+    | MoneyData
+    | ResourceData
+    | FavoriteData
+    | FavoriteFolderData;
   moment: MomentData;
   letter: LetterData;
   document: DocumentData;

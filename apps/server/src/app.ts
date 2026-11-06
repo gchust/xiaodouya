@@ -45,6 +45,7 @@ import {
   isAllowedMime,
   isDocumentScope,
   isFormulaData,
+  isLibraryData,
   isMoneyData,
   isReleaseKey,
   isVaccinePlanData,
@@ -1909,6 +1910,8 @@ export function createApp({
       if (isVaccinePlanData(r.data)) return false;
       // 小金库记的是钱，不是照护记录，也没有 at；就算以后的版本带上 at 也不通知。
       if (isMoneyData(r.data)) return false;
+      // 育儿资料、收藏和收藏夹（issue #98）不是照护记录，不通知。
+      if (isLibraryData(r.data)) return false;
       // 补记很久以前的记录不打扰家人。
       return now - (r.data as EventData).at < 3_600_000;
     });
