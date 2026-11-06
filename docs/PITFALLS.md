@@ -154,6 +154,7 @@
 
 ## Android 构建和模拟器
 
+- **同一个 App 既发 `ACTION_SEND` 又收 `ACTION_SEND` 时，发给自己的包要写完整的组件。** F-139 发到 E2E 测试目标只 `setPackage(自己)`，F-143 又让 `MainActivity` 收 `text/plain`，两个 PR 各自 CI 全绿，合在一起后系统弹出“用哪个打开”（`Xiaodouya / E2E share target`、`Xiaodouya`、`Just once`），流程 11b 等不到文字（CI run 42221094378）。现在发给自己时指到 `E2eShareTargetActivity` 这个组件，正式包里没有它就不发；“更多”用 `Intent.createChooser` 加 `EXTRA_EXCLUDE_COMPONENTS` 去掉自己的所有接收者（React Native 的 `Share` 不能排除），否则分享链接时能选到“存成育儿资料”。加新的 intent-filter 时要搜一遍谁在给自己的包发 Intent。
 - **构建还没打完 JS 包时不要改源码，也不要切分支。** `android-build.sh` 打的是 worktree 里当时的文件，JS 包在 `createBundleReleaseJsAndAssets` 这一步（Gradle 开始后十几分钟）才读。2026-11-04 以为等到 `Done writing bundle output` 再还原文件就行，结果“改动前”的 APK 里已经有一半新代码，对照数据作废。也不要靠 grep JS 包里的函数名或中文判断代码在不在：Metro 压缩后名字换掉了、中文转成了 `\uXXXX`，grep 不到不说明没有。要改动前的对照包，没动原生代码时用 `expo export:embed` 在 `main` 的文件上打 JS 包，`hermesc` 编译后换进已有 APK 的 `assets/index.android.bundle`，`zipalign`、用 `apps/mobile/android/app/debug.keystore` 签名（和 Gradle 签的是同一个证书，`install -r` 不用卸载，桌面上的小工具也还在），几分钟一个包。
 - **第一次 Gradle 构建要装 NDK，慢网下超过 1 小时。** 放后台跑，不要给短超时。之后的增量构建快得多，但 R8 这一步仍要几分钟。
 - **Gradle 内存在 `scripts/android-build.sh` 里限制（`GRADLE_HEAP`、`GRADLE_WORKERS`）。** 本机内存紧张，不要让 Gradle 和模拟器同时高负载。

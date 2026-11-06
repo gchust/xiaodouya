@@ -3,6 +3,7 @@ package expo.modules.sharetargets
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -27,6 +28,22 @@ class ShareTargetsModule : Module() {
     get() = requireNotNull(appContext.reactContext) { "React 上下文还没准备好" }
 
   private fun textIntent() = Intent(Intent.ACTION_SEND).setType("text/plain")
+
+  private fun query(intent: Intent) =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      context.packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+    } else {
+      @Suppress("DEPRECATION") context.packageManager.queryIntentActivities(intent, 0)
+    }
+
+  /**
+   * 小豆芽自己也收文字分享（存成育儿资料，F-143），E2E 构建还多一个测试目标。
+   * 发给自己的包时只写包名，系统会在这两个之间弹选择框；系统分享面板里也会列出小豆芽自己。
+   */
+  private fun ownReceivers(): List<ComponentName> =
+    query(textIntent().setPackage(context.packageName)).map {
+      ComponentName(it.activityInfo.packageName, it.activityInfo.name)
+    }
 
   override fun definition() = ModuleDefinition {
     Name("ShareTargets")
@@ -76,7 +93,14 @@ class ShareTargetsModule : Module() {
      * 打不开（刚卸载、被停用）时返回 false，界面提示用“更多”。
      */
     AsyncFunction("sendText") { packageName: String, text: String ->
-      val intent = textIntent().putExtra(Intent.EXTRA_TEXT, text).setPackage(packageName)
+      val intent = textIntent().putExtra(Intent.EXTRA_TEXT, text)
+      if (packageName == context.packageName) {
+        // 只有 E2E 构建会发给自己：直接指到测试 Activity。正式包里没有它，不能发给自己（会存成一条资料）。
+        val e2e = ownReceivers().find { it.className == E2E_TARGET } ?: return@AsyncFunction false
+        intent.component = e2e
+      } else {
+        intent.setPackage(packageName)
+      }
       val activity = appContext.currentActivity
       try {
         if (activity != null) {
@@ -92,9 +116,31 @@ class ShareTargetsModule : Module() {
       }
     }.runOnQueue(Queues.MAIN)
 
+    /**
+     * “更多”：系统分享面板，去掉小豆芽自己（不然分享链接时能选到“存成育儿资料”）。
+     * 打不开时返回 false，界面退回 React Native 的 Share。
+     */
+    AsyncFunction("shareSheet") { text: String ->
+      val chooser = Intent.createChooser(textIntent().putExtra(Intent.EXTRA_TEXT, text), null)
+      chooser.putExtra(Intent.EXTRA_EXCLUDE_COMPONENTS, ownReceivers().toTypedArray())
+      val activity = appContext.currentActivity
+      try {
+        if (activity != null) {
+          activity.startActivity(chooser)
+        } else {
+          context.startActivity(chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+        true
+      } catch (_: ActivityNotFoundException) {
+        false
+      }
+    }.runOnQueue(Queues.MAIN)
+
     AsyncFunction("copyText") { text: String ->
       val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
       clipboard.setPrimaryClip(ClipData.newPlainText(null, text))
     }.runOnQueue(Queues.MAIN)
   }
 }
+
+private const val E2E_TARGET = "expo.modules.sharetargets.E2eShareTargetActivity"
