@@ -123,6 +123,7 @@
 
 ## React Native 和 Expo
 
+- **React Native 的 `URL` 不是 WHATWG 的。** 它是 `Libraries/Blob/URL.js` 里的几条正则：`new URL('not a url')` 不抛错，`protocol` 不转小写，`hostname` 按字符串截。`packages/shared` 的校验在手机和服务端各跑一遍，用 `URL` 判断的话同一条记录可能手机上合法、服务端拒收，卡在手机上。F-143 的资料链接改用自己的一条正则（`parseWebUrl`），两边结果一样。
 - **换行布局里，子元素全是绝对定位时，`aspectRatio` 算出的高度是 0。** 照片墙因此显示“1 项”却一片空白，也没有任何报错。给格子明确的宽和高。
 - **截图存了就要打开看。** 照片墙这个 Bug 的截图一直在，是 E2E 失败后才发现的。
 - **打开弹层时要收起 Toast。** Toast 显示在弹层之上，会盖住底部按钮。
