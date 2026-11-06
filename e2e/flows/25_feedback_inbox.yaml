@@ -9,8 +9,10 @@ appId: com.gchust.xiaodouya
     visible: { id: tab-family }
     timeout: 30000
 - tapOn: { id: tab-family }
+# 滚到最下面：“收到的反馈”会紧跟在“反馈问题”下面，只滚到“反馈问题”时它可能本来就在屏幕外，断言没有意义。
 - scrollUntilVisible:
-    element: { id: open-feedback }
+    element: { id: delete-account }
+- assertVisible: { id: open-feedback }
 - assertNotVisible: { id: open-feedback-inbox }
 - takeScreenshot: .artifacts/e2e-25-admin-no-entry
 - runScript:
