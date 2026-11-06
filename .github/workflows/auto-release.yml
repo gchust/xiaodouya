@@ -1,0 +1,191 @@
+name: 自动发版
+
+# 每 4 小时看一次 main：最新的 vX.Y.Z 标签之后合并了 PR、改动不全是文档、CI 测过这份代码并且通过，
+# 就先部署后端（deploy-backend.yml），成功后发布 APK（release.yml，版本号是次版本号加一）。任何一步失败就停。
+# 仓库变量 AUTO_RELEASE_ENABLED 不是 true 时只算不发。说明见 docs/DEPLOYMENT.md 的“自动发版”。
+# 公开仓库的日志谁都能看：不要 set -x，这里只打印版本号、提交和 PR 编号。
+on:
+  schedule:
+    # 避开整点：整点的定时任务最多，最容易被推迟或跳过。
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 只看要不要发、发哪个版本、包含哪些 PR，不部署也不发布
+        type: boolean
+        default: true
+
+permissions: {}
+
+# 不能叫 deploy-backend 或 release-apk：被调用的两个工作流用这两个组，同名会互相等。
+# 它们自己的组已经让部署和手动部署、发布和手动打标签排队。
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: 看要不要发
+    # 定时任务只在默认分支上跑；手动运行时也只认 main，别的分支不能借它部署。
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+      notes: ${{ steps.decide.outputs.notes }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # 要全部标签和历史才能算出上一版之后有什么。
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24.21.0"
+      - name: 最新标签之后合并了什么
+        id: plan
+        run: |
+          node scripts/release-plan.mjs plan > "$RUNNER_TEMP/plan.json"
+          jq -r '"release=\(.release)", "version=\(.version // "")", "previous=\(.previous // "")", "sha=\(.sha)", "ci_sha=\(.ciSha // "")", "why=\(.why)"' \
+            "$RUNNER_TEMP/plan.json" >> "$GITHUB_OUTPUT"
+          jq -r '.why' "$RUNNER_TEMP/plan.json"
+      - name: CI 测过这份代码吗
+        id: ci
+        if: steps.plan.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_SHA: ${{ steps.plan.outputs.ci_sha }}
+        run: |
+          # main 上纯文档的推送不跑 CI，所以查的是最后一个有代码改动的提交（release-plan.mjs 的 ciSha），
+          # 它和 HEAD 只差文档。不等待：还在跑或者没通过就这次不发，4 小时后再看。
+          verdict() { echo "ok=$1" >> "$GITHUB_OUTPUT"; echo "why=$2" >> "$GITHUB_OUTPUT"; echo "$2"; exit 0; }
+          [ -n "$CI_SHA" ] || verdict false "找不到 CI 跑过的提交"
+          run="$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$CI_SHA&event=push&branch=main&per_page=20" \
+            --jq '[.workflow_runs[]] | sort_by(.run_number) | last | select(. != null) | "\(.id) \(.status) \(.conclusion)"')"
+          [ -n "$run" ] || verdict false "提交 $CI_SHA 在 main 上没有 CI"
+          read -r id status conclusion <<< "$run"
+          echo "run_id=$id" >> "$GITHUB_OUTPUT"
+          [ "$status" = completed ] || verdict false "CI 还在跑（run $id，$status），这次不发"
+          [ "$conclusion" = success ] || verdict false "CI 没有通过（run $id，$conclusion），这次不发"
+          result="$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | select(.name == "CI 结果") | .conclusion] | first // ""')"
+          [ "$result" = success ] || verdict false "CI 结果 是 ${result:-没有这个 job}（run $id），这次不发"
+          verdict true "CI run $id 通过"
+      - name: 决定
+        id: decide
+        env:
+          RELEASE: ${{ steps.plan.outputs.release }}
+          PLAN_WHY: ${{ steps.plan.outputs.why }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          PREVIOUS: ${{ steps.plan.outputs.previous }}
+          SHA: ${{ steps.plan.outputs.sha }}
+          CI_SHA: ${{ steps.plan.outputs.ci_sha }}
+          CI_OK: ${{ steps.ci.outputs.ok }}
+          CI_WHY: ${{ steps.ci.outputs.why }}
+          CI_RUN: ${{ steps.ci.outputs.run_id }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ENABLED: ${{ vars.AUTO_RELEASE_ENABLED }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          go=false
+          if [ "$RELEASE" != true ]; then
+            why="不发：$PLAN_WHY"
+          elif [ "$CI_OK" != true ]; then
+            why="不发：$CI_WHY"
+            echo "::warning::$VERSION 可以发，但$CI_WHY"
+          elif [ "$DRY_RUN" = true ]; then
+            why="dry_run：会发 $VERSION，这次只看不发"
+          elif [ "$ENABLED" != true ]; then
+            why="会发 $VERSION，但仓库变量 AUTO_RELEASE_ENABLED 不是 true，自动发版没有开启"
+          else
+            go=true
+            why="发布 $VERSION"
+          fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "$why"
+          # Release 正文的开头，GitHub 自动生成的 PR 列表接在它后面。
+          {
+            echo "由[自动发版]($RUN_URL)发布：部署后端成功后构建。"
+            echo
+            echo "- 提交：\`$SHA\`"
+            if [ -n "$CI_RUN" ]; then
+              echo "- CI：[run $CI_RUN]($REPO_URL/actions/runs/$CI_RUN) 通过（提交 \`$CI_SHA\`，之后只有文档改动时和上面不同）"
+            fi
+            echo "- 上一版：$PREVIOUS"
+            echo
+            echo "包含的 PR："
+            jq -r '.pulls[] | "- #\(.number) \(.title)"' "$RUNNER_TEMP/plan.json"
+          } > "$RUNNER_TEMP/notes.md"
+          delimiter="NOTES_$(openssl rand -hex 16)"
+          { echo "notes<<$delimiter"; cat "$RUNNER_TEMP/notes.md"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+          {
+            echo "### 自动发版：$why"
+            echo
+            echo "| 项目 | 内容 |"
+            echo "| --- | --- |"
+            echo "| 上一版 | ${PREVIOUS:-没有} |"
+            echo "| 这次 | ${VERSION:-不发} |"
+            echo "| main HEAD | \`$SHA\` |"
+            echo "| CI | ${CI_WHY:-没有查} |"
+            echo "| 开启（AUTO_RELEASE_ENABLED） | ${ENABLED:-没有设置} |"
+            echo "| dry_run | ${DRY_RUN:-false} |"
+            echo
+            cat "$RUNNER_TEMP/notes.md"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: 部署后端
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/deploy-backend.yml
+    with:
+      sha: ${{ needs.plan.outputs.sha }}
+    secrets: inherit
+
+  # 部署失败时这里不跑，也就不打标签：标签是创建 Release 时打的，在 APK 核对通过之后。
+  release:
+    name: 发布 APK
+    needs: [plan, deploy]
+    if: needs.plan.outputs.go == 'true'
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      sha: ${{ needs.plan.outputs.sha }}
+      notes: ${{ needs.plan.outputs.notes }}
+    secrets: inherit
+
+  result:
+    name: 发版结果
+    needs: [plan, deploy, release]
+    if: always() && needs.plan.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          DEPLOY: ${{ needs.deploy.result }}
+          RELEASE: ${{ needs.release.result }}
+        run: |
+          if [ "$DEPLOY" = success ] && [ "$RELEASE" = success ]; then
+            echo "### $VERSION 已发布：后端已部署，APK 已核对并上传" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ "$DEPLOY" != success ]; then
+            msg="$VERSION 没有发布：部署后端是 $DEPLOY，没有打标签，线上可能停在部署的某一步（见「部署后端」的日志）"
+          else
+            msg="$VERSION 后端已部署，但发布 APK 是 $RELEASE。看「发布 APK」停在哪一步：创建 Release 之前失败的没有打标签；之后失败的标签和 Release 已经在了，要人工核对"
+          fi
+          echo "::error::$msg"
+          echo "### $msg" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

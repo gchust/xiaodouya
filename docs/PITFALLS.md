@@ -228,6 +228,10 @@
 - **系统镜像的下载偶尔拿到坏包。** 现象是 `Error on ZipFile unknown archive`，模拟器没起来 job 就失败了，什么现场也没有，1 分钟多一点结束（run 41465842346 的 `vaccine` 组）。四组各下载一次，碰上的机会多了，所以 `ci.yml` 先单独下载并只重试这一步。测试失败不重试。
 - **`gh api .../actions/jobs/<id>/logs` 会拒绝输出日志。** 日志里有颜色转义，gh 报 `the response contains terminal escape sequences`，要加 `--allow-escape-sequences`，写进文件后再去掉转义。
 - **开发服务的端口 55432、59000 在 Linux 的临时端口范围（32768–60999）里。** 新开的 Runner 上 docker 也可能报 `failed to bind host port for 0.0.0.0:59000 ... address already in use`：某个出站连接刚好用了这个本地端口（run 41572950825 的 `files` 组，模拟器还没启动就失败了）。`ci.yml` 一开始就用 `net.ipv4.ip_local_reserved_ports` 把它们留出来。本机的 `pnpm dev:infra` 理论上也会碰到，没遇到过。
+- **被 `workflow_call` 调用的工作流里，`github` 上下文全是调用方的。** `github.ref_name` 是 `main` 而不是标签，`github.run_number` 是调用方的运行编号（新工作流从 1 开始），`github.event_name` 是 `schedule` 或 `workflow_dispatch`。`release.yml` 原来用 `GITHUB_REF_NAME` 当版本号、`GITHUB_RUN_NUMBER` 当 versionCode，直接被调用会发出叫 `main`、versionCode 倒退的 APK。现在版本号从输入取，versionCode 是上一版 Release 的 APK 里的加一（F-140）。依据是 GitHub 文档，还没有真实调用过。
+- **用 `GITHUB_TOKEN` 推的标签（包括创建 Release 时打的）不会触发别的工作流的 `push: tags`。** 自动发版不能靠“打标签触发 `release.yml`”，所以改成 `workflow_call` 直接调用；反过来这也保证了同一个版本不会被发两次。
+- **调用方和被调用的工作流用同名的 `concurrency` 组会互相等。** 调用方占着组，被调用的排在它后面，GitHub 判成死锁取消。`auto-release.yml` 用自己的 `auto-release` 组，部署和发布沿用被调用工作流里的 `deploy-backend`、`release-apk`。来自 GitHub 社区的报告，没有实测。
+- **`run:` 里的中文弯引号会被 shellcheck 当成写错的引号（SC1111）。** `actionlint` 带上 shellcheck 时报 `This is a unicode quote`；shell 里的提示用「」，或者放在单引号里。
 
 ## 部署
 

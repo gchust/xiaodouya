@@ -1,39 +1,55 @@
 name: Release
 
-# 打 v* 标签时发布：服务端镜像推到 GHCR，签名 APK 放到 GitHub Release。
+# 发布：签名 APK 放到 GitHub Release 并传到存储（应用内更新），服务端镜像推到 GHCR。
+# 两种触发：手动打 v* 标签；自动发版（auto-release.yml）调用，传入版本号和提交，这时标签由创建 Release 时打上。
+# 用 GITHUB_TOKEN 推的标签不会触发 push，所以自动发版不靠标签触发这里，也不会发两次。
 # 需要配置的 Secrets 和变量见 docs/DEPLOYMENT.md。
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: 版本号，vX.Y.Z
+        type: string
+        required: true
+      sha:
+        description: 要发布的提交
+        type: string
+        required: true
+      notes:
+        description: 写在 Release 正文最前面的说明
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: write
   packages: write
 
-jobs:
-  server-image:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: deploy/server.Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}-server:${{ github.ref_name }}
-            ghcr.io/${{ github.repository }}-server:latest
+# 手动打的标签和自动发版同时跑时，后一个等前一个，否则两边会算出同一个 versionCode。
+# 调用方 auto-release.yml 用的是自己的组，不能和这里同名，否则互相等。
+concurrency:
+  group: release-apk
 
+env:
+  # 被调用时 github.ref_name 是调用方的分支（main），github.run_number 也是调用方的，都不能用。
+  TAG: ${{ inputs.version || github.ref_name }}
+  SOURCE_SHA: ${{ inputs.sha || github.sha }}
+
+jobs:
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CALLED: ${{ github.event_name != 'push' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
       - name: 检查必需配置
         env:
           API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
@@ -58,6 +74,21 @@ jobs:
               [ -n "${!name}" ] || { echo "::error::应用内更新需要仓库 Secret $name，或者把仓库变量 EXPO_PUBLIC_SELF_UPDATE 设成 0"; exit 1; }
             done
           fi
+      - name: 核对版本号
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::版本号要是 vX.Y.Z：$TAG"; exit 1; }
+          # 被调用时标签还不存在，由下面创建 Release 时打在 SOURCE_SHA 上。已经有了说明有人手动发过这个版本，
+          # 再往下 Release 会挂到那个标签指的提交上，所以停下。
+          if [ "$CALLED" = true ]; then
+            if found="$(gh api "repos/$GH_REPO/git/ref/tags/$TAG" --jq .ref 2>&1)"; then
+              echo "::error::标签 $TAG 已经存在，不重复发布"
+              exit 1
+            elif ! grep -q 'HTTP 404' <<< "$found"; then
+              echo "::error::查不了标签 $TAG 在不在：$found"
+              exit 1
+            fi
+          fi
+          echo "发布 $TAG，提交 $SOURCE_SHA"
       - name: 释放磁盘空间
         run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk
       - uses: pnpm/action-setup@v4
@@ -71,8 +102,33 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools
+          # build-tools 里的 aapt2 和 apksigner 要在构建之前读上一版 APK。
+          packages: platform-tools build-tools;36.0.0
       - uses: gradle/actions/setup-gradle@v4
+      - name: 读上一版，算 versionCode
+        run: |
+          # versionCode 是上一版 Release 的 APK 里的加一，不用运行编号：被调用时运行编号是调用方的，会倒退。
+          # 已经发布过比这次更高的版本时 release-plan.mjs 直接失败。
+          gh release list --exclude-drafts --limit 200 --json tagName --jq '.[].tagName' > "$RUNNER_TEMP/released.txt"
+          previous="$(node scripts/release-plan.mjs previous "$TAG" < "$RUNNER_TEMP/released.txt")"
+          previous_code=""
+          if [ -n "$previous" ]; then
+            mkdir -p "$RUNNER_TEMP/previous"
+            gh release download "$previous" --pattern 'xiaodouya-*.apk' --dir "$RUNNER_TEMP/previous"
+            apks=("$RUNNER_TEMP"/previous/*.apk)
+            if [ "${#apks[@]}" != 1 ] || [ ! -f "${apks[0]}" ]; then
+              echo "::error::上一版 $previous 的 Release 上应该正好有一个 APK"
+              exit 1
+            fi
+            previous_code="$(node scripts/release-apk.mjs inspect "${apks[0]}" | jq -r .versionCode)"
+            echo "PREVIOUS_APK=${apks[0]}" >> "$GITHUB_ENV"
+            echo "上一版 $previous，versionCode $previous_code"
+          else
+            echo "::notice::没有更早的 Release，这是第一次发布，versionCode 用运行编号，不比对签名证书"
+          fi
+          code="$(node scripts/release-plan.mjs version-code "$previous_code" "$GITHUB_RUN_NUMBER")"
+          echo "VERSION_CODE=$code" >> "$GITHUB_ENV"
+          echo "这次的 versionCode：$code"
       - run: pnpm install --frozen-lockfile
       - name: 还原签名和推送配置
         env:
@@ -101,17 +157,32 @@ jobs:
           GRADLE_WORKERS: "4"
           GRADLE_HEAP: 6g
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          export APP_VERSION="$TAG"
-          export APP_VERSION_CODE="${GITHUB_RUN_NUMBER}"
+          export APP_VERSION="${TAG#v}"
+          export APP_VERSION_CODE="$VERSION_CODE"
           bash scripts/android-build.sh release --clean
-          mv .artifacts/xiaodouya-release.apk "xiaodouya-$TAG.apk"
+          mv .artifacts/xiaodouya-release.apk "xiaodouya-${TAG#v}.apk"
+      # 在创建 Release 之前：被调用时创建 Release 才打标签，这里不通过就什么都不留下。
+      - name: 核对 APK（版本号、签名证书和上一版一致）
+        run: node scripts/release-apk.mjs check "xiaodouya-${TAG#v}.apk" "${TAG#v}" "$VERSION_CODE" ${PREVIOUS_APK:+"$PREVIOUS_APK"}
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
+          # 只在标签还不存在（被调用）时用到，手动打的标签已经指着自己的提交。
+          target_commitish: ${{ env.SOURCE_SHA }}
+          body: ${{ inputs.notes }}
           files: xiaodouya-*.apk
           generate_release_notes: true
+      - name: 核对 Release 上的 APK
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          gh release download "$TAG" --pattern "xiaodouya-${TAG#v}.apk" --dir "$RUNNER_TEMP/published" --clobber
+          local_sha="$(sha256sum "xiaodouya-${TAG#v}.apk" | cut -d' ' -f1)"
+          published_sha="$(sha256sum "$RUNNER_TEMP/published/xiaodouya-${TAG#v}.apk" | cut -d' ' -f1)"
+          [ "$local_sha" = "$published_sha" ] || { echo "::error::Release 上的 APK（$published_sha）和刚构建的（$local_sha）不一样"; exit 1; }
+          echo "Release 上的 APK sha256 $published_sha"
       # 打开了应用内更新的 APK 会去存储里找新版本，所以它自己也必须传上去：缺 Secret 时失败，不跳过。
       # 放在 GitHub Release 之后：存储出问题时，下载页照样有这个版本。说明见 docs/DEPLOYMENT.md 的“应用内更新”。
+      # 脚本写完清单会读回来，核对 versionCode 和 sha256。
       - name: 上传到存储（应用内更新）
         if: (vars.EXPO_PUBLIC_SELF_UPDATE || '1') == '1'
         env:
@@ -122,9 +193,30 @@ jobs:
           S3_REGION: auto
           APP_RELEASE_PREFIX: ${{ vars.APP_RELEASE_PREFIX }}
           RELEASE_MIN_SUPPORTED_CODE: ${{ vars.RELEASE_MIN_SUPPORTED_CODE }}
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          bash scripts/publish-apk.sh "xiaodouya-$TAG.apk" "$TAG" "$GITHUB_RUN_NUMBER"
+        run: bash scripts/publish-apk.sh "xiaodouya-${TAG#v}.apk" "${TAG#v}" "$VERSION_CODE"
       - name: 应用内更新已关闭
         if: (vars.EXPO_PUBLIC_SELF_UPDATE || '1') != '1'
         run: echo "::notice::EXPO_PUBLIC_SELF_UPDATE 不是 1，这个 APK 没有应用内更新，也没有传到存储"
+
+  # 放在 APK 后面：APK 没发出去时，GHCR 的 latest 不该先变。
+  server-image:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/server.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-server:${{ env.TAG }}
+            ghcr.io/${{ github.repository }}-server:latest
