@@ -9,13 +9,13 @@ import {
 } from '@xiaodouya/shared';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecords } from '../lib/app';
 import { useFavorites } from '../lib/library';
 import { MediaImage } from '../lib/mediaViews';
 import { FolderEditSheet, FolderPicker, NewFolderSheet } from '../sheets/librarySheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Button, Chip, ListCard, Muted, PageTitle, Serif, Stripes } from '../ui/primitives';
 import { ResourceRow, StarButton } from '../ui/ResourceRow';
@@ -271,7 +271,7 @@ function MomentPreview({ moment }: { moment: { id: string; data: MomentData } })
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 16 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -281,7 +281,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'baseline',
   },
-  link: { fontSize: 13, color: colors.accent },
+  link: { fontSize: 13, color: colors.accentText },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   newChip: {
     paddingHorizontal: 12,
@@ -301,4 +301,4 @@ const s = StyleSheet.create({
   title: { fontSize: 14, color: colors.ink, lineHeight: 20 },
   more: { width: 28, height: 40, alignItems: 'center', justifyContent: 'center' },
   moreGlyph: { fontSize: 18, color: colors.muted },
-});
+}));

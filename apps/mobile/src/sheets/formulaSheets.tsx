@@ -16,9 +16,9 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback } from '../ui/overlays';
 import { Button, Chip, Field, Muted, SectionTitle } from '../ui/primitives';
@@ -371,7 +371,7 @@ function NutrientField({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chooser: { gap: 10 },
   milkRow: {
     flexDirection: 'row',
@@ -394,9 +394,9 @@ const s = StyleSheet.create({
   },
   presetName: { fontSize: 14, color: colors.ink },
   hint: { fontSize: 12, lineHeight: 18 },
-  error: { fontSize: 13, color: colors.danger },
+  error: { fontSize: 13, color: colors.dangerText },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   gridItem: { flexBasis: '47%', flexGrow: 1 },
   nutrientField: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   unitChips: { flexDirection: 'row', gap: 6, paddingBottom: 8 },
-});
+}));

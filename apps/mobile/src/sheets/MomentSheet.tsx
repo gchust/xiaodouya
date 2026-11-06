@@ -12,13 +12,13 @@ import {
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import { IS_E2E } from '../lib/config';
 import { type PickedFile, pickFromLibrary, queueAllForUpload } from '../lib/media';
 import { mergePicked } from '../lib/mediaUtils';
 import { ExistingThumb, LocalThumb, useRecorder } from '../lib/mediaViews';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Mono, Muted, SoftInput, Toggle } from '../ui/primitives';
 import { RecordTimeField, useRecordTime } from '../ui/TimeField';
@@ -233,18 +233,18 @@ export function MomentSheet({
                 s.picker,
                 recorder.recording
                   ? {
-                      backgroundColor: colors.accent,
-                      borderColor: colors.accent,
+                      backgroundColor: colors.accentFill,
+                      borderColor: colors.accentFill,
                       borderStyle: 'solid',
                     }
                   : null,
               ]}
             >
-              <Text style={[s.pickerLabel, recorder.recording ? { color: colors.white } : null]}>
+              <Text style={[s.pickerLabel, recorder.recording ? { color: colors.onAccent } : null]}>
                 {recorder.recording ? t().recall.recordingNow : t().ui.recording}
               </Text>
               {recorder.recording ? (
-                <Mono style={{ fontSize: 10, color: colors.white, opacity: 0.8 }}>
+                <Mono style={{ fontSize: 10, color: colors.onAccent, opacity: 0.8 }}>
                   {t().recall.tapToStop(formatMediaDuration(recorder.elapsedMs))}
                 </Mono>
               ) : (
@@ -325,7 +325,7 @@ export function MomentSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   kinds: { flexDirection: 'row', gap: 8 },
   kindChip: { paddingHorizontal: 14, paddingVertical: 8 },
   pickers: { flexDirection: 'row', gap: 8 },
@@ -344,4 +344,4 @@ const s = StyleSheet.create({
   pickerLabel: { fontSize: 14, color: colors.ink },
   pickerSub: { fontSize: 10, color: colors.muted },
   textArea: { fontFamily: fonts.serifMedium, lineHeight: 24, minHeight: 112 },
-});
+}));

@@ -9,11 +9,11 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecords } from '../lib/app';
 import { openMoneySheet, useLocalCurrency } from '../sheets/moneySheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Card, ListCard, Mono, Muted, PageTitle, SectionTitle } from '../ui/primitives';
 
@@ -182,7 +182,7 @@ export function PiggyBankScreen() {
                   <Mono
                     style={[
                       s.entryAmount,
-                      { color: data.flow === 'in' ? colors.green : colors.ink },
+                      { color: data.flow === 'in' ? colors.greenText : colors.ink },
                     ]}
                   >
                     {amount}
@@ -231,7 +231,7 @@ function GroupRow({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 16 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -241,7 +241,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'baseline',
   },
-  link: { fontSize: 13, color: colors.accent },
+  link: { fontSize: 13, color: colors.accentText },
   summary: { gap: 8 },
   summaryLabel: { fontSize: 12 },
   balance: { fontSize: 32, color: colors.ink },
@@ -255,4 +255,4 @@ const s = StyleSheet.create({
   rowLabel: { fontSize: 14, color: colors.ink },
   groupAmount: { fontSize: 13, color: colors.ink },
   entryAmount: { fontSize: 14 },
-});
+}));

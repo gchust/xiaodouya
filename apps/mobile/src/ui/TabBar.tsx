@@ -1,8 +1,8 @@
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scrollTabToTop } from '../lib/tabScroll';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 
 /** 原型的底部导航：没有图标，只有文字和激活时的赤陶色短条。 */
 export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTabBarProps) {
@@ -56,7 +56,7 @@ export function TabBar({ state, descriptors, emitter, navigateToTab }: BottomTab
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   bar: {
     flexDirection: 'row',
     paddingHorizontal: 8,
@@ -66,4 +66,4 @@ const s = StyleSheet.create({
   },
   tab: { flex: 1, alignItems: 'center', gap: 4, paddingTop: 12 },
   indicator: { width: 18, height: 3, borderRadius: 2 },
-});
+}));

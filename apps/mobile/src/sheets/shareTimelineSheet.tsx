@@ -9,7 +9,7 @@ import {
   timelineRangeText,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords } from '../lib/app';
 import { SHARE_BASE_URL } from '../lib/config';
@@ -22,7 +22,7 @@ import {
   shareTimelineRange,
   type TimelinePreset,
 } from '../lib/share';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { Button, Chip, Muted } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
@@ -196,11 +196,11 @@ export function ShareTimelineSheet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   title: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   line: { fontSize: 13, lineHeight: 20 },
   notice: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
-  problem: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  problem: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   dates: { flexDirection: 'row', gap: 10 },
   date: { flex: 1 },
@@ -208,4 +208,4 @@ const s = StyleSheet.create({
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   ttlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ttlLabel: { fontSize: 13, marginRight: 'auto' },
-});
+}));

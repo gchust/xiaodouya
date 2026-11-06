@@ -9,7 +9,6 @@ import {
   dueVaccine,
   type EventData,
   estimateNextFeed,
-  eventColors,
   formatClock,
   formatDateHeader,
   formatDuration,
@@ -61,7 +60,7 @@ import {
   VaccineSheet,
 } from '../sheets/recordSheets';
 import { ShareDaySheet, useCanShare } from '../sheets/shareSheets';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
@@ -207,7 +206,7 @@ export function TodayScreen() {
           </Text>
           <Muted>{ageText(birthAt, now)}</Muted>
           {syncLine ? (
-            <Muted testID="sync-status" style={{ color: colors.accent, fontSize: 11 }}>
+            <Muted testID="sync-status" style={{ color: colors.accentText, fontSize: 11 }}>
               {syncLine}
             </Muted>
           ) : null}
@@ -242,7 +241,7 @@ export function TodayScreen() {
       >
         <View style={s.feedTop}>
           <Text style={s.feedLabel}>{t().today.sinceLastFeed}</Text>
-          <Text style={[s.feedHint, { color: feedHintNear ? colors.accent : colors.muted }]}>
+          <Text style={[s.feedHint, { color: feedHintNear ? colors.accentText : colors.muted }]}>
             {feedHint}
           </Text>
         </View>
@@ -267,8 +266,8 @@ export function TodayScreen() {
           style={[s.action, s.actionPrimary]}
           onPress={openFeed}
         >
-          <Dot color={colors.white} />
-          <Text style={[s.actionLabel, { color: colors.white, fontWeight: '500' }]}>
+          <Dot color={colors.onAccent} />
+          <Text style={[s.actionLabel, { color: colors.onAccent, fontWeight: '500' }]}>
             {t().today.feed}
           </Text>
         </PressScale>
@@ -415,9 +414,11 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   useEffect(() => {
     progress.value = withTiming(sleeping ? 1 : 0, { duration: 250 });
   }, [sleeping, progress]);
+  // worklet 会冻结捕获的对象，先读成局部变量（scripts/check-colors.mjs）。
+  const { card, line, sleepFill } = colors;
   const tint = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(progress.value, [0, 1], [colors.card, colors.sleep]),
-    borderColor: interpolateColor(progress.value, [0, 1], [colors.line, colors.sleep]),
+    backgroundColor: interpolateColor(progress.value, [0, 1], [card, sleepFill]),
+    borderColor: interpolateColor(progress.value, [0, 1], [line, sleepFill]),
   }));
   return (
     <PressScale
@@ -426,8 +427,8 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
       style={[s.action, tint]}
       onPress={onPress}
     >
-      <Dot color={sleeping ? colors.white : colors.sleep} />
-      <Text style={[s.actionLabel, sleeping ? { color: colors.white } : null]}>
+      <Dot color={sleeping ? colors.onSleep : colors.sleep} />
+      <Text style={[s.actionLabel, sleeping ? { color: colors.onSleep } : null]}>
         {sleeping ? t().today.awake : t().today.sleep}
       </Text>
     </PressScale>
@@ -458,7 +459,7 @@ export function TimelineRow({
     >
       <Mono style={s.rowTime}>{formatClock(event.at)}</Mono>
       <View style={{ width: 14, paddingTop: 6 }}>
-        <Dot color={eventColors[event.type]} size={8} />
+        <Dot color={colors[event.type]} size={8} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={s.rowTitle}>{describeEvent(event, now, units)}</Text>
@@ -468,7 +469,7 @@ export function TimelineRow({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   scroll: { flex: 1, backgroundColor: colors.paper },
   header: {
     flexDirection: 'row',
@@ -492,7 +493,7 @@ const s = StyleSheet.create({
     borderRadius: 22,
     overflow: 'hidden',
     borderWidth: 2,
-    borderColor: colors.white,
+    borderColor: colors.card,
     backgroundColor: colors.line,
     alignItems: 'center',
     justifyContent: 'center',
@@ -528,7 +529,7 @@ const s = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: 14,
   },
-  actionPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
+  actionPrimary: { backgroundColor: colors.accentFill, borderColor: colors.accentFill },
   actionLabel: { fontSize: 13, color: colors.ink },
   insight: {
     marginTop: 14,
@@ -539,7 +540,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.sand,
     gap: 4,
   },
-  insightLabel: { fontSize: 11, color: colors.accent, letterSpacing: 0.7 },
+  insightLabel: { fontSize: 11, color: colors.accentText, letterSpacing: 0.7 },
   insightText: { fontSize: 13, lineHeight: 21, color: colors.ink },
   listHeader: {
     marginTop: 20,
@@ -557,14 +558,14 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  listLink: { fontSize: 12, color: colors.accent },
+  listLink: { fontSize: 12, color: colors.accentText },
   row: {
     flexDirection: 'row',
     gap: 8,
     paddingVertical: 9,
     alignItems: 'flex-start',
     borderBottomWidth: 1,
-    borderBottomColor: '#efe7dc',
+    borderBottomColor: colors.track,
   },
   rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
@@ -581,6 +582,6 @@ const s = StyleSheet.create({
   nutritionText: { flexShrink: 1, textAlign: 'right' },
   vaccineWrap: { marginHorizontal: spacing.page, marginTop: 16 },
   vaccineCard: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, gap: 4 },
-  vaccineLabel: { fontSize: 11, color: colors.green, letterSpacing: 0.7 },
+  vaccineLabel: { fontSize: 11, color: colors.greenText, letterSpacing: 0.7 },
   vaccineText: { fontSize: 13, lineHeight: 20, color: colors.ink },
-});
+}));

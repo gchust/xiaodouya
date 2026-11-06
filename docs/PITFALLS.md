@@ -122,6 +122,7 @@
 - **chinacdc.cn 的 PDF 不是一直能读。** 2026-11-02 再读返回 445，上次（F-90）能读。读不到就不重试、不绕过，只用文件里已有的缩写和通用名，写明待复核。AAP 的 PDF 这次能读，`pdftotext -layout` 能看到 Table 1 的术语。
 - **翻译健康文案时用同一组输入比较两种语言的数字。** 把 “3 个月以下” 译错成 “under 6 months” 不会报错，`i18n-content.test.ts` 抽出句子里的数字比较才能发现。
 - **chinacdc.cn 的 PDF 用 curl 返回 445 时，WebFetch 还能拿到。** WebFetch 读不出 PDF 正文，但会把原文件存进 tool-results，`pdftotext -layout` 就能看（2026-11-04 读了 2026 年版免疫程序和 2026—2027 流感指南）。已经失效的旧链接（2016 年的 EV71 指南返回 404）用 `curl https://web.archive.org/web/2020/<原地址>` 能读到。疫苗说明书没有找到能读的官方来源，宣传单之类的资料要写明待复核。
+- **原型的红色和赤陶色写成字，对比度不到 WCAG AA。** 发烧提示的 `danger` `#b8645e` 写在纸色上只有 3.72:1，`accent` 当小字链接 3.27:1，白字压在 `accent` 按钮上 3.67:1，`muted` 写在 `sand` 提示卡上 3.96:1。半夜调暗屏幕时最先看不清的就是这些。F-142 起文字用 `dangerText`、`warnText`、`accentText`，按钮用 `*Fill`，`apps/mobile/test/themes.test.ts` 对每套主题的浅色和深色都算一遍；原来的值放进这个测试有 21 条不过。对比度够了还不够：发烧（≥38℃）的红和偏高（37.5–38℃）的赤陶在同一个体温弹层里交替出现，原来两者的 CIE76 色差只有 12，看起来是同一个颜色，深色版一开始也只有 12。现在测试要求至少 20，红改成 `#c4483f`。
 
 ## React Native 和 Expo
 
@@ -153,6 +154,7 @@
 - **`locales` 只写带限定符的资源目录，默认的 `values/strings.xml` 不归它管。** 手机是法语时用默认资源，所以默认资源要写英文。小工具的 `label` 直接进清单，要写成 `@string/...` 才能本地化。
 - **跟着文字收缩的 Text 可能把最后一个单词折到看不见的第二行。** 空状态的标题 “The first moment starts today” 在屏幕上只剩 “The first moment starts”，`uiautomator` 读到的文字是完整的，只有看截图才发现。量出来的宽度比实际画的窄一点时，高度还是一行。中文没遇到过。居中的文字用 `alignSelf: 'stretch'`。
 - **`ListCard` 的 `Row` 放不下长的等宽值。** 反馈 ID（uuid）放在 `Row` 的右边，中文还放得下，英文标签 `Feedback ID` 更长，值折成两行、第二行被卡片裁掉一半（模拟器截图上才看出来）。长的、要复制的值单独一行放在卡片下面。
+- **模块顶层的 `StyleSheet.create` 在导入时就把颜色抄死了。** 换语言那样让整棵界面重新挂载也换不了颜色：模块只加载一次。F-142 改成 `themedStyles(() => ({...}))`，读样式时按当前主题生成；模块顶层写 `colors.xxx`（比如营养页原来的 `STATUS_COLORS`）、写颜色字面量都会被 `scripts/check-colors.mjs` 拦下来。
 
 ## Android 构建和模拟器
 
@@ -331,3 +333,4 @@
 - **`flock` 排队不等于拿到锁。** 后台挂着 `flock ... sleep` 时要确认它下面已经有 `sleep` 子进程，别的会话可能抢在前面。长任务要算好时间，不要跑到锁到期之后；收尾的命令直接用 `flock` 包住。
 - **杀掉 `flock` 进程不会释放模拟器锁。** `flock 锁文件 sleep 3600` 里的 `sleep` 继承了锁的文件描述符，只杀 `flock` 锁还在，别人一直排队。要杀 `sleep`（或整个进程组），再用 `stat -c %i 锁文件` 得到 inode，`grep :<inode> /proc/locks` 确认已经放掉。
 - **两次拿锁之间，模拟器上的 App 可能已经被别的 Agent 换掉。** 包名都是 `com.gchust.xiaodouya`，F-139 走查时第二次拿锁不重装、接着跑，打开的是别人刚装的构建（深色主题、没有新按钮），差点当成自己的 Bug 去查。每次拿锁都重装自己的 APK、从建账号开始跑；`setsid npx …` 起的服务端要按端口找进程杀掉，只杀记下的 pid 可能留下 node，下一次同端口起不来，就连上了旧的那个。
+- **给整块对象套一层调用时，别让格式化把它整体缩进一格。** F-142 一开始写成 `themedStyles(() => StyleSheet.create({...}))`，Biome 把 41 个文件的样式表全部多缩进一层，差异里删了 1644 行，和并行分支必然冲突。改成 `themedStyles(() => ({...}))`：最后一个参数是返回对象的箭头函数时，Biome 和 Prettier 一样把它贴在同一行，缩进不变，删的只剩 341 行。机械替换写成脚本（`scripts/codemod-themed-styles.mjs`），rebase 后再跑一次。

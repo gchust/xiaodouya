@@ -1,10 +1,10 @@
 import { formatBytes, quotaStatus, type StorageUsage, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp } from '../lib/app';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { Button, ListCard, Muted, PageTitle, SectionTitle, Toggle } from '../ui/primitives';
 
 /**
@@ -37,7 +37,7 @@ export function StorageUsagePage() {
   const base = usage ? (limited ? (usage.quota ?? 1) : Math.max(usage.total, 1)) : 1;
   const width = (value: number) =>
     `${value > 0 ? Math.min(100, Math.max(1, (value / base) * 100)) : 0}%` as `${number}%`;
-  const warnColor = status?.level === 'full' ? colors.danger : colors.accent;
+  const warnColor = status?.level === 'full' ? colors.dangerText : colors.warnText;
 
   return (
     <View style={s.root} testID="storage-screen">
@@ -63,7 +63,7 @@ export function StorageUsagePage() {
 
         {loadError ? (
           <View style={{ gap: 8 }}>
-            <Text style={{ color: colors.danger, fontSize: 13 }}>{loadError}</Text>
+            <Text style={{ color: colors.dangerText, fontSize: 13 }}>{loadError}</Text>
             <Button
               testID="storage-retry"
               tone="outline"
@@ -161,7 +161,7 @@ function LegendItem({ color, label, value }: { color: string; label: string; val
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -180,11 +180,11 @@ const s = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     overflow: 'hidden',
-    backgroundColor: '#efe7dc',
+    backgroundColor: colors.track,
   },
   legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   swatch: { width: 7, height: 7, borderRadius: 4 },
   warning: { fontSize: 12, lineHeight: 18 },
   note: { fontSize: 11, lineHeight: 18 },
-});
+}));

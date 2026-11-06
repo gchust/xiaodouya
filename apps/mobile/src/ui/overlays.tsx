@@ -32,7 +32,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IS_E2E } from '../lib/config';
 import { keyboardLift, sheetMaxHeight } from '../lib/layout';
-import { colors, fonts, motion, spacing } from '../theme';
+import { colors, fonts, motion, spacing, themedStyles } from '../theme';
 
 /** CI 的模拟器取一次界面就要好几秒，E2E 构建放长一些，避免点撤销时已经消失、点到下面的内容。 */
 const TOAST_MS = IS_E2E ? 8_000 : 3600;
@@ -417,7 +417,7 @@ export function SheetProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   panel: {
     position: 'absolute',
     left: 0,
@@ -477,11 +477,11 @@ const s = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bannerInitial: { fontFamily: fonts.serifBold, fontSize: 13, color: colors.white },
-  bannerApp: { fontSize: 11, color: '#bdb3a8' },
+  bannerInitial: { fontFamily: fonts.serifBold, fontSize: 13, color: colors.onAccent },
+  bannerApp: { fontSize: 11, color: colors.onInkMuted },
   bannerText: { fontSize: 13, color: colors.paper },
-});
+}));

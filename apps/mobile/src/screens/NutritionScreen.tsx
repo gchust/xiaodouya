@@ -13,25 +13,27 @@ import {
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNow, useRecords, useRegion, useUnits } from '../lib/app';
 import { localDayBounds } from '../lib/dates';
 import { AddFormulaFlow, FormulaEditor } from '../sheets/formulaSheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { ListCard, Mono, Muted, PageTitle, SectionTitle } from '../ui/primitives';
 
 /** 只回看一周：更早的记录一天天翻没有用，也不想让人盯着过去的数字。 */
 const DAYS_BACK = 6;
 
-const STATUS_COLORS: Record<NutrientStatus, string> = {
-  progress: colors.inkSoft,
-  met: colors.green,
-  below: colors.accent,
-  insufficient: colors.muted,
-  'no-reference': colors.muted,
-};
+// 低于参考量用提醒色（warn），不跟主题变：不能因为换了主题就看不出来。
+const statusColor = (status: NutrientStatus): string =>
+  ({
+    progress: colors.inkSoft,
+    met: colors.greenText,
+    below: colors.warnText,
+    insufficient: colors.muted,
+    'no-reference': colors.muted,
+  })[status];
 
 export function NutritionScreen() {
   const insets = useSafeAreaInsets();
@@ -220,7 +222,7 @@ function NutrientRow({ nutrient, last }: { nutrient: NutrientResult; last: boole
       <View style={s.rowTop}>
         <Text style={s.rowLabel}>{nutrientMeta[key].label}</Text>
         <Text
-          style={[s.rowStatus, { color: STATUS_COLORS[status] }]}
+          style={[s.rowStatus, { color: statusColor(status) }]}
           testID={`nutrient-${key}-status`}
         >
           {text}
@@ -234,7 +236,7 @@ function NutrientRow({ nutrient, last }: { nutrient: NutrientResult; last: boole
               s.bar,
               {
                 width: `${fill}%`,
-                backgroundColor: status === 'met' ? colors.green : colors.accent,
+                backgroundColor: status === 'met' ? colors.green : colors.warn,
                 opacity: status === 'insufficient' ? 0.35 : 1,
               },
             ]}
@@ -246,7 +248,7 @@ function NutrientRow({ nutrient, last }: { nutrient: NutrientResult; last: boole
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 16 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -265,7 +267,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.sand,
     gap: 4,
   },
-  reasonsLabel: { fontSize: 11, color: colors.accent, letterSpacing: 0.7 },
+  reasonsLabel: { fontSize: 11, color: colors.accentText, letterSpacing: 0.7 },
   reasonText: { fontSize: 13, lineHeight: 20, color: colors.ink },
   row: { paddingVertical: 11, gap: 5 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
@@ -282,7 +284,7 @@ const s = StyleSheet.create({
   bar: { height: 4, borderRadius: 999 },
   note: { fontSize: 11, lineHeight: 17 },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  add: { fontSize: 13, color: colors.accent },
+  add: { fontSize: 13, color: colors.accentText },
   formulaRow: { paddingVertical: 11, gap: 2 },
   formulaName: { fontSize: 14, color: colors.ink },
-});
+}));

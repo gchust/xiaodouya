@@ -40,11 +40,11 @@ import {
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { type ReactNode, useCallback, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -447,7 +447,7 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
         {
           key: 'feed',
           label: t().today.feed,
-          color: colors.accent,
+          color: colors.feed,
           onPress: () => open(t().today.feed, () => <FeedSheet backfill />),
         },
         {
@@ -459,7 +459,7 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
         {
           key: 'sleep',
           label: t().today.sleep,
-          color: colors.sleep,
+          color: colors.sleepText,
           onPress: () => open(t().today.sleep, () => <SleepSheet />),
         },
       ]
@@ -470,32 +470,32 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
       {
         key: 'temp',
         label: t().records.temp,
-        color: '#b8645e',
+        color: colors.temp,
         onPress: () =>
           open(t().records.temp, () => <TempSheet birthAt={birthAt} backfill={backfill} />),
       },
       {
         key: 'med',
         label: t().records.med,
-        color: '#8a7a9e',
+        color: colors.med,
         onPress: () => open(t().records.med, () => <MedSheet backfill={backfill} />),
       },
       {
         key: 'bath',
         label: t().records.bath,
-        color: '#6f9aa0',
+        color: colors.bath,
         onPress: () => open(t().records.bath, () => <BathSheet backfill={backfill} />),
       },
       {
         key: 'growth',
         label: t().records.growth,
-        color: '#6f9a6a',
+        color: colors.growth,
         onPress: () => open(t().records.growth, () => <GrowthSheet backfill={backfill} />),
       },
       {
         key: 'vaccine',
         label: t().records.vaccine,
-        color: '#6f9a6a',
+        color: colors.vaccine,
         onPress: () =>
           sheet.replace(t().today.vaccination, () => <VaccineSheet birthAt={birthAt} />),
       },
@@ -503,7 +503,7 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
         ? {
             key: 'solids',
             label: t().records.solids,
-            color: '#c9a24a',
+            color: colors.solids,
             onPress: () => open(t().records.solids, () => <SolidsSheet backfill={backfill} />),
           }
         : {
@@ -551,9 +551,9 @@ export function TempSheet({
   const assessment = assessTemperature(celsius, ageParts(birthAt, time.resolve()).months, unit);
   const tone =
     assessment.level === 'fever' || assessment.level === 'urgent'
-      ? colors.danger
+      ? colors.dangerText
       : assessment.level === 'elevated'
-        ? colors.accent
+        ? colors.warnText
         : colors.ink;
   return (
     <>
@@ -1237,7 +1237,7 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   stepper: {
     flexDirection: 'row',
@@ -1312,4 +1312,4 @@ const s = StyleSheet.create({
   smallValue: { fontFamily: fonts.monoMedium, fontSize: 26, color: colors.ink },
   smallUnit: { fontSize: 13, color: colors.muted },
   vaccineOption: { paddingHorizontal: 14, paddingVertical: 13, borderRadius: 12 },
-});
+}));

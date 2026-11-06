@@ -13,7 +13,7 @@ import {
 import { requestPinWidget } from 'react-native-android-widget';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Button, Field, ListCard, Muted, PageTitle, SectionTitle, Toggle } from '../ui/primitives';
 import { scheduleWidgetRefresh } from '../widgets/controller';
@@ -245,7 +245,7 @@ export function WidgetsScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 16 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -288,4 +288,4 @@ const s = StyleSheet.create({
   hint: { fontSize: 11, lineHeight: 16 },
   // 接在开关那一行下面，算同一行的补充说明，中间不画分隔线。
   missing: { paddingBottom: 12, marginTop: -6 },
-});
+}));

@@ -15,7 +15,7 @@ import {
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { type ReactNode, useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
 import {
   doseTimestamp,
@@ -23,7 +23,7 @@ import {
   plannedDayTimestamp,
   plannedNextMonth,
 } from '../lib/dates';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -475,7 +475,7 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
                   onPress={() => setPicking(dose.id)}
                 >
                   <Text
-                    style={[s.rowDate, ownDates.has(dose.id) ? { color: colors.accent } : null]}
+                    style={[s.rowDate, ownDates.has(dose.id) ? { color: colors.accentText } : null]}
                   >
                     {formatFullDate(dateOf(dose.id).getTime())}
                   </Text>
@@ -511,11 +511,11 @@ export function VaccineBackfillSheet({ birthAt }: { birthAt: number }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   planBar: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 2 },
   planSummary: { flex: 1, fontSize: 12 },
-  link: { fontSize: 12, color: colors.accent },
+  link: { fontSize: 12, color: colors.accentText },
   dateText: { fontSize: 14, color: colors.ink },
   hiddenRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
@@ -536,7 +536,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.green, borderColor: colors.green },
-  checkMark: { fontSize: 12, lineHeight: 14, color: colors.card },
+  checkOn: { backgroundColor: colors.greenFill, borderColor: colors.greenFill },
+  checkMark: { fontSize: 12, lineHeight: 14, color: colors.onGreen },
   rowDate: { fontFamily: fonts.monoRegular, fontSize: 12, color: colors.inkSoft },
-});
+}));

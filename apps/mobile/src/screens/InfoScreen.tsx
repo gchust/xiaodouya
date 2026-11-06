@@ -30,7 +30,7 @@ import {
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
@@ -41,7 +41,7 @@ import { DocAddSheet } from '../sheets/documentSheets';
 import { openMoneySheet, useLocalCurrency } from '../sheets/moneySheets';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
 import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { DocumentCard } from '../ui/DocumentCard';
 import { useFeedback, useSheet } from '../ui/overlays';
@@ -321,7 +321,7 @@ export function InfoScreen() {
                     <Dot color={colors.green} />
                   </View>
                   <Text style={{ flex: 1, fontSize: 13, color: colors.ink }}>{record.name}</Text>
-                  <Text style={{ fontSize: 11, color: colors.green }}>
+                  <Text style={{ fontSize: 11, color: colors.greenText }}>
                     {t().info.givenOn(formatFullDate(record.at))}
                   </Text>
                 </Pressable>
@@ -413,7 +413,11 @@ function VaccineRow({
 }) {
   const status = doseStatus(dose);
   const statusColor =
-    status.tone === 'done' ? colors.green : status.tone === 'due' ? colors.accent : colors.muted;
+    status.tone === 'done'
+      ? colors.greenText
+      : status.tone === 'due'
+        ? colors.accentText
+        : colors.muted;
   return (
     <Pressable
       testID={`vaccine-row-${dose.localId}`}
@@ -516,7 +520,7 @@ function OptionalVaccinesSection({
                       testID={`vaccine-optional-status-${v.localId}`}
                       style={{
                         fontSize: 11,
-                        color: colors.green,
+                        color: colors.greenText,
                         maxWidth: '40%',
                         textAlign: 'right',
                       }}
@@ -650,7 +654,10 @@ function BirthTimeSheet({ id, baby }: { id: string; baby: BabyData }) {
     <>
       <BirthPicker value={birth} onChange={setBirth} />
       {future ? (
-        <Text testID="birth-error" style={{ fontSize: 13, lineHeight: 20, color: colors.danger }}>
+        <Text
+          testID="birth-error"
+          style={{ fontSize: 13, lineHeight: 20, color: colors.dangerText }}
+        >
           {t().auth.birthInFuture}
         </Text>
       ) : (
@@ -765,7 +772,7 @@ function BabyEditSheet({ id, baby, field }: { id: string; baby: BabyData; field:
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   scroll: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, paddingBottom: 28, gap: 24 },
   section: { gap: 8 },
@@ -776,7 +783,7 @@ const s = StyleSheet.create({
     alignItems: 'baseline',
     zIndex: 1,
   },
-  link: { fontSize: 12, color: colors.accent },
+  link: { fontSize: 12, color: colors.accentText },
   piggyValue: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
   piggyBalance: { fontSize: 15, color: colors.ink, flexShrink: 1 },
   chevron: { fontSize: 16, color: colors.muted },
@@ -796,7 +803,13 @@ const s = StyleSheet.create({
     gap: 10,
     height: 150,
   },
-  barColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 6, height: '100%' },
+  barColumn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    height: '100%',
+  },
   bar: {
     width: '100%',
     maxWidth: 34,
@@ -815,4 +828,4 @@ const s = StyleSheet.create({
     borderRadius: 12,
     gap: 4,
   },
-});
+}));

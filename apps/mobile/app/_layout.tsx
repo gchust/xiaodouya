@@ -7,6 +7,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppProvider } from '../src/lib/app';
+import { useTheme } from '../src/lib/themePref';
 import { UpdateWatcher } from '../src/lib/UpdateWatcher';
 import { UploadCard } from '../src/lib/UploadCard';
 import { colors, fonts } from '../src/theme';
@@ -15,6 +16,8 @@ import { FeedbackProvider, SheetProvider } from '../src/ui/overlays';
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  // 换主题时这里重新渲染根视图的底色和状态栏；下面的界面由 AppProvider 重新挂载。
+  const theme = useTheme();
   const [loaded] = useFonts({
     [fonts.serifMedium]: require('../assets/fonts/NotoSerifSC-Medium.subset.ttf'),
     [fonts.serifBold]: require('../assets/fonts/NotoSerifSC-Bold.subset.ttf'),
@@ -30,7 +33,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.paper }}>
       <SafeAreaProvider>
-        <StatusBar style="dark" />
+        <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
         <FeedbackProvider>
           <AppProvider fallback={<View style={{ flex: 1, backgroundColor: colors.paper }} />}>
             <SheetProvider>
@@ -55,12 +58,13 @@ export default function RootLayout() {
                 <Stack.Screen name="feedback-inbox/[id]" />
                 <Stack.Screen
                   name="feedback-media"
-                  options={{ animation: 'fade', contentStyle: { backgroundColor: '#000' } }}
+                  options={{ animation: 'fade', contentStyle: { backgroundColor: colors.black } }}
                 />
                 <Stack.Screen name="widgets" />
+                <Stack.Screen name="theme" />
                 <Stack.Screen
                   name="viewer"
-                  options={{ animation: 'fade', contentStyle: { backgroundColor: '#000' } }}
+                  options={{ animation: 'fade', contentStyle: { backgroundColor: colors.black } }}
                 />
                 <Stack.Screen name="index" options={{ animation: 'none' }} />
               </Stack>

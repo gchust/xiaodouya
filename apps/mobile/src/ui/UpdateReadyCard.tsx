@@ -1,5 +1,5 @@
 import { t } from '@xiaodouya/shared';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp } from '../lib/app';
 import {
   getUpdateController,
@@ -8,7 +8,7 @@ import {
   useUpdateSettings,
 } from '../lib/appUpdateRuntime';
 import { UpdateSheet } from '../sheets/updateSheet';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from './overlays';
 
 /**
@@ -63,7 +63,7 @@ export function UpdateReadyCard() {
 }
 
 /** 和通知提示卡（NotificationPrompt）同一种样式：提示卡圆角 12、卡片底色、细边。 */
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   card: {
     marginTop: 14,
     marginHorizontal: spacing.page,
@@ -80,5 +80,5 @@ const s = StyleSheet.create({
   text: { flex: 1, fontSize: 13, lineHeight: 20, color: colors.ink },
   actions: { flexDirection: 'row', gap: 16, alignItems: 'center' },
   later: { fontSize: 13, color: colors.muted },
-  install: { fontSize: 13, color: colors.accent, fontWeight: '500' },
-});
+  install: { fontSize: 13, color: colors.accentText, fontWeight: '500' },
+}));

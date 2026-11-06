@@ -93,7 +93,8 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
   version,
   orientation: 'portrait',
   icon: './assets/icon.png',
-  userInterfaceStyle: 'light',
+  // 跟随手机的深色模式（F-142）。App 里还可以固定浅色或深色，见 src/lib/themePref.ts。
+  userInterfaceStyle: 'automatic',
   backgroundColor: '#f6f1ea',
   android: {
     package: process.env.ANDROID_PACKAGE ?? 'com.gchust.xiaodouya',
@@ -141,6 +142,8 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
         image: './assets/splash.png',
         imageWidth: 200,
         backgroundColor: '#f6f1ea',
+        // 启动时还读不到 App 里选的主题，只能跟手机：半夜打开不要先闪一下白屏。
+        dark: { image: './assets/splash.png', backgroundColor: '#1d1916' },
       },
     ],
     [

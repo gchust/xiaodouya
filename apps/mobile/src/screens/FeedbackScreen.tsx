@@ -22,7 +22,6 @@ import {
   Pressable,
   ScrollView,
   type ScrollViewInstance,
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -51,7 +50,7 @@ import {
 } from '../lib/feedbackSend';
 import { pickFromLibrary } from '../lib/media';
 import { LocalThumb } from '../lib/mediaViews';
-import { colors, fonts, spacing } from '../theme';
+import { colors, fonts, spacing, themedStyles } from '../theme';
 import { useFeedback as useToast } from '../ui/overlays';
 import {
   Button,
@@ -476,7 +475,7 @@ export function FeedbackScreen() {
                     <Text
                       style={{
                         fontSize: 11,
-                        color: item.status === 'sent' ? colors.green : colors.muted,
+                        color: item.status === 'sent' ? colors.greenText : colors.muted,
                       }}
                     >
                       {statusText(item.status)}
@@ -492,7 +491,7 @@ export function FeedbackScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 20 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -537,9 +536,9 @@ const s = StyleSheet.create({
   pickerSub: { fontSize: 10, color: colors.muted },
   value: { fontSize: 12, color: colors.ink },
   note: { fontSize: 11, lineHeight: 17 },
-  error: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  error: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   historyRow: { paddingVertical: 11, gap: 3 },
   historyText: { fontSize: 14, color: colors.ink, fontFamily: fonts.serifMedium },
   historyMeta: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
-});
+}));

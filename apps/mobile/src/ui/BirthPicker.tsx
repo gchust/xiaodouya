@@ -1,8 +1,8 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { formatClock, formatFullDate, t } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, fonts } from '../theme';
+import { Pressable, Text, View } from 'react-native';
+import { colors, fonts, themedStyles } from '../theme';
 import { Muted } from './primitives';
 
 /** 出生日期和时刻：建档页和资料页共用。 */
@@ -91,7 +91,7 @@ export function PastDatePicker({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   row: { flexDirection: 'row', gap: 8 },
   button: {
     flex: 1,
@@ -103,4 +103,4 @@ const s = StyleSheet.create({
     paddingVertical: 13,
   },
   text: { fontFamily: fonts.monoRegular, fontSize: 14, color: colors.ink },
-});
+}));

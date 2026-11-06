@@ -6,7 +6,7 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { ApiFailure } from '../lib/api';
 import { useApp, useRecords } from '../lib/app';
 import { SHARE_BASE_URL } from '../lib/config';
@@ -18,7 +18,7 @@ import {
   shareMomentsRange,
   shareMomentsTitle,
 } from '../lib/share';
-import { colors, fonts } from '../theme';
+import { colors, fonts, themedStyles } from '../theme';
 import { Button, Chip, Muted } from '../ui/primitives';
 import { ShareCreated, shareRightAway } from './shareCreated';
 import { ShareDisplayRow, useSharePrefs } from './shareDisplay';
@@ -147,13 +147,13 @@ export function ShareMomentsSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   title: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
   line: { fontSize: 13, lineHeight: 20 },
   notice: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
-  problem: { fontSize: 13, lineHeight: 20, color: colors.danger },
+  problem: { fontSize: 13, lineHeight: 20, color: colors.dangerText },
   warning: { backgroundColor: colors.sand, borderRadius: 12, padding: 12, gap: 6 },
   warningText: { fontSize: 13, lineHeight: 20, color: colors.inkSoft },
   ttlRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ttlLabel: { fontSize: 13, marginRight: 'auto' },
-});
+}));

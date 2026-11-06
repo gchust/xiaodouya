@@ -18,7 +18,7 @@ import {
   rotateImage,
   savedImageFile,
 } from '../lib/media';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useFeedback } from './overlays';
 
 type Rect = ReturnType<typeof cropRect>;
@@ -350,8 +350,8 @@ function CropStage({
   );
 }
 
-const s = StyleSheet.create({
-  stage: { flex: 1, overflow: 'hidden', backgroundColor: '#000' },
+const s = themedStyles(() => ({
+  stage: { flex: 1, overflow: 'hidden', backgroundColor: colors.black },
   busy: {
     position: 'absolute',
     left: 0,
@@ -360,14 +360,14 @@ const s = StyleSheet.create({
     bottom: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: colors.mediaChip,
   },
   bar: {
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
     paddingTop: 10,
-    backgroundColor: '#000',
+    backgroundColor: colors.black,
   },
   button: {
     flex: 1,
@@ -375,12 +375,12 @@ const s = StyleSheet.create({
     borderRadius: 999,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: colors.mediaFill,
   },
-  buttonPrimary: { backgroundColor: colors.accent },
+  buttonPrimary: { backgroundColor: colors.accentFill },
   buttonDisabled: { opacity: 0.45 },
-  buttonLabel: { color: colors.white, fontSize: 14, fontWeight: '500' },
-  mask: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.62)' },
+  buttonLabel: { color: colors.onAccent, fontSize: 14, fontWeight: '500' },
+  mask: { position: 'absolute', backgroundColor: colors.mediaMask },
   frame: { position: 'absolute', borderWidth: 1, borderColor: colors.white },
   circle: {
     position: 'absolute',
@@ -389,14 +389,14 @@ const s = StyleSheet.create({
     top: 0,
     bottom: 0,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
+    borderColor: colors.mediaLine,
   },
   hint: {
     position: 'absolute',
     left: 0,
     right: 0,
     textAlign: 'center',
-    color: colors.paper,
+    color: colors.white,
     fontSize: 13,
   },
-});
+}));

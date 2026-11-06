@@ -1,11 +1,11 @@
 import { type ResourceSource, resourceSource, resourceSources, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRecords } from '../lib/app';
 import { openResourceSheet } from '../sheets/librarySheets';
-import { colors, spacing } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { Chip, ListCard, Muted, PageTitle } from '../ui/primitives';
 import { ResourceRow } from '../ui/ResourceRow';
@@ -101,7 +101,7 @@ export function ResourcesScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   root: { flex: 1, backgroundColor: colors.paper },
   content: { paddingHorizontal: spacing.page, gap: 16 },
   back: { fontSize: 14, color: colors.muted, padding: 4, marginLeft: -4 },
@@ -111,7 +111,7 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'baseline',
   },
-  link: { fontSize: 13, color: colors.accent },
+  link: { fontSize: 13, color: colors.accentText },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   note: { fontSize: 11, lineHeight: 18 },
-});
+}));

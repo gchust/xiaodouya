@@ -17,10 +17,10 @@ import {
 } from '@xiaodouya/shared';
 import * as Clipboard from 'expo-clipboard';
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useApp, useRecords } from '../lib/app';
 import { openResourceUrl, useFavorites } from '../lib/library';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Field, Muted } from '../ui/primitives';
@@ -385,7 +385,7 @@ export function FolderPicker({ target, targetId }: { target: FavoriteTarget; tar
                 <Text style={s.pickLabel} numberOfLines={1}>
                   {folder.data.name}
                 </Text>
-                <Text style={[s.pickState, inside ? { color: colors.green } : null]}>
+                <Text style={[s.pickState, inside ? { color: colors.greenText } : null]}>
                   {inside ? t().library.inFolder : t().library.notInFolder}
                 </Text>
               </Pressable>
@@ -566,7 +566,7 @@ export function FolderEditSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   paste: {
     paddingHorizontal: 12,
@@ -575,8 +575,8 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.accent,
   },
-  pasteLabel: { fontSize: 12, color: colors.accent },
-  error: { fontSize: 13, color: colors.danger },
+  pasteLabel: { fontSize: 12, color: colors.accentText },
+  error: { fontSize: 13, color: colors.dangerText },
   list: {
     backgroundColor: colors.card,
     borderColor: colors.line,
@@ -595,9 +595,9 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.green, borderColor: colors.green },
-  checkMark: { color: colors.white, fontSize: 12, fontWeight: '700' },
+  checkOn: { backgroundColor: colors.greenFill, borderColor: colors.greenFill },
+  checkMark: { color: colors.onGreen, fontSize: 12, fontWeight: '700' },
   pickLabel: { flex: 1, fontSize: 14, color: colors.ink },
   pickState: { fontSize: 12, color: colors.muted },
   newFolder: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
-});
+}));
