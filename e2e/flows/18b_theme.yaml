@@ -1,0 +1,82 @@
+# 主题配色（F-142）：家人页设置里换主题和深浅，马上生效、还停在这一页；关掉 App 再打开还在。
+# 最后换回默认（暖纸、跟随手机），后面的流程照旧。颜色本身 Maestro 看不出来，靠截图看。
+# 换主题时整棵界面重新挂载（和换语言一样），页面回到顶部，所以每次都重新滚到要点的地方。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-theme }
+- tapOn: { id: open-theme }
+- extendedWaitUntil:
+    visible: { id: theme-screen }
+    timeout: 10000
+- assertVisible: { id: appearance-system, selected: true }
+- scrollUntilVisible:
+    element: { id: theme-paper-in-use }
+- assertVisible: { id: theme-paper, selected: true }
+- scrollUntilVisible:
+    element: { id: theme-lavender }
+    centerElement: true
+- tapOn: { id: theme-lavender }
+# 导航状态在容器里，重新挂载后还在这一页。
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: { id: theme-lavender-in-use }
+- assertVisible: { id: theme-lavender, selected: true }
+- assertNotVisible: { id: theme-paper-in-use }
+- scrollUntilVisible:
+    element: { id: appearance-dark }
+    direction: UP
+- tapOn: { id: appearance-dark }
+- waitForAnimationToEnd
+- assertVisible: { id: appearance-dark, selected: true }
+- takeScreenshot: .artifacts/e2e-18b-theme-lavender-dark
+- tapOn: { id: theme-back }
+# 家人页也重新挂载过，回到了顶部。
+- scrollUntilVisible:
+    element: { id: open-theme }
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- takeScreenshot: .artifacts/e2e-18b-today-lavender-dark
+# 选择存在这台手机上：杀掉 App 再打开还在。
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 30000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-theme }
+- tapOn: { id: open-theme }
+- extendedWaitUntil:
+    visible: { id: theme-screen }
+    timeout: 10000
+- assertVisible: { id: appearance-dark, selected: true }
+- scrollUntilVisible:
+    element: { id: theme-lavender-in-use }
+- assertVisible: { id: theme-lavender, selected: true }
+- scrollUntilVisible:
+    element: { id: appearance-system }
+    direction: UP
+- tapOn: { id: appearance-system }
+- waitForAnimationToEnd
+- assertVisible: { id: appearance-system, selected: true }
+- scrollUntilVisible:
+    element: { id: theme-paper }
+    centerElement: true
+- tapOn: { id: theme-paper }
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: { id: theme-paper-in-use }
+- scrollUntilVisible:
+    element: { id: theme-back }
+    direction: UP
+- tapOn: { id: theme-back }
+- scrollUntilVisible:
+    element: { id: open-theme }
