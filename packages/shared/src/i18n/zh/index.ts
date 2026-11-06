@@ -7,6 +7,7 @@ import { family } from './family';
 import { feedback } from './feedback';
 import { health } from './health';
 import { info } from './info';
+import { library } from './library';
 import { money } from './money';
 import { nutritionUi } from './nutritionUi';
 import { recall } from './recall';
@@ -31,6 +32,7 @@ export const zh = {
   auth,
   nutritionUi,
   money,
+  library,
   records,
   share,
   today,

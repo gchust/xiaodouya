@@ -148,6 +148,23 @@ describe('event 集合里不是记录的内容', () => {
     expect(summarize([record(MOM, { ...money, at: NOW })])).toBeNull();
   });
 
+  it('家人存了育儿资料、收藏、建了收藏夹不提示，哪怕带着 at', () => {
+    const list = [
+      { type: 'resource', url: 'https://b23.tv/x', title: '虚构', addedAt: NOW },
+      {
+        type: 'favorite',
+        target: 'resource',
+        targetId: '0b6f2a8e-1c3d-4e5f-8a9b-0c1d2e3f4a5b',
+        addedAt: NOW,
+      },
+      { type: 'favorite-folder', name: '辅食', createdAt: NOW },
+    ];
+    for (const data of list) {
+      expect(summarize([record(MOM, data)])).toBeNull();
+      expect(summarize([record(MOM, { ...data, at: NOW })])).toBeNull();
+    }
+  });
+
   it('也不算进条数', () => {
     expect(summarize([record(MOM, feed(75)), record(MOM, plan)])?.message).toBe(
       '妈妈 记录了 喂奶 75ml',

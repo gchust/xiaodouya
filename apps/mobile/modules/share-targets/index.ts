@@ -7,6 +7,8 @@ interface NativeShareTargets {
   defaultSmsPackage(): string | null;
   icon(packageName: string, size: number): Promise<string | null>;
   sendText(packageName: string, text: string): Promise<boolean>;
+  /** 系统分享面板，去掉小豆芽自己。打不开时是 false。 */
+  shareSheet(text: string): Promise<boolean>;
   copyText(text: string): Promise<void>;
 }
 

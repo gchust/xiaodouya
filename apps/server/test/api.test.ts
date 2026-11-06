@@ -11,6 +11,7 @@ import type {
   SyncResponse,
   UploadUrlResponse,
 } from '@xiaodouya/shared';
+import { favoriteIdFor } from '@xiaodouya/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { type Config, loadConfig } from '../src/config';
@@ -498,6 +499,101 @@ describe('同步', () => {
     await sync(admin.token, 0, [{ ...change, data: edited, deleted: true, updatedAt: 3000 }]);
     const after = await sync(mom.token, 0);
     expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
+  });
+
+  it('育儿资料、收藏和收藏夹能同步，后写胜出，软删除；viewer 读不到也不能写', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const resourceId = randomUUID();
+    const folderId = randomUUID();
+    const favoriteId = favoriteIdFor(resourceId);
+    const resource = {
+      type: 'resource',
+      url: 'https://b23.tv/AbC1234',
+      title: '虚构的睡眠视频',
+      addedAt: 1000,
+      byName: '爸爸',
+    };
+    const folder = { type: 'favorite-folder', name: '睡眠', createdAt: 1000 };
+    const favorite = {
+      type: 'favorite',
+      target: 'resource',
+      targetId: resourceId,
+      addedAt: 1000,
+      folders: [folderId],
+    };
+    const changes = [
+      {
+        id: resourceId,
+        collection: 'event' as const,
+        data: resource,
+        deleted: false,
+        updatedAt: 1000,
+      },
+      { id: folderId, collection: 'event' as const, data: folder, deleted: false, updatedAt: 1000 },
+      {
+        id: favoriteId,
+        collection: 'event' as const,
+        data: favorite,
+        deleted: false,
+        updatedAt: 1000,
+      },
+    ];
+    expect((await sync(admin.token, 0, changes)).json.rejected).toEqual([]);
+    // 离线重试不会多出来
+    expect((await sync(admin.token, 0, changes)).json.rejected).toEqual([]);
+    const seen = await sync(mom.token, 0);
+    for (const change of changes) {
+      expect(seen.json.records.filter((r) => r.id === change.id)).toHaveLength(1);
+      expect(seen.json.records.find((r) => r.id === change.id)?.data).toEqual(change.data);
+    }
+
+    // 妈妈在另一台手机上也收藏了同一条：id 一样，是同一条记录，后写胜出
+    const momFavorite = { ...favorite, folders: [], addedAt: 2000, future: 'kept' };
+    expect(
+      (
+        await sync(mom.token, 0, [
+          { ...changes[2], id: favoriteIdFor(resourceId), data: momFavorite, updatedAt: 2000 },
+        ])
+      ).json.rejected,
+    ).toEqual([]);
+    const stale = await sync(admin.token, 0, [{ ...changes[2], updatedAt: 1500 }]);
+    expect(stale.json.records.find((r) => r.id === favoriteId)?.data).toEqual(momFavorite);
+
+    const view = await sync(grandma.token, 0);
+    expect(view.json.records).toEqual([]);
+    const forbidden = await sync(grandma.token, 0, [{ ...changes[0], id: randomUUID() }]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+    // 猜到 id 提交改动，也拿不到资料
+    const guessed = await sync(grandma.token, 0, [{ ...changes[0], updatedAt: 1 }]);
+    expect(guessed.json.records).toEqual([]);
+
+    await sync(admin.token, 0, [{ ...changes[0], deleted: true, updatedAt: 3000 }]);
+    const after = await sync(mom.token, 0);
+    expect(after.json.records.find((r) => r.id === resourceId)?.deleted).toBe(true);
+    // 资料删了，收藏不跟着删：撤销删除后收藏原样回来
+    expect(after.json.records.find((r) => r.id === favoriteId)?.deleted).toBe(false);
+  });
+
+  it('育儿资料的链接只收网页链接，格式不对整条被拒', async () => {
+    const { admin } = await newFamily();
+    const bad = ['javascript:alert(1)', 'intent://x#Intent;end', 'file:///etc/passwd', ''].map(
+      (url) => ({
+        id: randomUUID(),
+        collection: 'event' as const,
+        data: { type: 'resource', url, title: '虚构', addedAt: 1000 },
+        deleted: false,
+        updatedAt: 1000,
+      }),
+    );
+    const result = await sync(admin.token, 0, bad);
+    expect(result.json.rejected.map((r) => r.reason)).toEqual([
+      'invalid',
+      'invalid',
+      'invalid',
+      'invalid',
+    ]);
   });
 
   it('小金库的金额只收整数最小单位，格式不对整条被拒', async () => {
@@ -1121,6 +1217,32 @@ describe('推送', () => {
         updatedAt: Date.now(),
       },
     ]);
+    await flush();
+    expect(pushes).toEqual([]);
+  });
+  it('存资料、收藏、建收藏夹都不打扰家人，哪怕带着 at', async () => {
+    const { admin } = await familyWithToken();
+    const now = Date.now();
+    const targetId = randomUUID();
+    const items = [
+      { type: 'resource', url: 'https://youtu.be/x', title: '虚构', addedAt: now },
+      { type: 'favorite', target: 'resource', targetId, addedAt: now },
+      { type: 'favorite-folder', name: '辅食', createdAt: now },
+    ];
+    await sync(
+      admin.token,
+      0,
+      items.flatMap((data) => [
+        { id: randomUUID(), collection: 'event', data, deleted: false, updatedAt: now },
+        {
+          id: randomUUID(),
+          collection: 'event',
+          data: { ...data, at: now },
+          deleted: false,
+          updatedAt: now,
+        },
+      ]),
+    );
     await flush();
     expect(pushes).toEqual([]);
   });

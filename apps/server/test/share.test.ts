@@ -447,6 +447,19 @@ describe('公开接口：白名单', () => {
         from: '虚构的小金库',
         at: FROM + HOUR,
       }),
+      changeOf('event', {
+        type: 'resource',
+        url: 'https://b23.tv/AbC1234',
+        title: '虚构的育儿资料',
+        addedAt: FROM + HOUR,
+        at: FROM + HOUR,
+      }),
+      changeOf('event', {
+        type: 'favorite-folder',
+        name: '虚构的收藏夹',
+        createdAt: FROM + HOUR,
+        at: FROM + HOUR,
+      }),
       changeOf('event', { type: 'bath', at: FROM + HOUR }),
     ]);
     const { token } = await shareToken(admin.token, {
@@ -458,6 +471,8 @@ describe('公开接口：白名单', () => {
     expect(result.text).not.toContain('虚构奶粉配置');
     expect(result.text).not.toContain('没有时间的配置');
     expect(result.text).not.toContain('虚构的小金库');
+    expect(result.text).not.toContain('虚构的育儿资料');
+    expect(result.text).not.toContain('虚构的收藏夹');
   });
 });
 

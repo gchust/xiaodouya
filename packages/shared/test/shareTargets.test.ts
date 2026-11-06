@@ -47,6 +47,20 @@ describe('分享到常用 App：显示哪几个', () => {
     expect(ids(picked)).toEqual(regions.OTHER.shareTargets.slice(0, MAX_SHARE_TARGETS));
   });
 
+  it('小豆芽自己也收文字分享（F-143），但不在任何地区的名单里，不会出现在这一排', () => {
+    const self = ['com.gchust.xiaodouya', 'com.gchust.xiaodouya.dev'];
+    for (const app of Object.values(SHARE_TARGET_APPS)) {
+      for (const name of self) expect(app.androidPackages).not.toContain(name);
+    }
+    for (const region of regionList) {
+      const picked = pickShareTargets(
+        region.shareTargets,
+        self.map((name) => receiver(name)),
+      );
+      expect(picked).toEqual([]);
+    }
+  });
+
   it('同一个 App 的几个包只出现一次，用排在前面的那个', () => {
     const business = pickShareTargets(['whatsapp'], [receiver('com.whatsapp.w4b')]);
     expect(business).toEqual([

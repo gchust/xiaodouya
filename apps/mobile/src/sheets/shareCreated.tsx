@@ -2,6 +2,7 @@ import { t } from '@xiaodouya/shared';
 import { Image } from 'expo-image';
 import { type ReactNode, useState } from 'react';
 import { Platform, Pressable, Share, StyleSheet, Text, View } from 'react-native';
+import { ShareTargetsNative } from '../../modules/share-targets';
 import { useApp, useRegion } from '../lib/app';
 import { IS_E2E } from '../lib/config';
 import {
@@ -15,8 +16,19 @@ import { colors, fonts } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Mono, Muted, PressScale } from '../ui/primitives';
 
-/** 系统分享面板：iOS 一直用它，Android 上是“更多”。 */
+/**
+ * 系统分享面板：iOS 一直用它，Android 上是“更多”。Android 上用自己的模块打开，去掉小豆芽自己：
+ * App 也收文字分享（存成育儿资料，F-143），React Native 的 Share 不能排除。
+ */
 export const openSystemShare = (message: string) => {
+  if (Platform.OS === 'android' && ShareTargetsNative) {
+    void ShareTargetsNative.shareSheet(message)
+      .catch(() => false)
+      .then((opened) => {
+        if (!opened) void Share.share({ message });
+      });
+    return;
+  }
   void Share.share({ message });
 };
 

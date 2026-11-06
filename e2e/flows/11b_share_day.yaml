@@ -68,6 +68,8 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: E2E share target
     timeout: 10000
+# App 自己也收文字分享（F-143）：只写包名的话系统会弹“用哪个打开”，这里必须直接是测试目标。
+- assertNotVisible: Just once
 - assertVisible:
     text: .*的成长记录：https://share\.example\.test/#[A-Za-z0-9_-]{43}
 - takeScreenshot: .artifacts/e2e-11b-target-opened
@@ -81,6 +83,8 @@ appId: com.gchust.xiaodouya
     notVisible: { id: share-more }
     timeout: 10000
 - takeScreenshot: .artifacts/e2e-11b-system-share
+# 面板里没有小豆芽自己（存成育儿资料的入口和 E2E 的测试目标都排除了）。
+- assertNotVisible: E2E share target
 - back
 - extendedWaitUntil:
     visible: { id: share-link }

@@ -16,7 +16,7 @@ import {
 } from '@xiaodouya/shared';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
 import {
@@ -32,6 +32,7 @@ import { ensureNotificationPermission } from '../lib/notifications';
 import { shareSettingsSub } from '../lib/share';
 import { canOpenStorage, storageSummaryText } from '../lib/storagePage';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { openSystemShare } from '../sheets/shareCreated';
 import { ShareSettingsSheet, useShareDisplaySupported } from '../sheets/shareDisplay';
 import { SharedLinksSheet, useCanShare } from '../sheets/shareSheets';
 import { UpdateSheet, updateRowSub } from '../sheets/updateSheet';
@@ -622,9 +623,8 @@ function InviteSheet() {
           testID="invite-share"
           label={t().family.sendToFamily}
           onPress={() =>
-            void Share.share({
-              message: t().family.inviteShare(app.serverUrl, formatted),
-            })
+            // 去掉小豆芽自己：App 也收文字分享（F-143），选到自己会把邀请存成一条育儿资料。
+            openSystemShare(t().family.inviteShare(app.serverUrl, formatted))
           }
         />
       </>

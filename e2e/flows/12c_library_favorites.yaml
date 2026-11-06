@@ -1,0 +1,284 @@
+# 育儿资料和收藏（issue #98）：资料页添加资料（粘贴一整段 B站的分享文字，取出链接和标题；没写协议的网址），
+# 打开原页面，收藏资料和回忆，建收藏夹、放进收藏夹、按收藏夹看，取消收藏可撤销，删收藏夹和资料先确认。
+# CI 的 AOSP 模拟器没有浏览器，打开链接时会复制链接并提示，本机有 Chrome 时会打开 Custom Tab，两种都接受。
+# 跑完：测试用的资料、收藏夹和回忆都删掉了。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- scrollUntilVisible:
+    element: { id: library-add }
+    centerElement: true
+- waitForAnimationToEnd
+- assertVisible: { id: library-empty }
+- assertVisible: { id: favorites-section-empty }
+- takeScreenshot: .artifacts/e2e-12c-info-empty
+- tapOn: { id: library-add }
+- extendedWaitUntil:
+    visible: { id: resource-save }
+    timeout: 10000
+# 只有链接是必填的
+- tapOn: { id: resource-save }
+- assertVisible:
+    id: resource-error
+    text: 请填链接
+# 粘贴一整段分享文字：链接放进链接框，标题预填
+- tapOn: { id: resource-url }
+- inputText: "【宝宝睡眠${RUN_ID}-哔哩哔哩】 https://b23.tv/e2e${RUN_ID}"
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: resource-url
+      text: https://b23.tv/e2e${RUN_ID}
+    timeout: 5000
+- assertVisible:
+    id: resource-title
+    text: 宝宝睡眠${RUN_ID}
+- assertVisible:
+    id: resource-source
+    text: B站
+- tapOn: { id: resource-note }
+- inputText: E2E note
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-12c-add-sheet
+- tapOn: { id: resource-save }
+- extendedWaitUntil:
+    notVisible: { id: resource-save }
+    timeout: 10000
+- assertVisible:
+    text: .*已存下 · 宝宝睡眠${RUN_ID}.*
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+# 没写协议、不填标题：补上 https，标题用来源的默认标题
+- tapOn: { id: library-add }
+- extendedWaitUntil:
+    visible: { id: resource-save }
+    timeout: 10000
+- tapOn: { id: resource-url }
+- inputText: www.who.int
+- hideKeyboard
+- assertVisible:
+    id: resource-source
+    text: 网页
+- tapOn: { id: resource-save }
+- extendedWaitUntil:
+    notVisible: { id: resource-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- scrollUntilVisible:
+    element: { id: library-row-1 }
+    centerElement: true
+- assertVisible:
+    id: library-row-0-title
+    text: 网页
+- assertVisible:
+    id: library-row-1-title
+    text: 宝宝睡眠${RUN_ID}
+# 收藏 B站那条
+- tapOn: { id: library-star-1 }
+- assertVisible: .*已收藏.*
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-12c-info-list
+# 点一行在 App 里打开原页面：有浏览器就打开（返回回来），没有就复制链接并说明
+- tapOn: { id: library-row-1 }
+- runFlow:
+    when:
+      notVisible: { id: library-row-1 }
+    commands:
+      - back
+- extendedWaitUntil:
+    visible: { id: library-row-1 }
+    timeout: 15000
+
+# 收藏页：建一个收藏夹，放进去
+- scrollUntilVisible:
+    element: { id: favorites-entry }
+    centerElement: true
+- tapOn: { id: favorites-entry }
+- extendedWaitUntil:
+    visible: { id: favorites-screen }
+    timeout: 10000
+- assertVisible:
+    id: fav-row-0-title
+    text: 宝宝睡眠${RUN_ID}
+- tapOn: { id: favorites-folder-new }
+- extendedWaitUntil:
+    visible: { id: folder-create-save }
+    timeout: 10000
+- tapOn: { id: folder-create-save }
+- assertVisible:
+    id: folder-error
+    text: 请填名字
+- tapOn: { id: folder-create-name }
+- inputText: 睡眠
+- hideKeyboard
+- tapOn: { id: folder-create-save }
+- extendedWaitUntil:
+    notVisible: { id: folder-create-save }
+    timeout: 10000
+# 建好就切到这个收藏夹，还是空的
+- assertVisible: { id: favorites-empty }
+- assertVisible: { id: favorites-manage }
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: favorites-folder-all }
+- tapOn: { id: fav-more-0 }
+- tapOn: { id: resource-folders }
+- extendedWaitUntil:
+    visible: { id: folder-picker-save }
+    timeout: 10000
+- tapOn: { id: folder-pick-0 }
+- assertVisible: 已放进
+- takeScreenshot: .artifacts/e2e-12c-folder-picker
+- tapOn: { id: folder-picker-save }
+- extendedWaitUntil:
+    notVisible: { id: folder-picker-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: favorites-folder-0 }
+- assertVisible:
+    id: favorites-folder-0
+    text: 睡眠 1
+- assertVisible:
+    id: fav-row-0-title
+    text: 宝宝睡眠${RUN_ID}
+- tapOn: { id: favorites-back }
+
+# 回忆也能收藏
+- tapOn: { id: tab-recall }
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Fav ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: Favorite moment text
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Fav ${RUN_ID}
+    timeout: 15000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: 收藏“Fav ${RUN_ID}”
+- assertVisible: .*已收藏.*
+- assertVisible: 取消收藏“Fav ${RUN_ID}”
+- takeScreenshot: .artifacts/e2e-12c-moment-star
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+# ⋯ 里也能放进收藏夹
+- tapOn: Fav ${RUN_ID}的更多操作
+- tapOn: { id: moment-folders }
+- extendedWaitUntil:
+    visible: { id: folder-picker-save }
+    timeout: 10000
+- tapOn: { id: folder-pick-0 }
+- tapOn: { id: folder-picker-save }
+- extendedWaitUntil:
+    notVisible: { id: folder-picker-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+
+- tapOn: { id: tab-info }
+- scrollUntilVisible:
+    element: { id: favorites-entry-folder-0 }
+    centerElement: true
+- tapOn: { id: favorites-entry-folder-0 }
+- extendedWaitUntil:
+    visible: { id: favorites-screen }
+    timeout: 10000
+# 从资料页的收藏夹那一行进来，直接是这个收藏夹；新收藏的在前
+- assertVisible:
+    id: favorites-folder-0
+    text: 睡眠 2
+- assertVisible:
+    id: fav-row-0-title
+    text: Fav ${RUN_ID}
+- takeScreenshot: .artifacts/e2e-12c-favorites-folder
+- tapOn: { id: fav-row-0 }
+- extendedWaitUntil:
+    visible: { id: fav-moment-text }
+    timeout: 10000
+- assertVisible: Favorite moment text
+- tapOn: { id: sheet-cancel }
+# 取消收藏可以撤销
+- tapOn: { id: fav-star-0 }
+- assertVisible: .*已取消收藏.*
+- assertVisible:
+    id: favorites-folder-0
+    text: 睡眠 1
+- tapOn: { id: toast-undo }
+- extendedWaitUntil:
+    visible:
+      id: favorites-folder-0
+      text: 睡眠 2
+    timeout: 10000
+
+# 删收藏夹先确认，里面的东西还在收藏里
+- tapOn: { id: favorites-manage }
+- tapOn: { id: folder-delete }
+- extendedWaitUntil:
+    visible: { id: delete-sheet-confirm }
+    timeout: 10000
+- assertVisible: 删除收藏夹“睡眠”？
+- takeScreenshot: .artifacts/e2e-12c-folder-delete-confirm
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-confirm }
+    timeout: 10000
+- assertNotVisible: { id: favorites-folder-0 }
+- assertVisible:
+    id: favorites-folder-all
+    text: 全部 2
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: favorites-back }
+
+# 清理：删资料先确认
+- scrollUntilVisible:
+    element: { id: library-more-0 }
+    centerElement: true
+- tapOn: { id: library-more-0 }
+- tapOn: { id: resource-delete }
+- extendedWaitUntil:
+    visible: { id: delete-sheet-confirm }
+    timeout: 10000
+- assertVisible: 删除资料“网页”？
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: { id: delete-sheet-confirm }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: library-more-0 }
+- tapOn: { id: resource-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    visible: { id: library-empty }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+- tapOn: { id: tab-recall }
+- tapOn: Fav ${RUN_ID}的更多操作
+- tapOn: { id: moment-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: Fav ${RUN_ID}
+    timeout: 10000
