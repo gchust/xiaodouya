@@ -40,7 +40,7 @@ import {
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { type ReactNode, useCallback, useRef, useState } from 'react';
-import { Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { Pressable, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
@@ -49,6 +49,7 @@ import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput, Toggle } from '../ui/primitives';
+import { Text } from '../ui/Text';
 import {
   DateTimeRow,
   DayChips,
@@ -1262,9 +1263,11 @@ const s = themedStyles(() => ({
   mlChips: { flexDirection: 'row', gap: 8 },
   mlChip: { flex: 1, alignItems: 'center', paddingVertical: 9, borderRadius: 10 },
   diaperRow: { flexDirection: 'row', gap: 10 },
+  // 最小高度而不是固定高度：系统大字体下文字放大，按钮跟着长高（issue #110）。
   diaperBtn: {
     flex: 1,
-    height: 96,
+    minHeight: 96,
+    paddingVertical: 12,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,
@@ -1277,7 +1280,9 @@ const s = themedStyles(() => ({
   diaperLabel: { fontSize: 16, color: colors.ink },
   moreGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: MORE_GAP },
   moreItem: {
-    height: 88,
+    minHeight: 88,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.line,
@@ -1286,8 +1291,8 @@ const s = themedStyles(() => ({
     justifyContent: 'center',
     gap: 6,
   },
-  moreLabel: { fontSize: 14, color: colors.ink },
-  moreSub: { fontSize: 10, color: colors.muted },
+  moreLabel: { fontSize: 14, color: colors.ink, textAlign: 'center' },
+  moreSub: { fontSize: 10, color: colors.muted, textAlign: 'center' },
   hint: { fontSize: 12, lineHeight: 19 },
   smallStepper: {
     flexDirection: 'row',
@@ -1298,7 +1303,7 @@ const s = themedStyles(() => ({
     backgroundColor: colors.paper,
     borderRadius: 14,
   },
-  smallLabel: { fontSize: 14, color: colors.muted, width: 44 },
+  smallLabel: { fontSize: 14, color: colors.muted, minWidth: 44 },
   smallBtn: {
     width: 40,
     height: 40,

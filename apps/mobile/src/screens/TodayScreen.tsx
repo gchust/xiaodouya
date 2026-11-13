@@ -35,9 +35,11 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  type StyleProp,
   StyleSheet,
-  Text,
+  useWindowDimensions,
   View,
+  type ViewStyle,
 } from 'react-native';
 import {
   interpolateColor,
@@ -49,6 +51,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
 import { saveAvatar } from '../lib/avatar';
 import { localDayBounds } from '../lib/dates';
+import { quickActionColumns } from '../lib/fontScale';
 import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -66,6 +69,7 @@ import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
 import { Highlighted } from '../ui/Search';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
+import { Text } from '../ui/Text';
 import { UpdateReadyCard } from '../ui/UpdateReadyCard';
 import { useWidgetLink } from '../widgets/useWidgetLink';
 
@@ -74,6 +78,8 @@ const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 
 export function TodayScreen() {
   const insets = useSafeAreaInsets();
+  const { fontScale } = useWindowDimensions();
+  const actionStyle = quickActionColumns(fontScale) === 2 ? [s.action, s.actionHalf] : s.action;
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
   const router = useRouter();
@@ -264,7 +270,7 @@ export function TodayScreen() {
         <PressScale
           testID="action-feed"
           accessibilityLabel={t().today.feed}
-          style={[s.action, s.actionPrimary]}
+          style={[actionStyle, s.actionPrimary]}
           onPress={openFeed}
         >
           <Dot color={colors.onAccent} />
@@ -275,20 +281,21 @@ export function TodayScreen() {
         <PressScale
           testID="action-diaper"
           accessibilityLabel={t().today.diaper}
-          style={s.action}
+          style={actionStyle}
           onPress={() => sheet.open(t().today.changeDiaper, () => <DiaperSheet />)}
         >
           <Dot color={colors.diaper} />
           <Text style={s.actionLabel}>{t().today.diaper}</Text>
         </PressScale>
         <SleepAction
+          style={actionStyle}
           sleeping={Boolean(sleeping)}
           onPress={() => void toggleSleep(Boolean(sleeping))}
         />
         <PressScale
           testID="action-more"
           accessibilityLabel={t().today.more}
-          style={s.action}
+          style={actionStyle}
           onPress={() => sheet.open(t().today.recordOther, () => <MoreSheet birthAt={birthAt} />)}
         >
           <Dot color={colors.muted} hollow />
@@ -410,7 +417,15 @@ export function TodayScreen() {
   );
 }
 
-function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => void }) {
+function SleepAction({
+  sleeping,
+  onPress,
+  style,
+}: {
+  sleeping: boolean;
+  onPress: () => void;
+  style: StyleProp<ViewStyle>;
+}) {
   const progress = useSharedValue(sleeping ? 1 : 0);
   useEffect(() => {
     progress.value = withTiming(sleeping ? 1 : 0, { duration: 250 });
@@ -425,7 +440,7 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
     <PressScale
       testID="action-sleep"
       accessibilityLabel={sleeping ? t().today.awake : t().today.sleep}
-      style={[s.action, tint]}
+      style={[style, tint]}
       onPress={onPress}
     >
       <Dot color={sleeping ? colors.onSleep : colors.sleep} />
@@ -531,7 +546,13 @@ const s = themedStyles(() => ({
   feedLabel: { fontSize: 13, color: colors.muted },
   feedHint: { fontSize: 11, flexShrink: 1, textAlign: 'right' },
   timer: { fontSize: 32, lineHeight: 32, letterSpacing: -0.6 },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12, marginHorizontal: spacing.page },
+  actions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    marginHorizontal: spacing.page,
+  },
   action: {
     flex: 1,
     alignItems: 'center',
@@ -542,6 +563,8 @@ const s = themedStyles(() => ({
     borderColor: colors.line,
     borderRadius: 14,
   },
+  // 两行两列：每个按钮先占四成宽，flexGrow 补满一半。
+  actionHalf: { flexBasis: '40%' },
   actionPrimary: { backgroundColor: colors.accentFill, borderColor: colors.accentFill },
   actionLabel: { fontSize: 13, color: colors.ink },
   insight: {
@@ -580,7 +603,7 @@ const s = themedStyles(() => ({
     borderBottomWidth: 1,
     borderBottomColor: colors.track,
   },
-  rowTime: { width: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
+  rowTime: { minWidth: 44, fontSize: 12, color: colors.muted, paddingTop: 1 },
   rowTitle: { fontSize: 14, color: colors.ink },
   nutritionEntry: {
     marginTop: 8,

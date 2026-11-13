@@ -11,15 +11,7 @@ import {
   t,
 } from '@xiaodouya/shared';
 import { useEffect, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Linking,
-  Platform,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { consentSegments } from '../lib/accountLogic';
 import { Api } from '../lib/api';
@@ -30,6 +22,7 @@ import { colors, fonts, spacing, themedStyles } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { Button, Chip, Field, Muted, Serif } from '../ui/primitives';
 import { RegionPicker } from '../ui/RegionPicker';
+import { Text } from '../ui/Text';
 import { FormError, ResendButton, useCooldown, VerifyEmailForm } from './AccountPanels';
 
 function Page({ children, testID }: { children: React.ReactNode; testID: string }) {

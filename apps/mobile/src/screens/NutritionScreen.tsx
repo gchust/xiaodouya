@@ -13,7 +13,7 @@ import {
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNow, useRecords, useRegion, useUnits } from '../lib/app';
 import { localDayBounds } from '../lib/dates';
@@ -21,6 +21,7 @@ import { AddFormulaFlow, FormulaEditor } from '../sheets/formulaSheets';
 import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
 import { ListCard, Mono, Muted, PageTitle, SectionTitle } from '../ui/primitives';
+import { Text } from '../ui/Text';
 
 /** 只回看一周：更早的记录一天天翻没有用，也不想让人盯着过去的数字。 */
 const DAYS_BACK = 6;

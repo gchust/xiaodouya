@@ -17,7 +17,6 @@ import {
   type NativeSyntheticEvent,
   Pressable,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -41,6 +40,7 @@ import { colors, themedStyles } from '../theme';
 import { AvatarEditor } from '../ui/AvatarEditor';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Stripes } from '../ui/primitives';
+import { Text } from '../ui/Text';
 
 /** 全屏查看回忆里的照片和视频（左右滑动切换）、单个证件图片（可缩放）或宝宝的头像（可编辑）。 */
 export function ViewerScreen() {

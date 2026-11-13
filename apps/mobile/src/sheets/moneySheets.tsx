@@ -19,7 +19,7 @@ import {
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useRef, useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useApp, useRecords, useRegion } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { deviceRegionCode } from '../lib/device';
@@ -28,6 +28,7 @@ import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Field, Muted } from '../ui/primitives';
+import { Text, TextInput } from '../ui/Text';
 import { DayChips } from '../ui/TimeField';
 
 /** 家庭地区的币种：它显示成短符号（新加坡的 $），别的币种写成能分清的 S$、US$。 */
