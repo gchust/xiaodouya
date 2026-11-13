@@ -63,6 +63,8 @@ const session: WidgetSession = {
   label: '爸爸',
 };
 const baby: BabyData = { name: '测试豆', birthAt: 1 };
+// 宝宝档案的 id 是家庭 id，虚构的。
+const BABY_ID = '11111111-1111-4111-8111-111111111111';
 const HOUR = 3_600_000;
 const now = 1_800_000_000_000;
 
@@ -70,7 +72,7 @@ async function setup(events: Record<string, EventData> = {}) {
   const db = new MemoryDb();
   const store = new RecordStore(db, { now: () => now });
   await store.load();
-  await store.write('baby', 'baby-1', baby);
+  await store.write('baby', BABY_ID, baby);
   for (const [id, data] of Object.entries(events)) await store.write('event', id, data);
   return { db, store };
 }
@@ -89,6 +91,16 @@ describe('小工具写入', () => {
     });
     expect(store.dirtyRecords(100).map((r) => r.id)).toContain('new');
     expect(store.getSnapshot().events[0]?.id).toBe('new');
+  });
+
+  it('小工具记的喂奶、尿布、睡眠写上当前宝宝（issue #106）', async () => {
+    const { db, store } = await setup({ old: lastFeed });
+    await runWidgetAction({ type: 'feed', id: 'new' }, store, session, now);
+    await runWidgetAction({ type: 'diaper', id: 'd1', kind: 'wee' }, store, session, now);
+    await runWidgetAction({ type: 'sleepStart', id: 's' }, store, session, now);
+    for (const id of ['new', 'd1', 's']) {
+      expect(db.records.get(id)?.data).toMatchObject({ babyId: BABY_ID });
+    }
   });
 
   it('同一个 id 重试不会多记，也不会改掉已有记录的版本', async () => {
@@ -243,6 +255,7 @@ describe('奶粉配置和小工具', () => {
       formulaId: 'f1',
       formula: formulaSnapshot(formula),
       byName: '爸爸',
+      babyId: BABY_ID,
     });
   });
 

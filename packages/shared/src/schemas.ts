@@ -36,10 +36,17 @@ export const MediaRef = z.looseObject({
 });
 export type MediaRef = z.infer<typeof MediaRef>;
 
+/**
+ * 这条记录属于哪个宝宝（issue #106）。没有的属于家庭的第一个宝宝，规则在 domain/babies.ts，
+ * 见 docs/ARCHITECTURE.md 的“多个宝宝”。格式不对只丢这一项，记录回落到第一个宝宝，不能整条消失。
+ */
+const babyId = z.uuid().optional().catch(undefined);
+
 const eventBase = {
   at: timestamp,
   note: shortText.optional(),
   byName: shortText.optional(),
+  babyId,
 };
 
 export const diaperKinds = ['wee', 'poo', 'both'] as const;
@@ -129,6 +136,7 @@ export const VaccinePlanData = z.looseObject({
   plannedAt: timestamp.optional().catch(undefined),
   /** 自己加的疫苗按月龄算时的月龄。 */
   months: z.number().int().min(0).max(240).optional().catch(undefined),
+  babyId,
 });
 export type VaccinePlanData = z.infer<typeof VaccinePlanData>;
 
@@ -194,6 +202,7 @@ export const MoneyData = z.looseObject({
   category: z.string().max(64).optional().catch(undefined),
   note: shortText.optional().catch(undefined),
   byName: shortText.optional().catch(undefined),
+  babyId,
 });
 export type MoneyData = z.infer<typeof MoneyData>;
 
@@ -290,6 +299,7 @@ export const MomentData = z.looseObject({
    * 格式不对只丢掉这一项，不能让整条回忆校验失败；旧版 App 不认识它，按第一个显示。
    */
   coverMediaId: z.uuid().optional().catch(undefined),
+  babyId,
 });
 export type MomentData = z.infer<typeof MomentData>;
 
@@ -298,6 +308,7 @@ export const LetterData = z.looseObject({
   text: longText,
   at: timestamp,
   byName: shortText.optional(),
+  babyId,
 });
 export type LetterData = z.infer<typeof LetterData>;
 
@@ -315,6 +326,8 @@ export const DocumentData = z.looseObject({
   owner: z.uuid().optional(),
   /** 本人选的能看的家人。格式不对只丢这一项，结果是谁都不给看，不会多给人看。 */
   sharedWith: z.array(z.uuid()).max(MAX_DOCUMENT_READERS).optional().catch(undefined),
+  /** 宝宝的证件属于哪个宝宝。家人自己的证件（有 `owner`）不属于哪个宝宝，不写。 */
+  babyId,
 });
 export type DocumentData = z.infer<typeof DocumentData>;
 
@@ -332,6 +345,11 @@ export const BabyData = z.looseObject({
    * 格式不对也只丢掉这一项，不能让整份档案校验失败。
    */
   region: z.string().max(32).optional().catch(undefined),
+  /**
+   * 什么时候建的档，只用来排出谁是“第一个宝宝”（issue #106），不按 `updatedAt`：改一下档案顺序不能变。
+   * 家庭建档时的第一个宝宝不写，缺失排最前；以后加的宝宝才写。格式不对只丢这一项。
+   */
+  createdAt: timestamp.optional().catch(undefined),
 });
 export type BabyData = z.infer<typeof BabyData>;
 

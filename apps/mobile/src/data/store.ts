@@ -1,9 +1,11 @@
 import {
-  type BabyData,
+  type BabyRef,
+  babyRefOf,
   type Collection,
   type CollectionData,
   compareMoneyEntries,
   type DocumentData,
+  defaultBaby,
   type EventData,
   type FavoriteData,
   type FavoriteFolderData,
@@ -23,6 +25,7 @@ import {
   type ServerRecord,
   t,
   type VaccinePlanData,
+  withBabyId,
 } from '@xiaodouya/shared';
 
 /** 本地持久化接口。生产用 SQLite（`sqlite.ts`），测试用内存实现。 */
@@ -140,18 +143,26 @@ export class RecordStore {
       documents: [],
       pendingCount: 0,
     };
+    // 删除的、读不懂的档案也参与排序，谁是第一个宝宝不能因此改变（issue #106）；它们只是不显示。
+    const babies: (BabyRef & { entry: Entry<'baby'> | null })[] = [];
     for (const record of this.records.values()) {
       if (record.dirty) next.pendingCount += 1;
+      if (record.collection === 'baby') {
+        const data = record.deleted ? null : parseCollectionData('baby', record.data);
+        const entry = data && {
+          id: record.id,
+          updatedAt: record.updatedAt,
+          dirty: record.dirty,
+          data,
+        };
+        babies.push({ ...babyRefOf(record.id, record.data, entry === null), entry });
+        continue;
+      }
       if (record.deleted) continue;
       const data = parseCollectionData(record.collection, record.data);
       if (!data) continue;
       const base = { id: record.id, updatedAt: record.updatedAt, dirty: record.dirty };
       switch (record.collection) {
-        case 'baby':
-          if (!next.baby || record.updatedAt > next.baby.updatedAt) {
-            next.baby = { ...base, data: data as BabyData };
-          }
-          break;
         case 'event':
           if (isFormulaData(data)) next.formulas.push({ ...base, data });
           else if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
@@ -172,6 +183,7 @@ export class RecordStore {
           break;
       }
     }
+    next.baby = defaultBaby(babies)?.entry ?? null;
     const byAtDesc = (a: { data: unknown }, b: { data: unknown }) => atOf(b.data) - atOf(a.data);
     next.events.sort(byAtDesc);
     next.moments.sort(byAtDesc);
@@ -200,7 +212,8 @@ export class RecordStore {
     const record: StoredRecord = {
       id,
       collection,
-      data,
+      // 新记录写上属于哪个宝宝（issue #106）。改已有的记录不动：没有的本来就属于第一个宝宝。
+      data: this.records.has(id) ? data : withBabyId(collection, data, this.snapshot.baby?.id),
       deleted: false,
       updatedAt: this.nextVersion(id),
       dirty: true,
