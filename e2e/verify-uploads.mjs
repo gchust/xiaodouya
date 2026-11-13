@@ -129,7 +129,8 @@ const [babyRow] = await sql`
   SELECT r.data FROM records r
   JOIN memberships ms ON ms.family_id = r.family_id
   JOIN users u ON u.id = ms.user_id
-  WHERE u.email = ${`admin-${runId}@example.test`} AND r.collection = 'baby' AND r.deleted = false`;
+  WHERE u.email = ${`admin-${runId}@example.test`} AND r.collection = 'baby' AND r.deleted = false
+    AND r.id = r.family_id`;
 const avatar = babyRow?.data?.avatar;
 if (expected('avatar')) need(avatar?.mime === 'image/jpeg', '当前头像不是编辑后的 JPEG');
 const avatarSizes = new Map();

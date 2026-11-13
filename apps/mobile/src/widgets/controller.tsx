@@ -86,7 +86,7 @@ async function readSession(core: CoreServices) {
 
 export async function loadWidgetView(core: CoreServices): Promise<ShownWidgetView> {
   const { session, prefs } = await readSession(core);
-  const { baby, events } = core.store.getSnapshot();
+  const { baby, events, multiBaby } = core.store.getSnapshot();
   const now = Date.now();
   const syncedAt = Number((await core.db.getMeta(LAST_SYNC_KEY)) ?? 0);
   const display = await readWidgetPrefs(core.db);
@@ -98,7 +98,8 @@ export async function loadWidgetView(core: CoreServices): Promise<ShownWidgetVie
     now,
     dayStart: startOfLocalDay(now),
     syncedAt: syncedAt > 0 ? syncedAt : null,
-    label: display.label,
+    // 称呼是这台手机设的，不分宝宝：有几个宝宝时用档案里的名字，免得写着大宝的称呼、记给二宝（issue #106）。
+    label: multiBaby ? null : display.label,
   });
   if (view.kind !== 'ready') {
     lastView = view;

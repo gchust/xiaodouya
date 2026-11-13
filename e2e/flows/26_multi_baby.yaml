@@ -41,6 +41,10 @@ appId: com.gchust.xiaodouya
 - assertVisible: 这个宝宝的地区
 - assertVisible: 新加坡
 - takeScreenshot: .artifacts/e2e-26-info-second-baby
+# Toast 可能盖住底部标签
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
 # 今天页：Bean 还没有喂奶，Sprout 的记录不在这里。
 - tapOn: { id: tab-today }
 - extendedWaitUntil:
