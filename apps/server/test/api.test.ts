@@ -422,6 +422,50 @@ describe('同步', () => {
     expect(junk.json.rejected).toEqual([]);
     expect(await coverOf(mom.token)).toBeUndefined();
   });
+  it('记录的 babyId 和档案的 createdAt 能同步，格式不对只丢这一项（issue #106）', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const second = randomUUID();
+    const change = (id: string, collection: string, data: Record<string, unknown>) => ({
+      id,
+      collection,
+      data,
+      deleted: false,
+      updatedAt: 1000,
+    });
+    const scoped: [string, Record<string, unknown>][] = [
+      ['event', { type: 'feed', at: 1, ml: 90 }],
+      ['event', { type: 'vaccine-plan', vaccineId: 'sg:bcg', hidden: true }],
+      ['event', { type: 'money', flow: 'in', amountMinor: 100, currency: 'SGD', happenedAt: 1 }],
+      ['moment', { title: '', text: '', at: 1, milestone: false, media: [] }],
+      ['letter', { title: '', text: '虚构的信', at: 1 }],
+      ['document', { name: '虚构证件', files: [] }],
+    ];
+    const good = scoped.map(([collection, data]) =>
+      change(randomUUID(), collection, { ...data, babyId: second }),
+    );
+    const bad = scoped.map(([collection, data]) =>
+      change(randomUUID(), collection, { ...data, babyId: 'not-a-uuid' }),
+    );
+    const result = await sync(admin.token, 0, [babyChange(family.id, {}, 1000), ...good, ...bad]);
+    expect(result.json.rejected).toEqual([]);
+    // 以后的版本加的第二个宝宝。家人保存档案时服务端会换掉地区，createdAt 不能跟着丢。
+    expect(
+      (await sync(mom.token, 0, [babyChange(second, { createdAt: 5000 }, 2000)])).json.rejected,
+    ).toEqual([]);
+
+    const { json } = await sync(mom.token, 0);
+    const dataOf = (id: string) =>
+      json.records.find((r) => r.id === id)?.data as Record<string, unknown> | undefined;
+    for (const { id } of good) expect(dataOf(id)?.babyId).toBe(second);
+    for (const { id } of bad) {
+      expect(dataOf(id)).toBeDefined();
+      expect(dataOf(id)).not.toHaveProperty('babyId');
+    }
+    expect(dataOf(second)?.createdAt).toBe(5000);
+    expect(dataOf(family.id)).not.toHaveProperty('createdAt');
+  });
+
   it('奶粉配置和喂奶上的奶粉字段能同步，viewer 读不到也不能写', async () => {
     const { admin } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');

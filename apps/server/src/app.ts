@@ -312,7 +312,10 @@ function mergePrefs(stored: unknown): Prefs {
   return { ...defaultPrefs, timezone: LEGACY_TIMEZONE, ...(parsed.success ? parsed.data : {}) };
 }
 
-/** 家庭当前的地区。档案和记录一样是后写胜出，所以取最新的一条，和客户端的规则一致。 */
+/**
+ * 家庭当前的地区。现在一个家庭只有一份档案，取最新的一条就是它。客户端按“第一个宝宝”选档案，
+ * 有第二个宝宝之后这里要跟着改，见 docs/ARCHITECTURE.md 的“多个宝宝”。
+ */
 async function familyRegion(
   db: Pick<Sql, 'unsafe'>,
   familyId: string,

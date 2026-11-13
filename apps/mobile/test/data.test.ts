@@ -605,6 +605,102 @@ describe('离线优先的记录和同步', () => {
   });
 });
 
+describe('多个宝宝的数据规则（issue #106 第一步）', () => {
+  // 虚构的 id：家庭 id 也是第一个宝宝档案的 id。
+  const FAMILY = '11111111-1111-4111-8111-111111111111';
+  const SECOND = '22222222-2222-4222-8222-222222222222';
+  let server: FakeServer;
+  beforeEach(() => {
+    server = new FakeServer();
+  });
+  const pushRemote = (id: string, collection: ServerRecord['collection'], data: unknown, at = 1) =>
+    server.log.push({
+      id,
+      collection,
+      data,
+      deleted: false,
+      updatedAt: at,
+      seq: ++server.seq,
+      createdBy: null,
+    });
+
+  it('家里有两份档案时显示第一个宝宝，后改的那份更新也不会把它换掉', async () => {
+    // 以后的版本加第二个宝宝：它有 createdAt，而且改得更晚。旧规则（updatedAt 最大）会显示它。
+    pushRemote(FAMILY, 'baby', { name: '大豆', birthAt: 1 }, 100);
+    pushRemote(SECOND, 'baby', { name: '小豆', birthAt: 2, createdAt: 5000 }, 9000);
+    const a = device(server);
+    await a.engine.start();
+    expect(a.store.getSnapshot().baby?.id).toBe(FAMILY);
+    expect(a.store.getSnapshot().baby?.data.name).toBe('大豆');
+    a.engine.stop();
+  });
+
+  it('只有一个宝宝时照常显示它，改了档案还是它', async () => {
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('baby', FAMILY, { name: '大豆', birthAt: 1 });
+    await a.store.write('baby', FAMILY, { name: '大豆豆', birthAt: 1 });
+    expect(a.store.getSnapshot().baby).toMatchObject({ id: FAMILY, data: { name: '大豆豆' } });
+    a.engine.stop();
+  });
+
+  it('新记录写上当前宝宝；修改旧记录不补；全家共用的不写', async () => {
+    const legacyId = randomUUID();
+    const secondFeedId = randomUUID();
+    pushRemote(legacyId, 'event', feed(60, 500));
+    pushRemote(secondFeedId, 'event', { ...feed(80, 400), babyId: SECOND });
+    const a = device(server);
+    await a.engine.start();
+    await a.store.write('baby', FAMILY, { name: '大豆', birthAt: 1 });
+
+    const feedId = randomUUID();
+    const momentId = randomUUID();
+    const formulaId = randomUUID();
+    await a.store.write('event', feedId, feed());
+    await a.store.write('moment', momentId, {
+      title: '',
+      text: '虚构的回忆',
+      at: 1,
+      milestone: false,
+      media: [],
+    });
+    await a.store.write('event', formulaId, {
+      type: 'formula',
+      name: '虚构奶粉',
+      basis: 'per100ml',
+      values: {},
+    });
+    await a.store.write('event', legacyId, feed(70, 500));
+    // 以后的版本记给第二个宝宝的，在这里修改（mergeEdit 放到最新版本上）不能换主人。
+    const latest = a.store.getSnapshot().events.find((e) => e.id === secondFeedId)!.data;
+    await a.store.write('event', secondFeedId, mergeEdit(latest, latest, { ml: 120 }));
+
+    const data = (id: string) => a.db.records.get(id)?.data as Record<string, unknown>;
+    expect(data(momentId).babyId).toBe(FAMILY);
+    expect(data(feedId).babyId).toBe(FAMILY);
+    expect(data(secondFeedId)).toMatchObject({ ml: 120, babyId: SECOND });
+    expect(data(formulaId)).not.toHaveProperty('babyId');
+    expect(data(legacyId)).not.toHaveProperty('babyId');
+
+    // 同步给家人后原样在，时间线照常显示，旧记录也在。
+    await a.engine.syncNow();
+    const b = device(server);
+    await b.engine.start();
+    const events = b.store.getSnapshot().events;
+    expect(events.map((e) => e.id).sort()).toEqual([feedId, legacyId, secondFeedId].sort());
+    expect(server.log.find((r) => r.id === momentId)?.data).toMatchObject({ babyId: FAMILY });
+    a.engine.stop();
+    b.engine.stop();
+  });
+
+  it('还没有宝宝时写的记录不带 babyId，之后照样属于第一个宝宝', async () => {
+    const a = device(server);
+    const id = randomUUID();
+    await a.store.write('event', id, feed());
+    expect(a.db.records.get(id)?.data).toEqual(feed());
+  });
+});
+
 function fakeUploads(overrides: Partial<UploadTransport> = {}) {
   const calls: string[] = [];
   const transport: UploadTransport = {
