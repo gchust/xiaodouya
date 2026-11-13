@@ -193,6 +193,8 @@ export function summaryText(s: DaySummary, units: Units = metricUnits): string {
   }
   const parts: string[] = [];
   if (s.feeds > s.breastFeeds) parts.push(text.bottlePart(formatVolume(s.ml, units.volume)));
-  parts.push(text.breastPart(formatDuration(s.breastMs)));
+  // 和每一条一样四舍五入到分钟，喂了不到半分钟也写 1 分钟，不写“0分钟”。刚开始计时、还是 0 秒时就不写时长。
+  const minutes = s.breastMs > 0 ? Math.max(1, Math.round(s.breastMs / 60_000)) : 0;
+  parts.push(minutes > 0 ? text.breastPart(formatDuration(minutes * 60_000)) : text.breastOnly);
   return text.summaryMixed(s.feeds, parts, s.diapers, sleepHours);
 }

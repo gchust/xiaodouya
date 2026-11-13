@@ -45,6 +45,7 @@ export const domain = {
       `喂奶 ${feeds} 次 · ${feedParts.join(' · ')}　尿布 ${diapers}　睡 ${sleepHours}h`,
     bottlePart: (volume: string) => `瓶喂 ${volume}`,
     breastPart: (duration: string) => `亲喂 ${duration}`,
+    breastOnly: '亲喂',
     /** `parts` 是每一侧的时长，比如 `左 12 分 · 右 8 分`；两侧都没计到时是空的。 */
     breastFeed: (parts: string) => (parts ? `亲喂 ${parts}` : '亲喂'),
     breastFeeding: (detail: string) => `亲喂中 · ${detail}`,

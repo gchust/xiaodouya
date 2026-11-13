@@ -168,7 +168,11 @@ describe('亲喂怎么写', () => {
     expect(describeEvent(nursed(NOW - HOUR, 12, 8, 'right'), NOW)).toBe('亲喂 左 12 分 · 右 8 分');
     expect(describeEvent(nursed(NOW - HOUR, 0, 15, 'right'), NOW)).toBe('亲喂 右 15 分');
     expect(describeEvent(startBreastFeed('left', NOW), NOW)).toBe('亲喂中 · 左侧');
-    const running = switchBreastSide(startBreastFeed('left', NOW - 10 * MIN), 'right', NOW - 2 * MIN);
+    const running = switchBreastSide(
+      startBreastFeed('left', NOW - 10 * MIN),
+      'right',
+      NOW - 2 * MIN,
+    );
     expect(describeEvent(running!, NOW)).toBe('亲喂中 · 左 8 分 · 右 2 分');
   });
 
@@ -214,6 +218,16 @@ describe('24 小时摘要', () => {
     const summary = summarize24h([nursed(NOW - 2 * HOUR, 12, 8, 'right')], NOW);
     expect(summaryText(summary)).toBe('喂奶 1 次 · 亲喂 20分钟　尿布 0　睡 0.0h');
     expect(summaryText(summary)).not.toContain('0ml');
+  });
+
+  it('时长四舍五入到分钟，不到 1 分钟写 1 分钟，刚开始还没计到时不写时长', () => {
+    const short = { ...nursed(NOW - HOUR, 0, 0, 'left'), leftSec: 25 };
+    expect(summaryText(summarize24h([short], NOW))).toBe('喂奶 1 次 · 亲喂 1分钟　尿布 0　睡 0.0h');
+    const long = { ...nursed(NOW - HOUR, 0, 0, 'left'), leftSec: 12 * 60 + 40, rightSec: 8 * 60 };
+    expect(summaryText(summarize24h([long], NOW))).toBe('喂奶 1 次 · 亲喂 21分钟　尿布 0　睡 0.0h');
+    expect(summaryText(summarize24h([startBreastFeed('left', NOW)], NOW))).toBe(
+      '喂奶 1 次 · 亲喂　尿布 0　睡 0.0h',
+    );
   });
 
   it('只有瓶喂时和以前一字不差', () => {
