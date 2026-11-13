@@ -156,6 +156,7 @@
 - **跟着文字收缩的 Text 可能把最后一个单词折到看不见的第二行。** 空状态的标题 “The first moment starts today” 在屏幕上只剩 “The first moment starts”，`uiautomator` 读到的文字是完整的，只有看截图才发现。量出来的宽度比实际画的窄一点时，高度还是一行。中文没遇到过。居中的文字用 `alignSelf: 'stretch'`。
 - **`ListCard` 的 `Row` 放不下长的等宽值。** 反馈 ID（uuid）放在 `Row` 的右边，中文还放得下，英文标签 `Feedback ID` 更长，值折成两行、第二行被卡片裁掉一半（模拟器截图上才看出来）。长的、要复制的值单独一行放在卡片下面。
 - **模块顶层的 `StyleSheet.create` 在导入时就把颜色抄死了。** 换语言那样让整棵界面重新挂载也换不了颜色：模块只加载一次。F-142 改成 `themedStyles(() => ({...}))`，读样式时按当前主题生成；模块顶层写 `colors.xxx`（比如营养页原来的 `STATUS_COLORS`）、写颜色字面量都会被 `scripts/check-colors.mjs` 拦下来。
+- **会越存越多的列表不能用 `ScrollView` 加 `map`。** 回忆页原来就是这样，四个子标签共用一个 `ScrollView`。F-150 在模拟器上造了 300 段回忆、1,000 张照片：打开时间线要 3–4 秒，内存从 131 MB 涨到 436 MB；切到照片墙要 12–15 秒，单帧卡 5 秒以上，内存超过 1 GB；三轮里有两轮滑照片墙时 App 被系统杀掉。数据少时完全看不出来，十段回忆的账号一切正常。改成每个子标签一个 `FlatList` 后，同样的数据打开时间线和照片墙都在 1–2 秒，内存 150–310 MB，没再被杀。照片墙要拍平成“标题一行、每 3 张一行”，不能把一组当成一项：一段回忆有 100 张时照样一次画完。
 
 ## Android 构建和模拟器
 
@@ -317,6 +318,7 @@
 - **Maestro 不要断言几秒后自己消失的状态。** “复制链接”原来点了变成“已复制”、两秒后变回来，Maestro 点完要等界面稳定（Android 13 起系统还弹出剪贴板提示），断言时字已经变回去了，流程失败。界面上的确认要么一直留着，要么断言更持久的结果。
 - **开发机磁盘剩下不到 1% 时，SeaweedFS 一个新卷都不建，所有上传 500。** 日志是 `disk free 0.84% < required 1.00%`、`Not enough data nodes found`、`No writable volumes`，和卷位用满的报错很像，新起一个容器也一样（它看的是宿主机的磁盘）。2026-11-06 根分区 99% 满时遇到。不去动别人共用的容器，自己起一个：`docker run -d -p 59110:9000 -v <tmpfs 上的目录>:/data -v deploy/dev/s3.json:/etc/seaweedfs/s3.json:ro chrislusf/seaweedfs server -dir=/data -volume.max=100 -volume.minFreeSpace=200MiB -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json`，再用 `TEST_S3_ENDPOINT=http://localhost:59110` 跑 `pnpm test:server` 和 `pnpm test:edge`（`edge-smoke.ts` 从 F-141 起也认这个变量）。`cloud-backup.test.ts` 的脚本和读回用的都是 `.env.example` 里的 59000，换不了，这时它的 5 条会失败（`curl: (22) … 500`），要等磁盘空出来或者看 CI。
 - **被底部标签栏盖住的行，Maestro 也算“看得见”。** `scrollUntilVisible` 找到一行就停，这一行可能正好在标签栏后面，接着断言它的说明文字就失败。家人页设置里每多一行，下面那些行的位置都会变（F-141 加了“分享设置”后，流程 23 的 `检查更新` 在 run 42222130108 这样失败）。要读一行的说明文字或点它，滚动时加 `centerElement: true`。
+- **量列表性能要和数据少的账号比，不看绝对值。** 本机模拟器用 swiftshader 软件渲染，十段回忆的账号滑动时卡顿帧也有 36–100%，帧时间本身没有意义。F-150 的做法：同一个 CI APK 换 JS 包（只换回忆页的代码，连 8804 上的服务端），同一台模拟器，造一个 10 段回忆和一个 300 段回忆的账号，每轮冷启动后 `dumpsys gfxinfo <包名> reset`，点开、滑动，再取 `framestats` 和 `dumpsys meminfo`，各跑三轮取中位数。Android 15 的 `framestats` 只有 `InputEventId`，没有输入事件的时间，从第一个 `HandleInputStart` 不为 0 的帧算起。造数据时照片要上传 `thumb` 并在记录里写 `hasThumb: true`，否则 App 退回去取原图，量的就不是同一件事。脚本没有放进仓库，做法写在 issue #112。
 
 ## 并行开发
 
