@@ -45,26 +45,49 @@ export function FeedMethodSwitch({
   value: FeedMethod;
   onChange: (next: FeedMethod) => void;
 }) {
-  const options = [
-    { method: 'bottle', label: t().records.feedBottle },
-    { method: 'breast', label: t().records.feedBreast },
-  ] as const;
+  return (
+    <SegmentSwitch
+      value={value}
+      onChange={onChange}
+      options={(['bottle', 'breast'] as const).map((method) => {
+        const label = method === 'bottle' ? t().records.feedBottle : t().records.feedBreast;
+        return {
+          value: method,
+          label,
+          testID: `feed-method-${method}`,
+          a11y: t().records.feedMethodA11y(label),
+        };
+      })}
+    />
+  );
+}
+
+/** 一条分段胶囊：`paper` 底、细边，选中的一段 `ink` 底 `paper` 字。瓶喂 / 亲喂、吸奶的哪一侧都用它。 */
+export function SegmentSwitch<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: readonly { value: T; label: string; testID: string; a11y?: string }[];
+}) {
   return (
     <View style={s.segment} accessibilityRole="tablist">
-      {options.map(({ method, label }) => {
-        const on = value === method;
+      {options.map((option) => {
+        const on = value === option.value;
         return (
           <Pressable
-            key={method}
-            testID={`feed-method-${method}`}
+            key={option.value}
+            testID={option.testID}
             accessibilityRole="tab"
-            accessibilityLabel={t().records.feedMethodA11y(label)}
+            accessibilityLabel={option.a11y ?? option.label}
             accessibilityState={{ selected: on }}
             hitSlop={{ top: 6, bottom: 6 }}
-            onPress={() => onChange(method)}
+            onPress={() => onChange(option.value)}
             style={[s.segmentItem, on ? s.segmentOn : null]}
           >
-            <Text style={[s.segmentLabel, on ? s.segmentLabelOn : null]}>{label}</Text>
+            <Text style={[s.segmentLabel, on ? s.segmentLabelOn : null]}>{option.label}</Text>
           </Pressable>
         );
       })}
