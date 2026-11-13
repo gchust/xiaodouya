@@ -14,6 +14,7 @@ import {
   lastFeedDefaults,
   metricUnits,
   nextBreastSide,
+  nutritionEntryText,
   pickEventForShare,
   planWidgetAction,
   regions,
@@ -23,6 +24,7 @@ import {
   summarizeDay,
   summaryText,
   switchBreastSide,
+  t,
   withLocale,
 } from '../src';
 
@@ -379,6 +381,53 @@ describe('奶粉营养', () => {
     expect(result.reasons).toContain('有 1 次是亲喂，吃了多少没法知道，没算进去');
     expect(result.reasons.join()).not.toContain('没有标注奶类型');
     expect(result.nutrients.every((n) => n.status === 'insufficient')).toBe(true);
+    expect(nutritionEntryText(result)).toBe('数据不足 · 有 1 次喂奶没算进去');
+  });
+
+  it('两种语言的原因里次数一样', () => {
+    const reason = (n: number) => withLocale('en', () => t().domain.nutrition.breastfed(n));
+    expect(reason(1)).toMatch(/^1 feed was/);
+    expect(reason(3)).toMatch(/^3 feeds were/);
+    expect(t().domain.nutrition.breastfed(3)).toContain('3 次');
+  });
+
+  it('一天全是亲喂时，今天页不显示奶粉营养这一行：没有奶粉可算', () => {
+    const result = assessDayNutrition({
+      events: [
+        nursed(dayStart + 2 * HOUR, 12, 8, 'right'),
+        nursed(dayStart + 5 * HOUR, 10, 0, 'left'),
+      ],
+      dayStart,
+      dayEnd,
+      now: NOW,
+      ageMonths: 2,
+      reference: regions.US.nutrition,
+    });
+    expect(result.feeds).toBe(2);
+    expect(nutritionEntryText(result)).toBeNull();
+  });
+});
+
+describe('忘了关的计时', () => {
+  const forgotten = switchBreastSide(
+    startBreastFeed('left', NOW - 5 * HOUR),
+    'right',
+    NOW - 5 * HOUR + 10 * MIN,
+  )!;
+
+  it('结束时只记已经喂完的段落，不把几个小时记成亲喂', () => {
+    const done = finishBreastFeed(forgotten, NOW);
+    expect(done).toMatchObject({ leftSec: 600, rightSec: 0, side: 'right' });
+    expect(describeEvent(done, NOW)).toBe('亲喂 左 10 分');
+  });
+
+  it('结束之前时间线也不跟着一直涨', () => {
+    expect(describeEvent(forgotten, NOW)).toBe('亲喂中 · 左 10 分');
+    expect(describeEvent(forgotten, NOW + 20 * HOUR)).toBe('亲喂中 · 左 10 分');
+  });
+
+  it('换边也不把开着的这几个小时记进去', () => {
+    expect(switchBreastSide(forgotten, 'left', NOW)).toMatchObject({ leftSec: 600, rightSec: 0 });
   });
 });
 

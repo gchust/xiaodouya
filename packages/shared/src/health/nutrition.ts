@@ -254,6 +254,8 @@ export interface DayNutrition {
   countedMl: number;
   /** 喂奶里有几次完全算不进去。 */
   uncountedFeeds: number;
+  /** 喂奶里有几次是亲喂。 */
+  breastfedFeeds: number;
   /** 整天层面的说明，每条都是一句话，直接显示。 */
   reasons: string[];
   nutrients: NutrientResult[];
@@ -367,6 +369,7 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
     countedFeeds: counted.length,
     countedMl: counted.reduce((sum, feed) => sum + feed.ml, 0),
     uncountedFeeds,
+    breastfedFeeds: breastfed,
     reasons,
     nutrients,
   };
@@ -374,7 +377,8 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
 
 /** 今天页入口的一句话，克制，不说够不够。没有喂奶记录时不显示入口。 */
 export function nutritionEntryText(day: DayNutrition): string | null {
-  if (day.feeds === 0) return null;
+  // 一天全是亲喂时没有奶粉可算，这一行只会一直写“数据不足”，不显示。营养页里照样能看到原因。
+  if (day.feeds === 0 || day.breastfedFeeds === day.feeds) return null;
   const text = t().domain.nutrition;
   if (day.uncountedFeeds > 0) return text.entryUncounted(day.uncountedFeeds);
   const first = day.nutrients.find((n) => n.status === 'progress');

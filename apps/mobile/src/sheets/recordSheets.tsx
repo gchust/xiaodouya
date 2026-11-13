@@ -203,24 +203,26 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
       ? events.find((e) => e.data === running.feed)?.id
       : undefined;
   const method = picked ?? (openId ? 'breast' : lastFeedDefaults(data, formulas, now).method);
-  const body =
-    method === 'bottle' ? (
-      <BottleFeed initial={initial} id={id} time={time} />
-    ) : openId ? (
-      <BreastTimer id={openId} />
-    ) : id || time.choice.kind === 'exact' ? (
-      <BreastForm
-        initial={initial}
-        id={id}
-        time={time}
-        onSave={(next) => void save(next, id, initial)}
-      />
-    ) : (
-      <BreastStart time={time} />
-    );
+  const methodSwitch = <FeedMethodSwitch value={method} onChange={setPicked} />;
+  // 添加奶粉时整个弹层换成表单，切换条不能留在上面：点了亲喂会把填了一半的奶粉丢掉。
+  if (method === 'bottle') {
+    return <BottleFeed initial={initial} id={id} time={time} header={methodSwitch} />;
+  }
+  const body = openId ? (
+    <BreastTimer id={openId} />
+  ) : id || time.choice.kind === 'exact' ? (
+    <BreastForm
+      initial={initial}
+      id={id}
+      time={time}
+      onSave={(next) => void save(next, id, initial)}
+    />
+  ) : (
+    <BreastStart time={time} />
+  );
   return (
     <>
-      <FeedMethodSwitch value={method} onChange={setPicked} />
+      {methodSwitch}
       {body}
     </>
   );
@@ -230,10 +232,12 @@ function BottleFeed({
   initial,
   id,
   time,
+  header,
 }: {
   initial?: EventOf<'feed'>;
   id?: string;
   time: RecordTime;
+  header: ReactNode;
 }) {
   const { events, formulas } = useRecords();
   const app = useApp();
@@ -276,6 +280,7 @@ function BottleFeed({
   }
   return (
     <>
+      {header}
       <RecordTimeField time={time} />
       <Stepper
         testPrefix="ml"

@@ -32,9 +32,19 @@ export function isOpenBreastFeed(event: EventData): event is FeedEvent {
 
 export const otherSide = (side: BreastSide): BreastSide => (side === 'left' ? 'right' : 'left');
 
-/** 正在喂的这一段有多少秒。另一台手机的钟可能快一点，不能是负数。 */
+/** 计时是不是忘了关。 */
+export function isForgottenBreastFeed(feed: FeedEvent, now: number): boolean {
+  return feed.endAt === undefined && now - feed.at > FORGOTTEN_BREASTFEED_MS;
+}
+
+/**
+ * 正在喂的这一段有多少秒。另一台手机的钟可能快一点，不能是负数。
+ * 忘了关的计时不算这一段：结束、换边、时间线和摘要都只认已经喂完的段落，不能把开着的几个小时记成亲喂，
+ * 真实的时长由家人在记录里改。
+ */
 function runningSeconds(feed: FeedEvent, now: number): number {
   if (feed.endAt !== undefined || !feed.side || feed.sideSince === undefined) return 0;
+  if (isForgottenBreastFeed(feed, now)) return 0;
   return Math.max(0, Math.round((now - feed.sideSince) / 1000));
 }
 
@@ -52,16 +62,10 @@ export function breastSeconds(feed: FeedEvent, now: number): BreastSeconds {
   };
 }
 
-/** 计时是不是忘了关。 */
-export function isForgottenBreastFeed(feed: FeedEvent, now: number): boolean {
-  return feed.endAt === undefined && now - feed.at > FORGOTTEN_BREASTFEED_MS;
-}
-
-/** 摘要里算多少毫秒。忘了关的计时只算已经喂完的段落。 */
+/** 摘要里算多少毫秒。 */
 export function breastDurationMs(feed: FeedEvent, now: number): number {
-  const done = (feed.leftSec ?? 0) + (feed.rightSec ?? 0);
-  const running = isForgottenBreastFeed(feed, now) ? 0 : runningSeconds(feed, now);
-  return (done + running) * 1000;
+  const { left, right } = breastSeconds(feed, now);
+  return (left + right) * 1000;
 }
 
 /** 点一侧开始。`at` 可以早于现在（“15 分钟前”开始喂的），这一侧就从那时算起。 */
