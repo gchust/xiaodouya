@@ -5,8 +5,8 @@ import {
   growthAgeDays,
   growthChartEndDays,
   growthChartNotes,
-  growthDisplayValue,
   growthMeasures,
+  growthPlotValue,
   growthPoints,
   growthPointText,
   growthUnit,
@@ -24,6 +24,8 @@ import { Chip, Mono, Muted } from './primitives';
 const CHART_HEIGHT = 210;
 /** 点很小，透明的点击区 44×44 盖在上面（相邻的点挨得近时，后面的盖住前面的）。 */
 const HIT = 44;
+/** 纵轴至少跨多少（公制 kg、cm），见 layoutGrowthChart 的 minSpan。 */
+const MIN_SPAN: Record<GrowthMeasure, number> = { weight: 2, length: 10, head: 5 };
 /** 链接文字只有 16 高，上下各扩 14 才到 44。 */
 const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 
@@ -53,7 +55,7 @@ export function GrowthChart({
   const points = growthPoints(baby, events, measure);
   const lastAge = Math.max(growthAgeDays(baby.birthAt, now), points.at(-1)?.ageDays ?? 0);
   const endDays = growthChartEndDays(lastAge);
-  const display = (metric: number) => growthDisplayValue(measure, metric, units);
+  const display = (metric: number) => growthPlotValue(measure, metric, units);
   const curves = sex
     ? referenceCurves(measure, sex, endDays).map((c) => ({
         percentile: c.percentile,
@@ -66,7 +68,14 @@ export function GrowthChart({
   const readout = current ? growthPointText(current, baby.birthAt, measure, sex, units) : null;
   const layout =
     width > 0 && points.length > 0
-      ? layoutGrowthChart({ width, height: CHART_HEIGHT, endDays, curves, points: shown })
+      ? layoutGrowthChart({
+          width,
+          height: CHART_HEIGHT,
+          endDays,
+          curves,
+          points: shown,
+          minSpan: display(MIN_SPAN[measure]),
+        })
       : null;
 
   return (

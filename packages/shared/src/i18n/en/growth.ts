@@ -14,6 +14,7 @@ export const growth: Catalog['growth'] = {
     above: 'above P99',
   },
   birth: 'Birth',
+  birthDay: 'Day of birth',
   point: (age, value, percentile) => [age, value, percentile].filter(Boolean).join(' · '),
   pointA11y: (age, value, percentile) => [age, value, percentile].filter(Boolean).join(', '),
   empty: {
@@ -26,7 +27,7 @@ export const growth: Catalog['growth'] = {
     `The light lines are the 3rd, 15th, 50th, 85th and 97th percentiles of the WHO Child Growth Standards (${sex}).`,
   disclaimer:
     "The curves are only a reference. For how your baby is growing, go by your doctor's judgment.",
-  preterm: "If your baby was born early, follow your doctor's method (usually corrected age).",
+  preterm: "If your baby was born early, follow your doctor's method.",
   noSex:
     'Add sex (for growth charts) in the birth profile to see the WHO reference lines and percentiles.',
   noSexLink: 'Add sex',

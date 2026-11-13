@@ -1,5 +1,5 @@
 import { ageParts, agePartsText } from '../domain/age';
-import { scaleFor, toDisplay, type Units } from '../domain/units';
+import { scaleFor, toDisplay, toDisplayExact, type Units } from '../domain/units';
 import { t } from '../i18n';
 import type { BabyData, EventData } from '../schemas';
 import { type LmsRow, WHO_GROWTH_LMS } from './whoGrowthData';
@@ -276,10 +276,15 @@ export function growthUnit(measure: GrowthMeasure, units: Units): string {
   return scaleFor(dimension, units[dimension]).label;
 }
 
-/** 公制换成显示单位的数值。参考线和宝宝的点用同一个换算，lb、in 下也对得上。 */
+/** 公制换成显示单位，取整到一位小数，写在文字里。 */
 export function growthDisplayValue(measure: GrowthMeasure, metric: number, units: Units): number {
   const dimension = measureDimension(measure);
   return toDisplay(dimension, metric, units[dimension]);
+}
+
+/** 画图用，不取整。参考线和宝宝的点用同一个换算，lb、in 下也对得上。 */
+export function growthPlotValue(measure: GrowthMeasure, metric: number, units: Units): number {
+  return toDisplayExact(metric, units[measureDimension(measure)]);
 }
 
 export interface GrowthPointText {
@@ -298,7 +303,13 @@ export function growthPointText(
   units: Units,
 ): GrowthPointText {
   const text = t().growth;
-  const age = point.birth ? text.birth : agePartsText(ageParts(birthAt, point.at));
+  const parts = ageParts(birthAt, point.at);
+  // agePartsText 在出生当天写“今天出生”，放在一次测量上，过几天再看就不对了。
+  const age = point.birth
+    ? text.birth
+    : parts.months === 0 && parts.days === 0
+      ? text.birthDay
+      : agePartsText(parts);
   const value = `${growthDisplayValue(measure, point.value, units).toFixed(1)} ${growthUnit(measure, units)}`;
   const percentile = sex ? growthPercentile(measure, sex, point.ageDays, point.value) : null;
   const band = percentile === null ? undefined : percentileText(percentile);

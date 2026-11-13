@@ -9,6 +9,8 @@ import {
   growthChartEndDays,
   growthPercentile,
   growthPoints,
+  growthPointText,
+  metricUnits,
   percentileBand,
   percentileText,
   percentileValue,
@@ -277,6 +279,17 @@ describe('宝宝自己的点', () => {
     expect(growthPoints(b, events, 'length').map((p) => p.value)).toEqual([50, 54, 58]);
     // 出生档案里没有头围；没记头围的记录不画。
     expect(growthPoints(b, events, 'head').map((p) => [p.ageDays, p.value])).toEqual([[30, 37]]);
+  });
+
+  it('出生当天记的点写“出生当天”，不写会过时的“今天出生”', () => {
+    const point = { at: BIRTH + 3_600_000, ageDays: 1 / 24, value: 3.4, birth: false };
+    expect(growthPointText(point, BIRTH, 'weight', undefined, metricUnits).text).toBe(
+      '出生当天 · 3.4 kg',
+    );
+    const birth = { at: BIRTH, ageDays: 0, value: 3.2, birth: true };
+    expect(growthPointText(birth, BIRTH, 'weight', 'male', metricUnits).text).toMatch(
+      /^出生 · 3\.2 kg · 约 P\d+$/,
+    );
   });
 
   it('早于出生的记录不画', () => {

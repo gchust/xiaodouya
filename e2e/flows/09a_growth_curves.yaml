@@ -34,7 +34,7 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: 浅色的线是 WHO 儿童生长标准（女孩）的第 3、15、50、85、97 百分位。
 - assertVisible: 曲线只是参考，生长情况请以医生判断为准。
-- assertVisible: 早产的宝宝请按医生的方法看（通常要用矫正月龄）。
+- assertVisible: 早产的宝宝请按医生的方法看。
 - takeScreenshot: .artifacts/e2e-09a-weight-curves
 # 点前一个点，下面换成那一次。先滚回整张卡片的顶上
 - scrollUntilVisible:

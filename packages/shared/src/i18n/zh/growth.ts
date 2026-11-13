@@ -17,6 +17,7 @@ export const growth = {
     above: '高于 P99',
   },
   birth: '出生',
+  birthDay: '出生当天',
   /** 点开一个点：`3 个月零 12 天 · 6.2 kg · 约 P40`。没填性别时没有百分位。 */
   point: (age: string, value: string, percentile?: string) =>
     [age, value, percentile].filter(Boolean).join(' · '),
@@ -31,7 +32,7 @@ export const growth = {
   reference: (sex: string) =>
     `浅色的线是 WHO 儿童生长标准（${sex}）的第 3、15、50、85、97 百分位。`,
   disclaimer: '曲线只是参考，生长情况请以医生判断为准。',
-  preterm: '早产的宝宝请按医生的方法看（通常要用矫正月龄）。',
+  preterm: '早产的宝宝请按医生的方法看。',
   noSex: '在出生档案里填上性别（用于生长曲线），就能看到 WHO 的参考线和百分位。',
   noSexLink: '填写性别',
   heightBreak:

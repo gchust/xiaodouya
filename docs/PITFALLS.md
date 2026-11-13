@@ -332,7 +332,7 @@
 - **测试里还原时区不能写 `process.env.TZ = originalTz`。** 没设过 `TZ` 时 `originalTz` 是 `undefined`，赋值后变成字符串 `"undefined"`，Node 当成 UTC，同一个文件后面的测试悄悄换了时区（F-145 的 `trends.test.ts` 因此有 8 条按本地时间算的用例失败，单独跑却通过）。原来没有就 `delete process.env.TZ`。
 - **`cmd locale set-app-locales` 换不了 App 的语言。** E2E 包没选过语言时固定中文（见流程 18a），要看英文截图就在家人页设置里点 `open-language` → `lang-en`。
 - **Maestro 看不出文字断没断行。** `below`/`above` 只比上边缘，`leftOf`/`rightOf` 只比左边缘。F-151 的流程 18c 用 `height` + `tolerance` 按一行的像素高度找钟点（pixel_6，本机和 CI 一样）；正则 `\d{2}:\d{2}` 还会匹配状态栏的时间，要加 `childOf: { id: today-screen }`，第一次没加时修复前的 App 也通过了。
-- **Maestro 按 id 点的是元素的中心坐标，叠在一起的透明点击区点到的是最上面那个。** 生长曲线上一分钟内记的两个点位置相同，`tapOn: { id: growth-point-0 }` 实际点到 `growth-point-1`。现在点已选中的点会换成叠在下面的前一个（`nextSelection`），流程 09 靠这个规则断言；改点击逻辑时要一起改流程。
+- **Maestro 按 id 点的是元素的中心坐标，叠在一起的透明点击区点到的是最上面那个。** 生长曲线上一分钟内记的两个点几乎在同一个位置，`tapOn: { id: growth-point-0 }` 落在 `growth-point-1` 的点击区里（按坐标推断，写流程时没有在本机跑 Maestro）。所以点已选中的点会换成叠在下面的前一个（`nextSelection`），流程 09、09a 按这个规则断言；改点击逻辑时要一起改流程。
 
 ## 并行开发
 

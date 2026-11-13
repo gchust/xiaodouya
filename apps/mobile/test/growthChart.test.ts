@@ -12,6 +12,7 @@ describe('生长曲线的几何', () => {
       endDays: SIX,
       curves: referenceCurves('weight', 'female', SIX),
       points: [{ ageDays: 30, value: 11 }],
+      minSpan: 2,
     });
     const values = layout.yTicks.map((t) => t.value);
     expect(Math.min(...values)).toBeLessThanOrEqual(2.4);
@@ -31,12 +32,32 @@ describe('生长曲线的几何', () => {
       endDays: SIX,
       curves: [],
       points: [{ ageDays: 0, value: 3.2 }],
+      minSpan: 2,
     });
     expect(layout.bands).toEqual([]);
     expect(layout.curves).toEqual([]);
     expect(layout.line).toBe('');
     expect(layout.dots).toHaveLength(1);
     expect(layout.yTicks.length).toBeGreaterThan(1);
+  });
+
+  it('没有参考线时 100 g 的差别不会拉满整个高度', () => {
+    const layout = layoutGrowthChart({
+      width: 320,
+      height: 200,
+      endDays: SIX,
+      curves: [],
+      points: [
+        { ageDays: 1, value: 3.6 },
+        { ageDays: 2, value: 3.7 },
+      ],
+      minSpan: 2,
+    });
+    const [a, b] = layout.dots;
+    const plotHeight = layout.plot.bottom - layout.plot.top;
+    expect(Math.abs((a?.y ?? 0) - (b?.y ?? 0))).toBeLessThan(plotHeight * 0.1);
+    const ticks = layout.yTicks.map((t) => t.value);
+    expect((ticks.at(-1) ?? 0) - (ticks[0] ?? 0)).toBeGreaterThanOrEqual(2);
   });
 
   it('身长跨过 2 岁时底色和每条线都是两段', () => {
@@ -47,6 +68,7 @@ describe('生长曲线的几何', () => {
       endDays: end,
       curves: referenceCurves('length', 'male', end),
       points: [],
+      minSpan: 10,
     });
     expect(layout.bands).toHaveLength(2);
     for (const c of layout.curves) expect(c.d.match(/M/g)).toHaveLength(2);

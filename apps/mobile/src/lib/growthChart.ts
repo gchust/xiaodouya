@@ -18,6 +18,11 @@ export interface ChartInput {
   endDays: number;
   curves: readonly ChartCurve[];
   points: readonly ChartPoint[];
+  /**
+   * 纵轴至少跨这么多（显示单位）。没有参考线时范围只看宝宝的点，3.6 和 3.7 kg 会被拉满整个高度，
+   * 100 g 的差别画成悬崖，看起来像在下判断。
+   */
+  minSpan: number;
 }
 
 export interface ChartLayout {
@@ -73,6 +78,7 @@ export function layoutGrowthChart({
   endDays,
   curves,
   points,
+  minSpan,
 }: ChartInput): ChartLayout {
   const plot = {
     left: CHART_PADDING.left,
@@ -90,9 +96,10 @@ export function layoutGrowthChart({
     low = 0;
     high = 1;
   }
-  if (high - low < 1e-6) {
-    low -= 0.5;
-    high += 0.5;
+  if (high - low < minSpan) {
+    const mid = (high + low) / 2;
+    low = Math.max(0, mid - minSpan / 2);
+    high = low + minSpan;
   }
   const step = niceStep((high - low) * 1.08);
   const min = Math.floor(low / step) * step;
