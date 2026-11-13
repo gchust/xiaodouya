@@ -37,7 +37,8 @@ export const domain: Catalog['domain'] = {
     med: (name, dose) => `Medicine · ${name}${dose ? ` ${dose}` : ''}`,
     bath: 'Bath',
     solids: (food) => `Solids · ${food}`,
-    growth: (weight, length) => `Weight ${weight} · Length ${length}`,
+    growth: (weight, length, head) =>
+      `Weight ${weight} · Length ${length}${head ? ` · Head ${head}` : ''}`,
     vaccine: (name) => `Vaccine: ${name}`,
     summary: (feeds, volume, diapers, sleepHours) =>
       `${plural(feeds, 'feed', 'feeds')} · ${volume}   ${plural(diapers, 'diaper', 'diapers')}   Slept ${sleepHours}h`,

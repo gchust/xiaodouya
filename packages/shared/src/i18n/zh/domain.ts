@@ -36,7 +36,8 @@ export const domain = {
     med: (name: string, dose: string | undefined) => `吃药 · ${name}${dose ? ` ${dose}` : ''}`,
     bath: '洗澡',
     solids: (food: string) => `辅食 · ${food}`,
-    growth: (weight: string, length: string) => `体重 ${weight} · 身长 ${length}`,
+    growth: (weight: string, length: string, head?: string) =>
+      `体重 ${weight} · 身长 ${length}${head ? ` · 头围 ${head}` : ''}`,
     vaccine: (name: string) => `接种 ${name}`,
     summary: (feeds: number, volume: string, diapers: number, sleepHours: string) =>
       `喂奶 ${feeds} 次 · ${volume}　尿布 ${diapers}　睡 ${sleepHours}h`,

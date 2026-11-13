@@ -84,6 +84,11 @@ describe('白名单', () => {
         { type: 'growth', weightKg: 4, lengthCm: 55 },
         { type: 'growth', weightKg: 4, lengthCm: 55 },
       ],
+      // 头围（F-148）这一版不放进分享页：公开页的字段逐个写出来，没加的就不给。
+      [
+        { type: 'growth', weightKg: 4, lengthCm: 55, headCm: 38 },
+        { type: 'growth', weightKg: 4, lengthCm: 55 },
+      ],
       [
         { type: 'vaccine', vaccineId: 'sg:bcg', name: '卡介苗' },
         { type: 'vaccine', vaccineId: 'sg:bcg', name: '卡介苗' },

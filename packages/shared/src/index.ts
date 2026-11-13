@@ -27,6 +27,7 @@ export * from './domain/widget';
 export * from './feedback';
 export * from './health';
 export * from './health/formulaPresets';
+export * from './health/growth';
 export * from './health/nutrition';
 export * from './health/nutritionReferences';
 export * from './i18n';

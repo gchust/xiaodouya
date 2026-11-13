@@ -5,6 +5,7 @@ import { confirm } from './confirm';
 import { domain } from './domain';
 import { family } from './family';
 import { feedback } from './feedback';
+import { growth } from './growth';
 import { health } from './health';
 import { info } from './info';
 import { library } from './library';
@@ -30,6 +31,7 @@ export const zh = {
   themeUi,
   storageUi,
   family,
+  growth,
   feedback,
   info,
   recall,
