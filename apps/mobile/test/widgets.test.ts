@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import {
   type BabyData,
+  breastFeedState,
   buildWidgetView,
   type EventData,
   type FormulaData,
@@ -155,6 +156,62 @@ describe('小工具写入', () => {
     const sleeps = store.getSnapshot().events.filter((e) => e.data.type === 'sleep');
     expect(sleeps).toHaveLength(1);
     expect(sleeps[0]?.data).toMatchObject({ at: now - HOUR, endAt: now });
+  });
+
+  it('小工具开始的亲喂就是 App 里的计时：同一条记录，结束后再点不改（issue #104）', async () => {
+    const { store, db } = await setup({
+      done: {
+        type: 'feed',
+        at: now - 3 * HOUR,
+        ml: 0,
+        method: 'breast',
+        side: 'left',
+        leftSec: 600,
+        rightSec: 0,
+        endAt: now - 3 * HOUR + 600_000,
+      },
+    });
+    const start = now - 15 * 60_000;
+    await runWidgetAction({ type: 'breastStart', id: 'b', side: 'right' }, store, session, start);
+    // 今天页和喂奶弹层用的就是这个判断：看到的是小工具开的那一条。
+    const events = store.getSnapshot().events;
+    const state = breastFeedState(
+      events.map((e) => e.data),
+      now,
+    );
+    expect(state.status).toBe('running');
+    expect(events.find((e) => e.data === (state as { feed: EventData }).feed)?.id).toBe('b');
+    expect(db.records.get('b')?.dirty).toBe(true);
+
+    // 连点开始不多开一条
+    const twice = await runWidgetAction(
+      { type: 'breastStart', id: 'b2', side: 'right' },
+      store,
+      session,
+      start + 1000,
+    );
+    expect(twice.kind).toBe('noop');
+
+    await runWidgetAction({ type: 'breastEnd', feedId: 'b' }, store, session, now);
+    const again = await runWidgetAction(
+      { type: 'breastEnd', feedId: 'b' },
+      store,
+      session,
+      now + 1,
+    );
+    expect(again.kind).toBe('noop');
+    const breastFeeds = store
+      .getSnapshot()
+      .events.filter((e) => e.data.type === 'feed' && e.id !== 'done');
+    expect(breastFeeds).toHaveLength(1);
+    expect(breastFeeds[0]?.data).toMatchObject({
+      method: 'breast',
+      side: 'right',
+      rightSec: 15 * 60,
+      endAt: now,
+      byName: '爸爸',
+      babyId: BABY_ID,
+    });
   });
 });
 

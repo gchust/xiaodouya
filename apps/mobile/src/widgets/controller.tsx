@@ -1,6 +1,8 @@
 import {
   buildWidgetView,
   type DiaperKind,
+  describeEvent,
+  type EventData,
   effectiveUnits,
   type Prefs,
   type Role,
@@ -198,7 +200,11 @@ const diaperTitle = (kind: DiaperKind) =>
       : t().records.diaperBoth;
 
 /** “已记好 · …”后面的那几个字。写入之后再取，喂奶的奶量就是刚记下的这条。 */
-function feedbackTitle(action: WidgetAction, view: WidgetView): string {
+function feedbackTitle(action: WidgetAction, view: WidgetView, data: EventData): string {
+  // 亲喂写的就是这条记录本身：`亲喂中 · 右侧`、`亲喂 左 12 分 · 右 8 分`，和时间线一样。
+  if (action.type === 'breastStart' || action.type === 'breastEnd') {
+    return describeEvent(data, Date.now(), view.kind === 'ready' ? view.units : undefined);
+  }
   if (action.type === 'sleepStart') return t().widgetUi.fellAsleep;
   if (action.type === 'sleepEnd') return t().widgetUi.awake;
   if (action.type === 'diaper') return diaperTitle(action.kind);
@@ -206,6 +212,13 @@ function feedbackTitle(action: WidgetAction, view: WidgetView): string {
   return view.kind === 'ready' && view.quickFeedAmount
     ? t().domain.events.feed(view.quickFeedAmount)
     : t().records.logged;
+}
+
+/** 刚记好的钟点：结束睡眠和结束亲喂写的是结束的时间。 */
+function feedbackAt(data: EventData): number {
+  if (data.type === 'sleep' && data.endAt) return data.endAt;
+  if (data.type === 'feed' && data.method === 'breast' && data.endAt) return data.endAt;
+  return data.at;
 }
 
 export async function handleWidgetClick(
@@ -237,9 +250,8 @@ export async function handleWidgetClick(
       if (result.kind === 'write') {
         feedback.set(name, {
           eventId: result.id,
-          title: feedbackTitle(action, view),
-          at:
-            result.data.type === 'sleep' && result.data.endAt ? result.data.endAt : result.data.at,
+          title: feedbackTitle(action, view, result.data),
+          at: feedbackAt(result.data),
           button: buttonOf(action),
         });
       }

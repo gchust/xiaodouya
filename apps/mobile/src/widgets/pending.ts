@@ -16,12 +16,16 @@ export interface PendingTap {
 
 export function buttonOf(action: WidgetAction): WidgetButton {
   if (action.type === 'diaper') return action.kind;
-  return action.type === 'feed' ? 'feed' : 'sleep';
+  // 开始和结束亲喂都是记喂奶小工具上那一个按钮。
+  if (action.type === 'feed' || action.type === 'breastStart' || action.type === 'breastEnd') {
+    return 'feed';
+  }
+  return 'sleep';
 }
 
-/** 被点的按钮沿用这次点击的 id，其他按钮用新的。结束睡眠用的是睡眠记录本身的 id，不在这里。 */
+/** 被点的按钮沿用这次点击的 id，其他按钮用新的。结束睡眠和亲喂用的是记录本身的 id，不在这里。 */
 export function idsWithPending(ids: WidgetIds, action: WidgetAction | undefined): WidgetIds {
-  if (!action || action.type === 'sleepEnd') return ids;
+  if (!action || action.type === 'sleepEnd' || action.type === 'breastEnd') return ids;
   return { ...ids, [buttonOf(action)]: action.id };
 }
 
