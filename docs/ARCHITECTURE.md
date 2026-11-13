@@ -487,6 +487,7 @@ issue #89：每位家人有自己的证件夹（身份证、医保卡），本�
 - 低体温分级依据 WHO 新生儿保暖指南的二手引用，以及 NHS 孕产单位的家长手册。
 - 疫苗表和来源在 `packages/shared/src/regions/` 各地区的文件里。新加坡的 2026-04-01 版 PDF 没能读到完整表格，标记为 `needs-review`。
 - 奶粉营养的参考量在 `packages/shared/src/health/nutritionReferences.ts`，预置奶粉在 `formulaPresets.ts`，来源都写在代码旁边。
+- 生长曲线（F-148）用 WHO Child Growth Standards 的 LMS 表，`packages/shared/src/health/whoGrowthData.ts` 由 `scripts/who-growth.py` 从 who.int 下载的原始 Excel 生成（前 91 天用按天的 expanded tables，之后按月），来源、文件版本（sfvrsn）和下载日期写在生成的文件里。计算在 `growth.ts`。只做 WHO，地区标准（例如中国 2009 年 0–7 岁标准、美国 2 岁后用 CDC）以后放进地区配置。性别存在 `BabyData.sex`（可选，只用来选女孩表或男孩表），头围存在身高体重记录的 `headCm`（可选）；都是可选字段，旧服务端和旧版 App 的 `looseObject` 原样保留，没有部署顺序的要求。档案 viewer 也能读，所以 viewer 能看到填了的性别。分享页不带头围。
 
 **这些内容都应该请医生或护士看一遍。**
 

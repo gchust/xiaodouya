@@ -129,6 +129,7 @@
 - **翻译健康文案时用同一组输入比较两种语言的数字。** 把 “3 个月以下” 译错成 “under 6 months” 不会报错，`i18n-content.test.ts` 抽出句子里的数字比较才能发现。
 - **chinacdc.cn 的 PDF 用 curl 返回 445 时，WebFetch 还能拿到。** WebFetch 读不出 PDF 正文，但会把原文件存进 tool-results，`pdftotext -layout` 就能看（2026-11-04 读了 2026 年版免疫程序和 2026—2027 流感指南）。已经失效的旧链接（2016 年的 EV71 指南返回 404）用 `curl https://web.archive.org/web/2020/<原地址>` 能读到。疫苗说明书没有找到能读的官方来源，宣传单之类的资料要写明待复核。
 - **原型的红色和赤陶色写成字，对比度不到 WCAG AA。** 发烧提示的 `danger` `#b8645e` 写在纸色上只有 3.72:1，`accent` 当小字链接 3.27:1，白字压在 `accent` 按钮上 3.67:1，`muted` 写在 `sand` 提示卡上 3.96:1。半夜调暗屏幕时最先看不清的就是这些。F-142 起文字用 `dangerText`、`warnText`、`accentText`，按钮用 `*Fill`，`apps/mobile/test/themes.test.ts` 对每套主题的浅色和深色都算一遍；原来的值放进这个测试有 21 条不过。对比度够了还不够：发烧（≥38℃）的红和偏高（37.5–38℃）的赤陶在同一个体温弹层里交替出现，原来两者的 CIE76 色差只有 12，看起来是同一个颜色，深色版一开始也只有 12。现在测试要求至少 20，红改成 `#c4483f`。
+- **WHO 生长标准的 LMS 不能只用按月（或按周）的节点插值。** 新生儿体重头几天先降后升，第 0 周到第 1 周之间线性插值，第 1–2 天的 P50 比 WHO 按天的表高 1.5–2%，百分位差好几个点。前 13 周用 expanded tables（按天）的 LMS，之后按月插值，和按天的表比误差不到 0.4%（F-148，`scripts/who-growth.py`）。另外 WHO 的身长表在 24 个月（730.5 天）分卧位和立位两段，差约 0.7 cm，不能跨段插值；月换天用 30.4375。who.int 和 cdn.who.int 在这台机器上能直接下载 Excel。
 
 ## React Native 和 Expo
 
@@ -331,6 +332,7 @@
 - **测试里还原时区不能写 `process.env.TZ = originalTz`。** 没设过 `TZ` 时 `originalTz` 是 `undefined`，赋值后变成字符串 `"undefined"`，Node 当成 UTC，同一个文件后面的测试悄悄换了时区（F-145 的 `trends.test.ts` 因此有 8 条按本地时间算的用例失败，单独跑却通过）。原来没有就 `delete process.env.TZ`。
 - **`cmd locale set-app-locales` 换不了 App 的语言。** E2E 包没选过语言时固定中文（见流程 18a），要看英文截图就在家人页设置里点 `open-language` → `lang-en`。
 - **Maestro 看不出文字断没断行。** `below`/`above` 只比上边缘，`leftOf`/`rightOf` 只比左边缘。F-151 的流程 18c 用 `height` + `tolerance` 按一行的像素高度找钟点（pixel_6，本机和 CI 一样）；正则 `\d{2}:\d{2}` 还会匹配状态栏的时间，要加 `childOf: { id: today-screen }`，第一次没加时修复前的 App 也通过了。
+- **Maestro 按 id 点的是元素的中心坐标，叠在一起的透明点击区点到的是最上面那个。** 生长曲线上一分钟内记的两个点位置相同，`tapOn: { id: growth-point-0 }` 实际点到 `growth-point-1`。现在点已选中的点会换成叠在下面的前一个（`nextSelection`），流程 09 靠这个规则断言；改点击逻辑时要一起改流程。
 
 ## 并行开发
 
