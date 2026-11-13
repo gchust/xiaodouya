@@ -1,8 +1,24 @@
 import { type Collection, type CollectionData, mediaRefsIn, withoutMedia } from '@xiaodouya/shared';
-import type { Snapshot } from './store';
+import type { Entry, Snapshot } from './store';
 import type { UploadQueue } from './uploadQueue';
 
-type UploadRecords = Pick<Snapshot, 'moments' | 'documents' | 'baby'>;
+/**
+ * 上传队列是全家的，不分宝宝（issue #106）：回忆、证件按全部宝宝的算，头像是每个宝宝的。
+ * 只按当前宝宝查的话，另一个宝宝的文件会被当成“记录已经删了”。
+ */
+export interface UploadRecords {
+  moments: Snapshot['moments'];
+  documents: Snapshot['documents'];
+  babies: readonly Entry<'baby'>[];
+}
+
+export function uploadRecordsOf(snapshot: Snapshot): UploadRecords {
+  return {
+    moments: snapshot.all.moments,
+    documents: snapshot.all.documents,
+    babies: snapshot.babies,
+  };
+}
 
 type OwnedEntry = { collection: Collection; id: string; data: unknown };
 
@@ -10,9 +26,7 @@ function entries(records: UploadRecords): OwnedEntry[] {
   return [
     ...records.moments.map((m) => ({ collection: 'moment' as const, id: m.id, data: m.data })),
     ...records.documents.map((d) => ({ collection: 'document' as const, id: d.id, data: d.data })),
-    ...(records.baby
-      ? [{ collection: 'baby' as const, id: records.baby.id, data: records.baby.data }]
-      : []),
+    ...records.babies.map((b) => ({ collection: 'baby' as const, id: b.id, data: b.data })),
   ];
 }
 
@@ -35,8 +49,10 @@ export function uploadOwners(records: UploadRecords): Map<string, UploadOwner> {
   for (const d of records.documents) {
     for (const ref of d.data.files) owners.set(ref.id, { kind: 'document', title: d.data.name });
   }
-  const avatar = records.baby?.data.avatar;
-  if (avatar) owners.set(avatar.id, { kind: 'avatar' });
+  for (const baby of records.babies) {
+    const avatar = baby.data.avatar;
+    if (avatar) owners.set(avatar.id, { kind: 'avatar' });
+  }
   return owners;
 }
 
