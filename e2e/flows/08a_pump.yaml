@@ -1,0 +1,87 @@
+# 吸奶（issue #104）：从「更多」进，默认两侧。记一条左侧 120ml，时间线上有它，24 小时摘要的喂奶次数和奶量不变；
+# 下次打开默认跟上一次吸奶；改成两侧 130ml；最后删掉，后面的流程看到的记录和以前一样。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+# 摘要第一段是喂奶（`喂奶 N 次 · …`），后面用全角空格隔开尿布和睡眠。
+- copyTextFrom: { id: summary }
+- evalScript: ${output.feedsBefore = maestro.copiedText.split('　')[0]}
+
+# ─── 记一条：默认两侧，改成左侧 120ml ─────────────────
+- tapOn: { id: action-more }
+- assertVisible: { id: more-pump }
+- takeScreenshot: .artifacts/e2e-08a-more-grid
+- tapOn: { id: more-pump }
+- assertVisible: { id: pump-side-both, selected: true }
+- assertVisible:
+    id: pump-ml-value
+    text: "90"
+- takeScreenshot: .artifacts/e2e-08a-pump-sheet
+- tapOn: { id: pump-side-left }
+- tapOn: { id: pump-ml-chip-120 }
+- assertVisible: { id: pump-side-left, selected: true }
+- tapOn: { id: pump-save }
+- extendedWaitUntil:
+    notVisible: { id: pump-save }
+    timeout: 10000
+# 时间线要等“今天”页的时钟走到记录之后才显示，最多 15 秒。
+- extendedWaitUntil:
+    visible: 吸奶 120ml · 左侧
+    timeout: 30000
+# 吸奶不是喂奶：摘要的喂奶次数和奶量不变。
+- copyTextFrom: { id: summary }
+- assertTrue: ${maestro.copiedText.split('　')[0] == output.feedsBefore}
+- takeScreenshot: .artifacts/e2e-08a-today
+
+# ─── 下次打开跟上一次吸奶 ───────────────────────────
+- tapOn: { id: action-more }
+- tapOn: { id: more-pump }
+- assertVisible: { id: pump-side-left, selected: true }
+- assertVisible:
+    id: pump-ml-value
+    text: "120"
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: pump-save }
+    timeout: 10000
+
+# ─── 修改：两侧，130ml ─────────────────────────────
+# Toast 可能盖着时间线那一行（见 PITFALLS“测试方法”），等它消失再点。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: 吸奶 120ml · 左侧
+- assertVisible: { id: event-detail }
+- tapOn: { id: event-edit }
+- assertVisible: 修改吸奶
+- tapOn: { id: pump-side-both }
+- tapOn: { id: pump-ml-inc }
+- assertVisible:
+    id: pump-ml-value
+    text: "130"
+- takeScreenshot: .artifacts/e2e-08a-pump-edit
+- tapOn: { id: pump-save }
+- extendedWaitUntil:
+    notVisible: { id: pump-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 吸奶 130ml · 两侧
+    timeout: 15000
+
+# ─── 删掉测试用的记录 ───────────────────────────────
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: 吸奶 130ml · 两侧
+- tapOn: { id: event-delete }
+- assertVisible: 删除这条吸奶记录？
+- takeScreenshot: .artifacts/e2e-08a-delete
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: 吸奶 130ml · 两侧
+    timeout: 15000
+- copyTextFrom: { id: summary }
+- assertTrue: ${maestro.copiedText.split('　')[0] == output.feedsBefore}
