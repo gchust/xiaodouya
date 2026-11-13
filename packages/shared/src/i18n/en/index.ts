@@ -18,6 +18,7 @@ import { share } from './share';
 import { storageUi } from './storageUi';
 import { themeUi } from './themeUi';
 import { today } from './today';
+import { trends } from './trends';
 import { ui } from './ui';
 import { update } from './update';
 import { widgetUi } from './widgetUi';
@@ -40,6 +41,7 @@ export const en: Catalog = {
   search,
   share,
   today,
+  trends,
   account,
   ui,
   update,

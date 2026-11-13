@@ -47,6 +47,7 @@ export default function RootLayout() {
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="storage" />
                 <Stack.Screen name="nutrition" />
+                <Stack.Screen name="trends" />
                 <Stack.Screen name="piggy-bank" />
                 <Stack.Screen name="resources" />
                 <Stack.Screen name="favorites" />

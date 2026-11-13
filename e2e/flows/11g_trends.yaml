@@ -1,0 +1,169 @@
+# 趋势页（issue #107）：今天和昨天各记一次喂奶，按日历日分在两天；没记的天写“–”不写 0；
+# 今天没过完，不算进日均；体温有记录才出现；切到 30 天。测试用的记录最后都删掉。
+# 跨午夜跑的话“今天”和“昨天”会错开一天，和别的按日期断言的流程一样不处理。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 没有记录时：入口在“过去 24 小时”旁，页面是空状态 ──────
+- scrollUntilVisible:
+    element: { id: trends-open }
+    centerElement: true
+- takeScreenshot: .artifacts/e2e-11g-today-entry
+- tapOn: { id: trends-open }
+- extendedWaitUntil:
+    visible: { id: trends-screen }
+    timeout: 10000
+- assertVisible: 这段时间还没有记录
+- tapOn: { id: trends-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+
+# ─── 今天：喂奶 90ml、尿布都有、体温 ──────────────────
+- scrollUntilVisible:
+    element: { id: action-feed }
+    direction: UP
+- tapOn: { id: action-feed }
+- tapOn: { id: ml-chip-90 }
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible: 喂奶 90ml
+    timeout: 30000
+- tapOn: { id: action-diaper }
+- tapOn: { id: diaper-both }
+- extendedWaitUntil:
+    notVisible: { id: diaper-both }
+    timeout: 10000
+- tapOn: { id: action-more }
+- tapOn: { id: more-temp }
+- tapOn: { id: temp-save }
+- extendedWaitUntil:
+    notVisible: { id: temp-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+
+# ─── 昨天：补记喂奶 120ml ────────────────────────────
+- scrollUntilVisible:
+    element: { id: backfill-open }
+- tapOn: { id: backfill-open }
+- tapOn: { id: more-feed }
+- assertVisible: 补记喂奶
+- tapOn: { id: time-day-1 }
+- tapOn: { id: ml-chip-120 }
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+
+# ─── 7 天 ─────────────────────────────────────────────
+- scrollUntilVisible:
+    element: { id: trends-open }
+    centerElement: true
+- tapOn: { id: trends-open }
+- extendedWaitUntil:
+    visible: { id: trends-screen }
+    timeout: 10000
+- assertVisible:
+    id: trend-feed-count-0-value
+    text: "1"
+- assertVisible:
+    id: trend-feed-ml-0-value
+    text: "90"
+- assertVisible:
+    id: trend-feed-count-1-value
+    text: "1"
+- assertVisible:
+    id: trend-feed-ml-1-value
+    text: "120"
+# 没记的天不是 0
+- assertVisible:
+    id: trend-feed-count-2-value
+    text: "–"
+# 日均只算过完的昨天，不算今天
+- assertVisible:
+    id: trend-feed-ml-average
+    text: 日均 120ml（1 天）
+- takeScreenshot: .artifacts/e2e-11g-week
+- scrollUntilVisible:
+    element: { id: trend-poo-0 }
+    centerElement: true
+# 都有：尿尿、便便各算一次
+- assertVisible:
+    id: trend-wee-0-value
+    text: "1"
+- assertVisible:
+    id: trend-poo-0-value
+    text: "1"
+- assertVisible:
+    id: trend-wee-1-value
+    text: "–"
+- takeScreenshot: .artifacts/e2e-11g-week-sleep-diaper
+- scrollUntilVisible:
+    element: { id: trend-temp-0 }
+- assertVisible:
+    id: trend-temp-0-value
+    text: 最高 .*℃ · 1 次
+- takeScreenshot: .artifacts/e2e-11g-week-temp
+
+# ─── 30 天：不写每天的数字，只画柱子 ──────────────────
+- scrollUntilVisible:
+    element: { id: trends-range-30 }
+    direction: UP
+- tapOn: { id: trends-range-30 }
+- assertVisible: { id: trend-feed-count-29 }
+- assertNotVisible: { id: trend-feed-count-0-value }
+- assertVisible:
+    id: trend-feed-ml-average
+    text: 日均 120ml（1 天）
+- takeScreenshot: .artifacts/e2e-11g-month
+- scrollUntilVisible:
+    element: { id: trend-rhythm }
+- takeScreenshot: .artifacts/e2e-11g-month-rhythm
+- scrollUntilVisible:
+    element: { id: trends-back }
+    direction: UP
+- tapOn: { id: trends-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+
+# ─── 删掉测试用的记录 ─────────────────────────────────
+- scrollUntilVisible:
+    element: { id: records-open }
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- tapOn: { id: records-filter-all }
+- repeat:
+    times: 4
+    commands:
+      - extendedWaitUntil:
+          notVisible: { id: toast-undo }
+          timeout: 15000
+      - tapOn:
+          text: (喂奶 .*ml|换尿布 · .*|体温 .*℃)
+          index: 0
+      - tapOn: { id: event-delete }
+      - tapOn: { id: delete-sheet-confirm }
+      - extendedWaitUntil:
+          notVisible: { id: event-delete }
+          timeout: 10000
+- assertNotVisible:
+    text: (喂奶 .*ml|换尿布 · .*|体温 .*℃)
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
