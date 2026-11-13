@@ -141,7 +141,7 @@
 - **打开弹层时要收起 Toast。** Toast 显示在弹层之上，会盖住底部按钮。
 - **`StyleSheet.absoluteFillObject` 在 RN 0.88 已移除。** 用 `absoluteFill` 或写明四个方向。
 - **自定义 Tab 栏的类型从 `expo-router/js-tabs` 导入。** expo-router 58 自带 react-navigation，props 是 `emitter` 和 `navigateToTab`，不是 `navigation`。
-- **App 里的深浅只管得了 JS 画的界面。** 系统的日期和时间选择框、`Alert`、导航栏按钮是原生画的，只看原生层的深浅：F-142 只改了 JS 的配色，手机浅色、App 固定深色时，喂奶弹层点 `更早` 弹出一整块白色的选择框（issue #105）。F-161 用 `Appearance.setColorScheme` 把原生层也固定住（Android 上是 AppCompat 的夜间模式，MainActivity 自己处理 `uiMode`，不重建界面）。代价是固定期间 `Appearance.getColorScheme()` 读到的是固定的值，读不到手机自己的深浅；改回 `unspecified` 后，原生层要过一会儿才发 `appearanceChanged`，JS 当场读到的还是旧值。所以手机的深浅在固定前记下来，撤掉固定后几秒内的变化在前台也跟上（`src/lib/themePref.ts`，`test/themePref.test.ts`）。
+- **App 里的深浅只管得了 JS 画的界面。** 系统的日期和时间选择框、`Alert` 是原生画的，只看原生层的深浅：F-142 只改了 JS 的配色，手机浅色、App 固定深色时，喂奶弹层点 `更早` 弹出一整块白色的选择框（issue #105）。F-161 用 `Appearance.setColorScheme` 把原生层也固定住（Android 上是 AppCompat 的夜间模式，MainActivity 自己处理 `uiMode`，不重建界面）。代价是固定期间 `Appearance.getColorScheme()` 读到的是固定的值，读不到手机自己的深浅；改回 `unspecified` 后，原生层要过一会儿才发 `appearanceChanged`，JS 当场读到的还是旧值。所以手机的深浅在固定前记下来，撤掉固定后几秒内的变化在前台也跟上（`src/lib/themePref.ts`，`test/themePref.test.ts`）。三键导航的导航栏又是另一回事：RN 的 `enableEdgeToEdge` 只在 Activity 创建时按当时的配置定一次半透明底和按钮的深浅，之后夜间模式怎么变都不跟，要用 `expo-navigation-bar` 的 `NavigationBar` 按 App 的深浅设。输入法键盘归输入法管，App 改不了。
 - **不要在记录后直接请求系统权限。** 系统弹窗会盖住 Toast 和撤销，用户拒绝后下一次又会弹。用页面上的提示卡，由用户自己点开。
 - **字体子集只有 GB2312 加一张名字用字表。** 表外的生僻字仍然回退到系统字体，和衬线标题放在一起字形不一样。要加字就改 `scripts/subset-fonts.py` 的 `NAME_CHARS` 再重新生成，并看 E2E 的 `e2e-05-rare-name` 截图。玥、喆已经在表里，这张截图现在看的是表内的字，不是回退。
 - **expo-file-system 的 `copy`、`move`、`write` 是异步的，必须 await。** 同名的 `delete`、`create` 却是同步的，TypeScript 也不报错。漏写之后读到的大小是 0，所有上传都被服务端拒绝。只有在模拟器上真正跑才发现。
