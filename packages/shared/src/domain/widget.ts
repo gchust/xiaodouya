@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { t } from '../i18n';
 import {
   type BabyData,
+  type BreastSide,
+  breastSides,
   canReadCollection,
   canWriteCollection,
   type DiaperKind,
@@ -12,7 +14,13 @@ import {
   type Role,
 } from '../schemas';
 import { dayNumber, formatClock, startOfLocalDay } from './age';
-import { isBreastFeed } from './breastfeeding';
+import {
+  breastFeedState,
+  finishBreastFeed,
+  isBreastFeed,
+  nextBreastSide,
+  startBreastFeed,
+} from './breastfeeding';
 import { type DaySummary, summarizeDay } from './events';
 import {
   estimateNextFeed,
@@ -69,6 +77,12 @@ const WidgetAction = z.discriminatedUnion('type', [
   z.object({ type: z.literal('sleepStart'), id: z.string().min(1) }),
   z.object({ type: z.literal('sleepEnd'), sleepId: z.string().min(1) }),
   z.object({ type: z.literal('diaper'), id: z.string().min(1), kind: z.enum(diaperKinds) }),
+  /**
+   * 亲喂（issue #104）。哪一侧写在点击数据里：按钮上写的是哪一侧，点了就从哪一侧开始，
+   * 不在点击时重新猜。“＋ 奶量”的 `feed` 还是瓶喂，已经画在桌面上的旧画面带的就是它。
+   */
+  z.object({ type: z.literal('breastStart'), id: z.string().min(1), side: z.enum(breastSides) }),
+  z.object({ type: z.literal('breastEnd'), feedId: z.string().min(1) }),
 ]);
 export type WidgetAction = z.infer<typeof WidgetAction>;
 
@@ -139,7 +153,60 @@ export function planWidgetAction(action: WidgetAction, input: WidgetPlanInput): 
         id: action.id,
         data: { type: 'diaper', at: now, kind: action.kind, ...byName },
       };
+    case 'breastStart': {
+      // 和 App 里点一侧是同一条记录：没有 endAt 的亲喂。已经有计时（包括忘了关的）就不再开一条，
+      // 不然今天页和喂奶弹层只认最新的那条，旧的一直开着。
+      if (isKnownId(action.id)) return { kind: 'noop' };
+      if (breastFeedState(events(entries), now).status !== 'none') return { kind: 'noop' };
+      return {
+        kind: 'write',
+        id: action.id,
+        data: { ...startBreastFeed(action.side, now), ...byName },
+      };
+    }
+    case 'breastEnd': {
+      // 忘了关的计时（超过 2 小时）要到 App 里结束和改时长，和睡眠一样，不能一点就结束。
+      const breast = breastFeedState(events(entries), now);
+      if (breast.status !== 'running') return { kind: 'noop' };
+      const target = entries.find((e) => e.id === action.feedId);
+      if (target?.data !== breast.feed) return { kind: 'noop' };
+      return { kind: 'write', id: target.id, data: finishBreastFeed(breast.feed, now) };
+    }
   }
+}
+
+/**
+ * 记喂奶小工具上的亲喂（issue #104）。小工具不能走字，所以只写开始的钟点：
+ * - `none`：上一次是瓶喂（或者还没喂过），照旧一键记瓶喂。
+ * - `next`：上一次是喂完的亲喂，按钮从另一侧开始计时。
+ * - `running`：正在计时，按钮结束；换边要到 App 里。
+ * - `forgotten`：开了 2 小时以上，按钮打开 App 去结束，和忘了结束的睡眠一样。
+ */
+export type WidgetBreast =
+  | { status: 'none' }
+  | { status: 'next'; side: BreastSide }
+  | { status: 'running'; id: string; since: number; side: BreastSide }
+  | { status: 'forgotten'; id: string; since: number };
+
+function widgetBreast(
+  entries: readonly WidgetEntry[],
+  last: EventData | undefined,
+  now: number,
+): WidgetBreast {
+  const state = breastFeedState(events(entries), now);
+  if (state.status !== 'none') {
+    const id = entries.find((e) => e.data === state.feed)?.id;
+    if (id && state.status === 'forgotten') {
+      return { status: 'forgotten', id, since: state.feed.at };
+    }
+    if (id && state.feed.side) {
+      return { status: 'running', id, since: state.feed.at, side: state.feed.side };
+    }
+    return { status: 'none' };
+  }
+  if (!last || !isBreastFeed(last)) return { status: 'none' };
+  const side = nextBreastSide(events(entries), now);
+  return side ? { status: 'next', side } : { status: 'none' };
 }
 
 export type WidgetSleep =
@@ -188,6 +255,8 @@ export type WidgetView =
       /** 上次喂奶写什么：瓶喂是奶量，亲喂是“亲喂”“亲喂中”（不写 0ml）。 */
       lastFeedAmount: string | null;
       canQuickFeed: boolean;
+      /** 记喂奶小工具的按钮是开始还是结束亲喂，见 `WidgetBreast`。 */
+      breast: WidgetBreast;
       /** 一键记喂奶记多少，和 `planWidgetAction` 写的一样（最近一次瓶喂的奶量）。不能一键记时是 null。 */
       quickFeedAmount: string | null;
       sleep: WidgetSleep;
@@ -303,6 +372,7 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     lastFeed: last && lastEntry ? { id: lastEntry.id, at: last.at, ml: last.ml } : null,
     lastFeedAmount,
     canQuickFeed: quickMl !== null,
+    breast: widgetBreast(entries, last, now),
     quickFeedAmount: quickMl === null ? null : formatVolume(quickMl, units.volume),
     sleep: widgetSleep(entries, now),
     today,

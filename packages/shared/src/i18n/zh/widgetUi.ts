@@ -35,6 +35,19 @@ export const widgetUi = {
   /** 小工具上亲喂的那几个字，放得进 2×2 的说明和快捷记录的一行。 */
   breastShort: '亲喂',
   breastRunningShort: '亲喂中',
+  /** 记喂奶小工具开始和结束亲喂（issue #104）。按钮放得进 2×2 的一行。 */
+  breastStart: (side: 'left' | 'right') => `开始亲喂 · ${side === 'left' ? '左侧' : '右侧'}`,
+  breastStartA11y: (side: 'left' | 'right') => `开始亲喂，从${side === 'left' ? '左' : '右'}侧开始`,
+  breastRunningSince: '亲喂中 · 从',
+  breastRunningSub: (side: 'left' | 'right') =>
+    `正在喂${side === 'left' ? '左' : '右'}侧 · 点卡片换边`,
+  breastRunningA11y: (detail: Text) => `亲喂中，${detail}，点这里换边`,
+  breastEnd: '结束亲喂',
+  breastEndA11y: '结束亲喂并保存',
+  breastForgottenSince: (date: Text) => `亲喂计时还开着 · 从${date}`,
+  over2h: '超过 2 小时了',
+  breastConfirm: '去结束亲喂',
+  breastConfirmA11y: '到 App 里结束这次亲喂，改一下时长',
   noFeedHint: '第一次要选一下奶量',
   logged: (title: Text) => `已记好 · ${title}`,
   fixHint: '记错了点下面',
@@ -70,7 +83,7 @@ export const widgetUi = {
   quickName: '快捷记录',
   quickDesc: '喂奶、尿布、睡眠都在一排，各点一下',
   feedName: '记喂奶',
-  feedDesc: '按上次的奶量记一次',
+  feedDesc: '按上次的奶量记一次，亲喂时开始和结束计时',
   sleepName: '睡眠',
   sleepDesc: '看是不是在睡，点一下开始或结束',
   diaperName: '尿布',
