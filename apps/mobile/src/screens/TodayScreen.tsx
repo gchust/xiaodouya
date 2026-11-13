@@ -51,7 +51,7 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecords, useRegion, useUnits } from '../lib/app';
+import { useApp, useNow, useRecordsOf, useRegion, useUnits } from '../lib/app';
 import { saveAvatar } from '../lib/avatar';
 import { localDayBounds } from '../lib/dates';
 import { pickFromLibrary } from '../lib/media';
@@ -82,7 +82,10 @@ export function TodayScreen() {
   const scrollRef = useTabScrollRef('today');
   const app = useApp();
   const router = useRouter();
-  const { events, baby, pendingCount, vaccinePlans } = useRecords();
+  const events = useRecordsOf('events');
+  const baby = useRecordsOf('baby');
+  const pendingCount = useRecordsOf('pendingCount');
+  const vaccinePlans = useRecordsOf('vaccinePlans');
   const region = useRegion();
   const units = useUnits();
   const sheet = useSheet();

@@ -103,9 +103,19 @@ export function useApp(): AppApi {
   return app;
 }
 
+/** 整份快照：任何一条记录变了都会重画。只用到其中几项的页面用 `useRecordsOf`。 */
 export function useRecords(): Snapshot {
   const { store } = useApp();
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
+}
+
+/**
+ * 快照里的一项。没变的列表是同一个数组（见 RecordStore），所以只有这一项变了才重画：
+ * 记一条喂奶，只看回忆的页面不跟着重画（issue #111）。
+ */
+export function useRecordsOf<K extends keyof Snapshot>(key: K): Snapshot[K] {
+  const { store } = useApp();
+  return useSyncExternalStore(store.subscribe, () => store.getSnapshot()[key]);
 }
 
 export function useUploadProgress() {
@@ -115,13 +125,13 @@ export function useUploadProgress() {
 
 /** 家庭的地区，规则见 regionFor。 */
 export function useRegion(): RegionDefinition {
-  return regionFor(useRecords().baby?.data.region);
+  return regionFor(useRecordsOf('baby')?.data.region);
 }
 
 /** 这个人用的单位。所有显示和输入数量的地方都从这里取。 */
 export function useUnits(): Units {
   const { prefs } = useApp();
-  return effectiveUnits(prefs.units, useRecords().baby?.data.region);
+  return effectiveUnits(prefs.units, useRecordsOf('baby')?.data.region);
 }
 
 /** 让计时类显示定期刷新。 */

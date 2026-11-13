@@ -33,7 +33,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
+import { useApp, useRecordsOf, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { useTabScrollRef } from '../lib/tabScroll';
@@ -67,7 +67,10 @@ const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 export function InfoScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('info');
-  const { baby, documents, events, vaccinePlans } = useRecords();
+  const baby = useRecordsOf('baby');
+  const documents = useRecordsOf('documents');
+  const events = useRecordsOf('events');
+  const vaccinePlans = useRecordsOf('vaccinePlans');
   const { role, prefs } = useApp();
   const region = useRegion();
   const units = useUnits();
@@ -354,7 +357,7 @@ export function InfoScreen() {
  * 不是每天要记的东西，不能挤占喂奶、尿布、睡眠的快捷按钮。只看回忆的家人没有资料页。
  */
 function PiggyBankSection() {
-  const { money } = useRecords();
+  const money = useRecordsOf('money');
   const sheet = useSheet();
   const router = useRouter();
   const localCurrency = useLocalCurrency();

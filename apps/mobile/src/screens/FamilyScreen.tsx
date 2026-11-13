@@ -18,7 +18,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecords, useUnits, useUploadProgress } from '../lib/app';
+import { useApp, useNow, useRecordsOf, useUnits, useUploadProgress } from '../lib/app';
 import {
   currentAppVersion,
   getUpdateController,
@@ -59,7 +59,9 @@ export function FamilyScreen() {
   const insets = useSafeAreaInsets();
   const scrollRef = useTabScrollRef('family');
   const app = useApp();
-  const { moments, letters, baby, pendingCount } = useRecords();
+  const moments = useRecordsOf('moments');
+  const letters = useRecordsOf('letters');
+  const baby = useRecordsOf('baby');
   const uploadProgress = useUploadProgress();
   const units = useUnits();
   const pendingFiles = uploadProgress.total + uploadProgress.failedCount;
@@ -116,6 +118,8 @@ export function FamilyScreen() {
   );
 
   const signOut = () => {
+    // 点的时候读一次就够了。订阅的话，每记一条，这一整页都要重画一遍。
+    const { pendingCount } = app.store.getSnapshot();
     const unsynced = pendingCount > 0 || pendingFiles > 0;
     sheet.open(t().auth.signOut, () => (
       <>
@@ -496,7 +500,7 @@ const unitRows = (): { dimension: Dimension; label: string; options: readonly st
 /** 单位是每个人自己的：爸爸看 oz、妈妈看 ml 都行，记录里存的都是公制。 */
 function UnitsSheet() {
   const app = useApp();
-  const { baby } = useRecords();
+  const baby = useRecordsOf('baby');
   const units = useUnits();
   const regionName = regionFor(baby?.data.region).name;
   return (

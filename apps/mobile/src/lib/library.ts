@@ -5,7 +5,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useCallback } from 'react';
 import { colors } from '../theme';
 import { useFeedback } from '../ui/overlays';
-import { useApp, useRecords } from './app';
+import { useApp, useRecordsOf } from './app';
 
 /**
  * 在 App 里打开资料的原页面（issue #98）。用系统的 Custom Tabs（expo-web-browser），不用 WebView：
@@ -39,7 +39,7 @@ export async function openResourceUrl(url: string, toast: (message: string) => v
 /** 收藏和取消收藏，全家共用。取消是软删除，Toast 可撤销，不用确认（和隐藏疫苗剂次一样只是个开关）。 */
 export function useFavorites() {
   const app = useApp();
-  const { favorites } = useRecords();
+  const favorites = useRecordsOf('favorites');
   const { toast } = useFeedback();
 
   const find = useCallback(
