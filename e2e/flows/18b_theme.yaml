@@ -44,6 +44,18 @@ appId: com.gchust.xiaodouya
     visible: { id: today-screen }
     timeout: 10000
 - takeScreenshot: .artifacts/e2e-18b-today-lavender-dark
+# 手机是浅色、App 固定深色时，系统的时刻选择框也要是深色（issue #105），看截图。
+- tapOn: { id: action-feed }
+- tapOn: { id: offset-custom }
+- tapOn: { id: time-clock }
+- waitForAnimationToEnd
+- takeScreenshot: .artifacts/e2e-18b-time-picker-dark
+- back
+- assertVisible: { id: feed-save }
+- back
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
 # 选择存在这台手机上：杀掉 App 再打开还在。
 - stopApp
 - launchApp
