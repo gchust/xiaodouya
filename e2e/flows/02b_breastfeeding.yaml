@@ -86,6 +86,10 @@ appId: com.gchust.xiaodouya
 - takeScreenshot: .artifacts/e2e-02b-today-done
 
 # ─── 修改：左侧改成 5 分钟 ──────────────────────────
+# Toast 可能盖着时间线那一行（见 PITFALLS“测试方法”），等它消失再点。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
 - tapOn:
     text: "亲喂 左 \\d+ 分 · 右 \\d+ 分"
 - assertVisible: { id: event-detail }
@@ -123,6 +127,9 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 
 # ─── 删掉测试用的记录 ───────────────────────────────
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
 - tapOn:
     text: "亲喂 左 5 分 · 右 \\d+ 分"
 - tapOn: { id: event-delete }
