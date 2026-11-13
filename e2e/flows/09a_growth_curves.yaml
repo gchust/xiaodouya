@@ -78,9 +78,11 @@ appId: com.gchust.xiaodouya
     text: ".* · 35\\.5 cm · 约 P[0-9]+"
 - takeScreenshot: .artifacts/e2e-09a-head-curves
 # 性别改回不填：不再说百分位
+# 滚到行里的值本身并放到屏幕中间：只滚到这一行“可见”时，它可能还压在屏幕顶边（CI run 43460180233）。
 - scrollUntilVisible:
-    element: { id: birth-sex }
+    element: 女孩
     direction: UP
+    centerElement: true
 - assertVisible: 女孩
 - tapOn: { id: birth-sex }
 - tapOn: { id: sex-unset }
