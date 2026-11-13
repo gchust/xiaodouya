@@ -556,6 +556,40 @@ describe('同步', () => {
     expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
   });
 
+  it('吸奶记录能同步，后写胜出，软删除；viewer 读不到也不能写；奶量不对被拒', async () => {
+    const { admin } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    const grandma = await join(admin.token, 'viewer', '奶奶');
+    const id = randomUUID();
+    const data = { type: 'pump', at: 1000, ml: 120, side: 'left', byName: '妈妈' };
+    const change = { id, collection: 'event' as const, data, deleted: false, updatedAt: 1000 };
+    expect((await sync(mom.token, 0, [change])).json.rejected).toEqual([]);
+    expect((await sync(mom.token, 0, [change])).json.rejected).toEqual([]);
+    const seen = await sync(admin.token, 0);
+    expect(seen.json.records.filter((r) => r.id === id)).toHaveLength(1);
+    expect(seen.json.records.find((r) => r.id === id)?.data).toEqual(data);
+
+    const edited = { ...data, ml: 150, side: 'both' };
+    expect(
+      (await sync(admin.token, 0, [{ ...change, data: edited, updatedAt: 2000 }])).json.rejected,
+    ).toEqual([]);
+    const stale = await sync(mom.token, 0, [{ ...change, updatedAt: 1500 }]);
+    expect(stale.json.records.find((r) => r.id === id)?.data).toEqual(edited);
+
+    expect((await sync(grandma.token, 0)).json.records).toEqual([]);
+    const forbidden = await sync(grandma.token, 0, [{ ...change, id: randomUUID() }]);
+    expect(forbidden.json.rejected[0]?.reason).toBe('forbidden');
+
+    const bad = await sync(mom.token, 0, [
+      { ...change, id: randomUUID(), data: { type: 'pump', at: 1000, ml: -1 } },
+    ]);
+    expect(bad.json.rejected[0]?.reason).toBe('invalid');
+
+    await sync(mom.token, 0, [{ ...change, data: edited, deleted: true, updatedAt: 3000 }]);
+    const after = await sync(admin.token, 0);
+    expect(after.json.records.find((r) => r.id === id)?.deleted).toBe(true);
+  });
+
   it('育儿资料、收藏和收藏夹能同步，后写胜出，软删除；viewer 读不到也不能写', async () => {
     const { admin } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');
@@ -1117,6 +1151,20 @@ describe('推送', () => {
     expect(pushes).toEqual([
       { token: 'ExponentPushToken[mom]', title: '爸爸 刚刚记录了', body: '喂奶 90ml' },
     ]);
+  });
+  it('吸奶的推送写吸了多少、哪一侧', async () => {
+    const { admin } = await familyWithToken();
+    await sync(admin.token, 0, [
+      {
+        id: randomUUID(),
+        collection: 'event',
+        data: { type: 'pump', at: Date.now(), ml: 120, side: 'both' },
+        deleted: false,
+        updatedAt: Date.now(),
+      },
+    ]);
+    await flush();
+    expect(pushes.map((p) => p.body)).toEqual(['吸奶 120ml · 两侧']);
   });
   it('按收件人自己选的单位写推送内容', async () => {
     const { admin } = await familyWithToken({ units: { volume: 'oz' } });

@@ -474,6 +474,27 @@ describe('公开接口：白名单', () => {
     expect(result.text).not.toContain('虚构的育儿资料');
     expect(result.text).not.toContain('虚构的收藏夹');
   });
+
+  it('吸奶不出现：记的是大人；已经部署的分享页遇到不认识的类型整页打不开', async () => {
+    const { admin } = await familyWithBaby();
+    await sync(admin.token, [
+      changeOf('event', {
+        type: 'pump',
+        at: FROM + HOUR,
+        ml: 120,
+        side: 'both',
+        note: '虚构的吸奶',
+      }),
+      changeOf('event', { type: 'feed', at: FROM + 2 * HOUR, ml: 90 }),
+    ]);
+    const { token } = await shareToken(admin.token, {
+      include: { moments: true, daily: true, health: true },
+    });
+    const result = await openPublic(token);
+    expect(result.status).toBe(200);
+    expect(result.json.events).toEqual([{ at: FROM + 2 * HOUR, type: 'feed', ml: 90 }]);
+    expect(result.text).not.toContain('虚构的吸奶');
+  });
 });
 
 describe('公开接口：内容范围', () => {
