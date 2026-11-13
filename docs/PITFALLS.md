@@ -157,6 +157,8 @@
 - **`ListCard` 的 `Row` 放不下长的等宽值。** 反馈 ID（uuid）放在 `Row` 的右边，中文还放得下，英文标签 `Feedback ID` 更长，值折成两行、第二行被卡片裁掉一半（模拟器截图上才看出来）。长的、要复制的值单独一行放在卡片下面。
 - **模块顶层的 `StyleSheet.create` 在导入时就把颜色抄死了。** 换语言那样让整棵界面重新挂载也换不了颜色：模块只加载一次。F-142 改成 `themedStyles(() => ({...}))`，读样式时按当前主题生成；模块顶层写 `colors.xxx`（比如营养页原来的 `STATUS_COLORS`）、写颜色字面量都会被 `scripts/check-colors.mjs` 拦下来。
 - **会越存越多的列表不能用 `ScrollView` 加 `map`。** 回忆页原来就是这样，四个子标签共用一个 `ScrollView`。F-150 在模拟器上造了 300 段回忆、1,000 张照片：打开时间线要 3–4 秒，内存从 131 MB 涨到 436 MB；切到照片墙要 12–15 秒，单帧卡 5 秒以上，内存超过 1 GB；三轮里有两轮滑照片墙时 App 被系统杀掉。数据少时完全看不出来，十段回忆的账号一切正常。改成每个子标签一个 `FlatList` 后，同样的数据打开时间线和照片墙都在 1–2 秒，内存 150–310 MB，没再被杀。照片墙要拍平成“标题一行、每 3 张一行”，不能把一组当成一项：一段回忆有 100 张时照样一次画完。
+- **嵌套的 `Text` 会继承外层的 `maxFontSizeMultiplier`。** F-151 给 26 号的数值设了 1.2 倍上限，套在里面的 13 号单位 `kg` 也跟着只放大 1.2 倍，2 倍字体下旁边的标签很大、单位很小。不限制的字要明确传 0（`lib/fontScale.ts` 就是这样），不传就是继承。
+- **Android 14 起系统字体是非线性放大的。** `font_scale` 2.0 时 13sp 放大到约 2 倍，32sp 的计时器只放大约 1.4 倍。大字被撑破的往往不是大数字本身，而是放小字的定宽、定高容器（时间线 44 宽的钟点列、88 高的按钮、44 宽的标签）。走查要真的在模拟器上调字体看，不要按倍数心算。
 
 ## Android 构建和模拟器
 
@@ -319,6 +321,7 @@
 - **开发机磁盘剩下不到 1% 时，SeaweedFS 一个新卷都不建，所有上传 500。** 日志是 `disk free 0.84% < required 1.00%`、`Not enough data nodes found`、`No writable volumes`，和卷位用满的报错很像，新起一个容器也一样（它看的是宿主机的磁盘）。2026-11-06 根分区 99% 满时遇到。不去动别人共用的容器，自己起一个：`docker run -d -p 59110:9000 -v <tmpfs 上的目录>:/data -v deploy/dev/s3.json:/etc/seaweedfs/s3.json:ro chrislusf/seaweedfs server -dir=/data -volume.max=100 -volume.minFreeSpace=200MiB -s3 -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json`，再用 `TEST_S3_ENDPOINT=http://localhost:59110` 跑 `pnpm test:server` 和 `pnpm test:edge`（`edge-smoke.ts` 从 F-141 起也认这个变量）。`cloud-backup.test.ts` 的脚本和读回用的都是 `.env.example` 里的 59000，换不了，这时它的 5 条会失败（`curl: (22) … 500`），要等磁盘空出来或者看 CI。
 - **被底部标签栏盖住的行，Maestro 也算“看得见”。** `scrollUntilVisible` 找到一行就停，这一行可能正好在标签栏后面，接着断言它的说明文字就失败。家人页设置里每多一行，下面那些行的位置都会变（F-141 加了“分享设置”后，流程 23 的 `检查更新` 在 run 42222130108 这样失败）。要读一行的说明文字或点它，滚动时加 `centerElement: true`。
 - **量列表性能要和数据少的账号比，不看绝对值。** 本机模拟器用 swiftshader 软件渲染，十段回忆的账号滑动时卡顿帧也有 36–100%，帧时间本身没有意义。F-150 的做法：同一个 CI APK 换 JS 包（只换回忆页的代码，连 8804 上的服务端），同一台模拟器，造一个 10 段回忆和一个 300 段回忆的账号，每轮冷启动后 `dumpsys gfxinfo <包名> reset`，点开、滑动，再取 `framestats` 和 `dumpsys meminfo`，各跑三轮取中位数。Android 15 的 `framestats` 只有 `InputEventId`，没有输入事件的时间，从第一个 `HandleInputStart` 不为 0 的帧算起。造数据时照片要上传 `thumb` 并在记录里写 `hasThumb: true`，否则 App 退回去取原图，量的就不是同一件事。脚本没有放进仓库，做法写在 issue #112。
+- **Maestro 看不出文字断没断行。** `below`/`above` 只比上边缘，`leftOf`/`rightOf` 只比左边缘。F-151 的流程 18c 用 `height` + `tolerance` 按一行的像素高度找钟点（pixel_6，本机和 CI 一样）；正则 `\d{2}:\d{2}` 还会匹配状态栏的时间，要加 `childOf: { id: today-screen }`，第一次没加时修复前的 App 也通过了。
 
 ## 并行开发
 
@@ -339,3 +342,4 @@
 - **两次拿锁之间，模拟器上的 App 可能已经被别的 Agent 换掉。** 包名都是 `com.gchust.xiaodouya`，F-139 走查时第二次拿锁不重装、接着跑，打开的是别人刚装的构建（深色主题、没有新按钮），差点当成自己的 Bug 去查。每次拿锁都重装自己的 APK、从建账号开始跑；`setsid npx …` 起的服务端要按端口找进程杀掉，只杀记下的 pid 可能留下 node，下一次同端口起不来，就连上了旧的那个。
 - **给整块对象套一层调用时，别让格式化把它整体缩进一格。** F-142 一开始写成 `themedStyles(() => StyleSheet.create({...}))`，Biome 把 41 个文件的样式表全部多缩进一层，差异里删了 1644 行，和并行分支必然冲突。改成 `themedStyles(() => ({...}))`：最后一个参数是返回对象的箭头函数时，Biome 和 Prettier 一样把它贴在同一行，缩进不变，删的只剩 341 行。机械替换写成脚本（`scripts/codemod-themed-styles.mjs`），rebase 后再跑一次。
 - **PROGRESS 的新编号要看所有进行中的分支，不能只看 `main`。** F-153（搜索）一开始在 `main` 上看到最大是 F-143，认领了 F-144，`feat/breastfeeding` 同时也认领了 F-144，两个 PR 都开着才发现，只好改号。认领前 `git fetch` 后用 `git grep -o '^| F-1[0-9][0-9] ' origin/<分支> -- docs/PROGRESS.md` 把开着的分支都看一遍，挑一个没人用的。
+- **本机 adb 上可能连着真手机（无线调试）。** F-151 走查时 `adb devices` 里除了 `emulator-5554` 还有一台小米手机，不带 `-s` 的 `adb` 报 `more than one device`，Maestro 则直接挑了手机，装驱动时被手机拦下（`INSTALL_FAILED_USER_RESTRICTED`）。走查脚本里 `export ANDROID_SERIAL=emulator-5554`，`adb` 一律带 `-s emulator-5554`，Maestro 带 `--device emulator-5554`。
