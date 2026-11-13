@@ -135,26 +135,30 @@ export function timelineEntries<E extends { data: EventData }>(
     .slice(0, TIMELINE_LIMIT);
 }
 
-export interface EventDay<E> {
+export interface DayGroup<T> {
   dayStart: number;
-  data: E[];
+  data: T[];
+}
+
+export type EventDay<E> = DayGroup<E>;
+
+/** 按当地日历日分组，天和天里都是新的在前。 */
+export function groupByDay<T>(items: readonly T[], at: (item: T) => number): DayGroup<T>[] {
+  const days = new Map<number, T[]>();
+  for (const item of items) {
+    const dayStart = new Date(at(item)).setHours(0, 0, 0, 0);
+    const day = days.get(dayStart);
+    if (day) day.push(item);
+    else days.set(dayStart, [item]);
+  }
+  return [...days.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([dayStart, data]) => ({ dayStart, data: data.sort((a, b) => at(b) - at(a)) }));
 }
 
 /** 全部记录页：按当地日历日分组，新的在前。 */
 export function eventsByDay<E extends { data: EventData }>(entries: readonly E[]): EventDay<E>[] {
-  const days = new Map<number, E[]>();
-  for (const entry of entries) {
-    const dayStart = new Date(entry.data.at).setHours(0, 0, 0, 0);
-    const day = days.get(dayStart);
-    if (day) day.push(entry);
-    else days.set(dayStart, [entry]);
-  }
-  return [...days.entries()]
-    .sort(([a], [b]) => b - a)
-    .map(([dayStart, data]) => ({
-      dayStart,
-      data: data.sort((a, b) => b.data.at - a.data.at),
-    }));
+  return groupByDay(entries, (entry) => entry.data.at);
 }
 
 export function summaryText(s: DaySummary, units: Units = metricUnits): string {

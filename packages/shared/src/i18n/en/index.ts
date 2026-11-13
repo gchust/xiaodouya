@@ -13,6 +13,7 @@ import { money } from './money';
 import { nutritionUi } from './nutritionUi';
 import { recall } from './recall';
 import { records } from './records';
+import { search } from './search';
 import { share } from './share';
 import { storageUi } from './storageUi';
 import { themeUi } from './themeUi';
@@ -36,6 +37,7 @@ export const en: Catalog = {
   money,
   library,
   records,
+  search,
   share,
   today,
   account,
