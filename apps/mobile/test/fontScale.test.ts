@@ -7,8 +7,8 @@ describe('系统大字体', () => {
       expect(maxFontScaleFor(size)).toBe(0);
     }
   });
-  it('没写字号的文字（默认 14）也不设上限', () => {
-    expect(maxFontScaleFor(undefined)).toBe(0);
+  it('没写字号时不传，和字号一样继承外层（顶层就是不限制）', () => {
+    expect(maxFontScaleFor(undefined)).toBeUndefined();
   });
   it('页面标题、计时器、弹层大数字、余额最多放大到 1.2 倍', () => {
     for (const size of [24, 26, 32, 40, 52]) {

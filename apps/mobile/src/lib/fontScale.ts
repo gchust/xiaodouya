@@ -7,11 +7,13 @@ export const LARGE_TEXT_SIZE = 24;
 export const LARGE_TEXT_MAX_SCALE = 1.2;
 
 /**
- * 交给 `maxFontSizeMultiplier`。0 表示不限制、跟着系统走；不能不传：嵌套的 Text 不传时继承外层，
- * 身高体重弹层里 `3.4` 后面的 `kg` 就会跟着大数字只放大 1.2 倍。
+ * 交给 `maxFontSizeMultiplier`。写了小字号时传 0（不限制、跟着系统走），不能不传：嵌套的 Text
+ * 不传时继承外层，身高体重弹层里 `3.4` 后面的 `kg` 就会跟着大数字只放大 1.2 倍。
+ * 没写字号时不传（undefined）：嵌套的字号也是继承外层的，上限跟着外层走才一致。
  */
-export function maxFontScaleFor(fontSize: number | undefined): number {
-  return fontSize !== undefined && fontSize >= LARGE_TEXT_SIZE ? LARGE_TEXT_MAX_SCALE : 0;
+export function maxFontScaleFor(fontSize: number | undefined): number | undefined {
+  if (fontSize === undefined) return undefined;
+  return fontSize >= LARGE_TEXT_SIZE ? LARGE_TEXT_MAX_SCALE : 0;
 }
 
 /**
