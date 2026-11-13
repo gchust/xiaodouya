@@ -919,6 +919,13 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
   const originalLength = initial?.lengthCm ?? latest?.lengthCm ?? baby?.data.birthLengthCm;
   const [w, setW] = useState(() => toDisplay('weight', originalWeight ?? 3.4, units.weight));
   const [h, setH] = useState(() => toDisplay('length', originalLength ?? 50, units.length));
+  // 头围选填（F-148）：默认不记，点了才出现步进器，从上一次记的头围开始（没有就从 35 cm）。
+  const lastHead = events.find((e) => e.data.type === 'growth' && e.data.headCm !== undefined)
+    ?.data as EventOf<'growth'> | undefined;
+  const originalHead = initial ? initial.headCm : undefined;
+  const [head, setHead] = useState<number | null>(() =>
+    originalHead === undefined ? null : toDisplay('length', originalHead, units.length),
+  );
   const [note, setNote] = useState(initial?.note ?? '');
   const time = useRecordTime({ at: initial?.at, backfill });
   return (
@@ -940,6 +947,43 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
         onDec={() => setH((v) => stepDisplay('length', v, -1, units.length))}
         onInc={() => setH((v) => stepDisplay('length', v, 1, units.length))}
       />
+      {head === null ? (
+        <Pressable
+          testID="head-add"
+          accessibilityRole="button"
+          accessibilityLabel={t().growth.addHead}
+          onPress={() => setHead(toDisplay('length', lastHead?.headCm ?? 35, units.length))}
+          style={s.headLink}
+        >
+          <Text style={s.headLinkText}>{t().growth.addHead}</Text>
+        </Pressable>
+      ) : (
+        <>
+          <SmallStepper
+            testPrefix="head"
+            label={t().growth.head}
+            value={head.toFixed(1)}
+            unit={scaleFor('length', units.length).label}
+            onDec={() => setHead((v) => stepDisplay('length', v ?? 0, -1, units.length))}
+            // 超过记录允许的 70 cm 会在校验时被丢掉，步进器就停在这里。
+            onInc={() =>
+              setHead((v) => {
+                const next = stepDisplay('length', v ?? 0, 1, units.length);
+                return toMetric('length', next, units.length) > 70 ? v : next;
+              })
+            }
+          />
+          <Pressable
+            testID="head-remove"
+            accessibilityRole="button"
+            accessibilityLabel={t().growth.removeHead}
+            onPress={() => setHead(null)}
+            style={s.headLink}
+          >
+            <Text style={s.headRemoveText}>{t().growth.removeHead}</Text>
+          </Pressable>
+        </>
+      )}
       {id ? <EventNote value={note} onChange={setNote} /> : null}
       <Button
         testID="growth-save"
@@ -953,6 +997,10 @@ export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {})
               at: time.resolve(),
               weightKg: metricToSave('weight', originalWeight, w, units.weight),
               lengthCm: metricToSave('length', originalLength, h, units.length),
+              headCm:
+                head === null
+                  ? undefined
+                  : metricToSave('length', originalHead ?? lastHead?.headCm, head, units.length),
               note: note.trim() || undefined,
             },
             id,
@@ -1417,6 +1465,10 @@ const s = themedStyles(() => ({
     justifyContent: 'center',
   },
   stepSign: { fontSize: 24, color: colors.ink },
+  // 文字只有 16 高，上下内边距补到 44。
+  headLink: { alignSelf: 'flex-start', paddingVertical: 14 },
+  headLinkText: { fontSize: 13, color: colors.accentText },
+  headRemoveText: { fontSize: 12, color: colors.muted },
   stepValue: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
   bigNumber: { fontSize: 52, lineHeight: 52 },
   unit: { fontSize: 16 },

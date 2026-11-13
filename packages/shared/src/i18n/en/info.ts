@@ -21,9 +21,6 @@ export const info: Catalog['info'] = {
   toUpload: 'To upload',
   docsPrivate:
     'Private storage, only family can see it. Links opened from here are valid for 10 minutes.',
-  weightTitle: (unit) => `Weight (${unit})`,
-  recordGrowth: 'Record height and weight',
-  addGrowth: '+ Record height & weight',
   vaccineBook: 'Vaccine book',
   backfillDosesA11y: 'Record several doses at once',
   backfillDoses: 'Record several doses',
@@ -55,8 +52,6 @@ export const info: Catalog['info'] = {
     'Vaccines you added stay in the book. Hidden and rescheduled settings belong to the old schedule and come back if you change back.',
   regionHint: 'Region sets the vaccine book and default units.',
   confirmRegion: (name) => `Change to ${name}`,
-  birthPoint: 'Birth',
-  chartEmpty: 'Record a weight and it will be charted here.',
   birthChangeNote: 'After changing this, days, age and vaccine dates are all recalculated.',
   birthMeasures: 'Birth weight and length',
   weightExample: (unit, example) => `Weight (${unit}), e.g. ${example}`,
