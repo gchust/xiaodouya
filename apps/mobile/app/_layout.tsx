@@ -52,6 +52,7 @@ export default function RootLayout() {
                 <Stack.Screen name="favorites" />
                 <Stack.Screen name="doc/[id]" />
                 <Stack.Screen name="records" />
+                <Stack.Screen name="recall-search" />
                 <Stack.Screen name="uploads" />
                 <Stack.Screen name="feedback" />
                 <Stack.Screen name="feedback-inbox/index" />
