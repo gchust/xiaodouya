@@ -161,6 +161,8 @@ function typeLabel(type: EventData['type']): string {
       return text.feed;
     case 'diaper':
       return text.diaper;
+    case 'pump':
+      return text.filterPump;
     case 'sleep':
       return text.sleep;
     case 'temp':

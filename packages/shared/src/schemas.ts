@@ -62,6 +62,10 @@ export type FeedMethod = (typeof feedMethods)[number];
 export const breastSides = ['left', 'right'] as const;
 export type BreastSide = (typeof breastSides)[number];
 
+/** 吸奶吸的是哪一侧（issue #104）。和亲喂不同，可以两侧一起吸。 */
+export const pumpSides = ['left', 'right', 'both'] as const;
+export type PumpSide = (typeof pumpSides)[number];
+
 /** 一侧最多记多少秒。一次亲喂不会超过一天，再大就是钟错了。 */
 const breastSeconds = z.number().int().min(0).max(86_400);
 
@@ -115,6 +119,16 @@ export const EventData = z.discriminatedUnion('type', [
     endAt: timestamp.optional().catch(undefined),
   }),
   z.looseObject({ ...eventBase, type: z.literal('diaper'), kind: z.enum(diaperKinds) }),
+  /**
+   * 吸奶（issue #104）：记的是大人吸了多少，不是宝宝吃了多少。不算喂奶次数，不进下次喂奶估算、奶粉营养和趋势，
+   * 分享页也不发。旧版 App 校验不过，保留但不显示，见 docs/ARCHITECTURE.md 的“吸奶”。
+   */
+  z.looseObject({
+    ...eventBase,
+    type: z.literal('pump'),
+    ml: z.number().int().min(0).max(1000),
+    side: z.enum(pumpSides).optional().catch(undefined),
+  }),
   z.looseObject({ ...eventBase, type: z.literal('sleep'), endAt: timestamp.optional() }),
   z.looseObject({ ...eventBase, type: z.literal('temp'), celsius: z.number().min(30).max(45) }),
   z.looseObject({

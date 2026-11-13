@@ -163,8 +163,14 @@ export type PublicShareResponse = z.infer<typeof PublicShareResponse>;
 
 export type ShareEventGroup = 'daily' | 'health';
 
-export function shareEventGroup(type: EventData['type']): ShareEventGroup {
+/**
+ * 吸奶不进分享页（null）：记的是大人，不是宝宝的一天。已经部署的分享页按 `z.array(EventData)` 解析整个响应，
+ * 不认识的类型会让整页打不开，所以服务端也绝不能发它。
+ */
+export function shareEventGroup(type: EventData['type']): ShareEventGroup | null {
   switch (type) {
+    case 'pump':
+      return null;
     case 'feed':
     case 'diaper':
     case 'sleep':
@@ -180,7 +186,8 @@ export function shareEventGroup(type: EventData['type']): ShareEventGroup {
 }
 
 export function shareIncludesEvent(type: EventData['type'], include: ShareInclude): boolean {
-  return include[shareEventGroup(type)];
+  const group = shareEventGroup(type);
+  return group !== null && include[group];
 }
 
 /**
@@ -214,6 +221,9 @@ export function pickEventForShare(event: EventData): EventData {
       return { ...base, type: 'feed', ml: event.ml };
     case 'diaper':
       return { ...base, type: 'diaper', kind: event.kind };
+    case 'pump':
+      // 不会发出去（`shareEventGroup` 是 null），这里只是保证逐字段构造。
+      return { ...base, type: 'pump', ml: event.ml, ...(event.side ? { side: event.side } : {}) };
     case 'sleep':
       return { ...base, type: 'sleep', ...(event.endAt ? { endAt: event.endAt } : {}) };
     case 'temp':

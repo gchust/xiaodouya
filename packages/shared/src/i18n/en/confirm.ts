@@ -9,6 +9,7 @@ export const confirm: Catalog['confirm'] = {
   event: {
     feed: 'Delete this feed?',
     diaper: 'Delete this diaper change?',
+    pump: 'Delete this pumping entry?',
     sleep: 'Delete this sleep?',
     temp: 'Delete this temperature reading?',
     med: 'Delete this medicine entry?',

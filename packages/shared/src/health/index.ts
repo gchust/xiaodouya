@@ -120,10 +120,12 @@ export function todayInsight(
 
   const summary = summarize24h(logged, now);
   const estimate = estimateNextFeed(logged, now);
+  // 吸奶记的是大人，也说明不了宝宝的喂奶和尿布有没有在记。
   const hasFullDay = logged.some(
     (e) =>
       e.type !== 'vaccine' &&
       e.type !== 'growth' &&
+      e.type !== 'pump' &&
       e.at >= birthAt &&
       now - e.at >= MIN_COVERAGE_MS &&
       now - e.at <= COVERAGE_LOOKBACK_MS,

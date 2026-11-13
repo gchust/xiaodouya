@@ -56,6 +56,10 @@ export const domain = {
       `${side === 'left' ? '左' : '右'} ${minutes} 分`,
     breastSide: (side: 'left' | 'right'): string => (side === 'left' ? '左侧' : '右侧'),
     nextBreastSide: (side: 'left' | 'right') => `下次从${side === 'left' ? '左' : '右'}侧开始`,
+    /** 吸奶，`side` 是 `pumpSide` 的结果，没记哪一侧时不写。 */
+    pump: (amount: string, side: string | undefined) => `吸奶 ${amount}${side ? ` · ${side}` : ''}`,
+    pumpSide: (side: 'left' | 'right' | 'both'): string =>
+      side === 'left' ? '左侧' : side === 'right' ? '右侧' : '两侧',
   },
   units: {
     ml: '毫升',

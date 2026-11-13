@@ -53,6 +53,8 @@ export const domain: Catalog['domain'] = {
     breastSideMinutes: (side, minutes) => `${side === 'left' ? 'L' : 'R'} ${minutes} min`,
     breastSide: (side) => (side === 'left' ? 'left side' : 'right side'),
     nextBreastSide: (side) => `Start on the ${side} side next time`,
+    pump: (amount, side) => `Pumped ${amount}${side ? ` · ${side}` : ''}`,
+    pumpSide: (side) => (side === 'both' ? 'both sides' : side),
   },
   units: {
     ml: 'milliliters',
