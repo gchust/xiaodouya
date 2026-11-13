@@ -1,4 +1,5 @@
 import { useFonts } from 'expo-font';
+import { NavigationBar } from 'expo-navigation-bar';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -34,6 +35,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: colors.paper }}>
       <SafeAreaProvider>
         <StatusBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
+        {/* 三键导航时系统在导航栏下垫一层半透明底，深浅只在启动时按手机定一次（RN 的 enableEdgeToEdge），
+            手机浅色、App 深色时屏幕最下面是一条亮带。这里跟着 App 的深浅换（issue #105）。 */}
+        <NavigationBar style={theme.scheme === 'dark' ? 'light' : 'dark'} />
         <FeedbackProvider>
           <AppProvider fallback={<View style={{ flex: 1, backgroundColor: colors.paper }} />}>
             <SheetProvider>
