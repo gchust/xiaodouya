@@ -1,4 +1,5 @@
 import type { EventData } from '../schemas';
+import { breastDurationMs } from './breastfeeding';
 import { FORGOTTEN_SLEEP_MS } from './feeding';
 
 /**
@@ -19,6 +20,11 @@ export interface TrendDay {
   /** 所有喂奶，含亲喂。 */
   feeds: number;
   nursingFeeds: number;
+  /**
+   * 亲喂时长，毫秒。和今天页摘要一样用 `breastDurationMs`：两侧写出来的分钟数加起来，
+   * 正在计时的算到现在，忘了关的只算喂完的段落。按开始喂的那天算。没有亲喂时是 null。
+   */
+  nursingMs: number | null;
   /** 算进奶量的喂奶次数。 */
   amountFeeds: number;
   /** 瓶喂的奶量，ml。没有一次带奶量的喂奶时是 null：没记不等于喝了 0ml。 */
@@ -38,8 +44,8 @@ export interface TrendDay {
 type FeedEvent = Extract<EventData, { type: 'feed' }>;
 
 /**
- * 亲喂（#104 加的 `method: 'breast'`）。#104 合并前旧版本不认识这个字段，
- * 记录照样能过校验（looseObject 保留多余字段），这里先认出来，不把亲喂的 0ml 当成摄入。
+ * 亲喂（#116 的 `method: 'breast'`）。和 `isBreastFeed` 一样，只是写成类型守卫，统计时要读计时字段。
+ * 亲喂的 `ml` 是 0（旧版 App 只认它），不能当成喝了 0ml。
  */
 export function isNursingFeed(e: EventData): e is FeedEvent {
   return e.type === 'feed' && e.method === 'breast';
@@ -62,6 +68,7 @@ function emptyDay(start: number, end: number, now: number): TrendDay {
     elapsed: partial ? Math.max(0, (now - start) / (end - start)) : 1,
     feeds: 0,
     nursingFeeds: 0,
+    nursingMs: null,
     amountFeeds: 0,
     ml: null,
     diapers: 0,
@@ -129,7 +136,10 @@ export function trendDays(
     if (!day) continue;
     if (e.type === 'feed') {
       day.feeds += 1;
-      if (isNursingFeed(e)) day.nursingFeeds += 1;
+      if (isNursingFeed(e)) {
+        day.nursingFeeds += 1;
+        day.nursingMs = (day.nursingMs ?? 0) + breastDurationMs(e, now);
+      }
       if (hasAmount(e)) {
         day.amountFeeds += 1;
         day.ml = (day.ml ?? 0) + e.ml;

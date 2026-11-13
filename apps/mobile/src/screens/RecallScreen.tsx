@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Snapshot } from '../data/store';
-import { useApp, useRecords } from '../lib/app';
+import { useApp, useRecordsOf } from '../lib/app';
 import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import { useFavorites } from '../lib/library';
@@ -56,7 +56,8 @@ const tabs = (): { key: SubTab; label: string }[] => [
 export function RecallScreen() {
   const insets = useSafeAreaInsets();
   const { role } = useApp();
-  const { baby, moments } = useRecords();
+  const baby = useRecordsOf('baby');
+  const moments = useRecordsOf('moments');
   const sheet = useSheet();
   const { toast } = useFeedback();
   const [tab, setTab] = useState<SubTab>('timeline');
@@ -296,7 +297,7 @@ function Timeline({
   onToggle: (id: string) => void;
   onStartSelect: (id: string) => void;
 }) {
-  const { moments } = useRecords();
+  const moments = useRecordsOf('moments');
   const router = useRouter();
   const app = useApp();
   const sheet = useSheet();
@@ -539,7 +540,7 @@ const PHOTO_COLUMNS = 3;
 const photoRowKey = (row: PhotoWallRow<Moment>) => row.key;
 
 function Photos({ bindList }: { bindList: BindList }) {
-  const { moments } = useRecords();
+  const moments = useRecordsOf('moments');
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
   const cellWidth = gridItemWidth(windowWidth - spacing.page * 2, PHOTO_COLUMNS, PHOTO_GAP);
@@ -628,7 +629,7 @@ function Milestones({
   onSeeTimeline: () => void;
   onSaved: (kind: MomentKind) => void;
 }) {
-  const { moments } = useRecords();
+  const moments = useRecordsOf('moments');
   const { role } = useApp();
   const sheet = useSheet();
   const items = useMemo(() => {
@@ -722,7 +723,7 @@ function Milestones({
 }
 
 function Letters({ bindList }: { bindList: BindList }) {
-  const { letters } = useRecords();
+  const letters = useRecordsOf('letters');
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();

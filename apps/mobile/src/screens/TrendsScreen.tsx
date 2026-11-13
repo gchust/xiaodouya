@@ -26,6 +26,7 @@ const HOUR = 3_600_000;
 
 const hours = (ms: number) => (ms / HOUR).toFixed(1);
 const oneDecimal = (n: number) => String(Math.round(n * 10) / 10);
+const minutes = (ms: number) => String(Math.round(ms / 60_000));
 
 /** 几天前，今天是 0。testID 用它，和日期、语言都无关。 */
 const backOf = (days: readonly TrendDay[], index: number) => days.length - 1 - index;
@@ -127,6 +128,19 @@ export function TrendsScreen() {
               format={(ml) => String(toDisplay('volume', ml, units.volume))}
               average={(ml) => formatVolume(ml, units.volume)}
             />
+            {/* 这段时间没有亲喂的家庭不画一排全是“–”的空图。 */}
+            {days.some((d) => d.nursingMs !== null) ? (
+              <Metric
+                id="trend-feed-nursing"
+                label={t().trends.nursingDuration}
+                days={days}
+                wide={wide}
+                color={colors.feed}
+                pick={(d) => d.nursingMs}
+                format={minutes}
+                average={(ms) => t().trends.nursingMinutes(minutes(ms))}
+              />
+            ) : null}
             <Axis days={days} wide={wide} />
             {days.some((d) => d.feeds > d.amountFeeds) ? (
               <Muted style={s.note} testID="trend-amount-note">

@@ -1,5 +1,6 @@
 # 趋势页（issue #107）：今天和昨天各记一次喂奶，按日历日分在两天；没记的天写“–”不写 0；
-# 今天没过完，不算进日均；体温有记录才出现；切到 30 天。测试用的记录最后都删掉。
+# 今天没过完，不算进日均；体温有记录才出现；亲喂只算次数和时长，不算进奶量；切到 30 天。测试用的记录最后都删掉。
+# 亲喂放在补记之后：喂奶弹层默认沿用上一次的方式，先亲喂的话补记打开的是亲喂。
 # 跨午夜跑的话“今天”和“昨天”会错开一天，和别的按日期断言的流程一样不处理。
 appId: com.gchust.xiaodouya
 ---
@@ -67,6 +68,24 @@ appId: com.gchust.xiaodouya
     notVisible: { id: toast-undo }
     timeout: 15000
 
+# ─── 今天：亲喂一次，左侧开始马上结束（时长随 CI 快慢，只断言是数字不是“–”） ──
+- scrollUntilVisible:
+    element: { id: action-feed }
+    direction: UP
+- tapOn: { id: action-feed }
+- tapOn: { id: feed-method-breast }
+- tapOn: { id: breast-left }
+- extendedWaitUntil:
+    visible: { id: breast-finish }
+    timeout: 10000
+- tapOn: { id: breast-finish }
+- extendedWaitUntil:
+    notVisible: { id: breast-finish }
+    timeout: 10000
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+
 # ─── 7 天 ─────────────────────────────────────────────
 - scrollUntilVisible:
     element: { id: trends-open }
@@ -75,9 +94,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: trends-screen }
     timeout: 10000
+# 亲喂算一次喂奶，0ml 不算进奶量
 - assertVisible:
     id: trend-feed-count-0-value
-    text: "1"
+    text: "2"
 - assertVisible:
     id: trend-feed-ml-0-value
     text: "90"
@@ -95,6 +115,14 @@ appId: com.gchust.xiaodouya
 - assertVisible:
     id: trend-feed-ml-average
     text: 日均 120ml（1 天）
+# 亲喂时长：今天有，昨天没有亲喂是“–”；没有过完的、有亲喂的天，所以没有日均
+- assertVisible:
+    id: trend-feed-nursing-0-value
+    text: "\\d+"
+- assertVisible:
+    id: trend-feed-nursing-1-value
+    text: "–"
+- assertNotVisible: { id: trend-feed-nursing-average }
 - takeScreenshot: .artifacts/e2e-11g-week
 - scrollUntilVisible:
     element: { id: trend-poo-0 }
@@ -148,13 +176,13 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - tapOn: { id: records-filter-all }
 - repeat:
-    times: 4
+    times: 5
     commands:
       - extendedWaitUntil:
           notVisible: { id: toast-undo }
           timeout: 15000
       - tapOn:
-          text: (喂奶 .*ml|换尿布 · .*|体温 .*℃)
+          text: (喂奶 .*ml|亲喂 左 .*|换尿布 · .*|体温 .*℃)
           index: 0
       - tapOn: { id: event-delete }
       - tapOn: { id: delete-sheet-confirm }
@@ -162,7 +190,7 @@ appId: com.gchust.xiaodouya
           notVisible: { id: event-delete }
           timeout: 10000
 - assertNotVisible:
-    text: (喂奶 .*ml|换尿布 · .*|体温 .*℃)
+    text: (喂奶 .*ml|亲喂 左 .*|换尿布 · .*|体温 .*℃)
 - tapOn: { id: records-back }
 - extendedWaitUntil:
     visible: { id: today-screen }

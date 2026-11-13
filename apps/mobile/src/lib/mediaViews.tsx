@@ -23,7 +23,7 @@ import { colors, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
 import { Mono, Muted, Stripes } from '../ui/primitives';
 import type { Api } from './api';
-import { useApp } from './app';
+import { useApp, useSyncStatus } from './app';
 import { DownloadButton } from './DownloadButton';
 import type { PickedFile } from './media';
 import { localOriginalCopy, localUriFor } from './media';
@@ -109,7 +109,7 @@ export function mediaUrlBatcher(api: Api): UrlBatcher {
  * 恢复联网后重新从最短的间隔开始。
  */
 function useUrlRetry(settled: boolean) {
-  const { syncStatus } = useApp();
+  const syncStatus = useSyncStatus();
   const [retry, setRetry] = useState(0);
   const failures = useRef(0);
   const offline = useRef(syncStatus === 'offline');

@@ -1,7 +1,7 @@
 import { favoriteFolderCounts, favoriteItems, t } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
-import { useRecords } from '../lib/app';
+import { useRecordsOf } from '../lib/app';
 import { openResourceSheet } from '../sheets/librarySheets';
 import { colors, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
@@ -22,7 +22,10 @@ const LINK_HIT_SLOP = { top: 14, bottom: 14, left: 12, right: 12 };
 export function LibrarySection() {
   const router = useRouter();
   const sheet = useSheet();
-  const { resources, favorites, favoriteFolders, moments } = useRecords();
+  const resources = useRecordsOf('resources');
+  const favorites = useRecordsOf('favorites');
+  const favoriteFolders = useRecordsOf('favoriteFolders');
+  const moments = useRecordsOf('moments');
   const items = favoriteItems({
     favorites,
     resourceIds: new Set(resources.map((r) => r.id)),

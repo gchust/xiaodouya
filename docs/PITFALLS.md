@@ -40,6 +40,7 @@
 - **修改记录不能重新构造对象。** 旧的喂奶修改只写认识的字段，新版本写入的未知字段保存一次就没了。修改要用 `mergeEdit` 放到最新版本上：只改用户动过的字段，弹层开着时家人改的内容也不会被盖掉。
 - **放进 `event` 集合的配置，推送那边要明确排除。** 没有 `at` 时 `now - undefined` 是 NaN，刚好过不了“一小时内”的判断，看起来没问题；只要配置带上 `at`，家人就会收到正文是 `undefined` 的推送。要用 `isVaccinePlanData` 判断，不能靠缺字段碰巧过滤。打开 App 时的家人汇总（`summarizeRemote`）同样要过滤，它不限时间，配置会被提示成“记录了 undefined”。新代码读 `event` 集合时都要想到里面不全是记录。
 - **`stop()` 不会取消已经发出的同步请求。** 退出登录清空本地之后响应才到的话，记录会被写回 SQLite，还会标记“同步过”，下一个登录的人就看到了上一个人的数据。按会话编号丢弃旧响应。上传队列同理，失败的任务不能再存回去。
+- **`RecordStore` 的记录表只能经 `put`、`drop`、`reset` 改。** 快照是增量更新的（issue #111），直接 `this.records.set` 不会记进“变过的记录”，界面不更新，要等别的记录变了才一起出现。快照里的数组会跨多次写入一直用下去，页面拿到后不能原地 `sort`、`splice`，要先复制。
 - **`store.write` 必须校验。** `rebuild` 会跳过校验不过的记录，不校验的话它存得下、看不见、服务端也不收。改已有记录时更糟：原来的内容也跟着消失。一条回忆 105 张照片就走到过这里：弹层正常关闭，时间线是空的，文件还在后台上传。
 - **不要把翻译后的文字写进记录。** 不填标题的信以前存成“无题”，英文下就会存成 “Untitled”，中文的家人看到的是英文。显示时才补的默认值就存空字符串（v0.1.0 也按空标题显示“无题”）。内置疫苗写 `recordName`（中文原名），显示时按 id 换语言，否则换一种语言记的剂次对不上名字。
 - **按时间倒序翻页，游标不能是 JS 的 `Date`。** Postgres 的时间戳到微秒，`Date` 只到毫秒，同一毫秒里的几条会被漏掉或重复。「收到的反馈」的游标是 `floor(extract(epoch …) * 1000000)` 的微秒数加 id，`feedback-viewer.test.ts` 把三条改成同一个时间点来测。
@@ -151,6 +152,7 @@
 - **系统回收进程后，从外部链接打开 App 时链接不在初始 Intent 里。** Activity 记录还在，重建时 `getIntent()` 是最初从桌面打开的那个，链接只通过 `onNewIntent` 送来：JS 已经在跑时发一次 `url` 事件，这时 expo-router 还没监听；JS 没跑时直接丢弃。App 只是停在首页，不报错。`with-latest-intent` 插件存下新 Intent，入口文件的 `linkInbox` 接住事件，`useWidgetLink` 都处理并去重。进程活着时测不出来，要先用 `am kill` 杀掉再点。
 - **弹层刚挂载时马上打开会被清掉。** 挂载时那次“收起”动画的回调可能比 `open` 晚到 JS，把刚设置的内容清成 null，界面上什么都没有也不报错。`onHidden` 要先判断现在是不是真的收起。
 - **语言定好之前求值的文字不会再变。** 模块顶层的常量（标签列表、选项表）在启动时算一次，用 `t()` 的话永远是默认语言。改成函数或属性（`get label()`），`check-i18n` 拦顶层调用。地区数据用 `localized()`，读的时候才取当前语言。
+- **`useApp()` 的值里不能放频繁变的状态，值本身也要 memo。** 同步状态每记一条就 idle → syncing → idle 走一遍，放在 `AppContext` 里，而且 `value={{ ...value, sessionState }}` 每次渲染都是新对象，所有用到 `useApp()` 的页面（几乎全部）每记一条都要重画两遍。issue #111 在模拟器上量到 1 年数据、四个标签都打开过时，点保存到 Toast 画出来中位数约 1.2 秒，其中 Toast 之后这一轮重画约 0.4 秒。同步状态现在在 `useSyncStatus()`。
 - **换语言时直接重新挂载界面。** 文字散在 `useMemo` 和被 memo 的组件里，靠 context 刷新总有漏的。`AppProvider` 里 `<Fragment key={locale}>` 最简单，导航状态在容器里不丢，打开的弹层会关掉。
 - **`name` 不能换成英文。** iOS 的工程目录（`ios/app.xcworkspace`）是从它算的，非 ASCII 的名字才得到 `app`，改了会弄坏 `scripts/ios-build.sh`。Android 的默认 `app_name` 用 `withStringsXml` 覆盖，中文放 `locales`。
 - **`locales` 只写带限定符的资源目录，默认的 `values/strings.xml` 不归它管。** 手机是法语时用默认资源，所以默认资源要写英文。小工具的 `label` 直接进清单，要写成 `@string/...` 才能本地化。
@@ -343,6 +345,7 @@
 - **`flock` 排队不等于拿到锁。** 后台挂着 `flock ... sleep` 时要确认它下面已经有 `sleep` 子进程，别的会话可能抢在前面。长任务要算好时间，不要跑到锁到期之后；收尾的命令直接用 `flock` 包住。
 - **杀掉 `flock` 进程不会释放模拟器锁。** `flock 锁文件 sleep 3600` 里的 `sleep` 继承了锁的文件描述符，只杀 `flock` 锁还在，别人一直排队。要杀 `sleep`（或整个进程组），再用 `stat -c %i 锁文件` 得到 inode，`grep :<inode> /proc/locks` 确认已经放掉。
 - **在 `flock` 里启动模拟器，锁会被后台的 qemu 带走，所有人永远排队。** `flock 锁文件 命令` 把锁的 fd 3 交给子进程，`scripts/emulator.sh` 原来 `nohup emulator … &` 不关 fd，qemu 继承了它，脚本退出后锁仍被占着（2026-11-13，9 个 Agent 并行时三个会话一起卡住，`ls -l /proc/<qemu pid>/fd` 里能看到锁文件；qemu 的父进程已经是 systemd）。`emulator.sh` 现在启动前关掉 0、1、2 以外继承的 fd。排队统一用 `flock -o 锁文件 命令`，`-o` 在执行命令前就关掉锁的 fd，命令里再起什么后台进程都带不走锁。排查谁占着锁：`for p in /proc/[0-9]*; do ls -l $p/fd 2>/dev/null | grep -q 锁文件名 && echo $p; done`。
+- **量 JS 耗时要用 Hermes 字节码的包，打点用 `console.log`。** release 包里 `console.log` 照样进 logcat 的 `ReactNativeJS`，`adb logcat -v epoch -s ReactNativeJS:V` 能拿到。issue #111 用 CI 的 E2E APK 换 JS 包（见“构建还没打完 JS 包时不要改源码”那条），打包时把 `EXPO_PUBLIC_API_URL` 指到自己的端口，假数据用 `/v1/sync` 每批 500 条写进服务端，登录后让 App 自己拉。每次测量都会多记几条，等拉取完成不能按固定条数判断。3 年数据（约 25,000 条）时切到回忆、资料页后，`adb-ui.py` 好几次 20 秒内读不到 `tab-family`（改前改后都这样），原因没查。
 - **两次拿锁之间，模拟器上的 App 可能已经被别的 Agent 换掉。** 包名都是 `com.gchust.xiaodouya`，F-139 走查时第二次拿锁不重装、接着跑，打开的是别人刚装的构建（深色主题、没有新按钮），差点当成自己的 Bug 去查。每次拿锁都重装自己的 APK、从建账号开始跑；`setsid npx …` 起的服务端要按端口找进程杀掉，只杀记下的 pid 可能留下 node，下一次同端口起不来，就连上了旧的那个。
 - **给整块对象套一层调用时，别让格式化把它整体缩进一格。** F-142 一开始写成 `themedStyles(() => StyleSheet.create({...}))`，Biome 把 41 个文件的样式表全部多缩进一层，差异里删了 1644 行，和并行分支必然冲突。改成 `themedStyles(() => ({...}))`：最后一个参数是返回对象的箭头函数时，Biome 和 Prettier 一样把它贴在同一行，缩进不变，删的只剩 341 行。机械替换写成脚本（`scripts/codemod-themed-styles.mjs`），rebase 后再跑一次。
 - **PROGRESS 的新编号要看所有进行中的分支，不能只看 `main`。** F-153（搜索）一开始在 `main` 上看到最大是 F-143，认领了 F-144，`feat/breastfeeding` 同时也认领了 F-144，两个 PR 都开着才发现，只好改号。认领前 `git fetch` 后用 `git grep -o '^| F-1[0-9][0-9] ' origin/<分支> -- docs/PROGRESS.md` 把开着的分支都看一遍，挑一个没人用的。

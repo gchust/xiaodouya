@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { finishBreastFeed, startBreastFeed, switchBreastSide } from '../src/domain/breastfeeding';
 import { FORGOTTEN_SLEEP_MS } from '../src/domain/feeding';
 import { isNursingFeed, trendAverage, trendDays } from '../src/domain/trends';
 import { EventData } from '../src/schemas';
@@ -121,6 +122,60 @@ describe('喂奶', () => {
     expect(isNursingFeed(feed(at(15, 10), 90, { method: 'bottle' }))).toBe(false);
     expect(isNursingFeed(feed(at(15, 10), 90, { method: 'spoon' }))).toBe(false);
     expect(isNursingFeed(feed(at(15, 10), 90))).toBe(false);
+  });
+});
+
+describe('亲喂时长', () => {
+  const MIN = 60_000;
+  /** 用 #116 的计时函数写出记录，和 App 里点左右、结束写的一样。 */
+  const nursed = (start: number, leftMin: number, rightMin: number): EventData => {
+    const left = startBreastFeed('left', start);
+    const switched = switchBreastSide(left, 'right', start + leftMin * MIN) ?? left;
+    return finishBreastFeed(switched, start + (leftMin + rightMin) * MIN);
+  };
+
+  it('每天把两侧的时长加起来，和今天页摘要一样按写出来的分钟算', () => {
+    const days = trendDays(
+      [nursed(at(14, 9), 12, 8), nursed(at(14, 13), 10, 0), nursed(at(15, 6), 7, 5)],
+      now,
+      7,
+    );
+    expect(days[5]).toMatchObject({ nursingFeeds: 2, nursingMs: 30 * MIN });
+    expect(days[6]).toMatchObject({ nursingFeeds: 1, nursingMs: 12 * MIN });
+  });
+
+  it('正在计时的亲喂按已经喂了的部分算到现在', () => {
+    const running = startBreastFeed('left', now - 9 * MIN);
+    const days = trendDays([running], now, 7);
+    expect(days[6]).toMatchObject({ nursingFeeds: 1, nursingMs: 9 * MIN });
+  });
+
+  it('忘了关的计时只算已经喂完的段落', () => {
+    const start = now - 5 * HOUR;
+    const left = startBreastFeed('left', start);
+    const forgotten = switchBreastSide(left, 'right', start + 10 * MIN) ?? left;
+    const days = trendDays([forgotten], now, 7);
+    expect(days[6]?.nursingMs).toBe(10 * MIN);
+  });
+
+  it('没有亲喂的那天是 null，不是 0；瓶喂不算', () => {
+    const days = trendDays([feed(at(14, 9), 90), nursed(at(15, 6), 7, 0)], now, 7);
+    expect(days[5]?.nursingMs).toBeNull();
+    expect(days[4]?.nursingMs).toBeNull();
+  });
+
+  it('只记了亲喂、没有计时的旧记录算一次，时长是 0 分', () => {
+    const days = trendDays([feed(at(14, 9), 0, { method: 'breast' })], now, 7);
+    expect(days[5]).toMatchObject({ nursingFeeds: 1, nursingMs: 0 });
+  });
+
+  it('日均只算过完的、有亲喂的天', () => {
+    const days = trendDays(
+      [nursed(at(13, 9), 10, 10), nursed(at(14, 9), 20, 20), nursed(at(15, 6), 30, 0)],
+      now,
+      7,
+    );
+    expect(trendAverage(days, (d) => d.nursingMs)).toEqual({ value: 30 * MIN, days: 2 });
   });
 });
 
