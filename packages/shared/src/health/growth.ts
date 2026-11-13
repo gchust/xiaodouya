@@ -242,7 +242,13 @@ export function growthAgeDays(birthAt: number, at: number): number {
   return (at - birthAt) / DAY_MS;
 }
 
-/** 宝宝自己的点：出生档案的出生体重、身长，加上身高体重记录，按时间排。早于出生的不画。 */
+/**
+ * 宝宝自己的点：出生档案的出生体重、身长，加上身高体重记录，按时间排。早于出生的不画。
+ *
+ * 身长和前一次（含出生身长）一模一样的不画：身长是必填的（旧版 App 要它），弹层默认带上一次的值，
+ * 只量了体重时存下的是沿用来的旧身长。画出来会是一段平线、百分位往下掉，等于给家长看一次没发生的
+ * 生长停滞（AGENTS.md 第 8 节）。真量出一样的值时少画一个点，影响很小。
+ */
 export function growthPoints(
   baby: BabyData,
   events: readonly EventData[],
@@ -263,7 +269,9 @@ export function growthPoints(
     if (value === undefined) continue;
     points.push({ at: e.at, ageDays: growthAgeDays(baby.birthAt, e.at), value, birth: false });
   }
-  return points.sort((a, b) => a.at - b.at);
+  points.sort((a, b) => a.at - b.at);
+  if (measure !== 'length') return points;
+  return points.filter((p, i) => i === 0 || p.value !== points[i - 1]?.value);
 }
 
 function measureDimension(measure: GrowthMeasure): 'weight' | 'length' {

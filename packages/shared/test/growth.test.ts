@@ -292,6 +292,27 @@ describe('宝宝自己的点', () => {
     );
   });
 
+  it('身长和上一次一样的记录不画身长：弹层默认带上一次的值，只量了体重时不能画成没长', () => {
+    const b = baby({ birthWeightKg: 3.2, birthLengthCm: 50 });
+    const events: EventData[] = [
+      growth(10, 3.6, 50), // 只量了体重，身长是出生时沿用来的
+      growth(30, 4.4, 54, 37),
+      growth(45, 5, 54, 37), // 又只量了体重，身长和头围都沿用
+      growth(60, 5.6, 58, 39),
+    ];
+    expect(growthPoints(b, events, 'length').map((p) => [p.ageDays, p.value])).toEqual([
+      [0, 50],
+      [30, 54],
+      [60, 58],
+    ]);
+    // 体重每次都画。头围是选填的，记了才有，照常画。
+    expect(growthPoints(b, events, 'weight')).toHaveLength(5);
+    expect(growthPoints(b, events, 'head').map((p) => p.ageDays)).toEqual([30, 45, 60]);
+    // 按时间比上一条，不按保存的顺序。
+    const shuffled = [events[3], events[1], events[0], events[2]] as EventData[];
+    expect(growthPoints(b, shuffled, 'length').map((p) => p.ageDays)).toEqual([0, 30, 60]);
+  });
+
   it('早于出生的记录不画', () => {
     expect(growthPoints(baby(), [growth(-2, 3, 49)], 'weight')).toEqual([]);
   });
