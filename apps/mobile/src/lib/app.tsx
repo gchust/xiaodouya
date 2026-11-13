@@ -77,7 +77,6 @@ export interface AppApi {
   prefs: Prefs;
   serverUrl: string;
   sessionState: SessionState;
-  syncStatus: SyncStatus;
   signIn(token: string, serverUrl: string): Promise<void>;
   signOut(): Promise<void>;
   /** 删除账号并清除手机上的全部数据。密码错误、被拦下时抛错，什么都不动。 */
@@ -101,6 +100,16 @@ export function useApp(): AppApi {
   const app = useContext(AppContext);
   if (!app) throw new Error('useApp must be used inside AppProvider');
   return app;
+}
+
+/**
+ * 同步状态单独放一个 context：每记一条都会 idle → syncing → idle 走一遍，
+ * 放在 useApp 里的话，所有用到 useApp 的页面每次都要跟着重画（issue #111）。
+ */
+const SyncStatusContext = createContext<SyncStatus>('idle');
+
+export function useSyncStatus(): SyncStatus {
+  return useContext(SyncStatusContext);
 }
 
 /** 整份快照：任何一条记录变了都会重画。只用到其中几项的页面用 `useRecordsOf`。 */
@@ -388,7 +397,6 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
       label: me?.label ?? me?.user.displayName ?? '',
       prefs,
       serverUrl,
-      syncStatus,
       async signIn(token, url) {
         const previousToken = api.token;
         const previousUrl = api.baseUrl;
@@ -474,17 +482,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
         void engine.syncNow();
       },
     };
-  }, [
-    services,
-    me,
-    prefs,
-    serverUrl,
-    syncStatus,
-    persistMe,
-    clearSession,
-    wipeLocalData,
-    refreshMe,
-  ]);
+  }, [services, me, prefs, serverUrl, persistMe, clearSession, wipeLocalData, refreshMe]);
 
   // baby 从无到有时 sessionState 要更新。
   const [, forceRender] = useState(0);
@@ -500,10 +498,9 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     });
   }, [services]);
 
-  if (!value || !booted) return <>{fallback}</>;
   const hasBaby = Boolean(services?.store.getSnapshot().baby);
   let sessionState: SessionState = 'signedOut';
-  if (value.api.token && me) {
+  if (value?.api.token && me) {
     if (shouldOfferVerifyStep(me, verifySkippedBy)) sessionState = 'verifyEmail';
     else if (!me.family) sessionState = 'noFamily';
     else if (hasBaby || me.role !== 'admin') sessionState = 'ready';
@@ -511,11 +508,16 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     // 会覆盖全家的出生时间。所以必须等第一次同步成功。
     else sessionState = hasSynced ? 'noBaby' : 'syncing';
   }
+  // 每次渲染都新建的话，这里一重画，所有用到 useApp 的页面都跟着重画。
+  const app = useMemo(() => (value ? { ...value, sessionState } : null), [value, sessionState]);
+  if (!app || !booted) return <>{fallback}</>;
   // 换语言或主题时整棵界面重新挂载：文字和颜色都是渲染时读的，有的还在 useMemo 里，逐个找容易漏。
   // 导航状态在容器里，重新挂载后还在原来的页面。
   return (
-    <AppContext.Provider value={{ ...value, sessionState }}>
-      <Fragment key={`${locale}:${theme.key}`}>{children}</Fragment>
+    <AppContext.Provider value={app}>
+      <SyncStatusContext.Provider value={syncStatus}>
+        <Fragment key={`${locale}:${theme.key}`}>{children}</Fragment>
+      </SyncStatusContext.Provider>
     </AppContext.Provider>
   );
 }

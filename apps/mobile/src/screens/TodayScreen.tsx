@@ -51,7 +51,7 @@ import {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useApp, useNow, useRecordsOf, useRegion, useUnits } from '../lib/app';
+import { useApp, useNow, useRecordsOf, useRegion, useSyncStatus, useUnits } from '../lib/app';
 import { saveAvatar } from '../lib/avatar';
 import { localDayBounds } from '../lib/dates';
 import { pickFromLibrary } from '../lib/media';
@@ -84,7 +84,6 @@ export function TodayScreen() {
   const router = useRouter();
   const events = useRecordsOf('events');
   const baby = useRecordsOf('baby');
-  const pendingCount = useRecordsOf('pendingCount');
   const vaccinePlans = useRecordsOf('vaccinePlans');
   const region = useRegion();
   const units = useUnits();
@@ -184,14 +183,6 @@ export function TodayScreen() {
   const openFeed = () => sheet.open(t().today.feed, () => <FeedSheet />);
   const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
-  const syncLine =
-    app.syncStatus === 'offline'
-      ? pendingCount > 0
-        ? t().today.offlinePending(pendingCount)
-        : t().today.offline
-      : pendingCount > 0
-        ? t().today.syncing(pendingCount)
-        : null;
 
   return (
     <ScrollView
@@ -219,11 +210,7 @@ export function TodayScreen() {
             {t().today.title(baby.data.name, dayNumber(birthAt, now))}
           </Text>
           <Muted>{ageText(birthAt, now)}</Muted>
-          {syncLine ? (
-            <Muted testID="sync-status" style={{ color: colors.accentText, fontSize: 11 }}>
-              {syncLine}
-            </Muted>
-          ) : null}
+          <SyncLine />
         </View>
         <PressScale
           testID="baby-avatar"
@@ -539,6 +526,29 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
         {sleeping ? t().today.awake : t().today.sleep}
       </Text>
     </PressScale>
+  );
+}
+
+/**
+ * 自己订阅同步状态和待上传条数：每记一条它们都会变好几次（syncing、idle、上传确认），
+ * 放在页面里的话整个“今天”要跟着重算一遍全部记录（issue #111）。
+ */
+function SyncLine() {
+  const syncStatus = useSyncStatus();
+  const pendingCount = useRecordsOf('pendingCount');
+  const line =
+    syncStatus === 'offline'
+      ? pendingCount > 0
+        ? t().today.offlinePending(pendingCount)
+        : t().today.offline
+      : pendingCount > 0
+        ? t().today.syncing(pendingCount)
+        : null;
+  if (!line) return null;
+  return (
+    <Muted testID="sync-status" style={{ color: colors.accentText, fontSize: 11 }}>
+      {line}
+    </Muted>
   );
 }
 

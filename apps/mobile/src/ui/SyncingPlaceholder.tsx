@@ -1,13 +1,14 @@
 import { t } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { useApp } from '../lib/app';
+import { useApp, useSyncStatus } from '../lib/app';
 import { colors, spacing, themedStyles } from '../theme';
 import { Button, Empty } from './primitives';
 
 /** 同步到宝宝资料之前显示，否则新成员会看到一片空白，管理员还可能重复建档。 */
 export function SyncingPlaceholder() {
-  const { syncNow, syncStatus } = useApp();
+  const { syncNow } = useApp();
+  const syncStatus = useSyncStatus();
   const [retrying, setRetrying] = useState(false);
   const offline = syncStatus === 'offline';
   return (
