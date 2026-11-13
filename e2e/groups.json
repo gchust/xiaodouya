@@ -22,6 +22,7 @@
     "vaccine": {
       "setup": ["onboard"],
       "flows": [
+        "02b_breastfeeding",
         "09_growth",
         "10_vaccine",
         "10a_vaccine_config",

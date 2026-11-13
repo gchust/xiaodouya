@@ -181,7 +181,11 @@ function typeLabel(type: EventData['type']): string {
 function eventFields(event: EventData): (string | undefined)[] {
   switch (event.type) {
     case 'feed':
-      return [event.formula?.name];
+      // 瓶喂的标题只写“喂奶 90ml”，搜“瓶喂”也要能找到；亲喂的标题本来就有“亲喂”。
+      return [
+        event.formula?.name,
+        event.method === 'breast' ? t().records.feedBreast : t().records.feedBottle,
+      ];
     case 'med':
       return [event.name, event.dose];
     case 'solids':
@@ -195,7 +199,7 @@ function eventFields(event: EventData): (string | undefined)[] {
 
 /**
  * 一条记录能不能被搜到：界面上的标题（按当前语言和单位生成，和列表上看到的一样）、类型名、
- * 备注、记录人，以及药名、剂量、辅食、奶粉名和疫苗的中英文名。
+ * 备注、记录人，瓶喂或亲喂，以及药名、剂量、辅食、奶粉名和疫苗的中英文名。
  */
 export function eventMatchesSearch(
   event: EventData,

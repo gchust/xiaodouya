@@ -1,0 +1,146 @@
+# 亲喂（issue #104）：瓶喂 / 亲喂切换，左侧开始计时，杀掉 App 再打开接着计，换到右侧，结束。
+# 今天页显示“左 N 分 · 右 N 分”、下次从左侧开始，摘要分开写；修改两侧时长；下次打开默认是亲喂。
+# 时长按秒走，CI 上快慢不一，断言只看格式不看几分钟。测试用的记录最后删掉，默认值回到瓶喂。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 开始：默认是瓶喂，切到亲喂，点左侧 ──────────────
+- tapOn: { id: action-feed }
+- assertVisible: { id: feed-method-bottle, selected: true }
+- assertVisible: { id: ml-chip-60 }
+- tapOn: { id: feed-method-breast }
+- assertVisible: { id: breast-left }
+- assertVisible: { id: breast-right }
+# 还没亲喂过，不猜从哪侧开始。
+- assertNotVisible: { id: breast-next-side }
+- takeScreenshot: .artifacts/e2e-02b-breast-start
+- tapOn: { id: breast-left }
+- extendedWaitUntil:
+    visible: { id: breast-finish }
+    timeout: 10000
+- assertVisible:
+    id: breast-left
+    text: "左侧，已喂.*"
+- takeScreenshot: .artifacts/e2e-02b-breast-timer
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: breast-finish }
+    timeout: 10000
+
+# ─── 今天页：亲喂中 · 左侧 ───────────────────────────
+- assertVisible:
+    id: breast-card-label
+    text: 亲喂中
+- assertVisible:
+    id: breast-card-side
+    text: 左侧
+- assertVisible:
+    text: "亲喂中 · .*"
+- takeScreenshot: .artifacts/e2e-02b-today-running
+
+# ─── 杀掉 App 再打开：计时还在 ───────────────────────
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible:
+    id: breast-card-side
+    text: 左侧
+
+# ─── 换到右侧，结束 ─────────────────────────────────
+- tapOn: { id: feed-card }
+- extendedWaitUntil:
+    visible: { id: breast-finish }
+    timeout: 10000
+- tapOn: { id: breast-right }
+- extendedWaitUntil:
+    visible:
+      id: breast-right
+      text: "右侧，已喂.*"
+    timeout: 10000
+- assertVisible:
+    id: breast-left
+    text: "换到左侧.*"
+- takeScreenshot: .artifacts/e2e-02b-breast-switched
+- tapOn: { id: breast-finish }
+- extendedWaitUntil:
+    notVisible: { id: breast-finish }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: last-feed
+      text: ".*亲喂 左 \\d+ 分 · 右 \\d+ 分.*"
+    timeout: 15000
+- assertVisible:
+    id: next-breast-side
+    text: 下次从左侧开始
+- assertVisible:
+    id: summary
+    text: "喂奶 1 次 · 亲喂 \\d+ 分.*"
+- assertNotVisible: { id: breast-card-label }
+- takeScreenshot: .artifacts/e2e-02b-today-done
+
+# ─── 修改：左侧改成 5 分钟 ──────────────────────────
+# Toast 可能盖着时间线那一行（见 PITFALLS“测试方法”），等它消失再点。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn:
+    text: "亲喂 左 \\d+ 分 · 右 \\d+ 分"
+- assertVisible: { id: event-detail }
+- tapOn: { id: event-edit }
+- assertVisible: 修改喂奶
+- assertVisible: { id: feed-method-breast, selected: true }
+# 右侧只喂了几秒，也要写 1 分钟，不能显示成 0（CI run 43437837493 里显示 0，保存后最后一侧被改成了左侧）。
+- assertVisible:
+    id: breast-right-min-value
+    text: "1.*"
+- assertVisible: { id: breast-last-right, selected: true }
+- tapOn: { id: breast-left-min-inc }
+- assertVisible:
+    id: breast-left-min-value
+    text: "5.*"
+- takeScreenshot: .artifacts/e2e-02b-breast-edit
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: last-feed
+      text: ".*亲喂 左 5 分 · 右 \\d+ 分.*"
+    timeout: 15000
+
+# ─── 下次打开默认是亲喂，建议从左侧开始；切回瓶喂还是原来的样子 ──
+- tapOn: { id: action-feed }
+- assertVisible: { id: feed-method-breast, selected: true }
+- assertVisible:
+    id: breast-next-side
+    text: 下次从左侧开始
+- takeScreenshot: .artifacts/e2e-02b-breast-next
+- tapOn: { id: feed-method-bottle }
+- assertVisible: { id: ml-chip-60 }
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: ml-chip-60 }
+    timeout: 10000
+
+# ─── 删掉测试用的记录 ───────────────────────────────
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn:
+    text: "亲喂 左 5 分 · 右 \\d+ 分"
+- tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: { id: next-breast-side }
+    timeout: 15000
+- assertVisible:
+    id: last-feed
+    text: 还没有喂奶记录，点这里记第一次

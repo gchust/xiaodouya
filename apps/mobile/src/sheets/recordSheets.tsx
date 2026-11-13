@@ -1,17 +1,19 @@
 import {
   ageParts,
   assessTemperature,
+  breastFeedState,
   checkRecordTime,
   chipsFor,
   createTapGuard,
   describeEvent,
   doseTimeText,
   type EventData,
-  estimateNextFeed,
+  type FeedMethod,
   type FeedMilk,
   feedDefaultsAt,
   feedMilkFields,
   feedMilkOf,
+  finishBreastFeed,
   formatClock,
   formatFullDate,
   formatMonthDay,
@@ -19,6 +21,7 @@ import {
   formulaSnapshot,
   guardTap,
   isCustomVaccineId,
+  isOpenBreastFeed,
   lastFeedDefaults,
   medicineSuggestions,
   mergeEdit,
@@ -44,18 +47,21 @@ import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
-import { colors, fonts, spacing, themedStyles } from '../theme';
+import { colors, spacing, themedStyles } from '../theme';
 import { PastDatePicker } from '../ui/BirthPicker';
 import { useDeleteConfirm } from '../ui/DeleteConfirm';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Dot, Mono, Muted, PressScale, SoftInput, Toggle } from '../ui/primitives';
+import { SmallStepper } from '../ui/SmallStepper';
 import {
   DateTimeRow,
   DayChips,
+  type RecordTime,
   RecordTimeField,
   TimeCheckText,
   useRecordTime,
 } from '../ui/TimeField';
+import { BreastForm, BreastStart, BreastTimer, FeedMethodSwitch } from './breastSheets';
 import { AddFormulaFlow, MilkChooser } from './formulaSheets';
 import { DosePlanBar, VaccinePlanForm } from './vaccineSheets';
 
@@ -177,26 +183,80 @@ function Stepper({
   );
 }
 
+/**
+ * 喂奶弹层：顶上 `瓶喂 / 亲喂`，默认跟上一次。有正在计时的亲喂时直接显示计时，
+ * 修改一条还没结束的亲喂也是计时；喂完的亲喂、补记和“更早”开始的亲喂填两侧的分钟数。
+ */
 export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
+  const { events, formulas } = useRecords();
+  const save = useSaveEvent();
+  const time = useRecordTime({ at: initial?.at, backfill });
+  const [picked, setPicked] = useState<FeedMethod | null>(() =>
+    initial ? (initial.method === 'breast' ? 'breast' : 'bottle') : null,
+  );
+  if (id && initial && isOpenBreastFeed(initial)) return <BreastTimer id={id} />;
+  const data = events.map((e) => e.data);
+  const now = Date.now();
+  const running = id || backfill ? null : breastFeedState(data, now);
+  const openId =
+    running && running.status !== 'none'
+      ? events.find((e) => e.data === running.feed)?.id
+      : undefined;
+  const method = picked ?? (openId ? 'breast' : lastFeedDefaults(data, formulas, now).method);
+  const methodSwitch = <FeedMethodSwitch value={method} onChange={setPicked} />;
+  // 添加奶粉时整个弹层换成表单，切换条不能留在上面：点了亲喂会把填了一半的奶粉丢掉。
+  if (method === 'bottle') {
+    return <BottleFeed initial={initial} id={id} time={time} header={methodSwitch} />;
+  }
+  const body = openId ? (
+    <BreastTimer id={openId} />
+  ) : id || time.choice.kind === 'exact' ? (
+    <BreastForm
+      initial={initial}
+      id={id}
+      time={time}
+      onSave={(next) => void save(next, id, initial)}
+    />
+  ) : (
+    <BreastStart time={time} />
+  );
+  return (
+    <>
+      {methodSwitch}
+      {body}
+    </>
+  );
+}
+
+function BottleFeed({
+  initial,
+  id,
+  time,
+  header,
+}: {
+  initial?: EventOf<'feed'>;
+  id?: string;
+  time: RecordTime;
+  header: ReactNode;
+}) {
   const { events, formulas } = useRecords();
   const app = useApp();
   const save = useSaveEvent();
-  const last = estimateNextFeed(
-    events.map((e) => e.data),
-    Date.now(),
-  ).last;
+  const data = events.map((e) => e.data);
   const { volume } = useUnits();
   const scale = scaleFor('volume', volume);
-  const original = initial?.ml ?? last?.ml;
+  // 新记录沿用上一次瓶喂的奶量（亲喂的 0ml 不算）；把亲喂改成瓶喂时也一样。
+  const original =
+    initial && initial.method !== 'breast'
+      ? initial.ml
+      : lastFeedDefaults(data, formulas, Date.now()).ml;
   const [amount, setAmount] = useState(() => toDisplay('volume', original ?? 90, volume));
   const [note, setNote] = useState(initial?.note ?? '');
-  const time = useRecordTime({ at: initial?.at, backfill });
   // 修改时固定用记录上的快照：只改时间或奶量不能改写当时的数值，只有换了奶粉才用现在的。
   const [pickedMilk, setPickedMilk] = useState<FeedMilk | null>(() =>
-    initial ? feedMilkOf(initial) : null,
+    initial && initial.method !== 'breast' ? feedMilkOf(initial) : null,
   );
   // 没动过就跟着时间走：补记以前的喂奶，默认是那个时候喂的奶粉，不是现在的。
-  const data = events.map((e) => e.data);
   const milk =
     pickedMilk ??
     (time.choice.kind === 'exact'
@@ -220,6 +280,7 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
   }
   return (
     <>
+      {header}
       <RecordTimeField time={time} />
       <Stepper
         testPrefix="ml"
@@ -277,6 +338,13 @@ export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
               formulaId: undefined,
               formula: undefined,
               ...feedMilkFields(milk),
+              // 把亲喂改成瓶喂：计时的字段都去掉。本来就是瓶喂的，这些键和原来一样是空的，不算改动。
+              method: undefined,
+              side: undefined,
+              sideSince: undefined,
+              leftSec: undefined,
+              rightSec: undefined,
+              endAt: undefined,
             },
             id,
             initial,
@@ -724,50 +792,6 @@ export function SolidsSheet({ initial, id, backfill }: SheetMode<'solids'> = {})
   );
 }
 
-function SmallStepper({
-  label,
-  value,
-  unit,
-  onDec,
-  onInc,
-  testPrefix,
-}: {
-  label: string;
-  value: string;
-  unit: string;
-  onDec: () => void;
-  onInc: () => void;
-  testPrefix: string;
-}) {
-  return (
-    <View style={s.smallStepper}>
-      <Text style={s.smallLabel}>{label}</Text>
-      <Pressable
-        testID={`${testPrefix}-dec`}
-        accessibilityRole="button"
-        accessibilityLabel={t().records.labelDecrease(label)}
-        onPress={onDec}
-        style={s.smallBtn}
-      >
-        <Text style={{ fontSize: 18, color: colors.ink }}>−</Text>
-      </Pressable>
-      <Text style={s.smallValue} testID={`${testPrefix}-value`}>
-        {value}
-        <Text style={s.smallUnit}> {unit}</Text>
-      </Text>
-      <Pressable
-        testID={`${testPrefix}-inc`}
-        accessibilityRole="button"
-        accessibilityLabel={t().records.labelIncrease(label)}
-        onPress={onInc}
-        style={s.smallBtn}
-      >
-        <Text style={{ fontSize: 18, color: colors.ink }}>{t().records.plus}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {}) {
   const { events, baby } = useRecords();
   const save = useSaveEvent();
@@ -1173,11 +1197,14 @@ function eventEditor(
 
 function eventTimeText(event: EventData): string {
   const start = `${formatFullDate(event.at)} ${formatClock(event.at)}`;
-  if (event.type !== 'sleep' || !event.endAt) return start;
-  const sameDay = formatFullDate(event.at) === formatFullDate(event.endAt);
-  const end = sameDay
-    ? formatClock(event.endAt)
-    : `${formatFullDate(event.endAt)} ${formatClock(event.endAt)}`;
+  // 睡眠和亲喂有结束时间，写成一段。
+  const endAt =
+    event.type === 'sleep' || (event.type === 'feed' && event.method === 'breast')
+      ? event.endAt
+      : undefined;
+  if (!endAt) return start;
+  const sameDay = formatFullDate(event.at) === formatFullDate(endAt);
+  const end = sameDay ? formatClock(endAt) : `${formatFullDate(endAt)} ${formatClock(endAt)}`;
   return `${start} – ${end}`;
 }
 
@@ -1223,6 +1250,21 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
           label={t().records.awakeNow}
           onPress={() => {
             void app.write('event', { ...event, endAt: Date.now() }, id);
+            sheet.close();
+          }}
+        />
+      ) : null}
+      {isOpenBreastFeed(event) ? (
+        <Button
+          testID="event-end-breast"
+          tone="outline"
+          label={t().records.breastEndNow}
+          onPress={() => {
+            // 按最新的那一版结束：弹层开着时可能又换过边。
+            const latest = app.store.getSnapshot().events.find((e) => e.id === id)?.data;
+            if (latest && isOpenBreastFeed(latest)) {
+              void app.write('event', finishBreastFeed(latest, Date.now()), id);
+            }
             sheet.close();
           }}
         />
@@ -1289,27 +1331,5 @@ const s = themedStyles(() => ({
   moreLabel: { fontSize: 14, color: colors.ink },
   moreSub: { fontSize: 10, color: colors.muted },
   hint: { fontSize: 12, lineHeight: 19 },
-  smallStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    backgroundColor: colors.paper,
-    borderRadius: 14,
-  },
-  smallLabel: { fontSize: 14, color: colors.muted, width: 44 },
-  smallBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  smallValue: { fontFamily: fonts.monoMedium, fontSize: 26, color: colors.ink },
-  smallUnit: { fontSize: 13, color: colors.muted },
   vaccineOption: { paddingHorizontal: 14, paddingVertical: 13, borderRadius: 12 },
 }));

@@ -52,4 +52,10 @@ export const today = {
   noRecords: '还没有记录',
   noRecordsFilter: '这一类还没有记录',
   addOlderHint: '以前的也可以补记，点右上角就行。',
+  breastRunning: '亲喂中',
+  breastRunningA11y: (side: Text, time: Text) => `亲喂中，${side}已喂 ${time}，点击换边或结束`,
+  breastRunningSub: (clock: Text, total: Text) => `${clock} 开始 · 共 ${total} · 点这里换边或结束`,
+  breastForgotten: '亲喂计时还开着',
+  breastForgottenSub: (clock: Text) => `${clock} 开始 · 点这里结束`,
+  lastFeedText: (clock: Text, detail: Text, by: Text) => `${clock} ${detail}${by}`,
 };

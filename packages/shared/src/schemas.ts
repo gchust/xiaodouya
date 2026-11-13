@@ -55,6 +55,16 @@ export type DiaperKind = (typeof diaperKinds)[number];
 export const milkTypes = ['formula', 'breast', 'mixed'] as const;
 export type MilkType = (typeof milkTypes)[number];
 
+/** 瓶喂还是亲喂（issue #104）。没有这个字段的旧记录都是瓶喂。 */
+export const feedMethods = ['bottle', 'breast'] as const;
+export type FeedMethod = (typeof feedMethods)[number];
+
+export const breastSides = ['left', 'right'] as const;
+export type BreastSide = (typeof breastSides)[number];
+
+/** 一侧最多记多少秒。一次亲喂不会超过一天，再大就是钟错了。 */
+const breastSeconds = z.number().int().min(0).max(86_400);
+
 /**
  * 营养标签上的数值。没有的项必须保持缺失：缺失是“不知道”，0 是“标签写了 0”。
  * 单位固定：能量 kcal，维生素 D 是 µg，输入时的 kJ、IU 换算见 health/nutrition。
@@ -89,6 +99,20 @@ export const EventData = z.discriminatedUnion('type', [
     milkType: z.enum(milkTypes).optional().catch(undefined),
     formulaId: z.string().max(64).optional().catch(undefined),
     formula: FormulaSnapshot.optional().catch(undefined),
+    /**
+     * 亲喂的计时都在这条记录上（`domain/breastfeeding.ts`），App 被杀、换手机都能接着计。旧版 App 只认 `ml`
+     * （亲喂写 0），看到的是“喂奶 0ml”。都带 catch，理由同上。
+     */
+    method: z.enum(feedMethods).optional().catch(undefined),
+    /** 正在喂或最后喂的一侧，下次从另一侧开始。 */
+    side: z.enum(breastSides).optional().catch(undefined),
+    /** 正在喂的这一侧从什么时候开始，只在计时中有。 */
+    sideSince: timestamp.optional().catch(undefined),
+    /** 两侧已经喂完的秒数，不含正在计时的这一段。 */
+    leftSec: breastSeconds.optional().catch(undefined),
+    rightSec: breastSeconds.optional().catch(undefined),
+    /** 亲喂结束的时间。亲喂没有它就是还在计时，和睡眠一样。 */
+    endAt: timestamp.optional().catch(undefined),
   }),
   z.looseObject({ ...eventBase, type: z.literal('diaper'), kind: z.enum(diaperKinds) }),
   z.looseObject({ ...eventBase, type: z.literal('sleep'), endAt: timestamp.optional() }),

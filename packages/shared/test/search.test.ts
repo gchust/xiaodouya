@@ -187,6 +187,33 @@ describe('eventMatchesSearch', () => {
     });
   });
 
+  it('亲喂搜得到“亲喂”和哪一侧，瓶喂搜得到“瓶喂”，两者互相搜不到', () => {
+    const breast = ev({
+      type: 'feed',
+      ml: 0,
+      method: 'breast',
+      side: 'right',
+      leftSec: 720,
+      rightSec: 480,
+      endAt: at + 20 * 60_000,
+    });
+    const bottle = ev({ type: 'feed', ml: 90 });
+    withLocale('zh', () => {
+      expect(match(breast, '亲喂')).toBe(true);
+      expect(match(breast, '左 12')).toBe(true);
+      expect(match(breast, '喂奶')).toBe(true);
+      expect(match(breast, '瓶喂')).toBe(false);
+      expect(match(breast, '0ml')).toBe(false);
+      expect(match(bottle, '瓶喂')).toBe(true);
+      expect(match(bottle, '亲喂')).toBe(false);
+    });
+    withLocale('en', () => {
+      expect(match(breast, 'breastfed')).toBe(true);
+      expect(match(bottle, 'bottle')).toBe(true);
+      expect(match(bottle, 'breast')).toBe(false);
+    });
+  });
+
   it('体温按数字搜得到', () => {
     const temp = ev({ type: 'temp', celsius: 38.5 });
     withLocale('zh', () => {

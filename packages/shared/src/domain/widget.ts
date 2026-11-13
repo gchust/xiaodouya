@@ -12,6 +12,7 @@ import {
   type Role,
 } from '../schemas';
 import { dayNumber, formatClock, startOfLocalDay } from './age';
+import { isBreastFeed } from './breastfeeding';
 import { type DaySummary, summarizeDay } from './events';
 import {
   estimateNextFeed,
@@ -184,8 +185,11 @@ export type WidgetView =
       /** 是否在小工具上写出同步时间，见 `WIDGET_SYNC_STALE_MS`。 */
       showSync: boolean;
       lastFeed: { id: string; at: number; ml: number } | null;
+      /** 上次喂奶写什么：瓶喂是奶量，亲喂是“亲喂”“亲喂中”（不写 0ml）。 */
       lastFeedAmount: string | null;
       canQuickFeed: boolean;
+      /** 一键记喂奶记多少，和 `planWidgetAction` 写的一样（最近一次瓶喂的奶量）。不能一键记时是 null。 */
+      quickFeedAmount: string | null;
       sleep: WidgetSleep;
       today: DaySummary;
       todayAmount: string;
@@ -278,6 +282,15 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
   const last = feedsNewestFirst(events(entries), now)[0];
   const lastEntry = last ? entries.find((e) => e.data === last) : undefined;
   const today = summarizeDay(events(entries), dayStart, now);
+  const quickMl = quickFeedMl(lastFeedDefaults(events(entries), [], now));
+  const text = t().widgetUi;
+  const lastFeedAmount = !last
+    ? null
+    : isBreastFeed(last)
+      ? last.endAt === undefined
+        ? text.breastRunningShort
+        : text.breastShort
+      : formatVolume(last.ml, units.volume);
   return {
     kind: 'ready',
     now,
@@ -288,11 +301,16 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     dayline: widgetDayline(events(entries), dayStart, now),
     showSync: syncedAt === null || now - syncedAt > WIDGET_SYNC_STALE_MS,
     lastFeed: last && lastEntry ? { id: lastEntry.id, at: last.at, ml: last.ml } : null,
-    lastFeedAmount: last ? formatVolume(last.ml, units.volume) : null,
-    canQuickFeed: quickFeedMl(lastFeedDefaults(events(entries), [], now)) !== null,
+    lastFeedAmount,
+    canQuickFeed: quickMl !== null,
+    quickFeedAmount: quickMl === null ? null : formatVolume(quickMl, units.volume),
     sleep: widgetSleep(entries, now),
     today,
-    todayAmount: formatVolume(today.ml, units.volume),
+    // 只有亲喂时没有奶量，写“亲喂”而不是 0ml。
+    todayAmount:
+      today.breastFeeds > 0 && today.breastFeeds === today.feeds
+        ? text.breastShort
+        : formatVolume(today.ml, units.volume),
     units,
     dayStart,
     syncedAt,

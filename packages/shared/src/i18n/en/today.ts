@@ -53,4 +53,11 @@ export const today: Catalog['today'] = {
   noRecords: 'No records yet',
   noRecordsFilter: 'No records of this type yet',
   addOlderHint: 'You can add older ones too. Just tap the top right.',
+  breastRunning: 'Breastfeeding',
+  breastRunningA11y: (side, time) =>
+    `Breastfeeding, ${String(side).toLowerCase()} side ${time} so far. Tap to switch or finish`,
+  breastRunningSub: (clock, total) => `Started ${clock} · ${total} total · Tap to switch or finish`,
+  breastForgotten: 'Breastfeeding timer still on',
+  breastForgottenSub: (clock) => `Started ${clock} · Tap to finish`,
+  lastFeedText: (clock, detail, by) => `${clock} ${detail}${by}`,
 };
