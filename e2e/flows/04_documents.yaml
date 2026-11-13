@@ -41,6 +41,9 @@ appId: com.gchust.xiaodouya
     visible: 2 个
     timeout: 15000
 - tapOn: { id: doc-back }
+# 出生档案多了一行（F-148 的性别）后，证件夹的卡片在第一屏只露出上半截，要滚到卡片上的字。
+- scrollUntilVisible:
+    element: 2 个文件
 - assertVisible: 2 个文件
 # 卡片上是照片的缩略图，一眼认得出是哪张证件。PDF 排在前面，照片在后面，也要用照片。
 - extendedWaitUntil:
