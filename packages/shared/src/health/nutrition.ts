@@ -15,7 +15,8 @@ import {
 
 /**
  * 奶粉营养估算。只说记录能证明的事：
- * - 有任何一次喂奶算不进去（母乳、没标注、奶粉没数据），就是“数据不足”并说明原因。
+ * - 有任何一次喂奶算不进去（亲喂、母乳、没标注、奶粉没数据），就是“数据不足”并说明原因。
+ *   亲喂没有奶量，记录上写的 0ml 不能当成没吃。
  * - 结论只给已经结束的日子，今天只说“目前已摄入 xx%”。
  * - 不评价品牌，也不判断“超过上限”。
  *
@@ -282,25 +283,29 @@ export function assessDayNutrition(input: DayNutritionInput): DayNutrition {
 
   let unmarked = 0;
   let noFormula = 0;
+  let breastfed = 0;
   let breast = 0;
   let mixed = 0;
   let noData = 0;
   const counted: { ml: number; per100ml: NutrientValues }[] = [];
   for (const feed of feeds) {
-    if (!feed.milkType) unmarked += 1;
+    // 亲喂不知道吃了多少，记录上的 0ml 不是摄入量。先看它，旧版改过的亲喂可能还带着别的奶类型。
+    if (feed.method === 'breast') breastfed += 1;
+    else if (!feed.milkType) unmarked += 1;
     else if (feed.milkType === 'breast') breast += 1;
     else if (feed.milkType === 'mixed') mixed += 1;
     else if (!feed.formula) noFormula += 1;
     else if (!hasAnyValue(feed.formula.per100ml)) noData += 1;
     else counted.push({ ml: feed.ml, per100ml: feed.formula.per100ml });
   }
-  const uncountedFeeds = unmarked + noFormula + breast + mixed + noData;
+  const uncountedFeeds = unmarked + noFormula + breastfed + breast + mixed + noData;
 
   const text = t().domain.nutrition;
   const reasons: string[] = [];
   if (feeds.length === 0) reasons.push(text.noFeeds);
   if (unmarked > 0) reasons.push(text.unmarked(unmarked));
   if (noFormula > 0) reasons.push(text.noFormula(noFormula));
+  if (breastfed > 0) reasons.push(text.breastfed(breastfed));
   if (breast > 0) reasons.push(text.breast(breast));
   if (mixed > 0) reasons.push(text.mixed(mixed));
   if (noData > 0) reasons.push(text.noData(noData));

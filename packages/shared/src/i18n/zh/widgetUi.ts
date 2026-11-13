@@ -32,6 +32,9 @@ export const widgetUi = {
   lastFeedOn: (date: Text) => `上次喂奶 · ${date}`,
   nextFeedAt: (clock: Text) => `约 ${clock} 该喂了`,
   plusAmount: (amount: Text) => `＋ ${amount}`,
+  /** 小工具上亲喂的那几个字，放得进 2×2 的说明和快捷记录的一行。 */
+  breastShort: '亲喂',
+  breastRunningShort: '亲喂中',
   noFeedHint: '第一次要选一下奶量',
   logged: (title: Text) => `已记好 · ${title}`,
   fixHint: '记错了点下面',

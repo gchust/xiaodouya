@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import type { EventData } from '../schemas';
 import { formatDuration } from './age';
+import { breastDurationMs, describeBreastFeed, isBreastFeed } from './breastfeeding';
 import { FORGOTTEN_SLEEP_MS } from './feeding';
 import {
   formatLength,
@@ -28,6 +29,7 @@ export function describeEvent(event: EventData, now: number, units: Units = metr
   const text = t().domain.events;
   switch (event.type) {
     case 'feed':
+      if (isBreastFeed(event)) return describeBreastFeed(event, now);
       return text.feed(formatVolume(event.ml, units.volume));
     case 'diaper':
       return text.diaper(text[event.kind]);
@@ -54,17 +56,42 @@ export function describeEvent(event: EventData, now: number, units: Units = metr
 }
 
 export interface DaySummary {
+  /** 喂奶次数，瓶喂和亲喂都算。 */
   feeds: number;
+  /** 瓶喂的奶量。亲喂没有奶量。 */
   ml: number;
+  /** 其中亲喂几次、一共喂了多久（正在喂的算到现在，忘了关的计时不算）。 */
+  breastFeeds: number;
+  breastMs: number;
   diapers: number;
   wetDiapers: number;
   sleepMs: number;
 }
 
+const emptySummary = (): DaySummary => ({
+  feeds: 0,
+  ml: 0,
+  breastFeeds: 0,
+  breastMs: 0,
+  diapers: 0,
+  wetDiapers: 0,
+  sleepMs: 0,
+});
+
+function addFeed(summary: DaySummary, feed: Extract<EventData, { type: 'feed' }>, now: number) {
+  summary.feeds += 1;
+  if (isBreastFeed(feed)) {
+    summary.breastFeeds += 1;
+    summary.breastMs += breastDurationMs(feed, now);
+  } else {
+    summary.ml += feed.ml;
+  }
+}
+
 /** 统计 `now` 往前 24 小时。跨越窗口起点的睡眠只算窗口内的部分。 */
 export function summarize24h(events: readonly EventData[], now: number): DaySummary {
   const start = now - 86_400_000;
-  const summary: DaySummary = { feeds: 0, ml: 0, diapers: 0, wetDiapers: 0, sleepMs: 0 };
+  const summary = emptySummary();
   for (const e of events) {
     if (e.type === 'sleep') {
       const end = Math.min(e.endAt ?? now, now);
@@ -73,10 +100,8 @@ export function summarize24h(events: readonly EventData[], now: number): DaySumm
       continue;
     }
     if (e.at <= start || e.at > now) continue;
-    if (e.type === 'feed') {
-      summary.feeds += 1;
-      summary.ml += e.ml;
-    } else if (e.type === 'diaper') {
+    if (e.type === 'feed') addFeed(summary, e, now);
+    else if (e.type === 'diaper') {
       summary.diapers += 1;
       if (e.kind !== 'poo') summary.wetDiapers += 1;
     }
@@ -93,7 +118,7 @@ export function summarizeDay(
   dayStart: number,
   now: number,
 ): DaySummary {
-  const summary: DaySummary = { feeds: 0, ml: 0, diapers: 0, wetDiapers: 0, sleepMs: 0 };
+  const summary = emptySummary();
   for (const e of events) {
     if (e.type === 'sleep') {
       if (!e.endAt && now - e.at > FORGOTTEN_SLEEP_MS) continue;
@@ -103,10 +128,8 @@ export function summarizeDay(
       continue;
     }
     if (e.at < dayStart || e.at > now) continue;
-    if (e.type === 'feed') {
-      summary.feeds += 1;
-      summary.ml += e.ml;
-    } else if (e.type === 'diaper') {
+    if (e.type === 'feed') addFeed(summary, e, now);
+    else if (e.type === 'diaper') {
       summary.diapers += 1;
       if (e.kind !== 'poo') summary.wetDiapers += 1;
     }
@@ -161,11 +184,15 @@ export function eventsByDay<E extends { data: EventData }>(entries: readonly E[]
   return groupByDay(entries, (entry) => entry.data.at);
 }
 
+/** 只有瓶喂时和以前一样（`喂奶 4 次 · 330ml`）；有亲喂时分开写，不写亲喂的 0ml。 */
 export function summaryText(s: DaySummary, units: Units = metricUnits): string {
-  return t().domain.events.summary(
-    s.feeds,
-    formatVolume(s.ml, units.volume),
-    s.diapers,
-    (s.sleepMs / 3_600_000).toFixed(1),
-  );
+  const text = t().domain.events;
+  const sleepHours = (s.sleepMs / 3_600_000).toFixed(1);
+  if (s.breastFeeds === 0) {
+    return text.summary(s.feeds, formatVolume(s.ml, units.volume), s.diapers, sleepHours);
+  }
+  const parts: string[] = [];
+  if (s.feeds > s.breastFeeds) parts.push(text.bottlePart(formatVolume(s.ml, units.volume)));
+  parts.push(text.breastPart(formatDuration(s.breastMs)));
+  return text.summaryMixed(s.feeds, parts, s.diapers, sleepHours);
 }

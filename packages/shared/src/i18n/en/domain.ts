@@ -41,6 +41,15 @@ export const domain: Catalog['domain'] = {
     vaccine: (name) => `Vaccine: ${name}`,
     summary: (feeds, volume, diapers, sleepHours) =>
       `${plural(feeds, 'feed', 'feeds')} · ${volume}   ${plural(diapers, 'diaper', 'diapers')}   Slept ${sleepHours}h`,
+    summaryMixed: (feeds, feedParts, diapers, sleepHours) =>
+      `${plural(feeds, 'feed', 'feeds')} · ${feedParts.join(' · ')}   ${plural(diapers, 'diaper', 'diapers')}   Slept ${sleepHours}h`,
+    bottlePart: (volume) => `Bottle ${volume}`,
+    breastPart: (duration) => `Breast ${duration}`,
+    breastFeed: (parts) => (parts ? `Breastfed · ${parts}` : 'Breastfed'),
+    breastFeeding: (detail) => `Breastfeeding · ${detail}`,
+    breastSideMinutes: (side, minutes) => `${side === 'left' ? 'L' : 'R'} ${minutes} min`,
+    breastSide: (side) => (side === 'left' ? 'left side' : 'right side'),
+    nextBreastSide: (side) => `Start on the ${side} side next time`,
   },
   units: {
     ml: 'milliliters',
@@ -120,6 +129,8 @@ export const domain: Catalog['domain'] = {
       `${plural(n, 'feed was', 'feeds were')} breast milk. Its nutrients can't be estimated, so ${n === 1 ? 'it was' : 'they were'} not counted`,
     mixed: (n) =>
       `${plural(n, 'feed was', 'feeds were')} mixed and can't be estimated, so ${n === 1 ? 'it was' : 'they were'} not counted`,
+    breastfed: (n) =>
+      `${plural(n, 'feed was', 'feeds were')} at the breast. How much was drunk can't be known, so ${n === 1 ? 'it was' : 'they were'} not counted`,
     noData: (n) =>
       `${plural(n, 'feed used', 'feeds used')} a formula with no nutrition data, so ${n === 1 ? 'it was' : 'they were'} not counted`,
     thinCount: (n) =>

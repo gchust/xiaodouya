@@ -40,6 +40,18 @@ export const domain = {
     vaccine: (name: string) => `接种 ${name}`,
     summary: (feeds: number, volume: string, diapers: number, sleepHours: string) =>
       `喂奶 ${feeds} 次 · ${volume}　尿布 ${diapers}　睡 ${sleepHours}h`,
+    /** 有亲喂时的摘要，`feedParts` 是 `瓶喂 330ml`、`亲喂 1小时10分`，按顺序用 · 连起来。 */
+    summaryMixed: (feeds: number, feedParts: string[], diapers: number, sleepHours: string) =>
+      `喂奶 ${feeds} 次 · ${feedParts.join(' · ')}　尿布 ${diapers}　睡 ${sleepHours}h`,
+    bottlePart: (volume: string) => `瓶喂 ${volume}`,
+    breastPart: (duration: string) => `亲喂 ${duration}`,
+    /** `parts` 是每一侧的时长，比如 `左 12 分 · 右 8 分`；两侧都没计到时是空的。 */
+    breastFeed: (parts: string) => (parts ? `亲喂 ${parts}` : '亲喂'),
+    breastFeeding: (detail: string) => `亲喂中 · ${detail}`,
+    breastSideMinutes: (side: 'left' | 'right', minutes: number) =>
+      `${side === 'left' ? '左' : '右'} ${minutes} 分`,
+    breastSide: (side: 'left' | 'right'): string => (side === 'left' ? '左侧' : '右侧'),
+    nextBreastSide: (side: 'left' | 'right') => `下次从${side === 'left' ? '左' : '右'}侧开始`,
   },
   units: {
     ml: '毫升',
@@ -114,6 +126,7 @@ export const domain = {
     noFormula: (n: number) => `有 ${n} 次喂奶没有标注奶粉，没算进去`,
     breast: (n: number) => `有 ${n} 次是母乳，母乳的成分没法估算，没算进去`,
     mixed: (n: number) => `有 ${n} 次是混合喂养，没法估算，没算进去`,
+    breastfed: (n: number) => `有 ${n} 次是亲喂，吃了多少没法知道，没算进去`,
     noData: (n: number) => `有 ${n} 次用的奶粉还没有营养数据，没算进去`,
     thinCount: (n: number) => `这一天只记了 ${n} 次喂奶，可能有漏记，不下结论`,
     thinSpan: '这一天的喂奶记录时间太集中，可能有漏记，不下结论',

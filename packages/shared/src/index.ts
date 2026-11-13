@@ -4,6 +4,7 @@ export * from './domain/age';
 export * from './domain/babies';
 export * from './domain/deleteConfirm';
 export * from './domain/edit';
+export * from './domain/breastfeeding';
 export * from './domain/events';
 export * from './domain/feeding';
 export * from './domain/library';
