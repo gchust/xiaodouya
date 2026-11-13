@@ -80,6 +80,17 @@ function applyNative(appearance: ThemePref['appearance']) {
 }
 applyNative(pref.appearance);
 
+/**
+ * 冷启动时上面那次固定在 Android 上没有生效：界面是深色，系统的时刻选择框还是浅色
+ * （CI 流程 18b 杀掉 App 再打开后的截图）。界面出来以后再固定一次。
+ * 原生层记着同一个值时再设一次什么都不做，所以先交还给系统再固定。
+ */
+export function reapplyNativeScheme(): void {
+  if (forced === null) return;
+  Appearance.setColorScheme('unspecified');
+  Appearance.setColorScheme(forced);
+}
+
 function update(nextPref: ThemePref, nextSystem: Scheme) {
   pref = nextPref;
   appliedSystem = nextSystem;

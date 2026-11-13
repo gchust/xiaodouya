@@ -145,6 +145,20 @@ describe('系统的日期时间选择框、对话框跟着 App 里固定的深�
     expect(scheme(mod)).toBe('dark');
   });
 
+  it('冷启动后界面出来再固定一次：先交还给系统再固定，原生层才会真的换', async () => {
+    const mod = await launch({ phone: 'light', saved: { theme: 'paper', appearance: 'dark' } });
+    mod.reapplyNativeScheme();
+    expect(native.calls).toEqual(['dark', 'unspecified', 'dark']);
+    // 这期间原生层报出的变化不是手机换了深浅，App 还是深色。
+    expect(scheme(mod)).toBe('dark');
+  });
+
+  it('跟随手机时冷启动不碰原生层', async () => {
+    const mod = await launch({ phone: 'dark' });
+    mod.reapplyNativeScheme();
+    expect(native.calls).toEqual([]);
+  });
+
   it('跟随手机时，手机在 App 前台切换深浅，照旧等退到后台再换', async () => {
     const mod = await launch({ phone: 'light' });
     native.phone = 'dark';
