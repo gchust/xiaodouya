@@ -324,8 +324,21 @@ export function TodayScreen() {
       ) : null}
 
       <View style={s.listHeader}>
-        <Text style={s.listTitle}>{t().today.past24h}</Text>
-        <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
+        <View style={s.listTitleRow}>
+          <Text style={s.listTitle}>{t().today.past24h}</Text>
+          {/* 放在标题旁，不占快捷按钮的位置：看趋势不是半夜单手要做的事。 */}
+          <Pressable
+            testID="trends-open"
+            accessibilityRole="button"
+            accessibilityLabel={t().trends.linkA11y}
+            hitSlop={LINK_HIT_SLOP}
+            onPress={() => router.push('/trends')}
+          >
+            <Text style={s.listLink}>{t().trends.link}</Text>
+          </Pressable>
+        </View>
+        {/* 放不下时整句换到下一行，不在句子中间折断（英文加上“Trends ›”后会挤）。 */}
+        <Muted style={s.summary} testID="summary">
           {summaryText(summary, units)}
         </Muted>
       </View>
@@ -561,9 +574,13 @@ const s = themedStyles(() => ({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    gap: 8,
+    flexWrap: 'wrap',
+    columnGap: 8,
+    rowGap: 2,
   },
+  summary: { flexShrink: 0, maxWidth: '100%', marginLeft: 'auto', textAlign: 'right' },
   listTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink },
+  listTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   list: { marginTop: 6, marginHorizontal: spacing.page },
   listFooter: {
     marginTop: 14,
