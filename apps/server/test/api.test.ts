@@ -1105,6 +1105,28 @@ describe('家庭的地区只有管理员能改', () => {
     const data = json.records.find((r) => r.id === other)?.data as Record<string, unknown>;
     expect(data.region).toBe('SG');
   });
+  it('性别（F-148）谁都能填，和地区、建档时间的规则一起保存，不被丢掉', async () => {
+    const { admin, family } = await newFamily();
+    const mom = await join(admin.token, 'caregiver', '妈妈');
+    await sync(admin.token, 0, [babyChange(family.id, { region: 'SG' }, 1000)]);
+    const result = await sync(mom.token, 0, [
+      babyChange(family.id, { region: 'US', sex: 'female' }, 2000),
+    ]);
+    expect(result.json.rejected).toEqual([]);
+    const data = await stored(admin.token, family.id);
+    expect(data.region).toBe('SG');
+    expect(data.sex).toBe('female');
+    expect(data.createdAt).toBeUndefined();
+    // 后加的宝宝带着建档时间和性别。
+    const other = randomUUID();
+    await syncMultiBaby(admin.token, 0, [
+      babyChange(other, { region: 'SG', createdAt: 5000, sex: 'male' }, 3000),
+    ]);
+    const { json } = await syncMultiBaby(admin.token, 0);
+    const second = json.records.find((r) => r.id === other)?.data as Record<string, unknown>;
+    expect(second.sex).toBe('male');
+    expect(second.createdAt).toBe(5000);
+  });
   it('没有地区的旧档案，其他家人保存后仍然没有地区', async () => {
     const { admin, family } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');
