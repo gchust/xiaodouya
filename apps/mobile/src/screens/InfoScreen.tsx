@@ -34,6 +34,7 @@ import { useApp, useRecordsOf, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { AddBabySheet, useCanAddBaby } from '../sheets/babySheets';
 import { DocAddSheet } from '../sheets/documentSheets';
 import { openMoneySheet, useLocalCurrency } from '../sheets/moneySheets';
 import { EventActionsSheet, GrowthSheet, VaccineSheet } from '../sheets/recordSheets';
@@ -70,6 +71,8 @@ export function InfoScreen() {
   const documents = useRecordsOf('documents');
   const events = useRecordsOf('events');
   const vaccinePlans = useRecordsOf('vaccinePlans');
+  const multiBaby = useRecordsOf('multiBaby');
+  const canAddBaby = useCanAddBaby();
   const { role, prefs } = useApp();
   const region = useRegion();
   const units = useUnits();
@@ -119,7 +122,22 @@ export function InfoScreen() {
       <PageTitle>{t().info.title}</PageTitle>
 
       <View style={s.section}>
-        <SectionTitle>{t().info.birthProfile}</SectionTitle>
+        {canAddBaby ? (
+          <View style={s.sectionHead}>
+            <SectionTitle>{t().info.birthProfile}</SectionTitle>
+            <Pressable
+              testID="baby-add"
+              accessibilityRole="button"
+              accessibilityLabel={t().babies.addA11y}
+              hitSlop={LINK_HIT_SLOP}
+              onPress={() => sheet.open(t().babies.addTitle, () => <AddBabySheet />)}
+            >
+              <Text style={s.link}>{t().babies.addLink}</Text>
+            </Pressable>
+          </View>
+        ) : (
+          <SectionTitle>{t().info.birthProfile}</SectionTitle>
+        )}
         <ListCard>
           <Row
             label={t().info.name}
@@ -164,10 +182,11 @@ export function InfoScreen() {
             testID="birth-blood"
           />
           <Row
-            label={t().info.region}
+            // 每个宝宝各自的地区（issue #106），有几个宝宝时写明是这个宝宝的。
+            label={multiBaby ? t().babies.regionThisBaby : t().info.region}
             value={region.name}
             testID="region-row"
-            // 全家共用同一份疫苗表，只有管理员能改。服务端也按这个规则校验。
+            // 只有管理员能改。服务端也按这个规则校验。
             onPress={
               role === 'admin'
                 ? () =>
@@ -568,8 +587,8 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
   const changed = selected !== current;
 
   const save = async () => {
-    // 弹层可能开了一会儿，用最新的档案，不要盖掉家人刚改的内容。
-    const latest = app.store.getSnapshot().baby ?? { id, data: baby };
+    // 弹层可能开了一会儿，用最新的档案，不要盖掉家人刚改的内容。按 id 找：弹层开着时可能换了宝宝。
+    const latest = app.store.getSnapshot().babies.find((b) => b.id === id) ?? { id, data: baby };
     await app.write('baby', { ...latest.data, region: selected }, latest.id);
     sheet.close();
     toast(t().info.regionChanged(target.name));

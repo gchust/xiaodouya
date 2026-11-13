@@ -1,5 +1,6 @@
 import { account } from './account';
 import { auth } from './auth';
+import { babies } from './babies';
 import { common } from './common';
 import { confirm } from './confirm';
 import { domain } from './domain';
@@ -34,6 +35,7 @@ export const zh = {
   growth,
   feedback,
   info,
+  babies,
   recall,
   auth,
   nutritionUi,

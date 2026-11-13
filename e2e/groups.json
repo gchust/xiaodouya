@@ -60,7 +60,8 @@
         "13_knowledge",
         "14c_widget_links",
         "14e_widget_gallery",
-        "18a_language"
+        "18a_language",
+        "26_multi_baby"
       ]
     },
     "files": {
@@ -102,9 +103,16 @@
     ],
     "20_viewer_role": ["03_moment_upload", "14a_avatar"],
     "21_caregiver_usage": ["20_viewer_role"],
-    "25_feedback_inbox": ["24_feedback"]
+    "25_feedback_inbox": ["24_feedback"],
+    "26_multi_baby": ["02_records"]
   },
-  "endOfGroup": ["20_viewer_role", "21_caregiver_usage", "22_delete_account", "25_feedback_inbox"],
+  "endOfGroup": [
+    "20_viewer_role",
+    "21_caregiver_usage",
+    "22_delete_account",
+    "25_feedback_inbox",
+    "26_multi_baby"
+  ],
   "uploadChecks": {
     "memory": ["03_moment_upload"],
     "multipart": ["03a_bulk_moment", "03b_upload_control"],

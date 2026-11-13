@@ -60,6 +60,7 @@ import { quickActionColumns } from '../lib/fontScale';
 import { pickFromLibrary } from '../lib/media';
 import { MediaImage } from '../lib/mediaViews';
 import { useTabScrollRef } from '../lib/tabScroll';
+import { BabySwitcherSheet } from '../sheets/babySheets';
 import {
   DiaperSheet,
   EventActionsSheet,
@@ -90,6 +91,7 @@ export function TodayScreen() {
   const router = useRouter();
   const events = useRecordsOf('events');
   const baby = useRecordsOf('baby');
+  const babies = useRecordsOf('babies');
   const vaccinePlans = useRecordsOf('vaccinePlans');
   const region = useRegion();
   const units = useUnits();
@@ -189,6 +191,13 @@ export function TodayScreen() {
   const openFeed = () => sheet.open(t().today.feed, () => <FeedSheet />);
   const avatar = baby.data.avatar;
   const canChangeAvatar = app.role !== 'viewer';
+  // 只有一个宝宝时头像和以前一样：有照片就看，没有就选一张。
+  const switching = babies.length > 1;
+  const openAvatar = () => {
+    // 还没有头像时没什么可放大的，直接选图。
+    if (avatar) router.push({ pathname: '/viewer', params: { avatar: '1' } });
+    else if (canChangeAvatar) void changeAvatar();
+  };
 
   return (
     <ScrollView
@@ -220,14 +229,28 @@ export function TodayScreen() {
         </View>
         <PressScale
           testID="baby-avatar"
-          accessibilityLabel={avatar ? t().today.viewAvatar : t().today.addAvatar}
-          accessibilityState={{ busy: changingAvatar, disabled: !avatar && !canChangeAvatar }}
-          disabled={changingAvatar || (!avatar && !canChangeAvatar)}
+          accessibilityLabel={
+            switching
+              ? t().babies.switchA11y(baby.data.name)
+              : avatar
+                ? t().today.viewAvatar
+                : t().today.addAvatar
+          }
+          accessibilityState={{
+            busy: changingAvatar,
+            disabled: !switching && !avatar && !canChangeAvatar,
+          }}
+          disabled={changingAvatar || (!switching && !avatar && !canChangeAvatar)}
           style={s.avatar}
           onPress={() => {
-            // 还没有头像时没什么可放大的，直接选图。
-            if (avatar) router.push({ pathname: '/viewer', params: { avatar: '1' } });
-            else void changeAvatar();
+            // 有几个宝宝时头像是切换器（issue #106），看头像、换头像在切换器里。
+            if (switching) {
+              sheet.open(t().babies.switchTitle, () => (
+                <BabySwitcherSheet onAvatar={openAvatar} canChangeAvatar={canChangeAvatar} />
+              ));
+              return;
+            }
+            openAvatar();
           }}
         >
           {avatar ? (

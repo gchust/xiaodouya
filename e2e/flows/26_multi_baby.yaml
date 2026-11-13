@@ -1,0 +1,113 @@
+# 多个宝宝（issue #106）：在资料页加第二个宝宝，今天页头像变成切换器，记录按宝宝分开，选的宝宝重启后还在。
+# 加了宝宝删不掉，要放在分组最后：之后的流程都按只有一个宝宝断言。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible:
+    text: Sprout的第.*
+# 只有一个宝宝时没有切换器，点头像还是看头像、换头像（流程 14a 测）。
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+# 服务端要先声明 multiBaby（/v1/config），入口才出现。
+- extendedWaitUntil:
+    visible: { id: baby-add }
+    timeout: 15000
+- assertVisible: 地区
+- takeScreenshot: .artifacts/e2e-26-info-one-baby
+- tapOn: { id: baby-add }
+- extendedWaitUntil:
+    visible: { id: add-baby-name }
+    timeout: 10000
+- assertVisible: 这个宝宝的地区
+- tapOn: { id: add-baby-name }
+- inputText: Bean
+- hideKeyboard
+- takeScreenshot: .artifacts/e2e-26-add-baby
+- scrollUntilVisible:
+    element: { id: add-baby-submit }
+- tapOn: { id: add-baby-submit }
+- extendedWaitUntil:
+    notVisible: { id: add-baby-submit }
+    timeout: 10000
+- assertVisible:
+    text: .*现在看的是Bean.*
+# 资料页现在是 Bean 的，地区写明是这个宝宝的（默认用 Sprout 的新加坡）。
+- assertVisible: Bean
+- assertVisible: 这个宝宝的地区
+- assertVisible: 新加坡
+- takeScreenshot: .artifacts/e2e-26-info-second-baby
+# 今天页：Bean 还没有喂奶，Sprout 的记录不在这里。
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- assertVisible:
+    text: Bean的第 1 天
+- assertVisible:
+    text: 还没有喂奶记录.*
+- tapOn: { id: action-feed }
+- tapOn: { id: ml-chip-60 }
+- tapOn: { id: ml-dec }
+- assertVisible: "50"
+- tapOn: { id: feed-save }
+- assertVisible:
+    text: 喂奶 50ml.*
+- takeScreenshot: .artifacts/e2e-26-today-second-baby
+- extendedWaitUntil:
+    notVisible: { id: toast-undo }
+    timeout: 15000
+# 头像是切换器
+- tapOn: { id: baby-avatar }
+- extendedWaitUntil:
+    visible: { id: baby-switch-list }
+    timeout: 10000
+- assertVisible: Sprout
+- assertVisible: 正在看
+- takeScreenshot: .artifacts/e2e-26-switcher
+- tapOn: { id: baby-switch-0 }
+- extendedWaitUntil:
+    visible:
+      text: Sprout的第.*
+    timeout: 10000
+# Sprout 有自己的喂奶，没有 Bean 的那一条。
+- assertNotVisible:
+    text: 还没有喂奶记录.*
+- assertNotVisible:
+    text: 喂奶 50ml.*
+- takeScreenshot: .artifacts/e2e-26-today-first-baby
+# 换回 Bean，重启后还是 Bean。
+- extendedWaitUntil:
+    notVisible: { id: toast }
+    timeout: 15000
+- tapOn: { id: baby-avatar }
+- extendedWaitUntil:
+    visible: { id: baby-switch-list }
+    timeout: 10000
+- tapOn: { id: baby-switch-1 }
+- extendedWaitUntil:
+    visible:
+      text: Bean的第 1 天
+    timeout: 10000
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible:
+    text: Bean的第 1 天
+- assertVisible:
+    text: 喂奶 50ml.*
+# 最后换回 Sprout，和这组开始时一样。
+- tapOn: { id: baby-avatar }
+- extendedWaitUntil:
+    visible: { id: baby-switch-list }
+    timeout: 10000
+- tapOn: { id: baby-switch-0 }
+- extendedWaitUntil:
+    visible:
+      text: Sprout的第.*
+    timeout: 10000
