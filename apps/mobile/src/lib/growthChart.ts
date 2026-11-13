@@ -147,3 +147,24 @@ export function layoutGrowthChart({
     dots,
   };
 }
+
+/**
+ * 同一天量了几次时点叠在一起，点击区也叠在一起，手指只点得到最上面（最新）的那个。
+ * 点已经选中的点时，换成和它叠在一起的前一个，再点又换回来。读屏直接选中的是哪个就是哪个。
+ */
+export function nextSelection(
+  dots: { x: number; y: number }[],
+  tapped: number,
+  selected: number,
+  hit: number,
+): number {
+  if (tapped !== selected) return tapped;
+  const dot = dots[tapped];
+  if (!dot) return tapped;
+  const cluster = dots
+    .map((d, i) => ({ d, i }))
+    .filter(({ d }) => Math.abs(d.x - dot.x) < hit / 2 && Math.abs(d.y - dot.y) < hit / 2)
+    .map(({ i }) => i);
+  const at = cluster.indexOf(tapped);
+  return cluster[(at - 1 + cluster.length) % cluster.length] ?? tapped;
+}

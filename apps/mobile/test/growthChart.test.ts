@@ -1,6 +1,6 @@
 import { DAYS_PER_MONTH, referenceCurves } from '@xiaodouya/shared';
 import { describe, expect, it } from 'vitest';
-import { layoutGrowthChart, monthTicks, spreadLabels } from '../src/lib/growthChart';
+import { layoutGrowthChart, monthTicks, nextSelection, spreadLabels } from '../src/lib/growthChart';
 
 const SIX = 6 * DAYS_PER_MONTH;
 
@@ -66,5 +66,18 @@ describe('生长曲线的几何', () => {
       expect((sorted[i] as number) - (sorted[i - 1] as number)).toBeGreaterThanOrEqual(11);
     }
     expect(ys[0]).toBe(100);
+  });
+
+  it('叠在一起的点：点已选中的那个换成前一个，再点换回来；点没选中的就选它', () => {
+    const dots = [
+      { x: 100, y: 50 },
+      { x: 101, y: 50 },
+      { x: 200, y: 80 },
+    ];
+    expect(nextSelection(dots, 1, 1, 44)).toBe(0);
+    expect(nextSelection(dots, 1, 0, 44)).toBe(1);
+    expect(nextSelection(dots, 0, 0, 44)).toBe(1);
+    expect(nextSelection(dots, 2, 1, 44)).toBe(2);
+    expect(nextSelection(dots, 2, 2, 44)).toBe(2);
   });
 });

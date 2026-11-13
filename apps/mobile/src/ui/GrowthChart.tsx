@@ -17,7 +17,7 @@ import {
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
-import { layoutGrowthChart } from '../lib/growthChart';
+import { layoutGrowthChart, nextSelection } from '../lib/growthChart';
 import { colors, fonts, themedStyles } from '../theme';
 import { Chip, Mono, Muted } from './primitives';
 
@@ -207,7 +207,7 @@ export function GrowthChart({
                       growthPointText(point, baby.birthAt, measure, sex, units).a11y
                     }
                     accessibilityState={{ selected: i === index }}
-                    onPress={() => setSelected(i)}
+                    onPress={() => setSelected(nextSelection(layout.dots, i, index, HIT))}
                     style={[s.hit, { left: dot.x - HIT / 2, top: dot.y - HIT / 2 }]}
                   />
                 );
