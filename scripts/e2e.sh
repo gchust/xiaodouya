@@ -147,6 +147,8 @@ run_attempt() {
   wait_for_device 5 || return 1
   # 上一次尝试可能断在飞行模式里（流程 03b、06、19 会开）。
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
+  # 流程 18c 断在模拟器断开时，流程后面的改回可能没生效，整组重跑前先改回 1 倍字体。
+  adb shell settings put system font_scale 1.0 >/dev/null 2>&1 || true
   adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
   # 安装是幂等的，断开时等连上再装一次就行，不用整组重跑。
   adb install -r "$APK" || { wait_for_device 5 && adb install -r "$APK"; } || return 1
