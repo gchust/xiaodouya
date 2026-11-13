@@ -776,7 +776,7 @@ export function BathSheet({ initial, id, backfill }: SheetMode<'bath'> = {}) {
  * 记的是大人，不是宝宝的喂奶，所以不在喂奶弹层里，也不算喂奶次数。
  */
 export function PumpSheet({ initial, id, backfill }: SheetMode<'pump'> = {}) {
-  const { events } = useRecords();
+  const events = useRecordsOf('events');
   const save = useSaveEvent();
   const { volume } = useUnits();
   const scale = scaleFor('volume', volume);
