@@ -11,6 +11,7 @@ import {
   FORGOTTEN_BREASTFEED_MS,
   feedDefaultsAt,
   finishBreastFeed,
+  isNursingFeed,
   lastFeedDefaults,
   metricUnits,
   nextBreastSide,
@@ -25,6 +26,7 @@ import {
   summaryText,
   switchBreastSide,
   t,
+  trendDays,
   withLocale,
 } from '../src';
 
@@ -436,6 +438,20 @@ describe('忘了关的计时', () => {
 
   it('换边也不把开着的这几个小时记进去', () => {
     expect(switchBreastSide(forgotten, 'left', NOW)).toMatchObject({ leftSec: 600, rightSec: 0 });
+  });
+});
+
+describe('趋势页', () => {
+  it('计时写出的亲喂被认成亲喂，只算次数，不把 0ml 算进奶量', () => {
+    const done = finishBreastFeed(
+      startBreastFeed('left', NOW - 2 * HOUR),
+      NOW - 2 * HOUR + 15 * MIN,
+    );
+    expect(isNursingFeed(done)).toBe(true);
+    expect(isNursingFeed(startBreastFeed('right', NOW - MIN))).toBe(true);
+    expect(isNursingFeed(bottle(NOW - HOUR, 90))).toBe(false);
+    const today = trendDays([done, bottle(NOW - HOUR, 90)], NOW, 7).at(-1);
+    expect(today).toMatchObject({ feeds: 2, nursingFeeds: 1, amountFeeds: 1, ml: 90 });
   });
 });
 
