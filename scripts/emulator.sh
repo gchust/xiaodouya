@@ -17,9 +17,17 @@ hw.keyboard=yes
 disk.dataPartition.size=4G
 CONF
 fi
-nohup emulator -avd "$AVD" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect \
-  -memory "${EMULATOR_MEMORY:-3072}" -cores 3 -no-snapshot -camera-back none -camera-front none \
-  > "$ROOT/.artifacts/emulator.log" 2>&1 &
+# 模拟器在后台一直活着，不能带走调用方打开的文件：在 `flock 锁文件 命令` 里启动时，
+# 锁的 fd（flock 交给子进程的是 3）会被 qemu 继承，调用方退出后锁仍被占着，所有排队的人永远等下去（2026-11-13）。
+(
+  for fd in /proc/$BASHPID/fd/*; do
+    fd="${fd##*/}"
+    if [ "$fd" -gt 2 ] && [ "$fd" -ne 255 ]; then eval "exec $fd>&-"; fi
+  done
+  exec nohup emulator -avd "$AVD" -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect \
+    -memory "${EMULATOR_MEMORY:-3072}" -cores 3 -no-snapshot -camera-back none -camera-front none \
+    > "$ROOT/.artifacts/emulator.log" 2>&1
+) &
 adb wait-for-device
 for _ in $(seq 1 180); do
   [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ] && break
