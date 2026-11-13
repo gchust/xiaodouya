@@ -16,6 +16,7 @@ export * from './domain/recordTime';
 export * from './domain/search';
 export * from './domain/storage';
 export * from './domain/tapGuard';
+export * from './domain/trends';
 export * from './domain/units';
 export * from './domain/vaccinePlan';
 export * from './domain/vaccines';
