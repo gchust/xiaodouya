@@ -96,7 +96,11 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: event-edit }
 - assertVisible: 修改喂奶
 - assertVisible: { id: feed-method-breast, selected: true }
-- assertVisible: { id: breast-left-min-value }
+# 右侧只喂了几秒，也要写 1 分钟，不能显示成 0（CI run 43437837493 里显示 0，保存后最后一侧被改成了左侧）。
+- assertVisible:
+    id: breast-right-min-value
+    text: "1.*"
+- assertVisible: { id: breast-last-right, selected: true }
 - tapOn: { id: breast-left-min-inc }
 - assertVisible:
     id: breast-left-min-value

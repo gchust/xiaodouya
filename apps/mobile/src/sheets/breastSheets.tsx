@@ -271,7 +271,9 @@ const stepMinutes = (value: number, direction: 1 | -1) => {
       : Math.ceil(value / MINUTE_STEP) * MINUTE_STEP - MINUTE_STEP;
   return Math.min(MAX_MINUTES, Math.max(0, next));
 };
-const minutesOf = (seconds: number | undefined) => Math.round((seconds ?? 0) / 60);
+/** 和时间线上的写法一样：喂了不到半分钟也是 1 分钟，不能在这里显示成 0，像是这一侧没喂。 */
+const minutesOf = (seconds: number | undefined) =>
+  seconds ? Math.max(1, Math.round(seconds / 60)) : 0;
 
 /**
  * 补记和修改喂完的亲喂：两侧各喂了几分钟、最后喂的是哪一侧。
@@ -308,14 +310,21 @@ export function BreastForm({
     (wasBreast ? initial?.side : undefined) ?? 'right',
   );
   const [note, setNote] = useState(initial?.note ?? '');
-  const side: BreastSide | undefined =
-    left > 0 && right > 0 ? lastSide : left > 0 ? 'left' : right > 0 ? 'right' : lastSide;
   const secondsFor = (minutes: number, start: number, original: number | undefined) =>
     wasBreast && minutes === start && original !== undefined ? original : minutes * 60;
+  const leftSec = secondsFor(left, startLeft, initial?.leftSec);
+  const rightSec = secondsFor(right, startRight, initial?.rightSec);
+  const bothSides = leftSec > 0 && rightSec > 0;
+  // 只喂了一侧，最后一侧就是它；两侧都喂了才要选。
+  const side: BreastSide = bothSides
+    ? lastSide
+    : leftSec > 0
+      ? 'left'
+      : rightSec > 0
+        ? 'right'
+        : lastSide;
   const save = () => {
     const at = time.resolve();
-    const leftSec = secondsFor(left, startLeft, initial?.leftSec);
-    const rightSec = secondsFor(right, startRight, initial?.rightSec);
     const unchanged =
       wasBreast &&
       initial?.at === at &&
@@ -359,7 +368,7 @@ export function BreastForm({
         onDec={() => setRight((v) => stepMinutes(v, -1))}
         onInc={() => setRight((v) => stepMinutes(v, 1))}
       />
-      {left > 0 && right > 0 ? (
+      {bothSides ? (
         <View style={s.lastSide}>
           <Muted>{t().records.breastLastSide}</Muted>
           <View style={s.lastSideChips}>
