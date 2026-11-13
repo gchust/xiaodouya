@@ -50,6 +50,8 @@ appId: com.gchust.xiaodouya
     element: { id: vaccine-row-6in1-1 }
     direction: UP
     timeout: 30000
+    centerElement: true
+- waitForAnimationToEnd
 - assertVisible: { id: vaccine-row-6in1-1 }
 
 # ── 诊所另约了时间：改计划日期，再恢复表上的时间 ──
