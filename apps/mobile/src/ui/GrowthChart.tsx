@@ -172,9 +172,10 @@ export function GrowthChart({
                     {tick.months}
                   </SvgText>
                 ))}
+                {/* 放在刻度下面靠右：放在左下角时英文的 Months 比左边距宽，被裁掉一半。 */}
                 <SvgText
-                  x={layout.plot.left - 6}
-                  y={layout.plot.bottom + 14}
+                  x={layout.plot.right}
+                  y={layout.plot.bottom + 30}
                   fontSize={9}
                   fill={colors.muted}
                   textAnchor="end"

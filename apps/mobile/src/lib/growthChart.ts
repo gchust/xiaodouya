@@ -37,8 +37,8 @@ export interface ChartLayout {
   dots: { x: number; y: number }[];
 }
 
-/** 左边放纵轴数字，右边放参考线的百分位，下面放月龄。 */
-export const CHART_PADDING = { left: 34, right: 22, top: 10, bottom: 22 };
+/** 左边放纵轴数字，右边放参考线的百分位，下面两行：月龄刻度和右对齐的“月龄”。 */
+export const CHART_PADDING = { left: 34, right: 22, top: 10, bottom: 36 };
 const LABEL_GAP = 11;
 const STEPS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50];
 
