@@ -237,6 +237,38 @@ describe('createdAt 只在建档时定一次', () => {
     expect(await stored(first)).not.toHaveProperty('createdAt');
     expect((await stored(second))?.createdAt).toBe(5000);
   });
+
+  it('建档页的档案比后加的宝宝晚传上来（同一批里排在后面）也收，它还是第一个宝宝', async () => {
+    const { admin, family } = await newFamily(app);
+    const second = randomUUID();
+    const result = await syncNew(admin.token, [
+      baby(second, { name: '二宝', createdAt: 5000 }),
+      baby(family.id, { name: '大宝' }),
+    ]);
+    expect(result.json.rejected).toEqual([]);
+    expect(await stored(family.id)).not.toHaveProperty('createdAt');
+    const created = await call<CreateShareResponse>(app, 'POST', '/v1/shares/timeline', {
+      token: admin.token,
+      body: { fromAt: FROM, toAt: FROM + DAY, timezone: TZ },
+    });
+    const page = await call<PublicTimelineResponse>(app, 'POST', '/v1/public/share/timeline', {
+      body: { token: created.json.token },
+    });
+    expect(page.json.baby.name).toBe('大宝');
+  });
+});
+
+describe('v0.1.0 之前各建了一份档案的家庭', () => {
+  it('两份档案都没有 createdAt（没有加过宝宝）时不挡旧版：挡了也没有新版可换', async () => {
+    const { admin, family } = await newFamily(app);
+    await sync(admin.token, [baby(family.id)]);
+    // 现在的服务端不收这样的第二份，直接写进库里，模拟那时留下的数据。
+    await db.sql`
+      INSERT INTO records (id, family_id, collection, data, deleted, updated_at_client, seq)
+      VALUES (${randomUUID()}, ${family.id}, 'baby', ${db.sql.json({ name: '虚构宝宝', birthAt: 1 })},
+              false, ${nextVersion()}, 0)`;
+    expect((await sync(admin.token)).status).toBe(200);
+  });
 });
 
 describe('地区', () => {

@@ -1803,7 +1803,7 @@ export function createApp({
             const settled = settleBabyCreatedAt(
               existing ? babyRefOf(change.id, existing.data, existing.deleted) : undefined,
               babyRefOf(change.id, data, change.deleted).createdAt,
-              anyBaby !== undefined,
+              { familyHasBaby: anyBaby !== undefined, isFamilyProfile: change.id === m.familyId },
             );
             if (!settled) {
               rejected.push({ id: change.id, reason: 'invalid' });

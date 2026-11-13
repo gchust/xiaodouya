@@ -29,15 +29,14 @@ export async function familyBabies(db: Db, familyId: string): Promise<BabyRow[]>
   return rows.map((row) => ({ ...babyRefOf(row.id, row.data, row.deleted), data: row.data }));
 }
 
-/** 只需要知道有没有第二份，最多数到 2。 */
-async function babyRecordCount(db: Db, familyId: string): Promise<number> {
-  const [row] = await db.unsafe<{ count: number }[]>(
-    `SELECT count(*)::int AS count FROM (
-       SELECT 1 FROM records WHERE family_id = $1 AND collection = 'baby' LIMIT 2
-     ) babies`,
+/** 排序要用的部分，不取整份档案：旧版 App 每次同步都要查一次。 */
+async function babyRefs(db: Db, familyId: string): Promise<BabyRef[]> {
+  const rows = await db.unsafe<{ id: string; created_at: unknown; deleted: boolean }[]>(
+    `SELECT id, data->'createdAt' AS created_at, deleted FROM records
+     WHERE family_id = $1 AND collection = 'baby'`,
     [familyId],
   );
-  return row?.count ?? 0;
+  return rows.map((row) => babyRefOf(row.id, { createdAt: row.created_at }, row.deleted));
 }
 
 /**
@@ -51,7 +50,7 @@ export async function blocksOldClient(
 ): Promise<boolean> {
   const level = parseClientLevel(header);
   if (level >= MULTI_BABY_CLIENT_LEVEL) return false;
-  return needsMultiBabyUpgrade(level, await babyRecordCount(db, familyId));
+  return needsMultiBabyUpgrade(level, await babyRefs(db, familyId));
 }
 
 /** 档案里写的地区。不是字符串就当没有，和 BabyData 的 `catch` 一样。 */
