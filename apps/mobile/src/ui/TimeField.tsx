@@ -8,7 +8,7 @@ import {
 } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { useRecords } from '../lib/app';
+import { useRecordsOf } from '../lib/app';
 import {
   isDaysAgo,
   resolveTimeChoice,
@@ -89,7 +89,7 @@ export function useRecordTime(
   options: { at?: number; backfill?: boolean; subject?: 'event' | 'memory' } = {},
 ): RecordTime {
   const { at, backfill, subject } = options;
-  const birthAt = useRecords().baby?.data.birthAt;
+  const birthAt = useRecordsOf('baby')?.data.birthAt;
   const [choice, setChoice] = useState<TimeChoice>(() =>
     at !== undefined
       ? { kind: 'exact', at }

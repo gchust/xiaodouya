@@ -44,7 +44,7 @@ import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { type ReactNode, useCallback, useRef, useState } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
-import { useApp, useRecords, useRegion, useUnits } from '../lib/app';
+import { useApp, useRecordsOf, useRegion, useUnits } from '../lib/app';
 import { doseTimestamp, editedDoseTimestamp } from '../lib/dates';
 import { gridItemWidth } from '../lib/layout';
 import { colors, spacing, themedStyles } from '../theme';
@@ -188,7 +188,8 @@ function Stepper({
  * 修改一条还没结束的亲喂也是计时；喂完的亲喂、补记和“更早”开始的亲喂填两侧的分钟数。
  */
 export function FeedSheet({ initial, id, backfill }: SheetMode<'feed'>) {
-  const { events, formulas } = useRecords();
+  const events = useRecordsOf('events');
+  const formulas = useRecordsOf('formulas');
   const save = useSaveEvent();
   const time = useRecordTime({ at: initial?.at, backfill });
   const [picked, setPicked] = useState<FeedMethod | null>(() =>
@@ -239,7 +240,8 @@ function BottleFeed({
   time: RecordTime;
   header: ReactNode;
 }) {
-  const { events, formulas } = useRecords();
+  const events = useRecordsOf('events');
+  const formulas = useRecordsOf('formulas');
   const app = useApp();
   const save = useSaveEvent();
   const data = events.map((e) => e.data);
@@ -432,7 +434,7 @@ export function DiaperSheet({ initial, id, backfill }: SheetMode<'diaper'> = {})
 /** 补记和修改睡眠。平时的睡眠还是在今天页点一下开始、再点一下结束。 */
 export function SleepSheet({ initial, id }: SheetMode<'sleep'> = {}) {
   const save = useSaveEvent();
-  const birthAt = useRecords().baby?.data.birthAt;
+  const birthAt = useRecordsOf('baby')?.data.birthAt;
   const [start, setStart] = useState(() => initial?.at ?? Date.now() - HOUR);
   const [end, setEnd] = useState(() => initial?.endAt ?? Date.now());
   // 只有还没结束的睡眠才有这个开关：已经结束的不用倒回去，点错了删掉重记也只是一下。
@@ -793,7 +795,8 @@ export function SolidsSheet({ initial, id, backfill }: SheetMode<'solids'> = {})
 }
 
 export function GrowthSheet({ initial, id, backfill }: SheetMode<'growth'> = {}) {
-  const { events, baby } = useRecords();
+  const events = useRecordsOf('events');
+  const baby = useRecordsOf('baby');
   const save = useSaveEvent();
   const latest = events.find((e) => e.data.type === 'growth')?.data as
     | EventOf<'growth'>
@@ -861,7 +864,8 @@ export function VaccineSheet({
   /** 直接打开“其他疫苗”，用于疫苗本上的添加入口。 */
   custom?: boolean;
 }) {
-  const { events, vaccinePlans } = useRecords();
+  const events = useRecordsOf('events');
+  const vaccinePlans = useRecordsOf('vaccinePlans');
   const region = useRegion();
   const save = useSaveEvent();
   const sheet = useSheet();
@@ -1094,7 +1098,7 @@ export function VaccineSheet({
 function VaccineEditSheet({ initial, id }: { initial: EventOf<'vaccine'>; id: string }) {
   const save = useSaveEvent();
   const region = useRegion();
-  const birthAt = useRecords().baby?.data.birthAt;
+  const birthAt = useRecordsOf('baby')?.data.birthAt;
   const [date, setDate] = useState(() => new Date(initial.at));
   const [name, setName] = useState(initial.name);
   const [note, setNote] = useState(initial.note ?? '');
@@ -1213,7 +1217,7 @@ export function EventActionsSheet({ id, event }: { id: string; event: EventData 
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
-  const birthAt = useRecords().baby?.data.birthAt ?? 0;
+  const birthAt = useRecordsOf('baby')?.data.birthAt ?? 0;
   const isOpenSleep = event.type === 'sleep' && !event.endAt;
   const units = useUnits();
   const confirmDelete = useDeleteConfirm();
