@@ -1,0 +1,173 @@
+# 搜索（issue #109）：全部记录页搜药名（大写搜小写）、和类型胶囊组合、搜疫苗名，从结果里删掉一条；
+# 回忆页搜回忆和信，结果里点开能改、能删。
+# 前置：卡介苗已接种（前置 record-bcg）。跑完留下的变化：无，测试用的记录、回忆和信都删掉了。
+# 高亮是同一行文字里的一段，Maestro 看不出来，要看截图。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+
+# ─── 全部记录 ────────────────────────────────────
+- tapOn: { id: action-more }
+- tapOn: { id: more-med }
+- tapOn: { id: med-name }
+- eraseText: 10
+- inputText: Tylenol
+- hideKeyboard
+- tapOn: { id: med-dose }
+- eraseText: 10
+- inputText: 2.5 ml
+- hideKeyboard
+- tapOn: { id: med-save }
+- extendedWaitUntil:
+    notVisible: { id: med-save }
+    timeout: 10000
+# 时间线要等“今天”页的时钟走到记录之后才显示，最多 15 秒。
+- extendedWaitUntil:
+    visible: 吃药 · Tylenol 2.5 ml
+    timeout: 30000
+- scrollUntilVisible:
+    element: { id: records-open }
+- waitForAnimationToEnd
+- tapOn: { id: records-open }
+- extendedWaitUntil:
+    visible: { id: records-screen }
+    timeout: 10000
+- assertNotVisible: { id: records-search-count }
+# 大写搜得到小写的药名
+- tapOn: { id: records-search }
+- inputText: TYLENOL
+- hideKeyboard
+- extendedWaitUntil:
+    visible: 吃药 · Tylenol 2.5 ml
+    timeout: 10000
+- assertVisible:
+    id: records-search-count
+    text: 找到 1 条
+- assertNotVisible: 接种 卡介苗 BCG
+- takeScreenshot: .artifacts/e2e-11f-records-search
+# 和类型胶囊组合：换成喂奶就没有了，换回全部又出来
+- tapOn: { id: records-filter-feed }
+- extendedWaitUntil:
+    visible: 没有找到“TYLENOL”
+    timeout: 10000
+- assertVisible: 换个说法试试，或者把上面的类型换成“全部”。
+- takeScreenshot: .artifacts/e2e-11f-records-search-empty
+- tapOn: { id: records-filter-all }
+- extendedWaitUntil:
+    visible: 吃药 · Tylenol 2.5 ml
+    timeout: 10000
+# 疫苗名
+- tapOn: { id: records-search-clear }
+- assertNotVisible: { id: records-search-count }
+- tapOn: { id: records-search }
+- inputText: bcg
+- hideKeyboard
+- extendedWaitUntil:
+    visible: 接种 卡介苗 BCG
+    timeout: 10000
+- assertNotVisible: 吃药 · Tylenol 2.5 ml
+- takeScreenshot: .artifacts/e2e-11f-records-search-vaccine
+# 从结果里点开、删掉
+- tapOn: { id: records-search-clear }
+- tapOn: { id: records-search }
+- inputText: tylenol
+- hideKeyboard
+- extendedWaitUntil:
+    visible: 吃药 · Tylenol 2.5 ml
+    timeout: 10000
+- tapOn: 吃药 · Tylenol 2.5 ml
+- assertVisible: { id: event-edit }
+- tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    visible: 没有找到“tylenol”
+    timeout: 10000
+- assertVisible: 换个说法试试。
+- tapOn: { id: records-back }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+
+# ─── 回忆和信 ────────────────────────────────────
+- tapOn: { id: tab-recall }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+- tapOn: { id: recall-tab-timeline }
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Rolled over ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: First roll today, all by themselves
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Rolled over ${RUN_ID}
+    timeout: 15000
+- tapOn: { id: recall-tab-letters }
+- tapOn: { id: recall-fab }
+- tapOn: { id: moment-title }
+- inputText: Letter ${RUN_ID}
+- hideKeyboard
+- tapOn: { id: moment-text }
+- inputText: Dear baby, you could ROLL today
+- hideKeyboard
+- tapOn: { id: moment-save }
+- extendedWaitUntil:
+    visible: Letter ${RUN_ID}
+    timeout: 15000
+- takeScreenshot: .artifacts/e2e-11f-recall-header
+- tapOn: { id: recall-search }
+- extendedWaitUntil:
+    visible: { id: recall-search-screen }
+    timeout: 10000
+- assertVisible: 回忆和写给宝宝的信都在这里搜，标题和正文里的字都算。
+- tapOn: { id: recall-search-input }
+- inputText: roll
+- hideKeyboard
+- extendedWaitUntil:
+    visible: Rolled over ${RUN_ID}
+    timeout: 10000
+- assertVisible: Letter ${RUN_ID}
+- assertVisible:
+    id: recall-search-count
+    text: 找到 2 条
+- takeScreenshot: .artifacts/e2e-11f-recall-search
+# 点开信：能看全文，能改
+- tapOn: Letter ${RUN_ID}
+- assertVisible: { id: recall-search-text }
+- takeScreenshot: .artifacts/e2e-11f-recall-search-letter
+- tapOn: { id: recall-search-edit }
+- assertVisible: 修改这封信
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: 修改这封信
+    timeout: 10000
+# 删掉回忆，结果跟着少一条
+- tapOn: Rolled over ${RUN_ID}
+- tapOn: { id: recall-search-delete }
+- assertVisible: 删除回忆“Rolled over ${RUN_ID}”？
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: Rolled over ${RUN_ID}
+    timeout: 10000
+- assertVisible:
+    id: recall-search-count
+    text: 找到 1 条
+# 删掉信
+- tapOn: Letter ${RUN_ID}
+- tapOn: { id: recall-search-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    visible: 没有找到“roll”
+    timeout: 10000
+- tapOn: { id: recall-search-back }
+- extendedWaitUntil:
+    visible: { id: recall-screen }
+    timeout: 10000
+- assertNotVisible: Letter ${RUN_ID}
+- tapOn: { id: recall-tab-timeline }
