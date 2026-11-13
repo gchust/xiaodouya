@@ -145,6 +145,23 @@ describe('睡眠', () => {
     expect(days[5]?.sleeps).toEqual([{ from: 0, to: 6 / 24 }]);
   });
 
+  it('一天里分开的几段都算上，按先后排', () => {
+    const days = trendDays(
+      [
+        sleep(at(14, 13, 5), at(14, 14, 20)),
+        sleep(at(14, 0), at(14, 5, 30)),
+        sleep(at(14, 9, 10), at(14, 10, 40)),
+      ],
+      now,
+      7,
+    );
+    expect(days[5]?.sleepMs).toBe(5.5 * HOUR + 1.5 * HOUR + 1.25 * HOUR);
+    const round = (n: number) => Number(n.toFixed(9));
+    expect(days[5]?.sleeps.map((s) => round(s.from))).toEqual(
+      [0, (9 + 10 / 60) / 24, (13 + 5 / 60) / 24].map(round),
+    );
+  });
+
   it('没有睡眠记录的那天是 null，不是 0', () => {
     const days = trendDays([sleep(at(15, 1), at(15, 3))], now, 7);
     expect(days[6]?.sleepMs).toBe(2 * HOUR);

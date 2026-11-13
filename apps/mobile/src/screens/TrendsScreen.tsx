@@ -273,7 +273,7 @@ function Metric({
           const value = values[index] ?? null;
           const back = backOf(days, index);
           const barHeight =
-            value === null || max === 0 ? 0 : Math.max(2, Math.round((value / max) * height));
+            value === null || value <= 0 ? 0 : Math.max(2, Math.round((value / max) * height));
           return (
             <View
               key={day.start}
