@@ -1,0 +1,42 @@
+# 系统大字体（issue #110）：长辈常把手机字体调大。e2e.sh 在这条流程开始前把系统字体调到 1.3 倍，
+# 结束后不管成败都改回 1.0（scripts/e2e.sh 的 font_scale_for）。走一遍今天页和喂奶弹层，截图要逐张看。
+# Maestro 看不出文字有没有断行，只能看大小：时间线的钟点原来是 44 宽的固定列，1.3 倍时 `23:56`
+# 放不下，断成 `23:5` 和 `6` 两行，高度翻倍。下面按一行的高度找钟点（像素，模拟器是 pixel_6，和 CI 一样）。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 30000
+- assertVisible: { id: feed-timer }
+- assertVisible: { id: action-feed }
+- assertVisible: { id: action-sleep }
+- takeScreenshot: .artifacts/e2e-18c-today
+- tapOn: { id: action-feed }
+- extendedWaitUntil:
+    visible: { id: feed-save }
+    timeout: 10000
+- tapOn: { id: ml-chip-60 }
+- tapOn: { id: ml-inc }
+- assertVisible: "70"
+- takeScreenshot: .artifacts/e2e-18c-feed-sheet
+- tapOn: { id: feed-save }
+- extendedWaitUntil:
+    notVisible: { id: feed-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: 喂奶 70ml
+# 一行高 58 像素（断成两行时是 112）。只在今天页里找，避开状态栏的钟点。
+- assertVisible:
+    text: \d{2}:\d{2}
+    childOf: { id: today-screen }
+    height: 58
+    tolerance: 12
+- takeScreenshot: .artifacts/e2e-18c-timeline
+# 删掉这条喂奶，后面的流程照旧。
+- tapOn: 喂奶 70ml
+- tapOn: { id: event-delete }
+- tapOn: { id: delete-sheet-confirm }
+- extendedWaitUntil:
+    notVisible: 喂奶 70ml
+    timeout: 15000
