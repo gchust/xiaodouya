@@ -4,7 +4,6 @@ import {
   type Collection,
   type CollectionData,
   compareMoneyEntries,
-  type DocumentData,
   defaultBaby,
   type EventData,
   type FavoriteData,
@@ -17,8 +16,6 @@ import {
   isNewerVersion,
   isResourceData,
   isVaccinePlanData,
-  type LetterData,
-  type MomentData,
   type MoneyData,
   parseCollectionData,
   type ResourceData,
@@ -97,17 +94,133 @@ const emptySnapshot: Snapshot = {
   pendingCount: 0,
 };
 
+type ListKey = Exclude<keyof Snapshot, 'baby' | 'pendingCount'>;
+type AnyEntry = RecordEntry<unknown>;
+type Compare = (a: AnyEntry, b: AnyEntry) => number;
+type Lists = Record<ListKey, AnyEntry[]>;
+
+const listKeys: readonly ListKey[] = [
+  'events',
+  'vaccinePlans',
+  'formulas',
+  'money',
+  'resources',
+  'favorites',
+  'favoriteFolders',
+  'moments',
+  'letters',
+  'documents',
+];
+
 const atOf = (data: unknown) => (data as { at?: number }).at ?? 0;
+const byAtDesc: Compare = (a, b) => atOf(b.data) - atOf(a.data);
+
+/** 各列表的排序。没写的（疫苗配置、收藏）按记录进入集合的先后。 */
+const listOrder: Partial<Record<ListKey, Compare>> = {
+  events: byAtDesc,
+  moments: byAtDesc,
+  letters: byAtDesc,
+  documents: (a, b) => a.updatedAt - b.updatedAt,
+  formulas: (a, b) => (a.data as FormulaData).name.localeCompare((b.data as FormulaData).name),
+  money: (a, b) => compareMoneyEntries(a as RecordEntry<MoneyData>, b as RecordEntry<MoneyData>),
+  resources: (a, b) =>
+    (b.data as ResourceData).addedAt - (a.data as ResourceData).addedAt || a.id.localeCompare(b.id),
+  favoriteFolders: (a, b) =>
+    (a.data as FavoriteFolderData).createdAt - (b.data as FavoriteFolderData).createdAt ||
+    a.id.localeCompare(b.id),
+};
+
+function placeOf(collection: Collection, data: unknown): ListKey | 'baby' {
+  switch (collection) {
+    case 'baby':
+      return 'baby';
+    case 'event':
+      if (isFormulaData(data)) return 'formulas';
+      if (isVaccinePlanData(data)) return 'vaccinePlans';
+      if (isMoneyData(data)) return 'money';
+      if (isResourceData(data)) return 'resources';
+      if (isFavoriteData(data)) return 'favorites';
+      if (isFavoriteFolderData(data)) return 'favoriteFolders';
+      return 'events';
+    case 'moment':
+      return 'moments';
+    case 'letter':
+      return 'letters';
+    case 'document':
+      return 'documents';
+  }
+}
+
+/** 第一个不排在 `entry` 前面的位置。 */
+function lowerBound(list: readonly AnyEntry[], entry: AnyEntry, compare: Compare): number {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (compare(list[mid] as AnyEntry, entry) < 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** 第一个排在 `entry` 后面的位置。 */
+function upperBound(
+  list: readonly AnyEntry[],
+  entry: AnyEntry,
+  compare: Compare,
+  from = 0,
+): number {
+  let lo = from;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (compare(list[mid] as AnyEntry, entry) <= 0) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** 一条记录上次重建时在快照的哪里。`entry` 为 null 表示不显示：已删除，或者校验不过。 */
+interface Placement {
+  record: StoredRecord;
+  seq: number;
+  key: ListKey | 'baby' | null;
+  entry: AnyEntry | null;
+}
+
+/** 变化不超过这么多条时在副本上二分插入；多了（同步拉下来一批）就过滤一遍再归并。 */
+const SPLICE_LIMIT = 16;
 
 /**
  * 内存中的记录集合，写入时同步落盘。所有页面读这里，所以界面在离线时也完全可用。
- * 记录量是家庭级别（每年几千条），全部放内存足够快，也让界面逻辑保持简单。
+ * 记录量是家庭级别（勤快的家庭一年约 8,400 条），全部放内存，界面逻辑保持简单。
+ *
+ * 快照是增量更新的（issue #111）：只校验、排进变了的那几条；没变的列表沿用原来的数组，
+ * 没变的记录沿用原来的条目对象，只订阅某个列表的页面（`useRecordsOf`）就不会跟着重画。
+ * 结果和以前每次全量重建一模一样，包括同一时间的先后，`recordStore.test.ts` 拿全量重建做对照。
  */
 export class RecordStore {
   private records = new Map<string, StoredRecord>();
   private listeners = new Set<() => void>();
   private snapshot: Snapshot = emptySnapshot;
   private now: () => number;
+  /** 每条记录上次重建时的位置和条目。记录对象没换就直接沿用。 */
+  private placements = new Map<string, Placement>();
+  /**
+   * 记录进入 `records` 的先后，也就是 Map 的遍历顺序。以前的全量重建按这个顺序做稳定排序，
+   * 所以排序打平手时按它排，结果才和以前一样。删掉再加回来的算新进来的。
+   */
+  private seqOf = new Map<string, number>();
+  private nextSeq = 0;
+  private entrySeq = new WeakMap<AnyEntry, number>();
+  /** 上次重建之后变过的记录。落盘失败、没走到重建时也留着，下次一起算。 */
+  private changed = new Set<string>();
+  private needsFullRebuild = true;
+  private dirtyCount = 0;
+  private babyIds = new Set<string>();
+  /** 校验结果按原始数据对象缓存：确认上传只改了 dirty，数据还是同一个对象，不用再过一遍 zod。 */
+  private parsed = new WeakMap<object, { collection: Collection; data: unknown }>();
+  private compares = new Map<ListKey, Compare>();
 
   constructor(
     private db: LocalDb,
@@ -117,7 +230,7 @@ export class RecordStore {
   }
 
   async load(): Promise<void> {
-    this.records = new Map((await this.db.loadAll()).map((r) => [r.id, r]));
+    this.reset(await this.db.loadAll());
     this.rebuild();
   }
 
@@ -128,75 +241,190 @@ export class RecordStore {
 
   getSnapshot = (): Snapshot => this.snapshot;
 
-  private rebuild() {
-    const next: Snapshot = {
-      baby: null,
-      events: [],
-      vaccinePlans: [],
-      formulas: [],
-      money: [],
-      resources: [],
-      favorites: [],
-      favoriteFolders: [],
-      moments: [],
-      letters: [],
-      documents: [],
-      pendingCount: 0,
+  // 记录表只能通过 put、drop、reset 修改，否则增量更新会漏掉变化。
+
+  private put(record: StoredRecord) {
+    const existing = this.records.get(record.id);
+    if (!existing) this.seqOf.set(record.id, this.nextSeq++);
+    this.dirtyCount += (record.dirty ? 1 : 0) - (existing?.dirty ? 1 : 0);
+    this.records.set(record.id, record);
+    this.changed.add(record.id);
+  }
+
+  private drop(id: string) {
+    const existing = this.records.get(id);
+    if (!existing) return;
+    if (existing.dirty) this.dirtyCount -= 1;
+    this.records.delete(id);
+    this.seqOf.delete(id);
+    this.changed.add(id);
+  }
+
+  private reset(records: readonly StoredRecord[]) {
+    this.records = new Map();
+    this.seqOf.clear();
+    this.changed.clear();
+    this.dirtyCount = 0;
+    this.needsFullRebuild = true;
+    for (const record of records) this.put(record);
+  }
+
+  private parse(collection: Collection, data: unknown): unknown {
+    const cacheable = typeof data === 'object' && data !== null;
+    if (cacheable) {
+      const hit = this.parsed.get(data);
+      if (hit && hit.collection === collection) return hit.data;
+    }
+    const result = parseCollectionData(collection, data);
+    if (cacheable) this.parsed.set(data, { collection, data: result });
+    return result;
+  }
+
+  private place(record: StoredRecord): Placement {
+    const seq = this.seqOf.get(record.id) ?? 0;
+    const data = record.deleted ? null : this.parse(record.collection, record.data);
+    if (!data) return { record, seq, key: null, entry: null };
+    const entry: AnyEntry = {
+      id: record.id,
+      data,
+      updatedAt: record.updatedAt,
+      dirty: record.dirty,
     };
-    // 删除的、读不懂的档案也参与排序，谁是第一个宝宝不能因此改变（issue #106）；它们只是不显示。
-    const babies: (BabyRef & { entry: Entry<'baby'> | null })[] = [];
+    this.entrySeq.set(entry, seq);
+    return { record, seq, key: placeOf(record.collection, data), entry };
+  }
+
+  private compareFor(key: ListKey): Compare {
+    let compare = this.compares.get(key);
+    if (!compare) {
+      const base = listOrder[key];
+      const seq = (e: AnyEntry) => this.entrySeq.get(e) ?? 0;
+      compare = base ? (a, b) => base(a, b) || seq(a) - seq(b) : (a, b) => seq(a) - seq(b);
+      this.compares.set(key, compare);
+    }
+    return compare;
+  }
+
+  /**
+   * 界面上的宝宝：按建档先后第一个能显示的（`defaultBaby`，issue #106）。删除的、读不懂的档案不显示，
+   * 它们在 `babyIds` 之外，不影响谁排第一。
+   */
+  private pickBaby(): Entry<'baby'> | null {
+    const babies: (BabyRef & { entry: AnyEntry })[] = [];
+    for (const id of this.babyIds) {
+      const placement = this.placements.get(id);
+      if (!placement?.entry) continue;
+      babies.push({ ...babyRefOf(id, placement.record.data, false), entry: placement.entry });
+    }
+    return (defaultBaby(babies)?.entry as Entry<'baby'> | undefined) ?? null;
+  }
+
+  private rebuild() {
+    if (this.needsFullRebuild) this.rebuildAll();
+    else this.applyChanges();
+    for (const listener of this.listeners) listener();
+  }
+
+  private rebuildAll() {
+    this.placements.clear();
+    this.babyIds.clear();
+    const lists = Object.fromEntries(listKeys.map((key) => [key, []])) as unknown as Lists;
     for (const record of this.records.values()) {
-      if (record.dirty) next.pendingCount += 1;
-      if (record.collection === 'baby') {
-        const data = record.deleted ? null : parseCollectionData('baby', record.data);
-        const entry = data && {
-          id: record.id,
-          updatedAt: record.updatedAt,
-          dirty: record.dirty,
-          data,
-        };
-        babies.push({ ...babyRefOf(record.id, record.data, entry === null), entry });
+      const placement = this.place(record);
+      this.placements.set(record.id, placement);
+      if (placement.key === 'baby') this.babyIds.add(record.id);
+      else if (placement.key && placement.entry) lists[placement.key].push(placement.entry);
+    }
+    for (const key of listKeys) lists[key].sort(this.compareFor(key));
+    this.snapshot = {
+      ...(lists as unknown as Omit<Snapshot, 'baby' | 'pendingCount'>),
+      baby: this.pickBaby(),
+      pendingCount: this.dirtyCount,
+    };
+    this.changed.clear();
+    this.needsFullRebuild = false;
+  }
+
+  private applyChanges() {
+    const removed = new Map<ListKey, Set<AnyEntry>>();
+    const added = new Map<ListKey, AnyEntry[]>();
+    let babyChanged = false;
+    for (const id of this.changed) {
+      const before = this.placements.get(id);
+      const record = this.records.get(id);
+      if (before && record && before.record === record && before.seq === this.seqOf.get(id)) {
         continue;
       }
-      if (record.deleted) continue;
-      const data = parseCollectionData(record.collection, record.data);
-      if (!data) continue;
-      const base = { id: record.id, updatedAt: record.updatedAt, dirty: record.dirty };
-      switch (record.collection) {
-        case 'event':
-          if (isFormulaData(data)) next.formulas.push({ ...base, data });
-          else if (isVaccinePlanData(data)) next.vaccinePlans.push({ ...base, data });
-          else if (isMoneyData(data)) next.money.push({ ...base, data });
-          else if (isResourceData(data)) next.resources.push({ ...base, data });
-          else if (isFavoriteData(data)) next.favorites.push({ ...base, data });
-          else if (isFavoriteFolderData(data)) next.favoriteFolders.push({ ...base, data });
-          else next.events.push({ ...base, data: data as EventData });
-          break;
-        case 'moment':
-          next.moments.push({ ...base, data: data as MomentData });
-          break;
-        case 'letter':
-          next.letters.push({ ...base, data: data as LetterData });
-          break;
-        case 'document':
-          next.documents.push({ ...base, data: data as DocumentData });
-          break;
+      const after = record ? this.place(record) : null;
+      if (after) this.placements.set(id, after);
+      else this.placements.delete(id);
+      if (before?.key === 'baby') {
+        this.babyIds.delete(id);
+        babyChanged = true;
+      } else if (before?.key && before.entry) {
+        const set = removed.get(before.key) ?? new Set<AnyEntry>();
+        set.add(before.entry);
+        removed.set(before.key, set);
+      }
+      if (after?.key === 'baby') {
+        this.babyIds.add(id);
+        babyChanged = true;
+      } else if (after?.key && after.entry) {
+        const list = added.get(after.key) ?? [];
+        list.push(after.entry);
+        added.set(after.key, list);
       }
     }
-    next.baby = defaultBaby(babies)?.entry ?? null;
-    const byAtDesc = (a: { data: unknown }, b: { data: unknown }) => atOf(b.data) - atOf(a.data);
-    next.events.sort(byAtDesc);
-    next.moments.sort(byAtDesc);
-    next.letters.sort(byAtDesc);
-    next.documents.sort((a, b) => a.updatedAt - b.updatedAt);
-    next.formulas.sort((a, b) => a.data.name.localeCompare(b.data.name));
-    next.money.sort(compareMoneyEntries);
-    next.resources.sort((a, b) => b.data.addedAt - a.data.addedAt || a.id.localeCompare(b.id));
-    next.favoriteFolders.sort(
-      (a, b) => a.data.createdAt - b.data.createdAt || a.id.localeCompare(b.id),
-    );
-    this.snapshot = next;
-    for (const listener of this.listeners) listener();
+    this.changed.clear();
+    const lists = { ...this.snapshot } as unknown as Lists;
+    for (const key of new Set([...removed.keys(), ...added.keys()])) {
+      lists[key] = this.patch(key, lists[key], removed.get(key), added.get(key));
+    }
+    const baby = babyChanged ? this.pickBaby() : this.snapshot.baby;
+    const unchanged =
+      baby === this.snapshot.baby &&
+      this.dirtyCount === this.snapshot.pendingCount &&
+      listKeys.every((key) => lists[key] === (this.snapshot as unknown as Lists)[key]);
+    if (unchanged) return;
+    this.snapshot = {
+      ...(lists as unknown as Omit<Snapshot, 'baby' | 'pendingCount'>),
+      baby,
+      pendingCount: this.dirtyCount,
+    };
+  }
+
+  /** 在排好序的列表里去掉、加上几条，返回新数组。原数组不能动：页面可能还拿着它。 */
+  private patch(
+    key: ListKey,
+    list: readonly AnyEntry[],
+    removed: ReadonlySet<AnyEntry> | undefined,
+    added: AnyEntry[] | undefined,
+  ): AnyEntry[] {
+    const compare = this.compareFor(key);
+    if ((removed?.size ?? 0) + (added?.length ?? 0) <= SPLICE_LIMIT) {
+      const next = list.slice();
+      for (const entry of removed ?? []) {
+        let index = lowerBound(next, entry, compare);
+        if (next[index] !== entry) index = next.indexOf(entry);
+        if (index >= 0) next.splice(index, 1);
+      }
+      for (const entry of added ?? []) next.splice(upperBound(next, entry, compare), 0, entry);
+      return next;
+    }
+    const kept = removed ? list.filter((entry) => !removed.has(entry)) : list.slice();
+    if (!added) return kept;
+    // 新来的排好序，逐条二分找位置再整段复制：比较次数是 k·log n，不是 n。
+    added.sort(compare);
+    const merged: AnyEntry[] = [];
+    let from = 0;
+    for (const entry of added) {
+      const at = upperBound(kept, entry, compare, from);
+      for (let i = from; i < at; i++) merged.push(kept[i] as AnyEntry);
+      merged.push(entry);
+      from = at;
+    }
+    for (let i = from; i < kept.length; i++) merged.push(kept[i] as AnyEntry);
+    return merged;
   }
 
   /** 新建或修改一条记录。内存先变，界面立即响应；落盘失败才抛错。 */
@@ -205,20 +433,24 @@ export class RecordStore {
     id: string,
     data: CollectionData[C],
   ): Promise<void> {
-    // rebuild 会跳过校验不过的记录：不在这里拦的话，它存得下却看不见，服务端也不收，改已有记录时原来的内容也没了。
-    if (!parseCollectionData(collection, data)) {
+    // 新记录写上属于哪个宝宝（issue #106）。改已有的记录不动：没有的本来就属于第一个宝宝。
+    const stored = this.records.has(id)
+      ? data
+      : withBabyId(collection, data, this.snapshot.baby?.id);
+    // 快照会跳过校验不过的记录：不在这里拦的话，它存得下却看不见，服务端也不收，改已有记录时原来的内容也没了。
+    // 校验的是要存的这一份，结果留在缓存里，重建时不用再校验一次。
+    if (!this.parse(collection, stored)) {
       throw new Error(t().ui.recordTooLarge);
     }
     const record: StoredRecord = {
       id,
       collection,
-      // 新记录写上属于哪个宝宝（issue #106）。改已有的记录不动：没有的本来就属于第一个宝宝。
-      data: this.records.has(id) ? data : withBabyId(collection, data, this.snapshot.baby?.id),
+      data: stored,
       deleted: false,
       updatedAt: this.nextVersion(id),
       dirty: true,
     };
-    this.records.set(id, record);
+    this.put(record);
     this.rebuild();
     await this.db.put(record);
   }
@@ -232,7 +464,7 @@ export class RecordStore {
       updatedAt: this.nextVersion(id),
       dirty: true,
     };
-    this.records.set(id, record);
+    this.put(record);
     this.rebuild();
     await this.db.put(record);
   }
@@ -250,6 +482,7 @@ export class RecordStore {
 
   dirtyRecords(limit: number): StoredRecord[] {
     const dirty: StoredRecord[] = [];
+    if (this.dirtyCount === 0) return dirty;
     for (const record of this.records.values()) {
       if (record.dirty) dirty.push(record);
       if (dirty.length >= limit) break;
@@ -280,7 +513,7 @@ export class RecordStore {
       void rejectedIds;
       const cleaned = { ...record, dirty: false };
       toPersist.set(record.id, cleaned);
-      this.records.set(record.id, cleaned);
+      this.put(cleaned);
     }
     const applied: ServerRecord[] = [];
     for (const remote of incoming) {
@@ -303,7 +536,7 @@ export class RecordStore {
         updatedAt: remote.updatedAt,
         dirty: false,
       };
-      this.records.set(remote.id, stored);
+      this.put(stored);
       toPersist.set(remote.id, stored);
       applied.push(remote);
     }
@@ -316,14 +549,14 @@ export class RecordStore {
   async purgeCollections(collections: readonly Collection[]): Promise<void> {
     await this.db.deleteCollections(collections);
     for (const [id, record] of this.records) {
-      if (collections.includes(record.collection)) this.records.delete(id);
+      if (collections.includes(record.collection)) this.drop(id);
     }
     this.rebuild();
   }
 
   async clear(): Promise<void> {
     await this.db.clear();
-    this.records.clear();
+    this.reset([]);
     this.rebuild();
   }
 }
