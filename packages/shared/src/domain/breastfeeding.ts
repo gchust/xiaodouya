@@ -62,10 +62,13 @@ export function breastSeconds(feed: FeedEvent, now: number): BreastSeconds {
   };
 }
 
-/** 摘要里算多少毫秒。 */
+/**
+ * 摘要里算多少毫秒：两侧写出来的分钟数加起来（`breastSidesText` 的取整），
+ * 这样时间线写“左 1 分 · 右 1 分”时摘要是 2 分，不会对不上。
+ */
 export function breastDurationMs(feed: FeedEvent, now: number): number {
   const { left, right } = breastSeconds(feed, now);
-  return (left + right) * 1000;
+  return (sideMinutes(left) + sideMinutes(right)) * 60_000;
 }
 
 /** 点一侧开始。`at` 可以早于现在（“15 分钟前”开始喂的），这一侧就从那时算起。 */
@@ -132,15 +135,17 @@ export function nextBreastSide(events: readonly EventData[], now: number): Breas
   return last?.side ? otherSide(last.side) : null;
 }
 
-/** 一侧的分钟数。喂了不到半分钟也写 1 分：写 0 像是没喂。 */
-const minutesOf = (seconds: number) => Math.max(1, Math.round(seconds / 60));
+/** 一侧写几分钟。喂了不到半分钟也写 1 分：写 0 像是没喂。没喂是 0。 */
+function sideMinutes(seconds: number): number {
+  return seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+}
 
 /** `左 12 分 · 右 8 分`。没喂的一侧不写。 */
 export function breastSidesText(seconds: BreastSeconds): string {
   const text = t().domain.events;
   return (['left', 'right'] as const)
     .filter((side) => seconds[side] > 0)
-    .map((side) => text.breastSideMinutes(side, minutesOf(seconds[side])))
+    .map((side) => text.breastSideMinutes(side, sideMinutes(seconds[side])))
     .join(' · ');
 }
 

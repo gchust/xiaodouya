@@ -210,7 +210,9 @@ describe('24 小时摘要', () => {
   it('瓶喂和亲喂分开写，亲喂不写 0ml', () => {
     const summary = summarize24h(events, NOW);
     expect(summary).toMatchObject({ feeds: 4, ml: 330, breastFeeds: 2, breastMs: 70 * MIN });
-    expect(summaryText(summary)).toBe('喂奶 4 次 · 瓶喂 330ml · 亲喂 1小时10分　尿布 0　睡 0.0h');
+    expect(summaryText(summary)).toBe(
+      '喂奶 4 次 · 瓶喂 330ml · 亲喂 1 小时 10 分　尿布 0　睡 0.0h',
+    );
     expect(withLocale('en', () => summaryText(summary))).toBe(
       '4 feeds · Bottle 330ml · Breast 1 hr 10 min   0 diapers   Slept 0.0h',
     );
@@ -218,18 +220,24 @@ describe('24 小时摘要', () => {
 
   it('只有亲喂时不写瓶喂', () => {
     const summary = summarize24h([nursed(NOW - 2 * HOUR, 12, 8, 'right')], NOW);
-    expect(summaryText(summary)).toBe('喂奶 1 次 · 亲喂 20分钟　尿布 0　睡 0.0h');
+    expect(summaryText(summary)).toBe('喂奶 1 次 · 亲喂 20 分　尿布 0　睡 0.0h');
     expect(summaryText(summary)).not.toContain('0ml');
   });
 
-  it('时长四舍五入到分钟，不到 1 分钟写 1 分钟，刚开始还没计到时不写时长', () => {
+  it('时长四舍五入到分钟，不到 1 分钟写 1 分，和每一侧的写法一样有空格；刚开始还没计到时不写时长', () => {
     const short = { ...nursed(NOW - HOUR, 0, 0, 'left'), leftSec: 25 };
-    expect(summaryText(summarize24h([short], NOW))).toBe('喂奶 1 次 · 亲喂 1分钟　尿布 0　睡 0.0h');
+    expect(summaryText(summarize24h([short], NOW))).toBe('喂奶 1 次 · 亲喂 1 分　尿布 0　睡 0.0h');
     const long = { ...nursed(NOW - HOUR, 0, 0, 'left'), leftSec: 12 * 60 + 40, rightSec: 8 * 60 };
-    expect(summaryText(summarize24h([long], NOW))).toBe('喂奶 1 次 · 亲喂 21分钟　尿布 0　睡 0.0h');
+    expect(summaryText(summarize24h([long], NOW))).toBe('喂奶 1 次 · 亲喂 21 分　尿布 0　睡 0.0h');
     expect(summaryText(summarize24h([startBreastFeed('left', NOW)], NOW))).toBe(
       '喂奶 1 次 · 亲喂　尿布 0　睡 0.0h',
     );
+  });
+
+  it('摘要的时长等于时间线上两侧分钟数加起来，不会写“左 1 分 · 右 1 分”却合计 1 分', () => {
+    const quick = { ...nursed(NOW - HOUR, 0, 0, 'right'), leftSec: 20, rightSec: 5 };
+    expect(describeEvent(quick, NOW)).toBe('亲喂 左 1 分 · 右 1 分');
+    expect(summaryText(summarize24h([quick], NOW))).toBe('喂奶 1 次 · 亲喂 2 分　尿布 0　睡 0.0h');
   });
 
   it('只有瓶喂时和以前一字不差', () => {

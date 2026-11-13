@@ -45,6 +45,8 @@ export const domain: Catalog['domain'] = {
       `${plural(feeds, 'feed', 'feeds')} · ${feedParts.join(' · ')}   ${plural(diapers, 'diaper', 'diapers')}   Slept ${sleepHours}h`,
     bottlePart: (volume) => `Bottle ${volume}`,
     breastPart: (duration) => `Breast ${duration}`,
+    breastDuration: (hours, minutes) =>
+      !hours ? `${minutes} min` : minutes ? `${hours} hr ${minutes} min` : `${hours} hr`,
     breastOnly: 'Breast',
     breastFeed: (parts) => (parts ? `Breastfed · ${parts}` : 'Breastfed'),
     breastFeeding: (detail) => `Breastfeeding · ${detail}`,

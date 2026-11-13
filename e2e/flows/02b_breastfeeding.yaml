@@ -81,7 +81,7 @@ appId: com.gchust.xiaodouya
     text: 下次从左侧开始
 - assertVisible:
     id: summary
-    text: "喂奶 1 次 · 亲喂 \\d+分钟.*"
+    text: "喂奶 1 次 · 亲喂 \\d+ 分.*"
 - assertNotVisible: { id: breast-card-label }
 - takeScreenshot: .artifacts/e2e-02b-today-done
 
