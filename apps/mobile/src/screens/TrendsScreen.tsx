@@ -21,7 +21,7 @@ import { Card, Chip, Dot, Empty, Mono, Muted, PageTitle } from '../ui/primitives
 
 const RANGES: readonly TrendRange[] = [7, 30];
 /** 今天没过完，柱子画浅一些，不能和完整的一天放在一起比。 */
-const PARTIAL_OPACITY = 0.4;
+const PARTIAL_OPACITY = 0.5;
 const HOUR = 3_600_000;
 
 const hours = (ms: number) => (ms / HOUR).toFixed(1);
@@ -193,12 +193,14 @@ export function TrendsScreen() {
                     testID={id}
                   >
                     <Text style={s.tempDate}>{dayName(day)}</Text>
-                    <Mono style={s.tempValue} testID={`${id}-value`}>
-                      {t().trends.tempDay(
-                        formatTemperature(Math.max(...day.temps), units.temperature),
-                        day.temps.length,
-                      )}
-                    </Mono>
+                    {/* 中文在等宽字体里会被拉开，只有温度用等宽。 */}
+                    <Text style={s.tempValue} testID={`${id}-value`}>
+                      {t().trends.tempHigh}{' '}
+                      <Text style={s.tempNumber}>
+                        {formatTemperature(Math.max(...day.temps), units.temperature)}
+                      </Text>
+                      {` · ${t().trends.tempCount(day.temps.length)}`}
+                    </Text>
                   </View>
                 );
               })}
@@ -424,7 +426,8 @@ const s = themedStyles(() => ({
   scale: { borderBottomWidth: 1, borderBottomColor: colors.rule, marginBottom: -6 },
   scaleText: { fontSize: 10, color: colors.muted },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
-  column: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  // 撑满整排的高度：没有记录的天柱子是 0 高，列本身也要看得见、读得出来。
+  column: { flex: 1, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'flex-end' },
   value: { fontSize: 11, color: colors.ink },
   valuePartial: { color: colors.muted },
   bar: {
@@ -473,4 +476,5 @@ const s = themedStyles(() => ({
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
   tempDate: { fontSize: 13, color: colors.ink },
   tempValue: { fontSize: 12, color: colors.inkSoft },
+  tempNumber: { fontFamily: fonts.monoRegular, color: colors.ink },
 }));
