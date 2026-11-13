@@ -324,7 +324,19 @@ export function TodayScreen() {
       ) : null}
 
       <View style={s.listHeader}>
-        <Text style={s.listTitle}>{t().today.past24h}</Text>
+        <View style={s.listTitleRow}>
+          <Text style={s.listTitle}>{t().today.past24h}</Text>
+          {/* 放在标题旁，不占快捷按钮的位置：看趋势不是半夜单手要做的事。 */}
+          <Pressable
+            testID="trends-open"
+            accessibilityRole="button"
+            accessibilityLabel={t().trends.linkA11y}
+            hitSlop={LINK_HIT_SLOP}
+            onPress={() => router.push('/trends')}
+          >
+            <Text style={s.listLink}>{t().trends.link}</Text>
+          </Pressable>
+        </View>
         <Muted style={{ textAlign: 'right', flexShrink: 1 }} testID="summary">
           {summaryText(summary, units)}
         </Muted>
@@ -564,6 +576,7 @@ const s = themedStyles(() => ({
     gap: 8,
   },
   listTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink },
+  listTitleRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
   list: { marginTop: 6, marginHorizontal: spacing.page },
   listFooter: {
     marginTop: 14,
