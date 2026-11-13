@@ -33,6 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IS_E2E } from '../lib/config';
 import { keyboardLift, sheetMaxHeight } from '../lib/layout';
 import { colors, fonts, motion, spacing, themedStyles } from '../theme';
+import { BadgeText } from './Text';
 
 /** CI 的模拟器取一次界面就要好几秒，E2E 构建放长一些，避免点撤销时已经消失、点到下面的内容。 */
 const TOAST_MS = IS_E2E ? 8_000 : 3600;
@@ -308,7 +309,7 @@ function BannerLayer({ banner }: { banner: { initial: string; message: string } 
       testID={banner ? 'family-banner' : undefined}
     >
       <View style={s.bannerAvatar}>
-        <Text style={s.bannerInitial}>{last.current?.initial}</Text>
+        <BadgeText style={s.bannerInitial}>{last.current?.initial}</BadgeText>
       </View>
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={s.bannerApp}>{t().common.appName}</Text>

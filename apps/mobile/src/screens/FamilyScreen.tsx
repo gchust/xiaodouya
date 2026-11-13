@@ -51,6 +51,7 @@ import {
   SoftInput,
   Toggle,
 } from '../ui/primitives';
+import { BadgeText } from '../ui/Text';
 import { DeleteAccountSheet, VerifyEmailSheet } from './AccountPanels';
 import { FamilyDocumentsSection } from './FamilyDocuments';
 import { appearanceLabel } from './ThemeScreen';
@@ -188,7 +189,7 @@ export function FamilyScreen() {
         {(me?.invites ?? []).map((invite) => (
           <View key={invite.id} style={[s.memberRow, s.divider]} testID={`invite-${invite.label}`}>
             <View style={s.avatar}>
-              <Text style={s.avatarText}>{invite.label.slice(0, 1)}</Text>
+              <BadgeText style={s.avatarText}>{invite.label.slice(0, 1)}</BadgeText>
             </View>
             <View style={{ flex: 1, gap: 1 }}>
               <Text style={{ fontSize: 14, color: colors.ink }}>{invite.label}</Text>
@@ -473,7 +474,7 @@ function MemberRow({
       style={[s.memberRow, last ? null : s.divider]}
     >
       <View style={s.avatar}>
-        <Text style={s.avatarText}>{member.label.slice(0, 1)}</Text>
+        <BadgeText style={s.avatarText}>{member.label.slice(0, 1)}</BadgeText>
       </View>
       <View style={{ flex: 1, gap: 1 }}>
         <Text style={{ fontSize: 14, color: colors.ink }}>{member.label}</Text>
