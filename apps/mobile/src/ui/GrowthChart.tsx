@@ -15,11 +15,12 @@ import {
   type Units,
 } from '@xiaodouya/shared';
 import { useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import Svg, { Circle, Line, Path, Text as SvgText } from 'react-native-svg';
 import { layoutGrowthChart, nextSelection } from '../lib/growthChart';
 import { colors, fonts, themedStyles } from '../theme';
 import { Chip, Mono, Muted } from './primitives';
+import { Text } from './Text';
 
 const CHART_HEIGHT = 210;
 /** 点很小，透明的点击区 44×44 盖在上面（相邻的点挨得近时，后面的盖住前面的）。 */
