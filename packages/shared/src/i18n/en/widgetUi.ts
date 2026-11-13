@@ -32,6 +32,8 @@ export const widgetUi: Catalog['widgetUi'] = {
   lastFeedOn: (date) => `Last feed · ${date}`,
   nextFeedAt: (clock) => `Next feed around ${clock}`,
   plusAmount: (amount) => `+ ${amount}`,
+  breastShort: 'Breastfed',
+  breastRunningShort: 'Nursing',
   noFeedHint: 'Choose an amount the first time',
   logged: (title) => `Logged · ${title}`,
   fixHint: 'Wrong? Tap below',

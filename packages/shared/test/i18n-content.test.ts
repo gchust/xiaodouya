@@ -228,7 +228,15 @@ describe('日期和数字', () => {
   });
 
   it('汇总在英文下处理单复数，中文保持全角空格', () => {
-    const s = { feeds: 1, ml: 90, diapers: 2, wetDiapers: 2, sleepMs: 1.5 * HOUR };
+    const s = {
+      feeds: 1,
+      ml: 90,
+      breastFeeds: 0,
+      breastMs: 0,
+      diapers: 2,
+      wetDiapers: 2,
+      sleepMs: 1.5 * HOUR,
+    };
     expect(summaryText(s, metricUnits)).toBe('喂奶 1 次 · 90ml　尿布 2　睡 1.5h');
     expect(withLocale('en', () => summaryText(s, metricUnits))).toBe(
       '1 feed · 90ml   2 diapers   Slept 1.5h',

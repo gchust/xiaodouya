@@ -191,6 +191,22 @@ export function pickEventForShare(event: EventData): EventData {
   };
   switch (event.type) {
     case 'feed':
+      if (event.method === 'breast') {
+        // 亲喂只发显示要用的：哪一侧、各喂了多久、什么时候结束。
+        const pick = <K extends 'side' | 'sideSince' | 'leftSec' | 'rightSec' | 'endAt'>(key: K) =>
+          event[key] === undefined ? {} : { [key]: event[key] };
+        return {
+          ...base,
+          type: 'feed',
+          ml: 0,
+          method: 'breast',
+          ...pick('side'),
+          ...pick('sideSince'),
+          ...pick('leftSec'),
+          ...pick('rightSec'),
+          ...pick('endAt'),
+        };
+      }
       return { ...base, type: 'feed', ml: event.ml };
     case 'diaper':
       return { ...base, type: 'diaper', kind: event.kind };

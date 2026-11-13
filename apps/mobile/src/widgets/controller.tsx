@@ -202,8 +202,9 @@ function feedbackTitle(action: WidgetAction, view: WidgetView): string {
   if (action.type === 'sleepStart') return t().widgetUi.fellAsleep;
   if (action.type === 'sleepEnd') return t().widgetUi.awake;
   if (action.type === 'diaper') return diaperTitle(action.kind);
-  return view.kind === 'ready' && view.lastFeedAmount
-    ? t().domain.events.feed(view.lastFeedAmount)
+  // 刚记下的就是一键记的那条瓶喂，奶量和按钮上的一样。
+  return view.kind === 'ready' && view.quickFeedAmount
+    ? t().domain.events.feed(view.quickFeedAmount)
     : t().records.logged;
 }
 

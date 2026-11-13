@@ -1,11 +1,15 @@
 import { formulaSnapshot } from '../health/nutrition';
-import type { EventData, FormulaData, FormulaSnapshot, MilkType } from '../schemas';
+import type { EventData, FeedMethod, FormulaData, FormulaSnapshot, MilkType } from '../schemas';
+import { isBreastFeed } from './breastfeeding';
 
 type FeedEvent = Extract<EventData, { type: 'feed' }>;
 
 const HOUR = 3_600_000;
 const DEFAULT_INTERVAL = 3 * HOUR;
-/** 太近的两次算同一顿（比如分两次喝），太远的多半是漏记，都不该影响平均间隔。 */
+/**
+ * 太近的两次算同一顿（比如分两次喝，亲喂完再补一点奶），太远的多半是漏记，都不该影响平均间隔。
+ * “太近”从上一顿吃完算：亲喂 30 分钟、停 10 分钟再喂，开始时间隔了 40 分钟，其实是同一顿。
+ */
 const MIN_GAP = 20 * 60_000;
 const MAX_GAP = 8 * HOUR;
 /** 喂奶间隔变得快。补记的旧记录，或者停记很久之前的规律，都不能用来估算现在。 */
@@ -16,6 +20,9 @@ export function feedsNewestFirst(events: readonly EventData[], now: number): Fee
     .filter((e): e is FeedEvent => e.type === 'feed' && e.at <= now)
     .sort((a, b) => b.at - a.at);
 }
+
+/** 亲喂按结束时间算这一顿什么时候吃完，瓶喂只有一个时间。 */
+const feedEnd = (feed: FeedEvent) => (isBreastFeed(feed) ? (feed.endAt ?? feed.at) : feed.at);
 
 export interface FeedEstimate {
   last: FeedEvent | null;
@@ -33,8 +40,12 @@ export function estimateNextFeed(events: readonly EventData[], now: number): Fee
   const gaps: number[] = [];
   for (let i = 1; i < feeds.length && gaps.length < 5; i++) {
     if (feeds[i]!.at < now - LEARNING_WINDOW) break;
+    // 间隔从这一顿开始算到下一顿开始，和常用的说法一致：AAP HealthyChildren.org
+    // “How Often and How Much Should Your Baby Eat?”：“nurse every 2 hours from the start of the
+    // feeding to the next feeding”（2026-11-13 读过原文）。亲喂一次二三十分钟，按结束时间算会把间隔算短。
     const gap = feeds[i - 1]!.at - feeds[i]!.at;
-    if (gap >= MIN_GAP && gap <= MAX_GAP) gaps.push(gap);
+    const sinceEnd = feeds[i - 1]!.at - feedEnd(feeds[i]!);
+    if (sinceEnd >= MIN_GAP && gap <= MAX_GAP) gaps.push(gap);
   }
   const isLearned = gaps.length >= 2;
   const intervalMs = isLearned ? gaps.reduce((a, b) => a + b, 0) / gaps.length : DEFAULT_INTERVAL;
@@ -67,12 +78,20 @@ export interface FeedMilk {
 
 export interface FeedDefaults extends FeedMilk {
   ml: number | undefined;
+  /** 瓶喂还是亲喂，跟最新的一条喂奶。 */
+  method: FeedMethod;
 }
+
+/** 奶量和奶类型只从瓶喂沿用：亲喂的 0ml 和“没有奶类型”不能变成下一次瓶喂的默认值。 */
+const bottleFeeds = (feeds: readonly FeedEvent[]) => feeds.filter((feed) => !isBreastFeed(feed));
+const methodOf = (feed: FeedEvent | undefined): FeedMethod =>
+  feed && isBreastFeed(feed) ? 'breast' : 'bottle';
 
 /**
  * 记喂奶时的默认值：不多一步，直接沿用上一次。喂奶弹层和桌面小工具都用这个。
  *
- * - 奶量跟最新的一条。奶类型跟最近标过的一条：家人用旧版记的没有这些字段，不能把默认值清掉。
+ * - 瓶喂还是亲喂跟最新的一条。
+ * - 奶量跟最新的一条瓶喂。奶类型跟最近标过的一条瓶喂：家人用旧版记的没有这些字段，不能把默认值清掉。
  * - 快照用奶粉现在的数值，这样改配方后新的喂奶按新的算。奶粉被删了就不再沿用，也不用旧快照。
  */
 export function lastFeedDefaults(
@@ -81,13 +100,16 @@ export function lastFeedDefaults(
   now: number,
 ): FeedDefaults {
   const feeds = feedsNewestFirst(events, now);
-  const ml = feeds[0]?.ml;
-  const marked = feeds.find((feed) => feed.milkType);
-  if (marked?.milkType !== 'formula') return { ml, milkType: marked?.milkType };
+  const method = methodOf(feeds[0]);
+  const bottles = bottleFeeds(feeds);
+  const ml = bottles[0]?.ml;
+  const marked = bottles.find((feed) => feed.milkType);
+  if (marked?.milkType !== 'formula') return { ml, method, milkType: marked?.milkType };
   const current = formulas.find((formula) => formula.id === marked.formulaId);
-  if (!current) return { ml, milkType: 'formula' };
+  if (!current) return { ml, method, milkType: 'formula' };
   return {
     ml,
+    method,
     milkType: 'formula',
     formulaId: current.id,
     formula: formulaSnapshot(current.data),
@@ -109,8 +131,13 @@ export function feedDefaultsAt(
   const feeds = feedsNewestFirst(events, now);
   const newest = feeds[0];
   if (!newest || at >= newest.at) return lastFeedDefaults(events, formulas, now);
-  const marked = feeds.find((feed) => feed.at <= at && feed.milkType);
-  return { ml: newest.ml, ...(marked ? feedMilkOf(marked) : { milkType: undefined }) };
+  const bottles = bottleFeeds(feeds);
+  const marked = bottles.find((feed) => feed.at <= at && feed.milkType);
+  return {
+    ml: bottles[0]?.ml,
+    method: methodOf(feeds.find((feed) => feed.at <= at)),
+    ...(marked ? feedMilkOf(marked) : { milkType: undefined }),
+  };
 }
 
 /** 一条记录上的奶类型字段，修改时用。 */

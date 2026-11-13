@@ -3,6 +3,9 @@ import {
   ageParts,
   ageText,
   assessDayNutrition,
+  type BreastSide,
+  breastFeedState,
+  breastSeconds,
   createTapGuard,
   dayNumber,
   describeEvent,
@@ -13,8 +16,10 @@ import {
   formatDateHeader,
   formatDuration,
   formatHoursMinutes,
+  formatMediaDuration,
   formatVolume,
   guardTap,
+  nextBreastSide,
   nutritionEntryText,
   planSchedule,
   summarize24h,
@@ -112,6 +117,11 @@ export function TodayScreen() {
   const birthAt = baby.data.birthAt;
   const data = events.map((e) => e.data);
   const estimate = estimateNextFeed(data, now);
+  const breast = breastFeedState(data, now);
+  const lastFeed = estimate.last;
+  const lastIsBreast = lastFeed?.method === 'breast';
+  // 上次是亲喂才提示下次从哪侧开始；瓶喂的家庭看不到这一行。
+  const nextSide = lastIsBreast ? nextBreastSide(data, now) : null;
   const sleeping = activeSleep(data);
   const summary = summarize24h(data, now);
   const insight = todayInsight(data, birthAt, now);
@@ -241,29 +251,57 @@ export function TodayScreen() {
 
       <PressScale
         testID="feed-card"
-        accessibilityLabel={t().today.sinceLastFeedA11y}
+        accessibilityLabel={
+          breast.status === 'running' && breast.feed.side
+            ? t().today.breastRunningA11y(
+                sideName(breast.feed.side),
+                formatMediaDuration(breastSeconds(breast.feed, now)[breast.feed.side] * 1000),
+              )
+            : breast.status === 'forgotten'
+              ? t().today.breastForgotten
+              : t().today.sinceLastFeedA11y
+        }
         scaleTo={0.98}
         onPress={openFeed}
         style={s.feedCard}
       >
-        <View style={s.feedTop}>
-          <Text style={s.feedLabel}>{t().today.sinceLastFeed}</Text>
-          <Text style={[s.feedHint, { color: feedHintNear ? colors.accentText : colors.muted }]}>
-            {feedHint}
-          </Text>
-        </View>
-        <Mono weight="medium" style={s.timer} testID="feed-timer">
-          {estimate.last ? formatHoursMinutes(estimate.sinceMs) : '—'}
-        </Mono>
-        <Muted testID="last-feed">
-          {estimate.last
-            ? t().today.lastFeed(
-                formatClock(estimate.last.at),
-                formatVolume(estimate.last.ml, units.volume),
-                estimate.last.byName ? t().today.lastFeedBy(estimate.last.byName) : '',
-              )
-            : t().today.noFeedYet}
-        </Muted>
+        {breast.status !== 'none' ? (
+          <BreastCard feed={breast.feed} forgotten={breast.status === 'forgotten'} />
+        ) : (
+          <>
+            <View style={s.feedTop}>
+              <Text style={s.feedLabel}>{t().today.sinceLastFeed}</Text>
+              <Text
+                style={[s.feedHint, { color: feedHintNear ? colors.accentText : colors.muted }]}
+              >
+                {feedHint}
+              </Text>
+            </View>
+            <Mono weight="medium" style={s.timer} testID="feed-timer">
+              {estimate.last ? formatHoursMinutes(estimate.sinceMs) : '—'}
+            </Mono>
+            <Muted testID="last-feed">
+              {!lastFeed
+                ? t().today.noFeedYet
+                : lastIsBreast
+                  ? t().today.lastFeedText(
+                      formatClock(lastFeed.at),
+                      describeEvent(lastFeed, now, units),
+                      lastFeed.byName ? t().today.lastFeedBy(lastFeed.byName) : '',
+                    )
+                  : t().today.lastFeed(
+                      formatClock(lastFeed.at),
+                      formatVolume(lastFeed.ml, units.volume),
+                      lastFeed.byName ? t().today.lastFeedBy(lastFeed.byName) : '',
+                    )}
+            </Muted>
+            {nextSide ? (
+              <Text style={s.nextSide} testID="next-breast-side">
+                {t().domain.events.nextBreastSide(nextSide)}
+              </Text>
+            ) : null}
+          </>
+        )}
       </PressScale>
 
       <View style={s.actions}>
@@ -430,6 +468,58 @@ export function TodayScreen() {
   );
 }
 
+const sideName = (side: BreastSide) =>
+  side === 'left' ? t().records.breastLeftSide : t().records.breastRightSide;
+
+/** 亲喂计时中的喂奶卡：正在喂的一侧和它的秒表，每秒走一次，只重画这一块。 */
+function BreastCard({
+  feed,
+  forgotten,
+}: {
+  feed: Extract<EventData, { type: 'feed' }>;
+  forgotten: boolean;
+}) {
+  const now = Math.max(useNow(1000), Date.now());
+  const seconds = breastSeconds(feed, now);
+  const clock = (sec: number) => formatMediaDuration(sec * 1000);
+  if (forgotten || !feed.side) {
+    // 忘了关的计时不再一秒一秒地走，写开了多久，点进去结束。
+    return (
+      <>
+        <View style={s.feedTop}>
+          <Text style={[s.feedLabel, { color: colors.warnText }]} testID="breast-card-label">
+            {t().today.breastForgotten}
+          </Text>
+        </View>
+        <Mono weight="medium" style={s.timer} testID="feed-timer">
+          {formatHoursMinutes(now - feed.at)}
+        </Mono>
+        <Muted testID="last-feed">{t().today.breastForgottenSub(formatClock(feed.at))}</Muted>
+      </>
+    );
+  }
+  return (
+    <>
+      <View style={s.feedTop}>
+        <Text style={[s.feedLabel, { color: colors.accentText }]} testID="breast-card-label">
+          {t().today.breastRunning}
+        </Text>
+      </View>
+      <View style={s.breastRow}>
+        <Text style={s.breastSide} testID="breast-card-side">
+          {sideName(feed.side)}
+        </Text>
+        <Mono weight="medium" style={s.timer} testID="feed-timer">
+          {clock(seconds[feed.side])}
+        </Mono>
+      </View>
+      <Muted testID="last-feed">
+        {t().today.breastRunningSub(formatClock(feed.at), clock(seconds.left + seconds.right))}
+      </Muted>
+    </>
+  );
+}
+
 function SleepAction({
   sleeping,
   onPress,
@@ -559,6 +649,9 @@ const s = themedStyles(() => ({
   feedLabel: { fontSize: 13, color: colors.muted },
   feedHint: { fontSize: 11, flexShrink: 1, textAlign: 'right' },
   timer: { fontSize: 32, lineHeight: 32, letterSpacing: -0.6 },
+  breastRow: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
+  breastSide: { fontFamily: fonts.serifBold, fontSize: 20, color: colors.ink },
+  nextSide: { fontSize: 12, color: colors.accentText },
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',

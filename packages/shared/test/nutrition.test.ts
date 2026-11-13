@@ -656,7 +656,11 @@ describe('沿用上一次喂奶', () => {
   });
 
   it('没有记录时没有默认值', () => {
-    expect(lastFeedDefaults([], [], during)).toEqual({ ml: undefined, milkType: undefined });
+    expect(lastFeedDefaults([], [], during)).toEqual({
+      ml: undefined,
+      method: 'bottle',
+      milkType: undefined,
+    });
   });
 
   it('沿用上一次的奶量、奶类型和奶粉', () => {

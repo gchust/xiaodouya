@@ -494,14 +494,14 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
         ink={p.ink}
         muted={p.muted}
       />
-      {view.canQuickFeed ? (
+      {view.quickFeedAmount ? (
         <Button
-          text={t().widgetUi.plusAmount(lastFeedAmount)}
+          text={t().widgetUi.plusAmount(view.quickFeedAmount)}
           background={p.accent}
           color={p.white}
           action={{ type: 'feed', id: ids.feed }}
           pending={pending}
-          label={t().widgetUi.logFeed(lastFeedAmount)}
+          label={t().widgetUi.logFeed(view.quickFeedAmount)}
         />
       ) : (
         <Button
@@ -825,17 +825,17 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
         link={eventLink(shown.eventId)}
         label={t().widgetUi.tapToEdit(shown.title)}
       />
-    ) : view.canQuickFeed && lastFeedAmount ? (
+    ) : view.quickFeedAmount ? (
       <Chip
         flex={1.35}
         top={<SmallText text={t().today.feed} color={p.white} />}
-        text={lastFeedAmount}
+        text={view.quickFeedAmount}
         mono
         background={p.accent}
         color={p.white}
         action={{ type: 'feed', id: ids.feed }}
         pending={pending}
-        label={t().widgetUi.logFeed(lastFeedAmount)}
+        label={t().widgetUi.logFeed(view.quickFeedAmount)}
       />
     ) : (
       <Chip
