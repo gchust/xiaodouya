@@ -60,8 +60,20 @@ appId: com.gchust.xiaodouya
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: { id: tab-family }
+    visible: { id: today-screen }
     timeout: 30000
+# 半夜冷启动时已经存着深色：时刻选择框一打开就是深色，看截图。
+- tapOn: { id: action-feed }
+- tapOn: { id: offset-custom }
+- tapOn: { id: time-clock }
+- waitForAnimationToEnd
+- takeScreenshot: .artifacts/e2e-18b-time-picker-dark-cold
+- back
+- assertVisible: { id: feed-save }
+- back
+- extendedWaitUntil:
+    visible: { id: tab-family }
+    timeout: 10000
 - tapOn: { id: tab-family }
 - scrollUntilVisible:
     element: { id: open-theme }
