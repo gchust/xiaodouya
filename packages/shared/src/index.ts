@@ -13,6 +13,7 @@ export * from './domain/money';
 export * from './domain/multipart';
 export * from './domain/personalDocuments';
 export * from './domain/recordTime';
+export * from './domain/search';
 export * from './domain/storage';
 export * from './domain/tapGuard';
 export * from './domain/units';

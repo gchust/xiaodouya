@@ -95,7 +95,10 @@ export function RecallScreen() {
     <View style={s.root} testID="recall-screen">
       <View style={[s.header, { paddingTop: insets.top + 12 }]}>
         <View style={s.titleRow}>
-          <PageTitle>{t().recall.title}</PageTitle>
+          <View style={s.titleGroup}>
+            <PageTitle>{t().recall.title}</PageTitle>
+            {selecting ? null : <SearchLink />}
+          </View>
           {selecting ? (
             <View style={s.headerLinks}>
               <Muted style={s.selectedCount} testID="share-selected-count">
@@ -239,6 +242,22 @@ export function RecallScreen() {
         </PressScale>
       ) : null}
     </View>
+  );
+}
+
+/** 搜回忆和信（issue #109），紧挨着标题，四个子标签下都有。 */
+function SearchLink() {
+  const router = useRouter();
+  return (
+    <Pressable
+      testID="recall-search"
+      accessibilityRole="button"
+      accessibilityLabel={t().search.recallA11y}
+      hitSlop={LINK_HIT_SLOP}
+      onPress={() => router.push('/recall-search')}
+    >
+      <Text style={s.shareLink}>{t().search.recallLink}</Text>
+    </Pressable>
   );
 }
 
@@ -660,7 +679,11 @@ const s = themedStyles(() => ({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
+    // 英文的 Memories + Search 和右边的 Select、Share timeline 在 360 宽的手机上放不下，右边换到下一行。
+    flexWrap: 'wrap',
+    rowGap: 4,
   },
+  titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
   shareLink: { fontSize: 13, color: colors.accentText },
   headerLinks: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   selectedCount: { fontSize: 13 },

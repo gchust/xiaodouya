@@ -1,6 +1,14 @@
-import { describeEvent, type EventData, eventsByDay, startOfLocalDay, t } from '@xiaodouya/shared';
+import {
+  describeEvent,
+  type EventData,
+  eventMatchesSearch,
+  eventsByDay,
+  parseSearchQuery,
+  startOfLocalDay,
+  t,
+} from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, SectionList, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords, useUnits } from '../lib/app';
@@ -9,7 +17,8 @@ import { EventActionsSheet, MoreSheet } from '../sheets/recordSheets';
 import { ShareDaySheet, useCanShare } from '../sheets/shareSheets';
 import { colors, spacing, themedStyles } from '../theme';
 import { useSheet } from '../ui/overlays';
-import { Chip, Empty, PageTitle } from '../ui/primitives';
+import { Chip, Empty, Muted, PageTitle } from '../ui/primitives';
+import { SearchField } from '../ui/Search';
 import { TimelineRow } from './TodayScreen';
 
 type Filter = 'all' | EventData['type'];
@@ -37,14 +46,25 @@ export function RecordsScreen() {
   const sheet = useSheet();
   const showShare = useCanShare();
   const [filter, setFilter] = useState<Filter>('all');
+  const [query, setQuery] = useState('');
+  // 一年几千条，每打一个字都全部比一遍。先让输入框跟上，列表晚一点也没关系。
+  const deferredQuery = useDeferredValue(query);
+  const terms = useMemo(() => parseSearchQuery(deferredQuery), [deferredQuery]);
   const now = Date.now();
-  const sections = useMemo(
+  const matched = useMemo(
     () =>
-      eventsByDay(filter === 'all' ? events : events.filter((e) => e.data.type === filter)).map(
-        (day) => ({ ...day, key: String(day.dayStart) }),
+      events.filter(
+        (e) =>
+          (filter === 'all' || e.data.type === filter) &&
+          eventMatchesSearch(e.data, terms, Date.now(), units),
       ),
-    [events, filter],
+    [events, filter, terms, units],
   );
+  const sections = useMemo(
+    () => eventsByDay(matched).map((day) => ({ ...day, key: String(day.dayStart) })),
+    [matched],
+  );
+  const searching = terms.length > 0;
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
 
@@ -76,6 +96,13 @@ export function RecordsScreen() {
           ) : null}
         </View>
         <PageTitle>{t().today.allRecordsTitle}</PageTitle>
+        <SearchField
+          testID="records-search"
+          value={query}
+          onChangeText={setQuery}
+          placeholder={t().search.recordsPlaceholder}
+          accessibilityLabel={t().search.recordsA11y}
+        />
         <View style={s.filters}>
           {filters().map((f) => (
             <Chip
@@ -89,18 +116,32 @@ export function RecordsScreen() {
             />
           ))}
         </View>
+        {searching ? (
+          <Muted style={s.count} testID="records-search-count">
+            {t().search.count(matched.length)}
+          </Muted>
+        ) : null}
       </View>
       <SectionList
         sections={sections}
         keyExtractor={(entry) => entry.id}
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
         ListEmptyComponent={
-          <Empty
-            title={filter === 'all' ? t().today.noRecords : t().today.noRecordsFilter}
-            sub={canWrite ? t().today.addOlderHint : undefined}
-          />
+          searching ? (
+            <Empty
+              title={t().search.empty(deferredQuery.trim())}
+              sub={filter === 'all' ? t().search.emptySub : t().search.emptyFilterSub}
+            />
+          ) : (
+            <Empty
+              title={filter === 'all' ? t().today.noRecords : t().today.noRecordsFilter}
+              sub={canWrite ? t().today.addOlderHint : undefined}
+            />
+          )
         }
         renderSectionHeader={({ section }) => (
           <View style={s.dayRow}>
@@ -134,6 +175,7 @@ export function RecordsScreen() {
               event={item.data}
               now={now}
               units={units}
+              terms={terms}
               onPress={() => {
                 if (!canWrite) return;
                 sheet.open(describeEvent(item.data, Date.now(), units), () => (
@@ -156,6 +198,7 @@ const s = themedStyles(() => ({
   link: { fontSize: 13, color: colors.accentText, padding: 4 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   filterOff: { backgroundColor: colors.card },
+  count: { marginTop: 2 },
   dayRow: {
     marginTop: 18,
     marginBottom: 2,

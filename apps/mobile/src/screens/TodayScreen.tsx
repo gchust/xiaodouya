@@ -64,6 +64,7 @@ import { colors, fonts, spacing, themedStyles } from '../theme';
 import { NotificationPrompt } from '../ui/NotificationPrompt';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Card, Dot, Mono, Muted, PressScale, Stripes } from '../ui/primitives';
+import { Highlighted } from '../ui/Search';
 import { SyncingPlaceholder } from '../ui/SyncingPlaceholder';
 import { UpdateReadyCard } from '../ui/UpdateReadyCard';
 import { useWidgetLink } from '../widgets/useWidgetLink';
@@ -435,25 +436,31 @@ function SleepAction({ sleeping, onPress }: { sleeping: boolean; onPress: () => 
   );
 }
 
+const noTerms: readonly string[] = [];
+
 export function TimelineRow({
   id,
   event,
   now,
   units,
   onPress,
+  terms = noTerms,
 }: {
   id: string;
   event: EventData;
   now: number;
   units: Units;
   onPress: () => void;
+  /** 全部记录页搜索时要高亮的词（issue #109）。 */
+  terms?: readonly string[];
 }) {
   const sub = [event.note, event.byName].filter(Boolean).join(' · ');
+  const title = describeEvent(event, now, units);
   return (
     <Pressable
       testID={`event-row-${id}`}
       accessibilityRole="button"
-      accessibilityLabel={describeEvent(event, now, units)}
+      accessibilityLabel={title}
       onPress={onPress}
       style={s.row}
     >
@@ -462,8 +469,14 @@ export function TimelineRow({
         <Dot color={colors[event.type]} size={8} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
-        <Text style={s.rowTitle}>{describeEvent(event, now, units)}</Text>
-        {sub ? <Muted style={{ fontSize: 11 }}>{sub}</Muted> : null}
+        <Text style={s.rowTitle}>
+          <Highlighted text={title} terms={terms} />
+        </Text>
+        {sub ? (
+          <Muted style={{ fontSize: 11 }}>
+            <Highlighted text={sub} terms={terms} />
+          </Muted>
+        ) : null}
       </View>
     </Pressable>
   );

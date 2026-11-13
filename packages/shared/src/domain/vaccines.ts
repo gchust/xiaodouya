@@ -126,6 +126,15 @@ export function vaccineRecordName(vaccineId: string, stored: string): string {
   return doseNames.get(normalizeVaccineId(vaccineId))?.[locale] ?? stored;
 }
 
+/**
+ * 搜索时一条接种记录能用哪些名字找到：记录里存的名字，内置剂次再加上中英文名。
+ * 用中文记的、英文界面下搜 BCG，或者反过来，都要能找到。
+ */
+export function vaccineSearchNames(vaccineId: string, stored: string): string[] {
+  const names = doseNames.get(normalizeVaccineId(vaccineId));
+  return [...new Set(names ? [stored, names.zh, names.en] : [stored])];
+}
+
 const CUSTOM_PREFIX = 'custom:';
 
 export function newCustomVaccineId(uuid: string): string {
