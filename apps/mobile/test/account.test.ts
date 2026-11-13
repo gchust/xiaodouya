@@ -1,4 +1,4 @@
-import type { MeResponse } from '@xiaodouya/shared';
+import { CLIENT_LEVEL_HEADER, type MeResponse, MULTI_BABY_CLIENT_LEVEL } from '@xiaodouya/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   consentSegments,
@@ -136,6 +136,19 @@ describe('账号接口', () => {
     ]);
     const headers = fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>;
     expect(headers.authorization).toBeUndefined();
+  });
+
+  it('每个请求都说明这个版本按宝宝过滤，服务端才让有第二个宝宝的家庭同步（issue #106）', async () => {
+    const fetchMock = stub(200, { cursor: 0, hasMore: false, records: [], rejected: [] });
+    const client = api();
+    await client.sync({ cursor: 0, changes: [] });
+    await client.me().catch(() => {});
+    await client.forgotPassword('a@example.test');
+    for (const call of fetchMock.mock.calls) {
+      const headers = call[1]?.headers as Record<string, string>;
+      expect(headers[CLIENT_LEVEL_HEADER]).toBe(String(MULTI_BABY_CLIENT_LEVEL));
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it('服务器开了邮件才显示忘记密码', async () => {

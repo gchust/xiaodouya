@@ -41,7 +41,9 @@ import {
   type AppUpdateInfo,
   AppUpdateResponse,
   apiErrorMessage,
+  CLIENT_LEVEL_HEADER,
   getLocale,
+  MULTI_BABY_CLIENT_LEVEL,
   t,
 } from '@xiaodouya/shared';
 
@@ -83,6 +85,8 @@ export class Api {
           // Android 的 OkHttp 会把 GET 响应存进 cache/http-cache。请求上也写明不存：
           // 自己部署的旧服务端没有 `no-store` 时，`/v1/me` 也不会落到手机上（F-135）。
           'cache-control': 'no-store',
+          // 这个版本按宝宝过滤（issue #106）。服务端看到它才让有第二个宝宝的家庭同步，见 ARCHITECTURE“多个宝宝”。
+          [CLIENT_LEVEL_HEADER]: String(MULTI_BABY_CLIENT_LEVEL),
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
           ...(process.env.EXPO_PUBLIC_API_REGION && SUPABASE_FUNCTION_URL.test(this.baseUrl)

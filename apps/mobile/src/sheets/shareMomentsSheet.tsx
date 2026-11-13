@@ -13,6 +13,7 @@ import { SHARE_BASE_URL } from '../lib/config';
 import { deviceTimezone } from '../lib/device';
 import {
   nicknameProblem,
+  shareBabyField,
   shareLinkUrl,
   shareMomentsPending,
   shareMomentsRange,
@@ -71,6 +72,7 @@ export function ShareMomentsSheet({
       timezone: deviceTimezone() ?? app.prefs.timezone,
       ttlDays,
       display,
+      ...shareBabyField(app.store.getSnapshot()),
     };
     try {
       const share = await app.api.createMomentsShare(body);

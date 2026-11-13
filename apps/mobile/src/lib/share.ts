@@ -26,6 +26,16 @@ import { localDayBounds } from './dates';
 
 /** 不依赖 React Native，方便单元测试。 */
 
+/**
+ * 链接属于哪个宝宝（issue #106）。有几个宝宝时是当前宝宝；只有一个宝宝时不带，请求和以前一样，
+ * 服务端按“旧版界面上显示的宝宝”处理，就是这一个。
+ */
+export function shareBabyField(snapshot: { multiBaby: boolean; baby: { id: string } | null }): {
+  babyId?: string;
+} {
+  return snapshot.multiBaby && snapshot.baby ? { babyId: snapshot.baby.id } : {};
+}
+
 /** 手机所在时区的这一天。过夏令时的那天是 23 或 25 小时，不能用加减毫秒算。 */
 export function shareDayRange(at: number): { fromAt: number; toAt: number } {
   const { start, end } = localDayBounds(at);
