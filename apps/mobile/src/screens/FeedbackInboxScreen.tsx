@@ -17,7 +17,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -42,6 +41,7 @@ import {
   Row,
   SectionTitle,
 } from '../ui/primitives';
+import { Text } from '../ui/Text';
 import { VideoPlayer, ZoomableImage } from './ViewerScreen';
 
 /**

@@ -1,6 +1,7 @@
 import { t } from '@xiaodouya/shared';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { colors, fonts, themedStyles } from '../theme';
+import { Text } from './Text';
 
 /** 一行带标签的步进器：身高体重、亲喂的两侧时长。 */
 export function SmallStepper({
@@ -57,7 +58,8 @@ const s = themedStyles(() => ({
     backgroundColor: colors.paper,
     borderRadius: 14,
   },
-  smallLabel: { fontSize: 14, color: colors.muted, width: 44 },
+  // 最小宽度：2 倍字体下 `体重` 在 44 宽里会竖着断成两行（issue #110）。
+  smallLabel: { fontSize: 14, color: colors.muted, minWidth: 44 },
   smallBtn: {
     width: 40,
     height: 40,

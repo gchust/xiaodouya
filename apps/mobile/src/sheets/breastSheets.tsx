@@ -19,12 +19,13 @@ import {
 } from '@xiaodouya/shared';
 import * as Haptics from 'expo-haptics';
 import { useRef, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useApp, useNow, useRecords, useUnits } from '../lib/app';
 import { colors, fonts, themedStyles } from '../theme';
 import { useFeedback, useSheet } from '../ui/overlays';
 import { Button, Chip, Mono, Muted, PressScale, SoftInput } from '../ui/primitives';
 import { SmallStepper } from '../ui/SmallStepper';
+import { Text } from '../ui/Text';
 import { type RecordTime, RecordTimeField } from '../ui/TimeField';
 
 type FeedEvent = Extract<EventData, { type: 'feed' }>;
@@ -416,9 +417,11 @@ const s = themedStyles(() => ({
   segmentLabelOn: { color: colors.paper, fontWeight: '500' },
   nextSide: { fontSize: 13, color: colors.accentText },
   sides: { flexDirection: 'row', gap: 10 },
+  // 最小高度：系统大字体下三行字放大后按钮跟着长高，不溢出（issue #110）。
   side: {
     flex: 1,
-    height: 112,
+    minHeight: 112,
+    paddingVertical: 12,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.line,

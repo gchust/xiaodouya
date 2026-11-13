@@ -7,8 +7,6 @@ import {
   type PressableProps,
   type StyleProp,
   StyleSheet,
-  Text,
-  TextInput,
   type TextInputProps,
   type TextProps,
   type TextStyle,
@@ -25,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../lib/themePref';
 import { colors, fonts, motion, themedStyles } from '../theme';
+import { Text, TextInput } from './Text';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -195,7 +194,8 @@ export function Button({
       scaleTo={0.97}
       style={[
         styles.button,
-        { height, backgroundColor: t.bg, opacity: disabled ? 0.45 : 1 },
+        // 最小高度：系统大字体下按钮文字换行时按钮跟着长高，不把字裁掉。
+        { minHeight: height, backgroundColor: t.bg, opacity: disabled ? 0.45 : 1 },
         t.border ? { borderWidth: 1, borderColor: t.border } : null,
         style,
       ]}
@@ -426,7 +426,12 @@ export const styles = themedStyles(() => ({
   },
   kvLabel: { fontSize: 13 },
   kvValue: { fontSize: 13, textAlign: 'right', flexShrink: 1 },
-  button: { borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  button: {
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
   buttonLabel: { fontSize: 16, fontWeight: '500' },
   chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, alignItems: 'center' },
   chipLabel: { fontSize: 12 },

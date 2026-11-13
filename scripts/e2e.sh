@@ -38,8 +38,17 @@ cleanup() {
   [ -n "$GITHUB_PID" ] && kill -- "-$GITHUB_PID" 2>/dev/null || true
   [ -n "$ANR_PID" ] && kill "$ANR_PID" 2>/dev/null || true
   [ -n "$MONITOR_PID" ] && kill -- "-$MONITOR_PID" 2>/dev/null || true
+  # 断在大字体流程中间时也要改回来：模拟器是共用的，后面的截图都按 1 倍字体看。
+  adb shell settings put system font_scale 1.0 >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+
+# 系统字体的倍数（issue #110）。Maestro 改不了系统设置，由这里在流程开始前改、结束后不管成败都改回 1.0。
+font_scale_for() {
+  case "$1" in
+    18c_font_scale) echo 1.3 ;;
+  esac
+}
 
 # 反馈（流程 24）连假的 GitHub，绝不连真实的。端口写死在 e2e/helpers/feedback-github.js 里。
 # 收到的反馈（流程 25）的维护者邮箱也写死，见 e2e/helpers/feedback-maintainer.js。
@@ -134,10 +143,12 @@ media_count() {
 # 一次完整的尝试：重装 App、新 RUN_ID（新账号），按顺序跑完再核对文件。
 # 返回 0 通过，ENV_FAILURE 是环境断开，其他是真的失败。
 run_attempt() {
-  local flows=("$@") flow run_id status media_before media_after
+  local flows=("$@") flow run_id status media_before media_after scale
   wait_for_device 5 || return 1
   # 上一次尝试可能断在飞行模式里（流程 03b、06、19 会开）。
   adb shell cmd connectivity airplane-mode disable >/dev/null 2>&1 || true
+  # 流程 18c 断在模拟器断开时，流程后面的改回可能没生效，整组重跑前先改回 1 倍字体。
+  adb shell settings put system font_scale 1.0 >/dev/null 2>&1 || true
   adb uninstall com.gchust.xiaodouya >/dev/null 2>&1 || true
   # 安装是幂等的，断开时等连上再装一次就行，不用整组重跑。
   adb install -r "$APK" || { wait_for_device 5 && adb install -r "$APK"; } || return 1
@@ -154,8 +165,11 @@ run_attempt() {
       23_app_update) bash e2e/helpers/fake-release.sh tampered 9>&- ;;
       23a_auto_update) bash e2e/helpers/fake-release.sh intact 9>&- ;;
     esac
+    scale="$(font_scale_for "$(basename "$flow" .yaml)")"
+    [ -z "$scale" ] || adb shell settings put system font_scale "$scale"
     status=0
     run_flow "$flow" "$run_id" || status=$?
+    [ -z "$scale" ] || adb shell settings put system font_scale 1.0 || true
     [ "$status" -eq 0 ] || return "$status"
   done
   node e2e/verify-uploads.mjs "$run_id" "${flows[@]}" || return 1
