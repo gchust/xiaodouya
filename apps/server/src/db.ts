@@ -322,6 +322,13 @@ export const migrations: readonly string[] = [
   ALTER TABLE shares ADD CONSTRAINT shares_baby_nickname_check
     CHECK (baby_nickname IS NULL OR char_length(baby_nickname) <= 40);
   `,
+  // 多个宝宝（issue #106 第二步）。旧版 App 每次同步都要数家庭的档案，没有索引就要扫这个家庭的全部记录。
+  // 分享的 baby_id 是创建时选的宝宝，旧行和旧版 App 建的行是空值（属于旧版界面上显示的宝宝）。
+  // 不引用 records：档案是客户端写的记录，删除也是软删除。
+  `
+  CREATE INDEX records_babies ON records(family_id) WHERE collection = 'baby';
+  ALTER TABLE shares ADD COLUMN baby_id UUID;
+  `,
 ];
 
 export interface ConnectOptions extends Partial<DbConfig> {

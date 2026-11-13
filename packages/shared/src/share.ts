@@ -60,6 +60,8 @@ export const CreateShareRequest = z
     ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
     /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
     display: ShareDisplay.optional(),
+    /** 分享的是哪个宝宝（issue #106）。没有时（旧版 App）是旧版界面上显示的宝宝，见 `shareBabyId`。 */
+    babyId: z.uuid().optional(),
   })
   .refine((v) => v.toAt > v.fromAt && v.toAt - v.fromAt <= SHARE_MAX_RANGE_MS, {
     path: ['toAt'],
@@ -92,6 +94,8 @@ export interface ShareSummary {
   momentIds?: string[];
   /** 创建时定下的名字和头像（F-141）。旧服务端没有这个字段。 */
   display?: ShareDisplay;
+  /** 创建时选的宝宝（issue #106）。旧版 App 建的链接没有，属于旧版界面上显示的宝宝。 */
+  babyId?: string;
   /** 创建者在家庭里的称呼。 */
   byLabel: string;
   canRevoke: boolean;
@@ -431,6 +435,8 @@ export const CreateTimelineShareRequest = z
     ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
     /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
     display: ShareDisplay.optional(),
+    /** 分享的是哪个宝宝（issue #106）。没有时（旧版 App）是旧版界面上显示的宝宝，见 `shareBabyId`。 */
+    babyId: z.uuid().optional(),
   })
   .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
 export type CreateTimelineShareRequest = z.input<typeof CreateTimelineShareRequest>;
@@ -575,6 +581,8 @@ export const CreateMomentsShareRequest = z
     ttlDays: ShareTtlDays.default(DEFAULT_SHARE_TTL_DAYS),
     /** F-141 起的 App 一直带。没有时（旧版 App）和以前一样：真实名字、不带头像。 */
     display: ShareDisplay.optional(),
+    /** 分享的是哪个宝宝（issue #106）。没有时（旧版 App）是旧版界面上显示的宝宝，见 `shareBabyId`。 */
+    babyId: z.uuid().optional(),
   })
   .refine((v) => v.toAt > v.fromAt, { path: ['toAt'] });
 export type CreateMomentsShareRequest = z.input<typeof CreateMomentsShareRequest>;

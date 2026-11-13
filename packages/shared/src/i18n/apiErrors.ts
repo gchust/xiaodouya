@@ -62,6 +62,8 @@ const en = new Map<string, (params: ApiErrorParams) => string>(
         ? `The file is too large. The maximum for this type is ${formatBytes(p.maxBytes)}.`
         : 'Too much content in this sync.',
     rate_limited: () => 'Too many requests. It will retry automatically in a moment.',
+    upgrade_required: () =>
+      'Your family now has more than one baby. Please update Xiaodouya to keep syncing.',
     quota_exceeded: (p: ApiErrorParams) =>
       `Storage is full (${typeof p.quota === 'number' ? formatBytes(p.quota) : 'limit reached'}). Delete some memories or documents, then retry.`,
     bad_type: () => "This file type isn't supported.",

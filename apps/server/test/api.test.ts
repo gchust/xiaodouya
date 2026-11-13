@@ -11,7 +11,7 @@ import type {
   SyncResponse,
   UploadUrlResponse,
 } from '@xiaodouya/shared';
-import { favoriteIdFor } from '@xiaodouya/shared';
+import { CLIENT_LEVEL_HEADER, favoriteIdFor, MULTI_BABY_CLIENT_LEVEL } from '@xiaodouya/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import { type Config, loadConfig } from '../src/config';
@@ -50,13 +50,14 @@ let pushes: PushMessage[];
 async function api<T = unknown>(
   method: string,
   path: string,
-  options: { token?: string; body?: unknown } = {},
+  options: { token?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<{ status: number; json: T }> {
   const response = await app.request(path, {
     method,
     headers: {
       'content-type': 'application/json',
       ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      ...options.headers,
     },
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -126,6 +127,14 @@ const babyChange = (
 
 const sync = (token: string, cursor: number, changes: unknown[] = []) =>
   api<SyncResponse>('POST', '/v1/sync', { token, body: { cursor, changes } });
+
+/** 按宝宝过滤的新版 App：家里有第二个宝宝后，不带这个头的旧版同步不了（issue #106）。 */
+const syncMultiBaby = (token: string, cursor: number, changes: unknown[] = []) =>
+  api<SyncResponse>('POST', '/v1/sync', {
+    token,
+    headers: { [CLIENT_LEVEL_HEADER]: String(MULTI_BABY_CLIENT_LEVEL) },
+    body: { cursor, changes },
+  });
 
 beforeAll(async () => {
   config = loadConfig(testEnv());
@@ -450,11 +459,13 @@ describe('同步', () => {
     const result = await sync(admin.token, 0, [babyChange(family.id, {}, 1000), ...good, ...bad]);
     expect(result.json.rejected).toEqual([]);
     // 以后的版本加的第二个宝宝。家人保存档案时服务端会换掉地区，createdAt 不能跟着丢。
+    // 有了第二个宝宝，旧版就同步不了了，所以这里是新版 App。
     expect(
-      (await sync(mom.token, 0, [babyChange(second, { createdAt: 5000 }, 2000)])).json.rejected,
+      (await syncMultiBaby(mom.token, 0, [babyChange(second, { createdAt: 5000 }, 2000)])).json
+        .rejected,
     ).toEqual([]);
 
-    const { json } = await sync(mom.token, 0);
+    const { json } = await syncMultiBaby(mom.token, 0);
     const dataOf = (id: string) =>
       json.records.find((r) => r.id === id)?.data as Record<string, unknown> | undefined;
     for (const { id } of good) expect(dataOf(id)?.babyId).toBe(second);
@@ -1053,9 +1064,12 @@ describe('家庭的地区只有管理员能改', () => {
     const { admin, family } = await newFamily();
     const mom = await join(admin.token, 'caregiver', '妈妈');
     await sync(admin.token, 0, [babyChange(family.id, { region: 'SG' }, 1000)]);
+    // 后加的档案要带 createdAt，有两份档案起只有新版 App 能同步（issue #106）。
     const other = randomUUID();
-    await sync(mom.token, 0, [babyChange(other, { region: 'US' }, 2000)]);
-    expect((await stored(admin.token, other)).region).toBe('SG');
+    await syncMultiBaby(mom.token, 0, [babyChange(other, { region: 'US', createdAt: 5000 }, 2000)]);
+    const { json } = await syncMultiBaby(admin.token, 0);
+    const data = json.records.find((r) => r.id === other)?.data as Record<string, unknown>;
+    expect(data.region).toBe('SG');
   });
   it('没有地区的旧档案，其他家人保存后仍然没有地区', async () => {
     const { admin, family } = await newFamily();

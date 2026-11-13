@@ -6,9 +6,14 @@ import {
   defaultBaby,
   firstBabyId,
   isBabyScoped,
+  MULTI_BABY_CLIENT_LEVEL,
+  needsMultiBabyUpgrade,
   orderBabies,
+  parseClientLevel,
   parseCollectionData,
   recordBabyId,
+  settleBabyCreatedAt,
+  shareBabyId,
   withBabyId,
 } from '../src/index';
 
@@ -173,5 +178,68 @@ describe('新记录写上 babyId', () => {
     const baby: CollectionData['baby'] = { name: '小豆', birthAt: 1 };
     expect(withBabyId('baby', baby, FAMILY)).toBe(baby);
     expect(withBabyId('event', feed, undefined)).toBe(feed);
+  });
+});
+
+describe('有第二个宝宝后挡住旧版 App（issue #106 第二步）', () => {
+  it('请求头里的级别：没有、不是非负整数的都算 0', () => {
+    expect(parseClientLevel(undefined)).toBe(0);
+    expect(parseClientLevel(null)).toBe(0);
+    expect(parseClientLevel('')).toBe(0);
+    expect(parseClientLevel('abc')).toBe(0);
+    expect(parseClientLevel('-1')).toBe(0);
+    expect(parseClientLevel('1.5')).toBe(0);
+    expect(parseClientLevel('1e3')).toBe(0);
+    expect(parseClientLevel('1')).toBe(1);
+    expect(parseClientLevel(' 2 ')).toBe(2);
+  });
+
+  it('只有一份档案时谁都不挡；两份起（删除的也算）挡住不按宝宝过滤的版本', () => {
+    expect(needsMultiBabyUpgrade(0, 0)).toBe(false);
+    expect(needsMultiBabyUpgrade(0, 1)).toBe(false);
+    expect(needsMultiBabyUpgrade(0, 2)).toBe(true);
+    expect(needsMultiBabyUpgrade(MULTI_BABY_CLIENT_LEVEL - 1, 3)).toBe(true);
+    expect(needsMultiBabyUpgrade(MULTI_BABY_CLIENT_LEVEL, 2)).toBe(false);
+    expect(needsMultiBabyUpgrade(MULTI_BABY_CLIENT_LEVEL + 1, 2)).toBe(false);
+  });
+});
+
+describe('服务端收到档案时的 createdAt（只在建档时定一次）', () => {
+  it('家庭的第一份档案不用写；已经有档案时，新档案没有 createdAt 就拒绝', () => {
+    expect(settleBabyCreatedAt(undefined, undefined, false)).toEqual({ createdAt: undefined });
+    expect(settleBabyCreatedAt(undefined, 5000, false)).toEqual({ createdAt: 5000 });
+    expect(settleBabyCreatedAt(undefined, undefined, true)).toBeNull();
+    expect(settleBabyCreatedAt(undefined, 5000, true)).toEqual({ createdAt: 5000 });
+  });
+
+  it('改已有的档案时 createdAt 一直是库里的：旧版改丢了补回去，谁也改不了', () => {
+    // 后加的宝宝被 v0.1.0 改了一下，丢了 createdAt：不能和第一个宝宝并列。
+    expect(settleBabyCreatedAt({ id: SECOND, createdAt: 5000 }, undefined, true)).toEqual({
+      createdAt: 5000,
+    });
+    expect(settleBabyCreatedAt({ id: SECOND, createdAt: 5000 }, 1, true)).toEqual({
+      createdAt: 5000,
+    });
+    // 第一个宝宝写上一个时间，就可能排到后加的宝宝后面，旧记录全换主人。
+    expect(settleBabyCreatedAt({ id: FAMILY }, 9000, true)).toEqual({ createdAt: undefined });
+    expect(settleBabyCreatedAt({ id: FAMILY }, undefined, true)).toEqual({ createdAt: undefined });
+  });
+});
+
+describe('分享链接属于哪个宝宝', () => {
+  it('创建时选了就是那个；没选（旧版 App 建的）是界面上显示的宝宝', () => {
+    const babies = [{ id: SECOND, createdAt: 5000 }, { id: FAMILY }];
+    expect(shareBabyId(babies, THIRD)).toBe(THIRD);
+    expect(shareBabyId(babies, null)).toBe(FAMILY);
+    const firstDeleted = [
+      { id: FAMILY, deleted: true },
+      { id: SECOND, createdAt: 5000 },
+    ];
+    expect(shareBabyId(firstDeleted, null)).toBe(SECOND);
+  });
+
+  it('档案全删了还是第一个宝宝，旧链接照样能看到记录；还没有档案时是 null', () => {
+    expect(shareBabyId([{ id: FAMILY, deleted: true }], null)).toBe(FAMILY);
+    expect(shareBabyId([], null)).toBeNull();
   });
 });

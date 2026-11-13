@@ -778,6 +778,12 @@ export interface PublicConfig {
    * 照样发真实名字，所以 App 只有看到它才显示分享设置。
    */
   shareDisplay?: boolean;
+  /**
+   * 服务端能管住多个宝宝（issue #106）：有第二个宝宝后挡住不按宝宝过滤的旧版 App、
+   * 后加的档案必须带 `createdAt`、分享按宝宝过滤。旧服务端这些都不做，第二个宝宝一加，
+   * 还没升级的家人手机上第一个宝宝就会被换掉，所以 App 只有看到它才让人加宝宝。
+   */
+  multiBaby?: boolean;
 }
 
 export interface ApiError {

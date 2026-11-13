@@ -1,6 +1,7 @@
 import {
   BabyData,
   EventData,
+  firstBabyId,
   hasShareContent,
   hasTimelineContent,
   type MediaRef,
@@ -19,12 +20,14 @@ import {
   type ShareInclude,
   type ShareKind,
   ShareUnits,
+  shareBabyId,
   shareCoverId,
   shareDayAge,
   shareIncludesEvent,
   shareMomentAge,
   TIMELINE_PAGE_SIZE,
 } from '@xiaodouya/shared';
+import { familyBabies } from './babies';
 import type { Config } from './config';
 import { sha256 } from './crypto';
 import type { Sql } from './db';
@@ -51,6 +54,8 @@ export interface ShareRow {
   show_name: boolean | null;
   baby_nickname: string | null;
   show_avatar: boolean | null;
+  /** 创建时选的宝宝（issue #106）。旧行和旧版 App 建的行是空值，见 `shareBaby`。 */
+  baby_id: string | null;
   expires_at: Date;
   created_at: Date;
 }
@@ -76,7 +81,7 @@ export async function findActiveShare(sql: Sql, token: string): Promise<ShareRow
   const [row] = await sql<ShareRow[]>`
     SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
            s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
-           s.show_name, s.baby_nickname, s.show_avatar, s.expires_at, s.created_at
+           s.show_name, s.baby_nickname, s.show_avatar, s.baby_id, s.expires_at, s.created_at
     FROM shares s
     JOIN memberships m ON m.family_id = s.family_id AND m.user_id = s.created_by AND m.role <> 'viewer'
     WHERE s.token_hash = ${sha256(token)} AND s.revoked_at IS NULL AND s.expires_at > now()`;
@@ -233,13 +238,36 @@ function publicMediaOf(
   return out;
 }
 
-async function familyBaby(sql: Sql, familyId: string): Promise<BabyData | null> {
-  const [babyRow] = await sql<{ data: unknown }[]>`
-    SELECT data FROM records
-    WHERE family_id = ${familyId} AND collection = 'baby' AND NOT deleted
-    ORDER BY updated_at_client DESC LIMIT 1`;
-  const baby = BabyData.safeParse(babyRow?.data);
-  return baby.success ? baby.data : null;
+interface ShareBaby {
+  /** 链接属于的宝宝，没有档案时是 null。 */
+  id: string | null;
+  /** 没写 `babyId` 的记录属于它。 */
+  firstId: string | null;
+  /** 页面上的名字、头像和月龄。档案删了或读不懂时是 null，记录照样按 `id` 过滤。 */
+  data: BabyData | null;
+}
+
+/**
+ * 链接属于哪个宝宝（issue #106）。创建时选的，或者旧版 App 建的链接：旧版界面上显示的宝宝。
+ * 以前取 `updated_at_client` 最大的档案，有第二个宝宝后改一下档案就换了。
+ */
+async function shareBaby(sql: Sql, share: ShareRow): Promise<ShareBaby> {
+  const babies = await familyBabies(sql, share.family_id);
+  const id = shareBabyId(babies, share.baby_id);
+  const row = babies.find((baby) => baby.id === id && !baby.deleted);
+  const parsed = BabyData.safeParse(row?.data);
+  return { id, firstId: firstBabyId(babies), data: parsed.success ? parsed.data : null };
+}
+
+/**
+ * 只要这个宝宝的记录，规则和 `recordBabyId` 一样：没写 `babyId` 的属于第一个宝宝。
+ * 库里的 `babyId` 都过过 zod（格式不对的写入时已经丢掉），所以是字符串就是一个宝宝的 id。
+ * 只用在照护记录和回忆上，它们都属于宝宝；全家共用的记录不能用它过滤。
+ */
+function ofBaby(sql: Sql, baby: ShareBaby) {
+  return baby.id === baby.firstId
+    ? sql`(jsonb_typeof(data->'babyId') IS DISTINCT FROM 'string' OR data->>'babyId' = ${baby.id})`
+    : sql`data->>'babyId' = ${baby.id}`;
 }
 
 /**
@@ -303,9 +331,11 @@ export async function buildPublicShare(
   ];
   // 配置型事件（奶粉、疫苗本）没有 at 的在这里过滤掉，带了 at 的靠后面的 EventData 校验。
   // 用 CASE：AND 不保证执行顺序，at 不是数字的行不能进到类型转换里。
+  const baby = await shareBaby(sql, share);
   const rows = await sql<{ collection: string; data: unknown }[]>`
     SELECT collection, data FROM records
     WHERE family_id = ${share.family_id} AND NOT deleted AND collection = ANY(${wanted})
+      AND ${ofBaby(sql, baby)}
       AND CASE WHEN jsonb_typeof(data->'at') = 'number'
                THEN (data->>'at')::double precision >= ${fromAt}::double precision
                 AND (data->>'at')::double precision < ${toAt}::double precision
@@ -337,12 +367,12 @@ export async function buildPublicShare(
     .map((moment) => pickMomentForShare(moment, publicMediaOf(moment, urls, signed)))
     .filter(hasShareContent);
 
-  const baby = await familyBaby(sql, share.family_id);
-  const dayAge = baby ? shareDayAge(baby.birthAt, toAt, share.timezone) : null;
+  const profile = baby.data;
+  const dayAge = profile ? shareDayAge(profile.birthAt, toAt, share.timezone) : null;
 
   return {
     baby: {
-      ...(await publicBaby(sql, config, share, baby)),
+      ...(await publicBaby(sql, config, share, profile)),
       dayNumber: dayAge?.dayNumber ?? null,
       age: dayAge?.age ? { months: dayAge.age.months, days: dayAge.age.days } : null,
     },
@@ -365,18 +395,22 @@ function parseCursor(cursor: string): { at: number; id: string } {
 /** 回忆的 at 不是数字时是 NULL，不进到类型转换里。 */
 const momentAt = (row: { at: number | null }) => row.at ?? 0;
 
-/** 回忆的 at 是数字时取出来，不是时为 NULL：不让它进到类型转换里。 */
-const momentsOf = (sql: Sql, share: ShareRow) => sql`
+/**
+ * 回忆的 at 是数字时取出来，不是时为 NULL：不让它进到类型转换里。
+ * 只要链接那个宝宝的（issue #106），选中回忆的链接也一样：选的时候界面上只有这个宝宝的回忆。
+ */
+const momentsOf = (sql: Sql, share: ShareRow, baby: ShareBaby) => sql`
   SELECT id, data,
          CASE WHEN jsonb_typeof(data->'at') = 'number'
               THEN (data->>'at')::double precision END AS at
   FROM records
   WHERE family_id = ${share.family_id} AND collection = 'moment' AND NOT deleted
+    AND ${ofBaby(sql, baby)}
     ${share.kind === 'moments' ? sql`AND id = ANY(${share.moment_ids ?? []}::uuid[])` : sql``}`;
 
 /**
  * 链接能看到哪些回忆：时间线是 [from, to) 里的，选中回忆的链接（F-136）只认选中的 id，
- * 不管它们现在的时间。家庭、`collection = 'moment'`、没删由 `momentsOf` 管。
+ * 不管它们现在的时间。家庭、`collection = 'moment'`、没删、属于哪个宝宝由 `momentsOf` 管。
  */
 function inShare(sql: Sql, share: ShareRow) {
   return share.kind === 'moments'
@@ -389,11 +423,15 @@ function inShare(sql: Sql, share: ShareRow) {
  * 页面顶上的范围。选中回忆的链接用现在还在的那几段的头尾（改了时间、删掉一段都会跟着变），
  * 一段都不在了时用创建时手机算的。
  */
-async function shareRange(sql: Sql, share: ShareRow): Promise<{ fromAt: number; toAt: number }> {
+async function shareRange(
+  sql: Sql,
+  share: ShareRow,
+  baby: ShareBaby,
+): Promise<{ fromAt: number; toAt: number }> {
   const stored = { fromAt: Number(share.from_at), toAt: Number(share.to_at) };
   if (share.kind !== 'moments') return stored;
   const [row] = await sql<{ first: number | null; last: number | null }[]>`
-    SELECT min(at) AS first, max(at) AS last FROM (${momentsOf(sql, share)}) moments
+    SELECT min(at) AS first, max(at) AS last FROM (${momentsOf(sql, share, baby)}) moments
     WHERE ${inShare(sql, share)}`;
   return row?.first != null && row.last != null
     ? { fromAt: Number(row.first), toAt: Number(row.last) + 1 }
@@ -412,8 +450,9 @@ export async function buildPublicTimeline(
   cursor: string | undefined,
 ): Promise<PublicTimelineResponse> {
   const after = cursor ? parseCursor(cursor) : null;
+  const baby = await shareBaby(sql, share);
   const rows = await sql<{ id: string; data: unknown; at: number | null }[]>`
-    SELECT id, data, at FROM (${momentsOf(sql, share)}) moments
+    SELECT id, data, at FROM (${momentsOf(sql, share, baby)}) moments
     WHERE ${inShare(sql, share)}
       ${
         after
@@ -460,7 +499,7 @@ export async function buildPublicTimeline(
     covers.flatMap(({ file }) => (file ? [byId.get(file.id) ?? []] : [])),
   );
 
-  const baby = await familyBaby(sql, share.family_id);
+  const profile = baby.data;
   const entries: PublicTimelineEntry[] = moments
     .map(({ id, data }, index) => {
       const { visual, audio, file } = covers[index] ?? {
@@ -468,7 +507,7 @@ export async function buildPublicTimeline(
         audio: new Set<string>(),
         file: null,
       };
-      const age = baby ? shareMomentAge(baby.birthAt, data.at, share.timezone) : null;
+      const age = profile ? shareMomentAge(profile.birthAt, data.at, share.timezone) : null;
       return {
         id,
         at: data.at,
@@ -485,12 +524,12 @@ export async function buildPublicTimeline(
     })
     .filter(hasTimelineContent);
 
-  const { fromAt, toAt } = await shareRange(sql, share);
-  const rangeAge = baby ? shareDayAge(baby.birthAt, toAt, share.timezone).age : null;
+  const { fromAt, toAt } = await shareRange(sql, share, baby);
+  const rangeAge = profile ? shareDayAge(profile.birthAt, toAt, share.timezone).age : null;
   return {
     kind: share.kind === 'moments' ? 'moments' : 'timeline',
     baby: {
-      ...(await publicBaby(sql, config, share, baby)),
+      ...(await publicBaby(sql, config, share, profile)),
       age: rangeAge ? { months: rangeAge.months, days: rangeAge.days } : null,
     },
     range: { fromAt, toAt, timezone: share.timezone },
@@ -511,8 +550,9 @@ export async function buildPublicTimelineMoment(
   share: ShareRow,
   momentId: string,
 ): Promise<PublicTimelineMomentResponse | null> {
+  const baby = await shareBaby(sql, share);
   const [row] = await sql<{ data: unknown }[]>`
-    SELECT data FROM (${momentsOf(sql, share)}) moments
+    SELECT data FROM (${momentsOf(sql, share, baby)}) moments
     WHERE id = ${momentId}::uuid AND ${inShare(sql, share)}`;
   const parsed = MomentData.safeParse(row?.data);
   if (!parsed.success) return null;
