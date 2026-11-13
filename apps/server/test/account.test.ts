@@ -92,6 +92,7 @@ describe('邮件配置', () => {
       feedback,
       personalDocuments: true,
       shareDisplay: true,
+      multiBaby: true,
     });
     const off = await call<PublicConfig>(plainApp, 'GET', '/v1/config');
     expect(off.status).toBe(200);
@@ -102,6 +103,7 @@ describe('邮件配置', () => {
       feedback,
       personalDocuments: true,
       shareDisplay: true,
+      multiBaby: true,
     });
   });
 

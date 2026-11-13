@@ -7,6 +7,8 @@ import {
   type AuthResponse,
   accountDeletionOutcome,
   type BabyData,
+  babyRefOf,
+  CLIENT_LEVEL_HEADER,
   CompleteUploadRequest,
   CreateFamilyRequest,
   CreateFeedbackRequest,
@@ -97,6 +99,7 @@ import {
   SYNC_PAGE_SIZE,
   SyncRequest,
   type SyncResponse,
+  settleBabyCreatedAt,
   TIMELINE_SHARE_INCLUDE,
   UpdateMemberRequest,
   UploadUrlRequest,
@@ -110,6 +113,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import { blocksOldClient, familyRegion, regionOf, withCreatedAt } from './babies';
 import { clientIpFrom } from './client-ip';
 import type { Config } from './config';
 import {
@@ -264,7 +268,7 @@ interface Membership {
 type Env = { Variables: { user: AuthedUser; membership: Membership | null } };
 
 function fail(
-  status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 429 | 501 | 503,
+  status: 400 | 401 | 403 | 404 | 409 | 410 | 413 | 426 | 429 | 501 | 503,
   code: string,
   message: string,
   params?: Record<string, string | number>,
@@ -310,23 +314,6 @@ const LEGACY_TIMEZONE = 'Asia/Singapore';
 function mergePrefs(stored: unknown): Prefs {
   const parsed = Prefs.partial().safeParse(stored);
   return { ...defaultPrefs, timezone: LEGACY_TIMEZONE, ...(parsed.success ? parsed.data : {}) };
-}
-
-/**
- * 家庭当前的地区。现在一个家庭只有一份档案，取最新的一条就是它。客户端按“第一个宝宝”选档案，
- * 有第二个宝宝之后这里要跟着改，见 docs/ARCHITECTURE.md 的“多个宝宝”。
- */
-async function familyRegion(
-  db: Pick<Sql, 'unsafe'>,
-  familyId: string,
-): Promise<string | undefined> {
-  const rows = await db.unsafe<{ region: string | null }[]>(
-    `SELECT data->>'region' AS region FROM records
-     WHERE family_id = $1 AND collection = 'baby' AND deleted = false
-     ORDER BY updated_at_client DESC LIMIT 1`,
-    [familyId],
-  );
-  return rows[0]?.region ?? undefined;
 }
 
 function withRegion(baby: BabyData, region: string | undefined): BabyData {
@@ -448,6 +435,7 @@ export function createApp({
       },
       personalDocuments: true,
       shareDisplay: true,
+      multiBaby: true,
     }),
   );
 
@@ -938,6 +926,12 @@ export function createApp({
     const manifest = parsed.data;
     const decision = updateDecision(manifest, query.data.versionCode);
     if (!decision.available) return c.json<AppUpdateResponse>({ update: null });
+    // 家里有第二个宝宝后旧版同步不了（issue #106），这是 v0.4.0 起的旧版唯一会提示的地方：必须更新的每次都提。
+    const membership = c.get('membership');
+    const required =
+      decision.required ||
+      (membership !== null &&
+        (await blocksOldClient(sql, membership.familyId, c.req.header(CLIENT_LEVEL_HEADER))));
     // 签名链接不进日志。
     const url = await presignDownload(storage, manifest.apk.key, APP_UPDATE_URL_TTL);
     return c.json<AppUpdateResponse>({
@@ -948,7 +942,7 @@ export function createApp({
         sha256: manifest.apk.sha256,
         url,
         expiresIn: APP_UPDATE_URL_TTL,
-        required: decision.required,
+        required,
         notes: manifest.notes ?? null,
       },
     });
@@ -1564,6 +1558,8 @@ export function createApp({
       momentIds?: string[];
       /** 旧版 App 不带，存空值，公开接口按以前的样子显示。 */
       display?: ShareDisplay;
+      /** 旧版 App 不带，存空值，属于旧版界面上显示的宝宝（`shareBabyId`）。不核对在不在：可能还没同步上来。 */
+      babyId?: string;
     },
   ) {
     const m = requireFamily(c);
@@ -1584,13 +1580,13 @@ export function createApp({
       await tx`
         INSERT INTO shares (id, family_id, created_by, token_hash, kind, from_at, to_at, timezone,
                             include_moments, include_daily, include_health, units, moment_ids,
-                            show_name, baby_nickname, show_avatar, expires_at)
+                            show_name, baby_nickname, show_avatar, baby_id, expires_at)
         VALUES (${id}, ${m.familyId}, ${c.get('user').id}, ${sha256(token)}, ${share.kind},
                 ${share.fromAt}, ${share.toAt}, ${share.timezone},
                 ${share.include.moments}, ${share.include.daily}, ${share.include.health},
                 ${tx.json(share.units)}, ${share.momentIds ?? null}::uuid[],
                 ${share.display?.showName ?? null}, ${share.display?.nickname ?? null},
-                ${share.display?.showAvatar ?? null}, ${expires})`;
+                ${share.display?.showAvatar ?? null}, ${share.babyId ?? null}::uuid, ${expires})`;
     });
     return c.json<CreateShareResponse>({ id, token, expiresAt: expires.getTime() }, 201);
   }
@@ -1641,7 +1637,7 @@ export function createApp({
     const rows = await sql<(ShareRow & { label: string })[]>`
       SELECT s.id, s.family_id, s.created_by, s.kind, s.from_at, s.to_at, s.timezone,
              s.include_moments, s.include_daily, s.include_health, s.units, s.moment_ids,
-             s.show_name, s.baby_nickname, s.show_avatar, s.expires_at, s.created_at, mem.label
+             s.show_name, s.baby_nickname, s.show_avatar, s.baby_id, s.expires_at, s.created_at, mem.label
       FROM shares s
       JOIN memberships mem ON mem.family_id = s.family_id AND mem.user_id = s.created_by
       WHERE s.family_id = ${m.familyId} AND s.revoked_at IS NULL AND s.expires_at > now()
@@ -1657,6 +1653,7 @@ export function createApp({
         include: shareInclude(row),
         ...(row.moment_ids ? { momentIds: row.moment_ids } : {}),
         display: shareDisplay(row),
+        ...(row.baby_id ? { babyId: row.baby_id } : {}),
         expiresAt: row.expires_at.getTime(),
         createdAt: row.created_at.getTime(),
         byLabel: row.label,
@@ -1694,6 +1691,17 @@ export function createApp({
     onError: () => fail(413, 'too_large', '这次同步的内容太多了'),
   });
 
+  /**
+   * 家里有第二个宝宝后，不按宝宝过滤的旧版 App 不能再同步（issue #106）：v0.1.0 起的版本取 `updatedAt`
+   * 最大的档案，会把显示的宝宝换掉，保存时还会丢掉 `babyId`；第一步的版本不换宝宝，但第二个宝宝的
+   * 记录会混进时间线。旧版把失败当成离线，记录留在手机的发件箱里，更新后接着传；提示更新靠 `/app/update`。
+   */
+  const failIfOldClient = async (c: Context<Env>, m: Membership) => {
+    if (await blocksOldClient(sql, m.familyId, c.req.header(CLIENT_LEVEL_HEADER))) {
+      fail(426, 'upgrade_required', '家里有了第二个宝宝，请先更新小豆芽，更新后会接着同步');
+    }
+  };
+
   v1.post('/sync', syncBodyLimit, async (c) => {
     const m = requireFamily(c);
     const user = c.get('user');
@@ -1714,6 +1722,7 @@ export function createApp({
     if (syncPerWindow > 0 && (counter?.sync_count ?? 0) > syncPerWindow) {
       fail(429, 'rate_limited', '同步太频繁了，稍后会自动重试');
     }
+    await failIfOldClient(c, m);
     const body = await parseBody(c, SyncRequest);
     const rejected: SyncResponse['rejected'] = [];
     const created: ServerRecord[] = [];
@@ -1784,12 +1793,34 @@ export function createApp({
             conflicted.push(change.id);
             continue;
           }
-          // 地区只有管理员能改。其他家人保存档案（换头像、改名）不能算错，所以不拒绝，
-          // 只把地区换回当前的值。这样拿着旧版本保存也不会把管理员刚改的地区覆盖掉。
-          const payload =
-            change.collection === 'baby' && !change.deleted && m.role !== 'admin'
-              ? withRegion(data as BabyData, await familyRegion(tx, m.familyId))
-              : data;
+          let payload: unknown = data;
+          if (change.collection === 'baby') {
+            // createdAt 决定谁是第一个宝宝，只在建档时定一次（issue #106，见 settleBabyCreatedAt）。
+            // 删除标记也要管：它照样参与排序，内容又是原样存的。在家庭的行锁里查，两台手机不会一起通过。
+            const [anyBaby] = existing
+              ? [undefined]
+              : await tx`SELECT 1 FROM records WHERE family_id = ${m.familyId} AND collection = 'baby' LIMIT 1`;
+            const settled = settleBabyCreatedAt(
+              existing ? babyRefOf(change.id, existing.data, existing.deleted) : undefined,
+              babyRefOf(change.id, data, change.deleted).createdAt,
+              { familyHasBaby: anyBaby !== undefined, isFamilyProfile: change.id === m.familyId },
+            );
+            if (!settled) {
+              rejected.push({ id: change.id, reason: 'invalid' });
+              conflicted.push(change.id);
+              continue;
+            }
+            // 地区只有管理员能改。其他家人保存档案（换头像、改名）不能算错，所以不拒绝，
+            // 只把地区换回这份档案原来的值；新档案用家庭的地区（旧版界面上显示的那个宝宝的）。
+            // 这样拿着旧版本保存也不会把管理员刚改的地区覆盖掉。
+            if (!change.deleted && m.role !== 'admin') {
+              const region = existing
+                ? regionOf(existing.data)
+                : await familyRegion(tx, m.familyId);
+              payload = withRegion(data as BabyData, region);
+            }
+            payload = withCreatedAt(payload, settled.createdAt);
+          }
           // 大小和引用都按真正入库的内容算，不是客户端发来的内容。
           const payloadJson = JSON.stringify(payload);
           const payloadBytes = Buffer.byteLength(payloadJson);
@@ -1893,6 +1924,9 @@ export function createApp({
         records.push(...(await projectForViewer(sql, m.familyId, viewer, extra)));
       }
     }
+    // 开头查过之后、读记录之前，家人可能刚好加了第二个宝宝：这一页里就有它的记录。再查一次，
+    // 这时旧版的改动已经写进去了，没关系，它更新后重发是同一个版本（幂等）。
+    await failIfOldClient(c, m);
     return c.json<SyncResponse>({ cursor, hasMore, records, rejected, role: m.role });
   });
 
@@ -1909,6 +1943,12 @@ export function createApp({
       const [row] = await sql<{ seq: string }[]>`SELECT seq FROM families WHERE id = ${m.familyId}`;
       return Number(row?.seq ?? 0);
     };
+    // 同步不了的旧版（issue #106）：说“有新内容”的话它马上来同步、失败、歇 5 秒再来，一直转。
+    // 就当没有新内容，等满一轮。
+    if (await blocksOldClient(sql, m.familyId, c.req.header(CLIENT_LEVEL_HEADER))) {
+      await sleep(longPoll.timeoutMs, signal);
+      return c.json({ changed: false });
+    }
     const initial = await latest();
     if (initial > cursor) return c.json({ changed: true });
     const deadline = Date.now() + longPoll.timeoutMs;

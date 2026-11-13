@@ -1,11 +1,16 @@
 import { execFile } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join as joinPath, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { type AppUpdateResponse, ReleaseManifest } from '@xiaodouya/shared';
+import {
+  type AppUpdateResponse,
+  CLIENT_LEVEL_HEADER,
+  MULTI_BABY_CLIENT_LEVEL,
+  ReleaseManifest,
+} from '@xiaodouya/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app';
 import type { Config } from '../src/config';
@@ -164,6 +169,43 @@ describe('检查更新', () => {
     const user = await newUser(app);
     expect((await check(app, user.token, 124)).json.update?.required).toBe(true);
     expect((await check(app, user.token, 125)).json.update?.required).toBe(false);
+  });
+
+  it('家里有第二个宝宝后，不按宝宝过滤的旧版必须更新；只有一个宝宝时照旧（issue #106）', async () => {
+    const { prefix, app } = fixture();
+    await publish(prefix, fakeApk(1000).path, '0.9.1', 140);
+    const level = { [CLIENT_LEVEL_HEADER]: String(MULTI_BABY_CLIENT_LEVEL) };
+    const babyChange = (id: string, data: Record<string, unknown>) => ({
+      id,
+      collection: 'baby',
+      data: { name: '虚构宝宝', birthAt: 1_000, ...data },
+      deleted: false,
+      updatedAt: Date.now(),
+    });
+    const { admin, family } = await newFamily(app);
+    const firstOnly = await call(app, 'POST', '/v1/sync', {
+      token: admin.token,
+      body: { cursor: 0, changes: [babyChange(family.id, {})] },
+    });
+    expect(firstOnly.status).toBe(200);
+    expect((await check(app, admin.token, 139)).json.update?.required).toBe(false);
+
+    const second = await call(app, 'POST', '/v1/sync', {
+      token: admin.token,
+      headers: level,
+      body: { cursor: 0, changes: [babyChange(randomUUID(), { createdAt: 5000 })] },
+    });
+    expect(second.status).toBe(200);
+    expect((await check(app, admin.token, 139)).json.update?.required).toBe(true);
+    const fromNewApp = await call<AppUpdateResponse>(
+      app,
+      'GET',
+      '/v1/app/update?platform=android&versionCode=139',
+      { token: admin.token, headers: level },
+    );
+    expect(fromNewApp.json.update?.required).toBe(false);
+    // 已经是最新版就没有更新可提示，不会因为这个凭空冒出一个。
+    expect((await check(app, admin.token, 140)).json).toEqual({ update: null });
   });
 
   it('清单坏了是 503，不能当成“已经是最新”', async () => {

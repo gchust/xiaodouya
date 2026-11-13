@@ -56,6 +56,63 @@ export function defaultBaby<T extends BabyRef>(babies: readonly T[]): T | null {
 }
 
 /**
+ * 分享链接属于哪个宝宝。创建时选了就是那个；没选的（旧版 App 建的）是旧版界面上显示的宝宝，
+ * 档案全删了时是第一个宝宝：那时它的旧记录还在，旧链接照样能看到。
+ */
+export function shareBabyId(babies: readonly BabyRef[], requested: string | null): string | null {
+  return requested ?? defaultBaby(babies)?.id ?? firstBabyId(babies);
+}
+
+/**
+ * App 在每个请求的这个头里写自己支持到哪一级。旧版 App 都不写，算 0。
+ * 用级别不用 versionCode：自动发版的包在按宝宝过滤做完之前 versionCode 也一直在涨。
+ */
+export const CLIENT_LEVEL_HEADER = 'x-client-level';
+/** 按宝宝过滤的 App 从这一级开始。v0.1.0 到第一步的版本不过滤，第二个宝宝的记录会混进时间线。 */
+export const MULTI_BABY_CLIENT_LEVEL = 1;
+
+export function parseClientLevel(header: string | null | undefined): number {
+  const text = header?.trim() ?? '';
+  return /^\d{1,6}$/.test(text) ? Number(text) : 0;
+}
+
+/**
+ * 这个版本的 App 还能不能和这个家庭同步。`babies` 是家庭的全部档案，删除的也算：它们照样参与排序，
+ * 删除可以撤销，那个宝宝的记录也还在。
+ *
+ * 还要有一份带 `createdAt` 的，也就是按宝宝过滤的 App 加过宝宝：v0.1.0 之前可能有两台手机各建了一份
+ * 档案（都没有 `createdAt`）的家庭，那时还没有能加宝宝的版本，挡住它们只会让全家同步不了、也没有新版可换。
+ */
+export function needsMultiBabyUpgrade(clientLevel: number, babies: readonly BabyRef[]): boolean {
+  return (
+    clientLevel < MULTI_BABY_CLIENT_LEVEL &&
+    babies.length > 1 &&
+    babies.some((baby) => baby.createdAt !== undefined)
+  );
+}
+
+/**
+ * 服务端收到一份档案时它的 `createdAt`，返回 null 是拒绝。`existing` 是库里同一个 id 的档案。
+ *
+ * `createdAt` 只在建档时定一次：家庭已经有档案时，新档案必须带；改已有的档案时一直用库里的。
+ * 后加的宝宝丢了它（旧版保存时丢掉、格式坏了被 `catch` 丢掉）就会和第一个宝宝并列，按 id 排可能
+ * 拿走全部旧记录；第一个宝宝写上一个时间也可能排到后加的宝宝后面。补回去而不拒绝修改，
+ * 这样旧版改个名字也不会失败。
+ *
+ * 建档页的档案（id 是家庭 id）什么时候到都可以不带：一台手机的发件箱不保证先发它，
+ * 后加的宝宝先传上去的话，它被拒就再也传不上去，后加的宝宝反而成了第一个。
+ */
+export function settleBabyCreatedAt(
+  existing: BabyRef | undefined,
+  incoming: number | undefined,
+  context: { familyHasBaby: boolean; isFamilyProfile: boolean },
+): { createdAt: number | undefined } | null {
+  if (existing) return { createdAt: existing.createdAt };
+  if (incoming === undefined && context.familyHasBaby && !context.isFamilyProfile) return null;
+  return { createdAt: incoming };
+}
+
+/**
  * 这条记录是不是属于某个宝宝。档案本身、奶粉、育儿资料、收藏和收藏夹是全家共用的，
  * 家人自己的证件（有 `owner`）是那个人的，都不属于哪个宝宝。
  */
