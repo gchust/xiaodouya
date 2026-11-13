@@ -21,6 +21,8 @@ export const trends: Catalog['trends'] = {
   feedTimes: (n) => `${n}`,
   feedAmount: (unit) => `Amount (${unit})`,
   amountNote: 'Breastfeeds and feeds without an amount count as feeds but not toward the amount.',
+  nursingDuration: 'Breastfeeding (minutes)',
+  nursingMinutes: (minutes) => `${minutes} min`,
   sleep: 'Sleep',
   sleepTotal: 'Total per day (hours)',
   sleepHours: (hours) => `${hours} h`,

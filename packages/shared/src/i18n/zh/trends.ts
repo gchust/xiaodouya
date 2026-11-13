@@ -20,6 +20,8 @@ export const trends = {
   feedTimes: (n: Text) => `${n} 次`,
   feedAmount: (unit: Text) => `奶量（${unit}）`,
   amountNote: '亲喂和没填奶量的喂奶只算次数，不算进奶量。',
+  nursingDuration: '亲喂时长（分钟）',
+  nursingMinutes: (minutes: Text) => `${minutes} 分钟`,
   sleep: '睡眠',
   sleepTotal: '每天总时长（小时）',
   sleepHours: (hours: Text) => `${hours} 小时`,
