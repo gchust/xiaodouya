@@ -3,31 +3,33 @@ import {
   formatMediaDuration,
   formatMonthDay,
   MAX_SHARE_MOMENTS,
-  type MediaRef,
+  type MilestoneTemplate,
   milestoneTemplates,
   momentCover,
   t,
-  visualMedia,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BackHandler,
+  FlatList,
+  type ListRenderItem,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { Snapshot } from '../data/store';
 import { useApp, useRecords } from '../lib/app';
 import { downloadFileNames } from '../lib/downloadCore';
 import { gridItemWidth } from '../lib/layout';
 import { useFavorites } from '../lib/library';
 import { AudioCard, MediaImage, PlayBadge } from '../lib/mediaViews';
+import { type PhotoWallRow, photoWallRows } from '../lib/photoWall';
 import { toggleSelection } from '../lib/share';
-import { useTabScrollRef } from '../lib/tabScroll';
+import { useTabScrollToTop } from '../lib/tabScroll';
 import { FolderPicker } from '../sheets/librarySheets';
 import { type MomentKind, MomentSheet } from '../sheets/MomentSheet';
 import { ShareMomentsSheet } from '../sheets/shareMomentsSheet';
@@ -62,13 +64,19 @@ export function RecallScreen() {
   const [selection, setSelection] = useState<readonly string[] | null>(null);
   const canWrite = role !== 'viewer';
   const birthAt = baby?.data.birthAt ?? 0;
-  const scroll = useTabScrollRef('recall');
   const canShare = useCanShare();
+  // 每个子标签是自己的虚拟列表（issue #112），这里记着正在显示的那一个。
+  const list = useRef<ListHandle | null>(null);
+  const bindList = useCallback((node: ListHandle | null) => {
+    list.current = node;
+  }, []);
+  const scrollToTop = () => list.current?.scrollToOffset({ offset: 0, animated: false });
+  useTabScrollToTop('recall', scrollToTop);
 
   // 新内容排在最前面，切到对应子标签后还要回到顶部才看得到。
   const showSaved = (kind: MomentKind) => {
     setTab(kind === 'letter' ? 'letters' : 'timeline');
-    scroll.current?.scrollTo({ y: 0, animated: false });
+    scrollToTop();
   };
 
   const selecting = selection !== null && tab === 'timeline' && canShare;
@@ -175,31 +183,26 @@ export function RecallScreen() {
           })}
         </View>
       </View>
-      <ScrollView
-        ref={scroll}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {tab === 'timeline' ? (
-          <Timeline
-            birthAt={birthAt}
-            canShare={canShare}
-            selected={selecting ? selected : null}
-            onToggle={toggle}
-            onStartSelect={(id) => setSelection([id])}
-          />
-        ) : null}
-        {tab === 'photos' ? <Photos /> : null}
-        {tab === 'milestones' ? (
-          <Milestones
-            birthAt={birthAt}
-            onSeeTimeline={() => setTab('timeline')}
-            onSaved={showSaved}
-          />
-        ) : null}
-        {tab === 'letters' ? <Letters /> : null}
-      </ScrollView>
+      {tab === 'timeline' ? (
+        <Timeline
+          bindList={bindList}
+          birthAt={birthAt}
+          canShare={canShare}
+          selected={selecting ? selected : null}
+          onToggle={toggle}
+          onStartSelect={(id) => setSelection([id])}
+        />
+      ) : null}
+      {tab === 'photos' ? <Photos bindList={bindList} /> : null}
+      {tab === 'milestones' ? (
+        <Milestones
+          bindList={bindList}
+          birthAt={birthAt}
+          onSeeTimeline={() => setTab('timeline')}
+          onSaved={showSaved}
+        />
+      ) : null}
+      {tab === 'letters' ? <Letters bindList={bindList} /> : null}
       {selecting ? (
         // 拇指够得到的底部：选好就点，不用回到页面顶上找按钮。
         <View style={s.selectBar}>
@@ -261,13 +264,31 @@ function SearchLink() {
   );
 }
 
+type Moment = Snapshot['moments'][number];
+type Letter = Snapshot['letters'][number];
+
+/** 四个子标签各自的列表都交给它：回到顶部、保存后回到最新一条。 */
+type ListHandle = { scrollToOffset: (params: { offset: number; animated?: boolean }) => void };
+type BindList = (node: ListHandle | null) => void;
+
+/** 给 memo 的行用：引用不变，调用的是最新的那个函数。 */
+function useStable<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback((...args: A) => ref.current(...args), []);
+}
+
+const momentKey = (m: { id: string }) => m.id;
+
 function Timeline({
+  bindList,
   birthAt,
   canShare,
   selected,
   onToggle,
   onStartSelect,
 }: {
+  bindList: BindList;
   birthAt: number;
   canShare: boolean;
   /** 选择模式里选中的回忆，不在选时是 null。 */
@@ -283,11 +304,8 @@ function Timeline({
   const { width } = useWindowDimensions();
   const confirmDelete = useDeleteConfirm();
   const favorites = useFavorites();
-  if (moments.length === 0) {
-    return <Empty title={t().recall.emptyTitle} sub={t().recall.emptySub} />;
-  }
   const canDelete = app.role !== 'viewer';
-  const openActions = (m: (typeof moments)[number]) =>
+  const openActions = useStable((m: Moment) =>
     sheet.open(m.data.title || t().ui.thisMoment, () => (
       <>
         <Button
@@ -346,183 +364,266 @@ function Timeline({
           }
         />
       </>
-    ));
+    )),
+  );
+  const toggle = useStable(onToggle);
+  const toggleStar = useStable((id: string) => void favorites.toggle('moment', id));
+  const openViewer = useStable((id: string, index: number) =>
+    router.push({ pathname: '/viewer', params: { moment: id, index } }),
+  );
+  const renderItem: ListRenderItem<Moment> = ({ item }) => (
+    <MomentCard
+      moment={item}
+      birthAt={birthAt}
+      width={width}
+      selecting={selected !== null}
+      isSelected={selected?.includes(item.id) ?? false}
+      starred={Boolean(favorites.find(item.id))}
+      canDelete={canDelete}
+      onToggle={toggle}
+      onOpenActions={openActions}
+      onToggleStar={toggleStar}
+      onOpenViewer={openViewer}
+    />
+  );
   return (
-    <View style={s.timeline}>
-      {moments.map((m) => {
-        const audios = m.data.media.filter((x) => x.kind === 'audio');
-        const found = momentCover(m.data.media, m.data.coverMediaId);
-        const cover = found?.media;
-        const fileNames = downloadFileNames(m.data.media, {
-          title: m.data.title || t().ui.thisMoment,
-          at: m.data.at,
-        });
-        const name = m.data.title || t().ui.thisMoment;
-        const isSelected = selected?.includes(m.id) ?? false;
-        return (
-          <View key={m.id} style={{ gap: 10 }} testID={`moment-${m.id}`}>
-            <View style={s.momentHeadRow}>
-              <Pressable
-                testID={`moment-head-${m.id}`}
-                style={s.momentHead}
-                accessibilityRole="button"
-                accessibilityLabel={name}
-                onPress={selected ? () => onToggle(m.id) : undefined}
-                onLongPress={canDelete && !selected ? () => openActions(m) : undefined}
-              >
-                <Text style={s.momentTitle}>{m.data.title || t().ui.thisMoment}</Text>
-                <Mono style={s.momentMeta}>
-                  {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
-                </Mono>
-                {m.data.milestone ? (
-                  <View style={s.milestoneTag}>
-                    <Text style={s.milestoneTagText}>{t().recall.milestoneTag}</Text>
-                  </View>
-                ) : null}
-              </Pressable>
-              {selected ? (
-                <Pressable
-                  testID={`moment-select-${m.id}`}
-                  accessibilityRole="checkbox"
-                  accessibilityLabel={t().share.selectToggleA11y(name)}
-                  accessibilityState={{ checked: isSelected }}
-                  hitSlop={{ top: 11, bottom: 11, left: 14, right: 14 }}
-                  onPress={() => onToggle(m.id)}
-                  style={s.checkBox}
-                >
-                  <View style={[s.check, isSelected ? s.checkOn : null]}>
-                    {isSelected ? <Text style={s.checkMark}>✓</Text> : null}
-                  </View>
-                </Pressable>
-              ) : canDelete ? (
-                <View style={s.momentActions}>
-                  <StarButton
-                    testID={`moment-star-${m.id}`}
-                    on={Boolean(favorites.find(m.id))}
-                    title={name}
-                    onPress={() => void favorites.toggle('moment', m.id)}
-                  />
-                  <Pressable
-                    testID={`moment-more-${m.id}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={t().recall.moreActions(m.data.title || t().ui.thisMoment)}
-                    hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
-                    onPress={() => openActions(m)}
-                  >
-                    <Text style={s.momentMore}>⋯</Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </View>
-            {found && cover ? (
-              <Pressable
-                testID={`moment-cover-${m.id}`}
-                accessibilityRole="imagebutton"
-                accessibilityLabel={
-                  cover.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
-                }
-                onPress={() =>
-                  selected
-                    ? onToggle(m.id)
-                    : router.push({
-                        pathname: '/viewer',
-                        params: { moment: m.id, index: found.index },
-                      })
-                }
-                style={[s.cover, isSelected ? s.coverSelected : null]}
-              >
-                <MediaImage
-                  media={cover}
-                  variant="thumb"
-                  width={width}
-                  style={StyleSheet.absoluteFill}
-                />
-                {cover.kind === 'video' ? <PlayBadge /> : null}
-                {found.count > 1 ? (
-                  <View style={s.morePill}>
-                    <Text style={{ fontSize: 11, color: colors.ink }}>
-                      {t().recall.itemsTotal(found.count)}
-                    </Text>
-                  </View>
-                ) : null}
-              </Pressable>
-            ) : null}
-            {audios.map((a) => (
-              <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? t().ui.recording} />
-            ))}
-            {m.data.text ? <Serif>{m.data.text}</Serif> : null}
-            {m.data.byName ? (
-              <Muted style={{ fontSize: 11 }}>{t().recall.by(m.data.byName)}</Muted>
-            ) : null}
-          </View>
-        );
-      })}
-    </View>
+    <FlatList
+      ref={bindList}
+      data={moments}
+      keyExtractor={momentKey}
+      renderItem={renderItem}
+      extraData={selected}
+      ItemSeparatorComponent={TimelineGap}
+      ListEmptyComponent={<Empty title={t().recall.emptyTitle} sub={t().recall.emptySub} />}
+      contentContainerStyle={moments.length === 0 ? s.emptyList : s.timeline}
+      // 一条带封面的回忆三百多高，前后各留三屏，快速滑动时不至于露白，又不会把几百张封面都挂着。
+      initialNumToRender={4}
+      maxToRenderPerBatch={4}
+      windowSize={7}
+      {...LIST_PROPS}
+    />
   );
 }
 
-const PHOTO_GAP = 4;
+const LIST_PROPS = {
+  showsVerticalScrollIndicator: false,
+  keyboardShouldPersistTaps: 'handled',
+} as const;
 
-function Photos() {
+function TimelineGap() {
+  return <View style={s.timelineGap} />;
+}
+
+const MomentCard = memo(function MomentCard({
+  moment: m,
+  birthAt,
+  width,
+  selecting,
+  isSelected,
+  starred,
+  canDelete,
+  onToggle,
+  onOpenActions,
+  onToggleStar,
+  onOpenViewer,
+}: {
+  moment: Moment;
+  birthAt: number;
+  width: number;
+  selecting: boolean;
+  isSelected: boolean;
+  starred: boolean;
+  canDelete: boolean;
+  onToggle: (id: string) => void;
+  onOpenActions: (m: Moment) => void;
+  onToggleStar: (id: string) => void;
+  onOpenViewer: (id: string, index: number) => void;
+}) {
+  const audios = m.data.media.filter((x) => x.kind === 'audio');
+  const found = momentCover(m.data.media, m.data.coverMediaId);
+  const cover = found?.media;
+  const fileNames = downloadFileNames(m.data.media, {
+    title: m.data.title || t().ui.thisMoment,
+    at: m.data.at,
+  });
+  const name = m.data.title || t().ui.thisMoment;
+  return (
+    <View style={{ gap: 10 }} testID={`moment-${m.id}`}>
+      <View style={s.momentHeadRow}>
+        <Pressable
+          testID={`moment-head-${m.id}`}
+          style={s.momentHead}
+          accessibilityRole="button"
+          accessibilityLabel={name}
+          onPress={selecting ? () => onToggle(m.id) : undefined}
+          onLongPress={canDelete && !selecting ? () => onOpenActions(m) : undefined}
+        >
+          <Text style={s.momentTitle}>{m.data.title || t().ui.thisMoment}</Text>
+          <Mono style={s.momentMeta}>
+            {formatMonthDay(m.data.at)} · {dayLabel(birthAt, m.data.at)}
+          </Mono>
+          {m.data.milestone ? (
+            <View style={s.milestoneTag}>
+              <Text style={s.milestoneTagText}>{t().recall.milestoneTag}</Text>
+            </View>
+          ) : null}
+        </Pressable>
+        {selecting ? (
+          <Pressable
+            testID={`moment-select-${m.id}`}
+            accessibilityRole="checkbox"
+            accessibilityLabel={t().share.selectToggleA11y(name)}
+            accessibilityState={{ checked: isSelected }}
+            hitSlop={{ top: 11, bottom: 11, left: 14, right: 14 }}
+            onPress={() => onToggle(m.id)}
+            style={s.checkBox}
+          >
+            <View style={[s.check, isSelected ? s.checkOn : null]}>
+              {isSelected ? <Text style={s.checkMark}>✓</Text> : null}
+            </View>
+          </Pressable>
+        ) : canDelete ? (
+          <View style={s.momentActions}>
+            <StarButton
+              testID={`moment-star-${m.id}`}
+              on={starred}
+              title={name}
+              onPress={() => onToggleStar(m.id)}
+            />
+            <Pressable
+              testID={`moment-more-${m.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={t().recall.moreActions(m.data.title || t().ui.thisMoment)}
+              hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+              onPress={() => onOpenActions(m)}
+            >
+              <Text style={s.momentMore}>⋯</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+      {found && cover ? (
+        <Pressable
+          testID={`moment-cover-${m.id}`}
+          accessibilityRole="imagebutton"
+          accessibilityLabel={cover.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto}
+          onPress={() => (selecting ? onToggle(m.id) : onOpenViewer(m.id, found.index))}
+          style={[s.cover, isSelected ? s.coverSelected : null]}
+        >
+          <MediaImage media={cover} variant="thumb" width={width} style={StyleSheet.absoluteFill} />
+          {cover.kind === 'video' ? <PlayBadge /> : null}
+          {found.count > 1 ? (
+            <View style={s.morePill}>
+              <Text style={{ fontSize: 11, color: colors.ink }}>
+                {t().recall.itemsTotal(found.count)}
+              </Text>
+            </View>
+          ) : null}
+        </Pressable>
+      ) : null}
+      {audios.map((a) => (
+        <AudioCard key={a.id} media={a} fileName={fileNames.get(a.id) ?? t().ui.recording} />
+      ))}
+      {m.data.text ? <Serif>{m.data.text}</Serif> : null}
+      {m.data.byName ? (
+        <Muted style={{ fontSize: 11 }}>{t().recall.by(m.data.byName)}</Muted>
+      ) : null}
+    </View>
+  );
+});
+
+const PHOTO_GAP = 4;
+/** 右下角的 `＋ 记下这一刻` 和选择模式的底部按钮下面，最后一条也要能滚到它们上面。 */
+const LIST_BOTTOM = 100;
+const PHOTO_COLUMNS = 3;
+const photoRowKey = (row: PhotoWallRow<Moment>) => row.key;
+
+function Photos({ bindList }: { bindList: BindList }) {
   const { moments } = useRecords();
   const router = useRouter();
   const { width: windowWidth } = useWindowDimensions();
-  const cellWidth = gridItemWidth(windowWidth - spacing.page * 2, 3, PHOTO_GAP);
-  const groups = moments
-    .map((m) => ({
-      moment: m,
-      cells: visualMedia(m.data.media),
-    }))
-    .filter((g) => g.cells.length > 0);
-  if (groups.length === 0) {
-    return <Empty title={t().recall.noPhotos} sub={t().recall.noPhotosSub} />;
-  }
+  const cellWidth = gridItemWidth(windowWidth - spacing.page * 2, PHOTO_COLUMNS, PHOTO_GAP);
+  const rows = useMemo(() => photoWallRows(moments, PHOTO_COLUMNS), [moments]);
+  const openViewer = useStable((id: string, index: number) =>
+    router.push({ pathname: '/viewer', params: { moment: id, index } }),
+  );
+  const renderItem: ListRenderItem<PhotoWallRow<Moment>> = ({ item }) => (
+    <PhotoRow row={item} cellWidth={cellWidth} onOpen={openViewer} />
+  );
   return (
-    <View style={s.photos}>
-      {groups.map(({ moment, cells }) => (
-        <View key={moment.id} style={{ gap: 8 }}>
-          <View style={s.groupHead}>
-            <Text style={s.groupTitle} numberOfLines={1}>
-              {moment.data.title || t().ui.thisMoment} · {formatMonthDay(moment.data.at)}
-            </Text>
-            <Muted>{t().recall.itemsCount(cells.length)}</Muted>
-          </View>
-          <View style={s.grid}>
-            {cells.map((cell: MediaRef, index) => (
-              <Pressable
-                key={cell.id}
-                testID={`photo-${cell.id}`}
-                accessibilityRole="imagebutton"
-                accessibilityLabel={
-                  cell.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto
-                }
-                style={[s.gridCell, { width: cellWidth, height: cellWidth }]}
-                onPress={() =>
-                  router.push({ pathname: '/viewer', params: { moment: moment.id, index } })
-                }
-              >
-                <MediaImage media={cell} variant="thumb" style={StyleSheet.absoluteFill} />
-                {cell.kind === 'video' ? (
-                  <View style={s.durationPill}>
-                    <Mono weight="medium" style={{ fontSize: 10, color: colors.white }}>
-                      ▶ {cell.durationMs ? formatMediaDuration(cell.durationMs) : ''}
-                    </Mono>
-                  </View>
-                ) : null}
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ))}
-    </View>
+    <FlatList
+      ref={bindList}
+      data={rows}
+      keyExtractor={photoRowKey}
+      renderItem={renderItem}
+      ListEmptyComponent={<Empty title={t().recall.noPhotos} sub={t().recall.noPhotosSub} />}
+      contentContainerStyle={rows.length === 0 ? s.emptyList : s.photos}
+      // 一行只有一百多高：一次多画几行才铺得满一屏。
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
+      windowSize={7}
+      {...LIST_PROPS}
+    />
   );
 }
 
+const PhotoRow = memo(function PhotoRow({
+  row,
+  cellWidth,
+  onOpen,
+}: {
+  row: PhotoWallRow<Moment>;
+  cellWidth: number;
+  onOpen: (id: string, index: number) => void;
+}) {
+  const moment = row.moment;
+  if (row.kind === 'head') {
+    return (
+      <View style={[s.groupHead, row.first ? null : s.groupGap]}>
+        <Text style={s.groupTitle} numberOfLines={1}>
+          {moment.data.title || t().ui.thisMoment} · {formatMonthDay(moment.data.at)}
+        </Text>
+        <Muted>{t().recall.itemsCount(row.count)}</Muted>
+      </View>
+    );
+  }
+  return (
+    <View style={[s.gridRow, row.first ? s.gridFirstRow : null]}>
+      {row.cells.map(({ media: cell, index }) => (
+        <Pressable
+          key={cell.id}
+          testID={`photo-${cell.id}`}
+          accessibilityRole="imagebutton"
+          accessibilityLabel={cell.kind === 'video' ? t().recall.playVideo : t().recall.viewPhoto}
+          style={[s.gridCell, { width: cellWidth, height: cellWidth }]}
+          onPress={() => onOpen(moment.id, index)}
+        >
+          <MediaImage media={cell} variant="thumb" style={StyleSheet.absoluteFill} />
+          {cell.kind === 'video' ? (
+            <View style={s.durationPill}>
+              <Mono weight="medium" style={{ fontSize: 10, color: colors.white }}>
+                ▶ {cell.durationMs ? formatMediaDuration(cell.durationMs) : ''}
+              </Mono>
+            </View>
+          ) : null}
+        </Pressable>
+      ))}
+    </View>
+  );
+});
+
+type MilestoneItem =
+  | { key: string; kind: 'done'; moment: Moment }
+  | { key: string; kind: 'pending'; template: MilestoneTemplate };
+const milestoneKey = (item: MilestoneItem) => item.key;
+
 function Milestones({
+  bindList,
   birthAt,
   onSeeTimeline,
   onSaved,
 }: {
+  bindList: BindList;
   birthAt: number;
   onSeeTimeline: () => void;
   onSaved: (kind: MomentKind) => void;
@@ -530,15 +631,23 @@ function Milestones({
   const { moments } = useRecords();
   const { role } = useApp();
   const sheet = useSheet();
-  const done = moments.filter((m) => m.data.milestone);
-  const pending = milestoneTemplates.filter(
-    (item) => !done.some((m) => item.matches(m.data.title)),
-  );
-  return (
-    <View style={s.milestones}>
-      {done.map((m) => (
+  const items = useMemo(() => {
+    const done = moments.filter((m) => m.data.milestone);
+    const pending = milestoneTemplates.filter(
+      (item) => !done.some((m) => item.matches(m.data.title)),
+    );
+    return [
+      ...done.map((m): MilestoneItem => ({ key: `done-${m.id}`, kind: 'done', moment: m })),
+      ...pending.map(
+        (template): MilestoneItem => ({ key: `todo-${template.id}`, kind: 'pending', template }),
+      ),
+    ];
+  }, [moments]);
+  const renderItem: ListRenderItem<MilestoneItem> = ({ item }) => {
+    if (item.kind === 'done') {
+      const m = item.moment;
+      return (
         <Pressable
-          key={m.id}
           testID={`milestone-done-${m.id}`}
           accessibilityRole="button"
           accessibilityLabel={t().recall.viewNamed(m.data.title)}
@@ -563,54 +672,63 @@ function Milestones({
           </View>
           <Text style={s.milestoneAction}>{t().recall.view}</Text>
         </Pressable>
-      ))}
-      {pending.map((item) => (
-        <Pressable
-          key={item.id}
-          testID={`milestone-${item.id}`}
-          accessibilityRole="button"
-          accessibilityLabel={t().recall.recordNamed(item.title)}
-          disabled={role === 'viewer'}
-          onPress={() =>
-            sheet.open(t().ui.recordMoment, () => (
-              <MomentSheet
-                initialKind="moment"
-                initialMilestone
-                initialTitle={item.title}
-                onSaved={onSaved}
-              />
-            ))
-          }
-          style={s.milestoneRow}
-        >
-          <View style={s.milestoneDotColumn}>
-            <View style={[s.milestoneDot, { borderColor: colors.hint }]} />
-          </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ fontSize: 14, color: colors.muted }}>{item.title}</Text>
-            <Muted style={{ fontSize: 11 }}>{item.typical}</Muted>
-          </View>
-          {role === 'viewer' ? null : <Text style={s.milestoneAction}>{t().records.record}</Text>}
-        </Pressable>
-      ))}
-      <Muted style={{ marginTop: 14, fontSize: 11, lineHeight: 18 }}>
-        {t().recall.milestonesNote}
-      </Muted>
-    </View>
+      );
+    }
+    const template = item.template;
+    return (
+      <Pressable
+        testID={`milestone-${template.id}`}
+        accessibilityRole="button"
+        accessibilityLabel={t().recall.recordNamed(template.title)}
+        disabled={role === 'viewer'}
+        onPress={() =>
+          sheet.open(t().ui.recordMoment, () => (
+            <MomentSheet
+              initialKind="moment"
+              initialMilestone
+              initialTitle={template.title}
+              onSaved={onSaved}
+            />
+          ))
+        }
+        style={s.milestoneRow}
+      >
+        <View style={s.milestoneDotColumn}>
+          <View style={[s.milestoneDot, { borderColor: colors.hint }]} />
+        </View>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={{ fontSize: 14, color: colors.muted }}>{template.title}</Text>
+          <Muted style={{ fontSize: 11 }}>{template.typical}</Muted>
+        </View>
+        {role === 'viewer' ? null : <Text style={s.milestoneAction}>{t().records.record}</Text>}
+      </Pressable>
+    );
+  };
+  return (
+    <FlatList
+      ref={bindList}
+      data={items}
+      keyExtractor={milestoneKey}
+      renderItem={renderItem}
+      ListFooterComponent={
+        <Muted style={{ marginTop: 14, fontSize: 11, lineHeight: 18 }}>
+          {t().recall.milestonesNote}
+        </Muted>
+      }
+      contentContainerStyle={s.milestones}
+      {...LIST_PROPS}
+    />
   );
 }
 
-function Letters() {
+function Letters({ bindList }: { bindList: BindList }) {
   const { letters } = useRecords();
   const app = useApp();
   const sheet = useSheet();
   const { toast } = useFeedback();
   const confirmDelete = useDeleteConfirm();
-  if (letters.length === 0) {
-    return <Empty title={t().recall.noLetters} sub={t().recall.noLettersSub} />;
-  }
   const canWrite = app.role !== 'viewer';
-  const openActions = (l: (typeof letters)[number]) =>
+  const openActions = (l: Letter) =>
     sheet.open(l.data.title || t().ui.untitled, () => (
       <>
         <Button
@@ -639,35 +757,45 @@ function Letters() {
         />
       </>
     ));
-  return (
-    <View style={s.letters}>
-      {letters.map((l) => (
-        <View key={l.id} style={s.letter} testID={`letter-${l.id}`}>
-          <View style={s.letterHead}>
-            <Text style={s.letterTitle}>{l.data.title || t().ui.untitled}</Text>
-            <Mono style={{ fontSize: 11, color: colors.muted }}>{formatMonthDay(l.data.at)}</Mono>
-            {canWrite ? (
-              <Pressable
-                testID={`letter-more-${l.id}`}
-                accessibilityRole="button"
-                accessibilityLabel={t().recall.moreActions(l.data.title || t().ui.untitled)}
-                hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
-                onPress={() => openActions(l)}
-              >
-                <Text style={s.momentMore}>⋯</Text>
-              </Pressable>
-            ) : null}
-          </View>
-          <Serif style={{ fontSize: 13, color: colors.inkSoft, lineHeight: 23 }}>
-            {l.data.text}
-          </Serif>
-          {l.data.byName ? (
-            <Muted style={{ fontSize: 11 }}>{t().recall.by(l.data.byName)}</Muted>
-          ) : null}
-        </View>
-      ))}
+  const renderItem: ListRenderItem<Letter> = ({ item: l }) => (
+    <View style={s.letter} testID={`letter-${l.id}`}>
+      <View style={s.letterHead}>
+        <Text style={s.letterTitle}>{l.data.title || t().ui.untitled}</Text>
+        <Mono style={{ fontSize: 11, color: colors.muted }}>{formatMonthDay(l.data.at)}</Mono>
+        {canWrite ? (
+          <Pressable
+            testID={`letter-more-${l.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={t().recall.moreActions(l.data.title || t().ui.untitled)}
+            hitSlop={{ top: 12, bottom: 12, left: 14, right: 14 }}
+            onPress={() => openActions(l)}
+          >
+            <Text style={s.momentMore}>⋯</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <Serif style={{ fontSize: 13, color: colors.inkSoft, lineHeight: 23 }}>{l.data.text}</Serif>
+      {l.data.byName ? (
+        <Muted style={{ fontSize: 11 }}>{t().recall.by(l.data.byName)}</Muted>
+      ) : null}
     </View>
   );
+  return (
+    <FlatList
+      ref={bindList}
+      data={letters}
+      keyExtractor={momentKey}
+      renderItem={renderItem}
+      ItemSeparatorComponent={LetterGap}
+      ListEmptyComponent={<Empty title={t().recall.noLetters} sub={t().recall.noLettersSub} />}
+      contentContainerStyle={letters.length === 0 ? s.emptyList : s.letters}
+      {...LIST_PROPS}
+    />
+  );
+}
+
+function LetterGap() {
+  return <View style={s.letterGap} />;
 }
 
 const s = themedStyles(() => ({
@@ -705,7 +833,10 @@ const s = themedStyles(() => ({
   tabs: { flexDirection: 'row', gap: 18, marginVertical: -9 },
   tab: { minHeight: 44, paddingVertical: 9, justifyContent: 'center' },
   tabLabel: { borderBottomWidth: 2, paddingBottom: 4 },
-  timeline: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 28 },
+  // 列表的间距用分隔项，不用 gap：虚拟列表没画的部分是占位视图，gap 会把它们也隔开。
+  emptyList: { paddingBottom: LIST_BOTTOM },
+  timeline: { paddingHorizontal: spacing.page, paddingTop: 18, paddingBottom: LIST_BOTTOM },
+  timelineGap: { height: 28 },
   momentHeadRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   momentHead: { flex: 1, flexDirection: 'row', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' },
   momentTitle: { fontFamily: fonts.serifBold, fontSize: 18, color: colors.ink },
@@ -730,7 +861,8 @@ const s = themedStyles(() => ({
     borderRadius: 999,
     backgroundColor: colors.cardGlass,
   },
-  photos: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 20 },
+  photos: { paddingHorizontal: spacing.page, paddingTop: 18, paddingBottom: LIST_BOTTOM },
+  groupGap: { marginTop: 20 },
   groupHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -738,7 +870,8 @@ const s = themedStyles(() => ({
     gap: 8,
   },
   groupTitle: { fontFamily: fonts.serifBold, fontSize: 15, color: colors.ink, flexShrink: 1 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: PHOTO_GAP },
+  gridRow: { flexDirection: 'row', gap: PHOTO_GAP, marginTop: PHOTO_GAP },
+  gridFirstRow: { marginTop: 8 },
   gridCell: {
     borderRadius: 8,
     overflow: 'hidden',
@@ -753,7 +886,7 @@ const s = themedStyles(() => ({
     borderRadius: 999,
     backgroundColor: colors.veil,
   },
-  milestones: { paddingHorizontal: spacing.page, paddingTop: 14 },
+  milestones: { paddingHorizontal: spacing.page, paddingTop: 14, paddingBottom: LIST_BOTTOM },
   milestoneRow: {
     flexDirection: 'row',
     gap: 12,
@@ -765,7 +898,8 @@ const s = themedStyles(() => ({
   milestoneDotColumn: { width: 22 },
   milestoneDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5 },
   milestoneAction: { fontSize: 12, color: colors.accentText },
-  letters: { paddingHorizontal: spacing.page, paddingTop: 18, gap: 12 },
+  letters: { paddingHorizontal: spacing.page, paddingTop: 18, paddingBottom: LIST_BOTTOM },
+  letterGap: { height: 12 },
   letter: {
     padding: 16,
     backgroundColor: colors.card,
