@@ -679,6 +679,9 @@ const s = themedStyles(() => ({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 12,
+    // 英文的 Memories + Search 和右边的 Select、Share timeline 在 360 宽的手机上放不下，右边换到下一行。
+    flexWrap: 'wrap',
+    rowGap: 4,
   },
   titleGroup: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1 },
   shareLink: { fontSize: 13, color: colors.accentText },

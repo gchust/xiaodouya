@@ -130,10 +130,21 @@ export function searchSnippet(text: string, terms: readonly string[]): string {
   if (!first || first[0] < SNIPPET_KEEP) return text;
   const hit = first[0];
   let begin = hit - SNIPPET_LEAD;
+  let atBreak = false;
   for (let i = hit - 1; i >= hit - SNIPPET_LEAD; i--) {
     if (SENTENCE_BREAK.test(text.charAt(i))) {
       begin = i + 1;
+      atBreak = true;
       break;
+    }
+  }
+  // 英文这类用空格分词的，没有句子结尾可断时从下一个词开始，不显示半个词。中文的窗口里没有空格，照字截。
+  if (!atBreak && !SPACE.test(text.charAt(begin - 1))) {
+    for (let i = begin; i < hit; i++) {
+      if (SPACE.test(text.charAt(i))) {
+        begin = i + 1;
+        break;
+      }
     }
   }
   // 不要从一个 emoji 的后半截开始。

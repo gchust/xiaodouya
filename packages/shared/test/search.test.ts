@@ -118,6 +118,17 @@ describe('searchSnippet', () => {
     expect(long.endsWith(snippet.slice(1))).toBe(true);
   });
 
+  it('英文没有句号可断时从词的开头开始，不切半个词', () => {
+    const text =
+      'It rained all afternoon so we stayed in and built a blanket fort and read the same book four times and just before dinner you tried to Roll onto your tummy again';
+    const snippet = searchSnippet(text, parseSearchQuery('roll'));
+    expect(snippet.startsWith('…')).toBe(true);
+    expect(text.endsWith(snippet.slice(1))).toBe(true);
+    const first = snippet.slice(1).split(' ')[0] ?? '';
+    expect(text.split(' ')).toContain(first);
+    expect(snippet).toContain('Roll onto');
+  });
+
   it('没有命中时原样返回（命中在标题里）', () => {
     expect(searchSnippet(long, parseSearchQuery('标题'))).toBe(long);
   });
