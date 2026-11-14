@@ -40,6 +40,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: growth-add }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: growth-point-0 }
 - assertVisible:
     id: growth-point-text
@@ -58,6 +60,12 @@ appId: com.gchust.xiaodouya
 - assertVisible: { id: growth-empty }
 - assertVisible: 记身高体重时可以顺便记头围，这里就会画出来。
 # 记一次头围：默认不记，点了才出现
+# 换到头围的空状态卡片变矮，页面跟着动，“记录身高体重”可能只露在状态栏下面一条，要先滚回来放到中间再点。
+- scrollUntilVisible:
+    element: { id: growth-add }
+    direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: growth-add }
 - assertVisible: 3.7 kg
 - assertNotVisible: { id: head-value }

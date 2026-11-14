@@ -47,6 +47,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: growth-add }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: growth-add }
 - assertVisible: 3.6 kg
 - tapOn: { id: weight-inc }
