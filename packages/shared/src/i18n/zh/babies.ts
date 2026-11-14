@@ -18,6 +18,12 @@ export const babies = {
   addSubmit: '加好了',
   added: (name: Text) => `已加上${name}，现在看的是${name}`,
   regionThisBaby: '这个宝宝的地区',
+  shareFor: (name: Text) => `宝宝：${name}`,
+  feedReminderBody: (name: Text) => `${name}已到平时的喂奶间隔。`,
+  widgetFor: '小工具记给谁',
+  widgetFollow: '跟着 App 里选的宝宝',
+  widgetHint: '只在这台手机上。跟着 App 时，在今天页换了宝宝，小工具也跟着换。',
+  widgetNameHint: '有几个宝宝时小工具上写宝宝的名字，不用上面的称呼。',
   regionHint: '决定这个宝宝的疫苗本和默认单位，只有管理员能改。',
   regionByAdmin: (name: Text) => `地区先用${name}，管理员可以在资料里改。`,
 };

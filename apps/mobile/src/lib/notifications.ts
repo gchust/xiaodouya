@@ -1,4 +1,4 @@
-import { type EventData, feedReminderDelayMs, t } from '@xiaodouya/shared';
+import { type EventData, planFeedReminders, t } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
@@ -49,24 +49,47 @@ export async function unregisterPushToken(api: Api): Promise<void> {
   await api.unregisterPushToken(await deviceId());
 }
 
-export async function scheduleFeedReminder(events: EventData[], enabled: boolean): Promise<void> {
+/**
+ * 喂奶提醒。只有一个宝宝时传 `babyId: null` 的一组，和以前一样只有一条（同一个 id、同样的文字）；
+ * 有几个宝宝时每个宝宝一条，文字写上名字（issue #106）。
+ */
+export async function scheduleFeedReminders(
+  babies: { babyId: string | null; name: string; events: EventData[] }[],
+  enabled: boolean,
+): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(FEED_REMINDER_ID);
+    // 每个宝宝一条的（有过几个宝宝时排的）。查不到已排的提醒也不能耽误只有一个宝宝的那条。
+    try {
+      const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+      for (const item of scheduled) {
+        if (item.identifier.startsWith(`${FEED_REMINDER_ID}:`)) {
+          await Notifications.cancelScheduledNotificationAsync(item.identifier);
+        }
+      }
+    } catch {}
     if (!enabled) return;
-    const delayMs = feedReminderDelayMs(events, Date.now());
-    if (delayMs === null) return;
+    const reminders = planFeedReminders(babies, Date.now());
+    if (reminders.length === 0) return;
     const current = await Notifications.getPermissionsAsync();
     if (!current.granted) return;
     await ensureChannels();
-    await Notifications.scheduleNotificationAsync({
-      identifier: FEED_REMINDER_ID,
-      content: { title: t().ui.feedReminderTitle, body: t().ui.feedReminderBody },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: Math.max(60, Math.round(delayMs / 1000)),
-        channelId: 'feed',
-      },
-    });
+    for (const reminder of reminders) {
+      await Notifications.scheduleNotificationAsync({
+        identifier: reminder.babyId ? `${FEED_REMINDER_ID}:${reminder.babyId}` : FEED_REMINDER_ID,
+        content: {
+          title: t().ui.feedReminderTitle,
+          body: reminder.babyId
+            ? t().babies.feedReminderBody(reminder.name)
+            : t().ui.feedReminderBody,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: Math.max(60, Math.round(reminder.delayMs / 1000)),
+          channelId: 'feed',
+        },
+      });
+    }
   } catch {
     // 通知不可用不能影响记录。
   }

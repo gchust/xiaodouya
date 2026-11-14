@@ -398,6 +398,11 @@ export const WidgetPrefs = z.looseObject({
   label: z.string().max(200).optional().catch(undefined),
   /** 默认不显示：桌面上谁拿起手机都能看到这张脸，要由这台手机的主人自己决定。 */
   showAvatar: z.boolean().optional().catch(undefined),
+  /**
+   * 小工具固定给哪个宝宝记（issue #106）。没有时跟着 App 里选的当前宝宝。
+   * 只存在这台手机上，和称呼一样。
+   */
+  babyId: z.uuid().optional().catch(undefined),
 });
 export type WidgetPrefs = z.infer<typeof WidgetPrefs>;
 
@@ -406,14 +411,28 @@ export function parseWidgetPrefs(raw: string | null): WidgetPrefs {
   try {
     const parsed = WidgetPrefs.safeParse(JSON.parse(raw));
     if (!parsed.success) return {};
-    const { label, showAvatar } = parsed.data;
+    const { label, showAvatar, babyId } = parsed.data;
     return {
       ...(label !== undefined ? { label } : {}),
       ...(showAvatar !== undefined ? { showAvatar } : {}),
+      ...(babyId !== undefined ? { babyId } : {}),
     };
   } catch {
     return {};
   }
+}
+
+/**
+ * 小工具给哪个宝宝记：这台手机固定的那个，还在家里能显示的话；否则是 App 里的当前宝宝。
+ * 固定的宝宝删了、换了家庭时回到当前宝宝，不会记给一个看不见的宝宝。
+ */
+export function widgetBabyId(
+  prefs: Pick<WidgetPrefs, 'babyId'>,
+  babies: readonly { id: string }[],
+  currentId: string | null,
+): string | null {
+  const pinned = prefs.babyId;
+  return pinned && babies.some((baby) => baby.id === pinned) ? pinned : currentId;
 }
 
 /** 去掉首尾空白，中间的空白和换行合成一个空格，按字截到上限；什么都没剩就是没设。 */

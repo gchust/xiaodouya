@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   canShare,
   shareBabyField,
+  shareBabyName,
   shareDayPending,
   shareDayRange,
   shareLinkUrl,
@@ -177,5 +178,25 @@ describe('链接属于哪个宝宝（issue #106）', () => {
   it('有几个宝宝时是当前宝宝', () => {
     expect(shareBabyField({ multiBaby: true, baby })).toEqual({ babyId: baby.id });
     expect(shareBabyField({ multiBaby: true, baby: null })).toEqual({});
+  });
+});
+
+describe('已分享的链接写明是哪个宝宝的（issue #106）', () => {
+  const babies = [
+    { id: '11111111-1111-4111-8111-111111111111', data: { name: '大宝' } },
+    { id: '22222222-2222-4222-8222-222222222222', data: { name: '二宝' } },
+  ];
+  it('只有一个宝宝时不写', () => {
+    expect(shareBabyName({ babyId: babies[0]!.id }, { multiBaby: false, babies })).toBeNull();
+  });
+  it('有几个宝宝时写链接的宝宝；旧版 App 建的（没有 babyId）是第一个宝宝', () => {
+    expect(shareBabyName({ babyId: babies[1]!.id }, { multiBaby: true, babies })).toBe('二宝');
+    expect(shareBabyName({}, { multiBaby: true, babies })).toBe('大宝');
+    expect(
+      shareBabyName(
+        { babyId: '33333333-3333-4333-8333-333333333333' },
+        { multiBaby: true, babies },
+      ),
+    ).toBeNull();
   });
 });

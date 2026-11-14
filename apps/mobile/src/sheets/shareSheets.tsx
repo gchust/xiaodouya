@@ -21,6 +21,7 @@ import {
   canShare,
   nicknameProblem,
   shareBabyField,
+  shareBabyName,
   shareDayPending,
   shareDayRange,
   shareDayTitle,
@@ -186,7 +187,9 @@ export function ShareDaySheet({ at }: { at: number }) {
 
 export function SharedLinksSheet() {
   const app = useApp();
-  const { moments } = useRecords();
+  const snapshot = useRecords();
+  // 链接可能是别的宝宝的：标题要用全部宝宝的回忆找名字（issue #106）。
+  const moments = snapshot.all.moments;
   const [shares, setShares] = useState<ShareSummary[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -246,6 +249,11 @@ export function SharedLinksSheet() {
               <Muted style={s.shareSub}>
                 {t().share.linkLine(formatShortDate(share.expiresAt), share.byLabel)}
               </Muted>
+              {shareBabyName(share, snapshot) ? (
+                <Muted style={s.shareSub} testID={`share-row-baby-${index}`}>
+                  {t().babies.shareFor(shareBabyName(share, snapshot) ?? '')}
+                </Muted>
+              ) : null}
               {share.display && !isDefaultShareDisplay(share.display) ? (
                 <Muted style={s.shareSub} testID={`share-row-display-${index}`}>
                   {shareDisplaySummary(share.display)}

@@ -1,4 +1,4 @@
-import { type MediaRef, widgetAvatarKey } from '@xiaodouya/shared';
+import { type MediaRef, type WidgetPrefs, widgetAvatarKey, widgetBabyId } from '@xiaodouya/shared';
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, type ImageRef, SaveFormat } from 'expo-image-manipulator';
 import type { CoreServices } from '../data/services';
@@ -107,13 +107,20 @@ async function writeSquare(source: string, target: File): Promise<void> {
   }
 }
 
+/** 小工具上那个宝宝的头像：固定给哪个宝宝记就是谁的（issue #106）。 */
+function widgetAvatar(store: CoreServices['store'], prefs: WidgetPrefs) {
+  const snapshot = store.getSnapshot();
+  const babyId = widgetBabyId(prefs, snapshot.babies, snapshot.baby?.id ?? null);
+  return store.viewFor(babyId).baby?.data.avatar;
+}
+
 let running: Promise<boolean> | null = null;
 let rerun = false;
 let lastMiss: { key: string; at: number } | null = null;
 
 async function update(core: Pick<CoreServices, 'api' | 'db' | 'store'>): Promise<boolean> {
   const prefs = await readWidgetPrefs(core.db);
-  const avatar = core.store.getSnapshot().baby?.data.avatar;
+  const avatar = widgetAvatar(core.store, prefs);
   const key = widgetAvatarKey(prefs, avatar);
   const dir = avatarDir();
   let changed = prune(dir, key);
@@ -138,10 +145,8 @@ async function update(core: Pick<CoreServices, 'api' | 'db' | 'store'>): Promise
     if (temp.exists) temp.delete();
   }
   // 等的这段时间里可能关了开关或者换了头像：再对一次，删掉不该留的。
-  const latest = widgetAvatarKey(
-    await readWidgetPrefs(core.db),
-    core.store.getSnapshot().baby?.data.avatar,
-  );
+  const latestPrefs = await readWidgetPrefs(core.db);
+  const latest = widgetAvatarKey(latestPrefs, widgetAvatar(core.store, latestPrefs));
   if (latest !== key) prune(dir, latest);
   return changed;
 }

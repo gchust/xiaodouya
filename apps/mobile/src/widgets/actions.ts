@@ -3,6 +3,7 @@ import {
   type WidgetAction,
   type WidgetPlan,
   type WidgetSession,
+  withBabyId,
 } from '@xiaodouya/shared';
 import type { RecordStore } from '../data/store';
 
@@ -16,8 +17,11 @@ export async function runWidgetAction(
   store: RecordStore,
   session: WidgetSession,
   now: number,
+  /** 小工具给哪个宝宝记（`widgetBabyId`，issue #106）。null 是 App 里的当前宝宝。 */
+  babyId: string | null = null,
 ): Promise<WidgetPlan> {
-  const { baby, events, formulas } = store.getSnapshot();
+  const { formulas } = store.getSnapshot();
+  const { baby, events } = store.viewFor(babyId);
   const plan = planWidgetAction(action, {
     session,
     hasBaby: Boolean(baby),
@@ -26,6 +30,11 @@ export async function runWidgetAction(
     isKnownId: (id) => store.has(id),
     now,
   });
-  if (plan.kind === 'write') await store.write('event', plan.id, plan.data);
-  return plan;
+  if (plan.kind !== 'write') return plan;
+  // 新记录写给小工具的宝宝，不是 App 里正在看的那个。改已有的（结束睡眠、亲喂）原样留着主人。
+  const data = store.has(plan.id)
+    ? plan.data
+    : (withBabyId('event', plan.data, baby?.id) as typeof plan.data);
+  await store.write('event', plan.id, data);
+  return { ...plan, data };
 }

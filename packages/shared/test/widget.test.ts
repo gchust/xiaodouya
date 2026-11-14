@@ -14,6 +14,7 @@ import {
   type WidgetEntry,
   type WidgetSession,
   widgetAvatarKey,
+  widgetBabyId,
   widgetLabel,
 } from '../src/domain/widget';
 import { formulaSnapshot } from '../src/health/nutrition';
@@ -587,6 +588,18 @@ describe('小工具上的称呼和头像', () => {
       label: '豆豆',
       showAvatar: true,
     });
+  });
+
+  it('小工具固定的宝宝还在就记给它，否则跟着当前宝宝（issue #106）', () => {
+    const first = '11111111-1111-4111-8111-111111111111';
+    const second = '22222222-2222-4222-8222-222222222222';
+    const babies = [{ id: first }, { id: second }];
+    expect(widgetBabyId({}, babies, first)).toBe(first);
+    expect(widgetBabyId({ babyId: second }, babies, first)).toBe(second);
+    // 固定的宝宝删了（不在能显示的宝宝里）：回到当前宝宝。
+    expect(widgetBabyId({ babyId: second }, [{ id: first }], first)).toBe(first);
+    expect(parseWidgetPrefs(`{"babyId":"${second}"}`)).toEqual({ babyId: second });
+    expect(parseWidgetPrefs('{"babyId":"not-a-uuid","label":"豆豆"}')).toEqual({ label: '豆豆' });
   });
 
   it('打开开关、宝宝有图片头像时才显示，缓存按头像的文件 id 区分', () => {

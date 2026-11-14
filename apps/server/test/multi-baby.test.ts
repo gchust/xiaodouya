@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   CreateShareResponse,
+  FamilyExport,
   PublicConfig,
   PublicShareResponse,
   PublicTimelineMomentResponse,
@@ -421,5 +422,46 @@ describe('分享按宝宝区分', () => {
     const created = await createDay(admin.token);
     await syncNew(admin.token, [baby(second, { name: '二宝改名', createdAt: 5000 })]);
     expect((await openDay(created.json.token)).json.baby.name).toBe('大宝');
+  });
+});
+
+describe('数据导出按宝宝区分', () => {
+  it('列出宝宝，每条属于宝宝的记录写上主人，没写 babyId 的是第一个宝宝；全家共用的不写', async () => {
+    const { admin, first, second } = await twoBabies();
+    const legacy = change('event', { type: 'feed', at: 1, ml: 90 });
+    const theirs = change('event', { type: 'feed', at: 2, ml: 40, babyId: second });
+    const formula = change('event', {
+      type: 'formula',
+      name: '虚构奶粉',
+      basis: 'per100ml',
+      values: {},
+    });
+    const moment = change('moment', {
+      title: '',
+      text: '虚构',
+      at: 3,
+      milestone: false,
+      media: [],
+      babyId: second,
+    });
+    await syncNew(admin.token, [legacy, theirs, formula, moment]);
+    const exported = await call<FamilyExport>(app, 'GET', '/v1/family/export', {
+      token: admin.token,
+    });
+    expect(exported.status).toBe(200);
+    expect(exported.json.babies).toEqual([
+      { id: first, name: '大宝' },
+      { id: second, name: '二宝' },
+    ]);
+    const ownerOf = (id: string) => exported.json.records.find((r) => r.id === id)?.babyId;
+    expect(ownerOf(legacy.id)).toBe(first);
+    expect(ownerOf(theirs.id)).toBe(second);
+    expect(ownerOf(moment.id)).toBe(second);
+    expect(ownerOf(formula.id)).toBeUndefined();
+    expect(ownerOf(first)).toBeUndefined();
+    // 原文不动：没写 babyId 的记录，data 里照样没有。
+    expect(exported.json.records.find((r) => r.id === legacy.id)?.data).not.toHaveProperty(
+      'babyId',
+    );
   });
 });

@@ -112,6 +112,68 @@ appId: com.gchust.xiaodouya
     text: Bean的第 1 天
 - assertVisible:
     text: 喂奶 50ml.*
+# 分享 Bean 的今天：已分享的链接里写明是 Bean 的。
+- scrollUntilVisible:
+    element: { id: share-today }
+- waitForAnimationToEnd
+- tapOn: { id: share-today }
+- extendedWaitUntil:
+    visible: { id: share-create }
+    timeout: 10000
+- tapOn: { id: share-create }
+- extendedWaitUntil:
+    visible: { id: share-link }
+    timeout: 30000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: share-link }
+    timeout: 10000
+- tapOn: { id: tab-family }
+- scrollUntilVisible:
+    element: { id: open-shares }
+- waitForAnimationToEnd
+- tapOn: { id: open-shares }
+- extendedWaitUntil:
+    visible: { id: share-row-0 }
+    timeout: 15000
+- assertVisible:
+    id: share-row-baby-0
+    text: 宝宝：Bean
+- takeScreenshot: .artifacts/e2e-26-shared-links
+- tapOn: { id: share-revoke-0 }
+- tapOn: { id: share-revoke-0 }
+- extendedWaitUntil:
+    visible: { id: shares-empty }
+    timeout: 10000
+- tapOn: { id: sheet-cancel }
+- extendedWaitUntil:
+    notVisible: { id: shares-empty }
+    timeout: 10000
+# 桌面小工具页：可以固定给一个宝宝记，有几个宝宝时不用称呼。
+- scrollUntilVisible:
+    element: { id: open-widgets }
+- tapOn: { id: open-widgets }
+- extendedWaitUntil:
+    visible: { id: widgets-screen }
+    timeout: 10000
+- assertVisible: { id: widget-baby }
+- assertVisible: { id: widget-baby-follow }
+- assertVisible: { id: widget-name-multi }
+- tapOn: { id: widget-baby-0 }
+- takeScreenshot: .artifacts/e2e-26-widget-baby
+# 改回跟着 App，不留给别的流程。
+- tapOn: { id: widget-baby-follow }
+- tapOn: { id: widgets-back }
+- extendedWaitUntil:
+    visible: { id: open-widgets }
+    timeout: 10000
+- tapOn: { id: tab-today }
+- extendedWaitUntil:
+    visible: { id: today-screen }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: baby-avatar }
+    direction: UP
 # 最后换回 Sprout，和这组开始时一样。
 - tapOn: { id: baby-avatar }
 - extendedWaitUntil:

@@ -162,6 +162,20 @@ export function feedReminderDelayMs(events: readonly EventData[], now: number): 
   return estimate.remainingMs;
 }
 
+/**
+ * 每个宝宝的喂奶提醒（issue #106）。`babyId` 是 null 的是只有一个宝宝的家庭，和以前一样只有一条；
+ * 有几个宝宝时每个宝宝按自己的喂奶各算一条，不能混在一起算：两个宝宝的间隔会互相拉短。
+ */
+export function planFeedReminders(
+  babies: readonly { babyId: string | null; name: string; events: readonly EventData[] }[],
+  now: number,
+): { babyId: string | null; name: string; delayMs: number }[] {
+  return babies.flatMap(({ babyId, name, events }) => {
+    const delayMs = feedReminderDelayMs(events, now);
+    return delayMs === null ? [] : [{ babyId, name, delayMs }];
+  });
+}
+
 export function activeSleep(
   events: readonly EventData[],
 ): Extract<EventData, { type: 'sleep' }> | null {
