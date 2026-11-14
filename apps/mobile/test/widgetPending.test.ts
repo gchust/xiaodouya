@@ -14,6 +14,12 @@ describe('idsWithPending', () => {
     expect(idsWithPending(ids, sleep)).toEqual({ ...ids, sleep: 's-tapped' });
   });
 
+  it('开始亲喂沿用这次点击的 id，结束亲喂用记录本身的 id', () => {
+    const start: WidgetAction = { type: 'breastStart', id: 'b-tapped', side: 'left' };
+    expect(idsWithPending(ids, start)).toEqual({ ...ids, feed: 'b-tapped' });
+    expect(idsWithPending(ids, { type: 'breastEnd', feedId: 'feed-1' })).toBe(ids);
+  });
+
   it('结束睡眠和没有点击时不改 id', () => {
     expect(idsWithPending(ids, { type: 'sleepEnd', sleepId: 'sleep-1' })).toBe(ids);
     expect(idsWithPending(ids, undefined)).toBe(ids);
@@ -24,6 +30,8 @@ describe('idsWithPending', () => {
     expect(buttonOf({ type: 'sleepStart', id: 'x' })).toBe('sleep');
     expect(buttonOf({ type: 'sleepEnd', sleepId: 'x' })).toBe('sleep');
     expect(buttonOf({ type: 'diaper', id: 'x', kind: 'both' })).toBe('both');
+    expect(buttonOf({ type: 'breastStart', id: 'x', side: 'right' })).toBe('feed');
+    expect(buttonOf({ type: 'breastEnd', feedId: 'x' })).toBe('feed');
   });
 });
 

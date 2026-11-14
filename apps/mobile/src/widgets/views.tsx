@@ -421,8 +421,68 @@ function nextFeedLine(view: Ready, p: WidgetPalette): { text: string; color?: He
   return next.status === 'near' ? { text, color: p.accentText } : { text };
 }
 
+/**
+ * 正在亲喂或者忘了关时，记喂奶小工具整张换成计时（issue #104）。不能走字，只写开始的钟点；
+ * 点卡片打开 App 的喂奶弹层，那里能换边。忘了关的不能一点就结束，和睡眠一样去 App 里确认。
+ */
+function BreastTimerCard({ view, p, pending }: Pick<CardProps, 'view' | 'p' | 'pending'>) {
+  const { breast } = view;
+  if (breast.status === 'forgotten') {
+    const since = breast.since >= view.dayStart ? '' : formatShortDate(breast.since);
+    return (
+      <Card background={p.card} link={FEED_LINK} label={t().widgetUi.breastConfirmA11y}>
+        <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+        <Hero
+          label={t().widgetUi.breastForgottenSince(since)}
+          labelColor={p.accentText}
+          time={formatClock(breast.since)}
+          sub={t().widgetUi.over2h}
+          ink={p.ink}
+          muted={p.muted}
+        />
+        <Button
+          text={t().widgetUi.breastConfirm}
+          background={p.confirmButton}
+          color={p.confirmText}
+          link={FEED_LINK}
+          label={t().widgetUi.breastConfirmA11y}
+        />
+      </Card>
+    );
+  }
+  if (breast.status !== 'running') return null;
+  return (
+    <Card
+      background={p.card}
+      link={FEED_LINK}
+      label={t().widgetUi.breastRunningA11y(t().widgetUi.breastRunningSub(breast.side))}
+    >
+      <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+      <Hero
+        label={t().widgetUi.breastRunningSince}
+        labelColor={p.accentText}
+        time={formatClock(breast.since)}
+        sub={t().widgetUi.breastRunningSub(breast.side)}
+        ink={p.ink}
+        muted={p.muted}
+      />
+      <Button
+        text={t().widgetUi.breastEnd}
+        background={p.accent}
+        color={p.white}
+        action={{ type: 'breastEnd', feedId: breast.id }}
+        pending={pending}
+        label={t().widgetUi.breastEndA11y}
+      />
+    </Card>
+  );
+}
+
 function FeedCard({ view, p, ids, shown, pending }: CardProps) {
-  const { lastFeed, lastFeedAmount } = view;
+  const { lastFeed, lastFeedAmount, breast } = view;
+  if (!shown && (breast.status === 'running' || breast.status === 'forgotten')) {
+    return <BreastTimerCard view={view} p={p} pending={pending} />;
+  }
   if (shown) {
     return (
       <Card
@@ -477,10 +537,12 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
           lastFeedAmount,
         );
   const next = nextFeedLine(view, p);
+  // 上一次是亲喂：按钮从另一侧开始计时；点卡片打开喂奶弹层，那里也能改成瓶喂。
+  const nextSide = breast.status === 'next' ? breast.side : null;
   return (
     <Card
       background={p.card}
-      link={eventLink(lastFeed.id)}
+      link={nextSide ? FEED_LINK : eventLink(lastFeed.id)}
       label={t().widgetUi.lastFeedA11y(
         `${clockOn(lastFeed.at, view.dayStart)} · ${lastFeedAmount}`,
       )}
@@ -494,7 +556,16 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
         ink={p.ink}
         muted={p.muted}
       />
-      {view.quickFeedAmount ? (
+      {nextSide ? (
+        <Button
+          text={t().widgetUi.breastStart(nextSide)}
+          background={p.accent}
+          color={p.white}
+          action={{ type: 'breastStart', id: ids.feed, side: nextSide }}
+          pending={pending}
+          label={t().widgetUi.breastStartA11y(nextSide)}
+        />
+      ) : view.quickFeedAmount ? (
         <Button
           text={t().widgetUi.plusAmount(view.quickFeedAmount)}
           background={p.accent}
