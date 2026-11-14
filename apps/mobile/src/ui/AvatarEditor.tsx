@@ -125,7 +125,7 @@ export function AvatarEditor({ media, children }: { media?: MediaRef; children: 
         )}
         {busy ? (
           <View style={s.busy} pointerEvents="none">
-            <ActivityIndicator color={colors.paper} />
+            <ActivityIndicator color={colors.white} />
           </View>
         ) : null}
       </View>

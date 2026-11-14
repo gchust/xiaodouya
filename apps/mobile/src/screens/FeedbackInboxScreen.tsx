@@ -514,7 +514,7 @@ export function FeedbackMediaScreen() {
         </View>
       ) : !url ? (
         <View style={s.center}>
-          <ActivityIndicator color={colors.paper} />
+          <ActivityIndicator color={colors.white} />
           <Text style={s.viewerText}>{t().feedback.mediaLoading}</Text>
         </View>
       ) : isVideo ? (
