@@ -245,6 +245,37 @@ describe('有几个宝宝时小工具跟着当前宝宝（issue #106）', () => 
   });
 });
 
+describe('小工具固定给一个宝宝记（issue #106）', () => {
+  const SECOND = '22222222-2222-4222-8222-222222222222';
+
+  it('App 里看的是大宝，小工具固定给二宝：写给二宝，只看二宝的记录', async () => {
+    const { store, db } = await setup({ sleeping: { type: 'sleep', at: now - HOUR } });
+    await store.write('baby', SECOND, { name: '二宝', birthAt: 2, createdAt: 5000 });
+    expect(store.getSnapshot().baby?.id).toBe(BABY_ID);
+    // 大宝在睡：二宝的小工具点“睡了”是开始一段新的，不是把大宝叫醒。
+    const plan = await runWidgetAction(
+      { type: 'sleepStart', id: 's2' },
+      store,
+      session,
+      now,
+      SECOND,
+    );
+    expect(plan.kind).toBe('write');
+    expect(db.records.get('s2')?.data).toMatchObject({ type: 'sleep', babyId: SECOND });
+    expect(db.records.get('sleeping')?.data).not.toHaveProperty('endAt');
+    // App 里还在看大宝，大宝的时间线不多出二宝的这一条。
+    expect(store.getSnapshot().events.map((e) => e.id)).toEqual(['sleeping']);
+  });
+
+  it('设置记在这台手机上，可以改回跟着 App', async () => {
+    const { db } = await setup();
+    await saveWidgetPrefs(db, { babyId: SECOND });
+    expect(await readWidgetPrefs(db)).toMatchObject({ babyId: SECOND });
+    await saveWidgetPrefs(db, { babyId: null });
+    expect(await readWidgetPrefs(db)).not.toHaveProperty('babyId');
+  });
+});
+
 describe('小工具记尿布', () => {
   it('写一条尿布进发件箱，点同一个按钮重试不会多记', async () => {
     const { db, store } = await setup();

@@ -15,7 +15,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecords } from '../lib/app';
 import { colors, spacing, themedStyles } from '../theme';
 import { useFeedback } from '../ui/overlays';
-import { Button, Field, ListCard, Muted, PageTitle, SectionTitle, Toggle } from '../ui/primitives';
+import {
+  Button,
+  Chip,
+  Field,
+  ListCard,
+  Muted,
+  PageTitle,
+  SectionTitle,
+  Toggle,
+} from '../ui/primitives';
 import { scheduleWidgetRefresh } from '../widgets/controller';
 import { readWidgetPrefs, saveWidgetPrefs } from '../widgets/prefs';
 import type { WidgetName } from '../widgets/views';
@@ -73,12 +82,13 @@ const entries: Entry[] = [
  */
 function DisplaySettings() {
   const app = useApp();
-  const { baby } = useRecords();
+  const { baby, babies, multiBaby } = useRecords();
   const { toast } = useFeedback();
   const [loaded, setLoaded] = useState(false);
   const [label, setLabel] = useState('');
   const saved = useRef<string | null>(null);
   const [showAvatar, setShowAvatar] = useState(false);
+  const [pinned, setPinned] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +98,7 @@ function DisplaySettings() {
       setLabel(current ?? '');
       saved.current = current;
       setShowAvatar(prefs.showAvatar === true);
+      setPinned(prefs.babyId ?? null);
       setLoaded(true);
     });
     return () => {
@@ -110,6 +121,21 @@ function DisplaySettings() {
     }
   };
 
+  const changeTarget = async (next: string | null) => {
+    const previous = pinned;
+    setPinned(next);
+    try {
+      await saveWidgetPrefs(app.db, { babyId: next });
+      scheduleWidgetRefresh();
+    } catch {
+      setPinned(previous);
+      toast(t().widgetUi.saveFailed);
+    }
+  };
+
+  // 小工具上的宝宝：固定的那个还在就是它，否则跟着 App（和 widgetBabyId 一样）。
+  const target = babies.find((b) => b.id === pinned) ?? baby;
+
   const changeAvatar = async (next: boolean) => {
     setShowAvatar(next);
     try {
@@ -123,22 +149,53 @@ function DisplaySettings() {
 
   return (
     <View style={{ gap: 8 }} testID="widget-display">
+      {multiBaby && babies.length > 1 ? (
+        <View style={{ gap: 8 }} testID="widget-baby">
+          <SectionTitle>{t().babies.widgetFor}</SectionTitle>
+          <View style={s.chips}>
+            <Chip
+              testID="widget-baby-follow"
+              label={t().babies.widgetFollow}
+              selected={!babies.some((b) => b.id === pinned)}
+              onPress={() => void changeTarget(null)}
+            />
+            {babies.map((entry, index) => (
+              <Chip
+                key={entry.id}
+                testID={`widget-baby-${index}`}
+                label={entry.data.name}
+                selected={entry.id === pinned}
+                onPress={() => void changeTarget(entry.id)}
+              />
+            ))}
+          </View>
+          <Muted style={s.hint}>{t().babies.widgetHint}</Muted>
+        </View>
+      ) : null}
       <SectionTitle>{t().widgetUi.displayTitle}</SectionTitle>
       <ListCard>
-        <View style={s.labelRow}>
-          <Field
-            testID="widget-label-input"
-            label={t().widgetUi.labelField}
-            value={label}
-            onChangeText={(text) => void changeLabel(text)}
-            placeholder={baby?.data.name}
-            maxLength={WIDGET_LABEL_MAX}
-            editable={loaded}
-            returnKeyType="done"
-            onEndEditing={() => setLabel(saved.current ?? '')}
-          />
-          <Muted style={s.hint}>{t().widgetUi.labelHint(WIDGET_LABEL_MAX)}</Muted>
-        </View>
+        {multiBaby ? (
+          <View style={s.labelRow}>
+            <Muted style={s.hint} testID="widget-name-multi">
+              {t().babies.widgetNameHint}
+            </Muted>
+          </View>
+        ) : (
+          <View style={s.labelRow}>
+            <Field
+              testID="widget-label-input"
+              label={t().widgetUi.labelField}
+              value={label}
+              onChangeText={(text) => void changeLabel(text)}
+              placeholder={baby?.data.name}
+              maxLength={WIDGET_LABEL_MAX}
+              editable={loaded}
+              returnKeyType="done"
+              onEndEditing={() => setLabel(saved.current ?? '')}
+            />
+            <Muted style={s.hint}>{t().widgetUi.labelHint(WIDGET_LABEL_MAX)}</Muted>
+          </View>
+        )}
         <Toggle
           testID="widget-avatar-toggle"
           label={t().widgetUi.avatarToggle}
@@ -148,7 +205,7 @@ function DisplaySettings() {
           disabled={!loaded}
           last
         />
-        {showAvatar && !baby?.data.avatar ? (
+        {showAvatar && !target?.data.avatar ? (
           <Muted style={[s.hint, s.missing]} testID="widget-avatar-missing">
             {t().widgetUi.avatarMissing}
           </Muted>
@@ -286,6 +343,7 @@ const s = themedStyles(() => ({
     borderBottomColor: colors.rule,
   },
   hint: { fontSize: 11, lineHeight: 16 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   // 接在开关那一行下面，算同一行的补充说明，中间不画分隔线。
   missing: { paddingBottom: 12, marginTop: -6 },
 }));

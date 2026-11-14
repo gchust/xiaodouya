@@ -10,9 +10,11 @@ import {
   t,
   type WidgetAction,
   type WidgetPlan,
+  type WidgetPrefs,
   type WidgetSession,
   type WidgetView,
   widgetAvatarKey,
+  widgetBabyId,
 } from '@xiaodouya/shared';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
@@ -84,12 +86,24 @@ async function readSession(core: CoreServices) {
   return { session, token, serverUrl, prefs: me?.prefs as Prefs | undefined };
 }
 
+/** 小工具给哪个宝宝记、显示谁（issue #106）：这台手机固定的那个，否则是 App 里的当前宝宝。 */
+function widgetView(store: CoreServices['store'], prefs: WidgetPrefs) {
+  const snapshot = store.getSnapshot();
+  const babyId = widgetBabyId(prefs, snapshot.babies, snapshot.baby?.id ?? null);
+  return { ...store.viewFor(babyId), multiBaby: snapshot.multiBaby };
+}
+
+async function widgetBaby(core: CoreServices): Promise<string | null> {
+  const snapshot = core.store.getSnapshot();
+  return widgetBabyId(await readWidgetPrefs(core.db), snapshot.babies, snapshot.baby?.id ?? null);
+}
+
 export async function loadWidgetView(core: CoreServices): Promise<ShownWidgetView> {
   const { session, prefs } = await readSession(core);
-  const { baby, events, multiBaby } = core.store.getSnapshot();
+  const display = await readWidgetPrefs(core.db);
+  const { baby, events, multiBaby } = widgetView(core.store, display);
   const now = Date.now();
   const syncedAt = Number((await core.db.getMeta(LAST_SYNC_KEY)) ?? 0);
-  const display = await readWidgetPrefs(core.db);
   const view = buildWidgetView({
     session,
     baby: baby?.data ?? null,
@@ -230,7 +244,7 @@ export async function handleWidgetClick(
   if (!isWidgetName(name)) {
     const core = await getCoreServices();
     const { session } = await readSession(core);
-    await runWidgetAction(action, core.store, session, Date.now());
+    await runWidgetAction(action, core.store, session, Date.now(), await widgetBaby(core));
     return;
   }
   pending.start(name, action, Date.now());
@@ -245,7 +259,13 @@ export async function handleWidgetClick(
     core = await getCoreServices();
     const { session } = await readSession(core);
     plan = await queue(async () => {
-      const result = await runWidgetAction(action, core.store, session, Date.now());
+      const result = await runWidgetAction(
+        action,
+        core.store,
+        session,
+        Date.now(),
+        await widgetBaby(core),
+      );
       pending.finish(name, action);
       const view = await loadWidgetView(core);
       if (result.kind === 'write') {

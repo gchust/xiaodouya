@@ -11,6 +11,7 @@ import {
   mergeEdit,
   mergeMediaEdit,
   parseCollectionData,
+  planFeedReminders,
   summarize24h,
   timelineEntries,
   todayInsight,
@@ -198,6 +199,30 @@ describe('补记和改时间之后的计算', () => {
     // 数据不足时不提醒。
     expect(feedReminderDelayMs([feed(1)], now)).toBeNull();
     expect(feedReminderDelayMs([feed(1), feed(3)], now)).toBeNull();
+  });
+
+  it('有几个宝宝时每个宝宝按自己的喂奶各提醒一次，不混在一起算（issue #106）', () => {
+    const regular = [feed(1), feed(3), feed(5)];
+    const other = [feed(0.5), feed(2.5), feed(4.5)];
+    // 只有一个宝宝：和以前一样一条。
+    expect(planFeedReminders([{ babyId: null, name: '', events: regular }], now)).toEqual([
+      { babyId: null, name: '', delayMs: HOUR },
+    ]);
+    expect(
+      planFeedReminders(
+        [
+          { babyId: 'a', name: '大宝', events: regular },
+          { babyId: 'b', name: '二宝', events: other },
+          { babyId: 'c', name: '三宝', events: [feed(1)] },
+        ],
+        now,
+      ),
+    ).toEqual([
+      { babyId: 'a', name: '大宝', delayMs: HOUR },
+      { babyId: 'b', name: '二宝', delayMs: 1.5 * HOUR },
+    ]);
+    // 混在一起算的话间隔变成 30 分钟，就提醒错了。
+    expect(feedReminderDelayMs([...regular, ...other], now)).not.toBe(HOUR);
   });
 
   it('摘要只算过去 24 小时，改到窗口外就不算了', () => {

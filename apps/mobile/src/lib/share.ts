@@ -30,6 +30,19 @@ import { localDayBounds } from './dates';
  * 链接属于哪个宝宝（issue #106）。有几个宝宝时是当前宝宝；只有一个宝宝时不带，请求和以前一样，
  * 服务端按“旧版界面上显示的宝宝”处理，就是这一个。
  */
+/**
+ * 已分享的链接是哪个宝宝的（issue #106），只在有几个宝宝时写。旧版 App 建的链接没有 `babyId`，
+ * 服务端按“旧版界面上显示的宝宝”给，也就是第一个能显示的宝宝。不认识的宝宝不写。
+ */
+export function shareBabyName(
+  share: { babyId?: string },
+  snapshot: { multiBaby: boolean; babies: readonly { id: string; data: { name: string } }[] },
+): string | null {
+  if (!snapshot.multiBaby) return null;
+  const id = share.babyId ?? snapshot.babies[0]?.id;
+  return snapshot.babies.find((baby) => baby.id === id)?.data.name ?? null;
+}
+
 export function shareBabyField(snapshot: { multiBaby: boolean; baby: { id: string } | null }): {
   babyId?: string;
 } {

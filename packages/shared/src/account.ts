@@ -55,12 +55,22 @@ export interface FamilyExport {
   role: Role;
   /** 不含别人的邮箱，和 /v1/me 给到的一样。 */
   members: { userId: string; label: string; role: Role }[];
+  /**
+   * 家里的宝宝，按建档先后（issue #106）。第一个就是没写 `babyId` 的记录的主人。
+   * 旧服务端导出的文件没有。
+   */
+  babies?: { id: string; name: string }[];
   records: {
     id: string;
     collection: Collection;
     data: unknown;
     updatedAt: number;
     createdBy: string | null;
+    /**
+     * 这条记录属于哪个宝宝，按 `recordBabyId` 算好的：没写 `babyId` 的记录这里也写上第一个宝宝。
+     * 全家共用的记录（奶粉、育儿资料、收藏、家人自己的证件、档案本身）没有这一项。
+     */
+    babyId?: string;
   }[];
   /** 只有文件信息，不含文件本身和下载地址。 */
   media: {

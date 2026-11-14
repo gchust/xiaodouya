@@ -9,6 +9,7 @@ import {
   type BabyData,
   babyRefOf,
   CLIENT_LEVEL_HEADER,
+  type Collection,
   CompleteUploadRequest,
   CreateFamilyRequest,
   CreateFeedbackRequest,
@@ -43,6 +44,7 @@ import {
   type FeedbackStatus,
   ForgotPasswordRequest,
   feedbackAttachmentLimit,
+  firstBabyId,
   formatBytes,
   isAllowedMime,
   isDocumentScope,
@@ -70,6 +72,7 @@ import {
   multipartPartBytes,
   multipartPartCount,
   multipartPartSize,
+  orderBabies,
   type PendingInvite,
   Prefs,
   type PublicConfig,
@@ -87,6 +90,7 @@ import {
   ResetPasswordRequest,
   type Role,
   rawDocumentOwner,
+  recordBabyId,
   type SendEmailCodeResponse,
   type ServerRecord,
   SHARE_TIMELINE_MAX_AHEAD_MS,
@@ -113,7 +117,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { blocksOldClient, familyRegion, regionOf, withCreatedAt } from './babies';
+import { blocksOldClient, familyBabies, familyRegion, regionOf, withCreatedAt } from './babies';
 import { clientIpFrom } from './client-ip';
 import type { Config } from './config';
 import {
@@ -1410,6 +1414,15 @@ export function createApp({
       { userId: user.id, role: m.role },
       media,
     );
+    // 按宝宝区分（issue #106）：每条记录写上算好的主人，没写 babyId 的也写上第一个宝宝。
+    const babies = await familyBabies(sql, m.familyId);
+    const firstId = firstBabyId(babies);
+    const shownBabies = orderBabies(babies.filter((baby) => !baby.deleted)).flatMap((baby) => {
+      const parsed = parseCollectionData('baby', baby.data);
+      return parsed ? [{ id: baby.id, name: parsed.name }] : [];
+    });
+    const ownerOf = (collection: Collection, data: unknown) =>
+      recordBabyId(collection, parseCollectionData(collection, data) ?? data, firstId);
     const now = new Date();
     const stamp = now.toISOString().slice(0, 10).replaceAll('-', '');
     c.header('content-disposition', `attachment; filename="xiaodouya-export-${stamp}.json"`);
@@ -1422,13 +1435,18 @@ export function createApp({
       family: { id: m.familyId, name: family?.name ?? '' },
       role: m.role,
       members: members.map((r) => ({ userId: r.user_id, label: r.label, role: r.role })),
-      records: records.map((r) => ({
-        id: r.id,
-        collection: r.collection,
-        data: r.data,
-        updatedAt: Number(r.updated_at_client),
-        createdBy: r.created_by,
-      })),
+      babies: shownBabies,
+      records: records.map((r) => {
+        const babyId = ownerOf(r.collection, r.data);
+        return {
+          id: r.id,
+          collection: r.collection,
+          data: r.data,
+          updatedAt: Number(r.updated_at_client),
+          createdBy: r.created_by,
+          ...(babyId ? { babyId } : {}),
+        };
+      }),
       media: media
         .filter((r) => canReadMediaScope(m.role, r.scope))
         .filter((r) => !isDocumentScope(r.scope) || ownedMedia.has(r.id))

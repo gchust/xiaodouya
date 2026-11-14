@@ -21,7 +21,7 @@ let writing: Promise<unknown> = Promise.resolve();
  */
 export function saveWidgetPrefs(
   db: MetaDb,
-  patch: { label?: string | null; showAvatar?: boolean },
+  patch: { label?: string | null; showAvatar?: boolean; babyId?: string | null },
 ): Promise<WidgetPrefs> {
   const run = writing.then(() => merge(db, patch));
   writing = run.catch(() => {});
@@ -30,7 +30,7 @@ export function saveWidgetPrefs(
 
 async function merge(
   db: MetaDb,
-  patch: { label?: string | null; showAvatar?: boolean },
+  patch: { label?: string | null; showAvatar?: boolean; babyId?: string | null },
 ): Promise<WidgetPrefs> {
   const next: WidgetPrefs = { ...(await readWidgetPrefs(db)) };
   if ('label' in patch) {
@@ -39,6 +39,11 @@ async function merge(
     else delete next.label;
   }
   if (patch.showAvatar !== undefined) next.showAvatar = patch.showAvatar;
+  // null 是回到“跟着 App 里选的宝宝”。
+  if (patch.babyId !== undefined) {
+    if (patch.babyId) next.babyId = patch.babyId;
+    else delete next.babyId;
+  }
   await db.setMeta(WIDGET_PREFS_KEY, JSON.stringify(next));
   return next;
 }

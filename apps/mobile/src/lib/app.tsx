@@ -45,7 +45,7 @@ import { clearDownloads } from './downloads';
 import { clearFeedbackDraft } from './feedbackDraft';
 import { applyLocale, deviceLanguageTag } from './locale';
 import { clearHttpCache, clearLocalMedia } from './media';
-import { scheduleFeedReminder, unregisterPushToken } from './notifications';
+import { scheduleFeedReminders, unregisterPushToken } from './notifications';
 import { summarizeRemote } from './remoteSummary';
 import { sessionOwner, shouldClearLocalData, timezoneToSync } from './sessionLogic';
 import { ME_KEY, OWNER_KEY, SERVER_KEY, TOKEN_KEY } from './storedSession';
@@ -262,7 +262,7 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
     // 反馈的草稿和附件副本也是这个人的，可能拍到孩子。
     clearFeedbackDraft();
     // 已经排好的本机提醒不随数据消失，账号没了之后还会响。
-    await scheduleFeedReminder([], false);
+    await scheduleFeedReminders([], false);
     // 自动下载新版本的设置在 meta 里，上面随 store.clear() 清掉了；下好没装的安装包也一起删。
     forgetUpdateDownloads();
     setHasSynced(false);
@@ -377,8 +377,17 @@ export function AppProvider({ children, fallback }: { children: ReactNode; fallb
   useEffect(() => {
     if (!services || me?.role === 'viewer' || !hasFamily) return;
     const reschedule = () => {
-      const events = services.store.getSnapshot().events.map((e) => e.data);
-      void scheduleFeedReminder(events, prefs.feedReminder);
+      const { store } = services;
+      const snapshot = store.getSnapshot();
+      // 有几个宝宝时每个宝宝按自己的喂奶各提醒（issue #106），只看当前宝宝的话另一个到点了没人提醒。
+      const babies = snapshot.multiBaby
+        ? snapshot.babies.map((baby) => ({
+            babyId: baby.id,
+            name: baby.data.name,
+            events: store.viewFor(baby.id).events.map((e) => e.data),
+          }))
+        : [{ babyId: null, name: '', events: snapshot.events.map((e) => e.data) }];
+      void scheduleFeedReminders(babies, prefs.feedReminder);
     };
     reschedule();
     return services.store.subscribe(reschedule);

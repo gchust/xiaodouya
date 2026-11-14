@@ -295,6 +295,24 @@ export class RecordStore {
   }
 
   /** 全部档案排序要用的部分，删除的、读不懂的也在。加宝宝时按它算 `createdAt`。 */
+  /**
+   * 某个宝宝的档案和照护记录，不是当前宝宝也行（小工具可以固定给一个宝宝记，提醒要看每个宝宝）。
+   * null 或找不到这个宝宝时是当前宝宝；只有一份档案时就是快照里的，和以前一样。
+   */
+  viewFor(babyId: string | null): { baby: Entry<'baby'> | null; events: Snapshot['events'] } {
+    const snapshot = this.snapshot;
+    const baby = snapshot.babies.find((b) => b.id === babyId);
+    if (!snapshot.multiBaby || !baby || baby.id === snapshot.baby?.id) {
+      return { baby: snapshot.baby, events: snapshot.events };
+    }
+    const firstId = this.firstIdCache;
+    const events = snapshot.all.events.filter((entry) => {
+      const owner = recordBabyId('event', entry.data, firstId);
+      return owner === null || owner === baby.id;
+    });
+    return { baby, events };
+  }
+
   babyRefs(): BabyRef[] {
     const refs: BabyRef[] = [];
     for (const id of this.babyRecordIds) {

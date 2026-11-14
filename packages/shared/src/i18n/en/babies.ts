@@ -19,6 +19,13 @@ export const babies: Catalog['babies'] = {
   addSubmit: 'Add',
   added: (name) => `Added ${name}. Now showing ${name}`,
   regionThisBaby: "This baby's region",
+  shareFor: (name) => `Baby: ${name}`,
+  feedReminderBody: (name) => `It's ${name}'s usual time between feeds.`,
+  widgetFor: 'Widgets record for',
+  widgetFollow: 'The baby chosen in the app',
+  widgetHint:
+    'Only on this phone. When following the app, switching babies on Today switches the widgets too.',
+  widgetNameHint: "With more than one baby, widgets show the baby's name, not a nickname.",
   regionHint: "Sets this baby's vaccine book and default units. Only an admin can change it.",
   regionByAdmin: (name) => `The region starts as ${name}. An admin can change it under Info.`,
 };
