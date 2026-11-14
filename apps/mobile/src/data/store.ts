@@ -9,6 +9,7 @@ import {
   type FavoriteData,
   type FavoriteFolderData,
   type FormulaData,
+  firstBabyId,
   isFavoriteData,
   isFavoriteFolderData,
   isFormulaData,
@@ -17,8 +18,10 @@ import {
   isResourceData,
   isVaccinePlanData,
   type MoneyData,
+  orderBabies,
   parseCollectionData,
   type ResourceData,
+  recordBabyId,
   type ServerRecord,
   t,
   type VaccinePlanData,
@@ -58,7 +61,18 @@ export interface RecordEntry<T> {
 export type Entry<C extends Collection> = RecordEntry<CollectionData[C]>;
 
 export interface Snapshot {
+  /** 当前宝宝（issue #106）：这台手机上选的，没选过或选的不在了就是第一个宝宝。 */
   baby: Entry<'baby'> | null;
+  /** 能显示的宝宝，按建档先后。 */
+  babies: Entry<'baby'>[];
+  /**
+   * 家庭有不止一份档案（删除的也算）。这时属于宝宝的列表（照护记录、疫苗本配置、小金库、回忆、信、
+   * 宝宝的证件）只有当前宝宝的，奶粉、育儿资料、收藏和家人自己的证件不分。只有一份档案时什么都不过滤，
+   * 和只支持一个宝宝的版本一模一样。
+   */
+  multiBaby: boolean;
+  /** 不按宝宝过滤的列表。上传页要看到所有宝宝的文件。 */
+  all: Lists;
   /** 按发生时间倒序。 */
   events: RecordEntry<EventData>[];
   /** 家庭对疫苗本的配置。存在 event 集合里，但不是一条记录，所以不进时间线。 */
@@ -79,8 +93,23 @@ export interface Snapshot {
   pendingCount: number;
 }
 
-const emptySnapshot: Snapshot = {
-  baby: null,
+export type ListKey =
+  | 'events'
+  | 'vaccinePlans'
+  | 'formulas'
+  | 'money'
+  | 'resources'
+  | 'favorites'
+  | 'favoriteFolders'
+  | 'moments'
+  | 'letters'
+  | 'documents';
+export type Lists = Pick<Snapshot, ListKey>;
+type AnyEntry = RecordEntry<unknown>;
+type Compare = (a: AnyEntry, b: AnyEntry) => number;
+type AnyLists = Record<ListKey, AnyEntry[]>;
+
+const emptyLists: Lists = {
   events: [],
   vaccinePlans: [],
   formulas: [],
@@ -91,13 +120,29 @@ const emptySnapshot: Snapshot = {
   moments: [],
   letters: [],
   documents: [],
+};
+
+const emptySnapshot: Snapshot = {
+  baby: null,
+  babies: [],
+  multiBaby: false,
+  all: emptyLists,
+  ...emptyLists,
   pendingCount: 0,
 };
 
-type ListKey = Exclude<keyof Snapshot, 'baby' | 'pendingCount'>;
-type AnyEntry = RecordEntry<unknown>;
-type Compare = (a: AnyEntry, b: AnyEntry) => number;
-type Lists = Record<ListKey, AnyEntry[]>;
+/** 当前宝宝存在这台手机上，不同步：每个家人看的可以不一样。 */
+export const CURRENT_BABY_KEY = 'baby.current';
+
+/** 属于宝宝、要按当前宝宝过滤的列表，和它们在哪个集合里。 */
+const babyLists: Partial<Record<ListKey, Collection>> = {
+  events: 'event',
+  vaccinePlans: 'event',
+  money: 'event',
+  moments: 'moment',
+  letters: 'letter',
+  documents: 'document',
+};
 
 const listKeys: readonly ListKey[] = [
   'events',
@@ -217,7 +262,21 @@ export class RecordStore {
   private changed = new Set<string>();
   private needsFullRebuild = true;
   private dirtyCount = 0;
+  /** 能显示的档案。 */
   private babyIds = new Set<string>();
+  /** 全部档案，删除的、读不懂的也在：它们参与排序，也决定要不要按宝宝过滤。 */
+  private babyRecordIds = new Set<string>();
+  /** 这台手机选的宝宝（`CURRENT_BABY_KEY`）。 */
+  private chosenBabyId: string | null = null;
+  /** 上次算出的第一个宝宝，档案没变时沿用。 */
+  private firstIdCache: string | null = null;
+  /** 不按宝宝过滤的列表，增量更新的就是它。 */
+  private lists: Lists = emptyLists;
+  /** 按宝宝过滤的结果，源列表和宝宝都没变时沿用，页面才不会白白重画。 */
+  private filtered = new Map<
+    ListKey,
+    { source: AnyEntry[]; babyId: string | null; firstId: string | null; result: AnyEntry[] }
+  >();
   /** 校验结果按原始数据对象缓存：确认上传只改了 dirty，数据还是同一个对象，不用再过一遍 zod。 */
   private parsed = new WeakMap<object, { collection: Collection; data: unknown }>();
   private compares = new Map<ListKey, Compare>();
@@ -230,8 +289,28 @@ export class RecordStore {
   }
 
   async load(): Promise<void> {
+    this.chosenBabyId = await this.db.getMeta(CURRENT_BABY_KEY);
     this.reset(await this.db.loadAll());
     this.rebuild();
+  }
+
+  /** 全部档案排序要用的部分，删除的、读不懂的也在。加宝宝时按它算 `createdAt`。 */
+  babyRefs(): BabyRef[] {
+    const refs: BabyRef[] = [];
+    for (const id of this.babyRecordIds) {
+      const record = this.records.get(id);
+      if (record) refs.push(babyRefOf(id, record.data, record.deleted));
+    }
+    return refs;
+  }
+
+  /** 切换当前宝宝。记在这台手机上，小工具的后台任务读的是同一份。 */
+  async setCurrentBaby(id: string): Promise<void> {
+    if (id === this.chosenBabyId) return;
+    this.chosenBabyId = id;
+    // 落盘失败时没来得及重建的改动也一起算进去。
+    this.rebuild(true);
+    await this.db.setMeta(CURRENT_BABY_KEY, id);
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -246,6 +325,7 @@ export class RecordStore {
   private put(record: StoredRecord) {
     const existing = this.records.get(record.id);
     if (!existing) this.seqOf.set(record.id, this.nextSeq++);
+    if (record.collection === 'baby') this.babyRecordIds.add(record.id);
     this.dirtyCount += (record.dirty ? 1 : 0) - (existing?.dirty ? 1 : 0);
     this.records.set(record.id, record);
     this.changed.add(record.id);
@@ -257,12 +337,14 @@ export class RecordStore {
     if (existing.dirty) this.dirtyCount -= 1;
     this.records.delete(id);
     this.seqOf.delete(id);
+    this.babyRecordIds.delete(id);
     this.changed.add(id);
   }
 
   private reset(records: readonly StoredRecord[]) {
     this.records = new Map();
     this.seqOf.clear();
+    this.babyRecordIds.clear();
     this.changed.clear();
     this.dirtyCount = 0;
     this.needsFullRebuild = true;
@@ -306,29 +388,105 @@ export class RecordStore {
   }
 
   /**
-   * 界面上的宝宝：按建档先后第一个能显示的（`defaultBaby`，issue #106）。删除的、读不懂的档案不显示，
-   * 它们在 `babyIds` 之外，不影响谁排第一。
+   * 能显示的宝宝按建档先后排（issue #106），当前宝宝是这台手机选的那个，没选过、选的删了或还没同步到时
+   * 是第一个能显示的（`defaultBaby`）。删除的、读不懂的档案不显示，但参与排序：没写 `babyId` 的记录
+   * 属于第一个宝宝（`firstBabyId`），它删了也是。
    */
-  private pickBaby(): Entry<'baby'> | null {
-    const babies: (BabyRef & { entry: AnyEntry })[] = [];
-    for (const id of this.babyIds) {
+  private pickBabies(): Pick<Snapshot, 'baby' | 'babies' | 'multiBaby'> & {
+    firstId: string | null;
+  } {
+    const all: BabyRef[] = [];
+    const shown: (BabyRef & { entry: AnyEntry })[] = [];
+    for (const id of this.babyRecordIds) {
+      const record = this.records.get(id);
+      if (!record) continue;
       const placement = this.placements.get(id);
-      if (!placement?.entry) continue;
-      babies.push({ ...babyRefOf(id, placement.record.data, false), entry: placement.entry });
+      const entry = placement?.key === 'baby' ? placement.entry : null;
+      all.push(babyRefOf(id, record.data, record.deleted || !entry));
+      if (entry) shown.push({ ...babyRefOf(id, record.data, false), entry });
     }
-    return (defaultBaby(babies)?.entry as Entry<'baby'> | undefined) ?? null;
+    const babies = orderBabies(shown).map((baby) => baby.entry as Entry<'baby'>);
+    const baby =
+      babies.find((entry) => entry.id === this.chosenBabyId) ??
+      (defaultBaby(shown)?.entry as Entry<'baby'> | undefined) ??
+      null;
+    return { baby, babies, multiBaby: all.length > 1, firstId: firstBabyId(all) };
   }
 
-  private rebuild() {
+  /** 只要当前宝宝的。和 `recordBabyId` 一样：没写 `babyId` 的属于第一个宝宝，全家共用的都留着。 */
+  private filterFor(
+    key: ListKey,
+    source: AnyEntry[],
+    babyId: string | null,
+    firstId: string | null,
+  ): AnyEntry[] {
+    const collection = babyLists[key];
+    if (!collection) return source;
+    const cached = this.filtered.get(key);
+    if (
+      cached &&
+      cached.source === source &&
+      cached.babyId === babyId &&
+      cached.firstId === firstId
+    ) {
+      return cached.result;
+    }
+    const result = source.filter((entry) => {
+      const owner = recordBabyId(collection, entry.data, firstId);
+      return owner === null || owner === babyId;
+    });
+    this.filtered.set(key, { source, babyId, firstId, result });
+    return result;
+  }
+
+  /** 由不按宝宝过滤的列表和宝宝算出快照。只有一份档案时什么都不过滤，列表就是原来那几个数组。 */
+  private publish(lists: Lists, babiesChanged: boolean) {
+    const previous = this.snapshot;
+    const picked = babiesChanged ? this.pickBabies() : { ...previous, firstId: this.firstIdCache };
+    this.firstIdCache = picked.firstId;
+    const babies =
+      picked.babies.length === previous.babies.length &&
+      picked.babies.every((entry, index) => entry === previous.babies[index])
+        ? previous.babies
+        : picked.babies;
+    const babyId = picked.baby?.id ?? null;
+    const exposed = {} as AnyLists;
+    for (const key of listKeys) {
+      const source = (lists as unknown as AnyLists)[key];
+      exposed[key] = picked.multiBaby
+        ? this.filterFor(key, source, babyId, picked.firstId)
+        : source;
+    }
+    const all = listKeys.every((key) => lists[key] === previous.all[key]) ? previous.all : lists;
+    const unchanged =
+      picked.baby === previous.baby &&
+      babies === previous.babies &&
+      picked.multiBaby === previous.multiBaby &&
+      all === previous.all &&
+      this.dirtyCount === previous.pendingCount &&
+      listKeys.every((key) => exposed[key] === (previous as unknown as AnyLists)[key]);
+    this.lists = all;
+    if (unchanged) return;
+    this.snapshot = {
+      ...(exposed as unknown as Lists),
+      all,
+      baby: picked.baby,
+      babies,
+      multiBaby: picked.multiBaby,
+      pendingCount: this.dirtyCount,
+    };
+  }
+
+  private rebuild(babiesChanged = false) {
     if (this.needsFullRebuild) this.rebuildAll();
-    else this.applyChanges();
+    else this.applyChanges(babiesChanged);
     for (const listener of this.listeners) listener();
   }
 
   private rebuildAll() {
     this.placements.clear();
     this.babyIds.clear();
-    const lists = Object.fromEntries(listKeys.map((key) => [key, []])) as unknown as Lists;
+    const lists = Object.fromEntries(listKeys.map((key) => [key, []])) as unknown as AnyLists;
     for (const record of this.records.values()) {
       const placement = this.place(record);
       this.placements.set(record.id, placement);
@@ -336,31 +494,29 @@ export class RecordStore {
       else if (placement.key && placement.entry) lists[placement.key].push(placement.entry);
     }
     for (const key of listKeys) lists[key].sort(this.compareFor(key));
-    this.snapshot = {
-      ...(lists as unknown as Omit<Snapshot, 'baby' | 'pendingCount'>),
-      baby: this.pickBaby(),
-      pendingCount: this.dirtyCount,
-    };
+    this.filtered.clear();
+    this.publish(lists as unknown as Lists, true);
     this.changed.clear();
     this.needsFullRebuild = false;
   }
 
-  private applyChanges() {
+  private applyChanges(babiesChanged: boolean) {
     const removed = new Map<ListKey, Set<AnyEntry>>();
     const added = new Map<ListKey, AnyEntry[]>();
-    let babyChanged = false;
+    let babyChanged = babiesChanged;
     for (const id of this.changed) {
       const before = this.placements.get(id);
       const record = this.records.get(id);
       if (before && record && before.record === record && before.seq === this.seqOf.get(id)) {
         continue;
       }
+      // 删除的档案也算：它决定谁是第一个宝宝、要不要按宝宝过滤。
+      if ((record ?? before?.record)?.collection === 'baby') babyChanged = true;
       const after = record ? this.place(record) : null;
       if (after) this.placements.set(id, after);
       else this.placements.delete(id);
       if (before?.key === 'baby') {
         this.babyIds.delete(id);
-        babyChanged = true;
       } else if (before?.key && before.entry) {
         const set = removed.get(before.key) ?? new Set<AnyEntry>();
         set.add(before.entry);
@@ -368,7 +524,6 @@ export class RecordStore {
       }
       if (after?.key === 'baby') {
         this.babyIds.add(id);
-        babyChanged = true;
       } else if (after?.key && after.entry) {
         const list = added.get(after.key) ?? [];
         list.push(after.entry);
@@ -376,21 +531,11 @@ export class RecordStore {
       }
     }
     this.changed.clear();
-    const lists = { ...this.snapshot } as unknown as Lists;
+    const lists = { ...this.lists } as unknown as AnyLists;
     for (const key of new Set([...removed.keys(), ...added.keys()])) {
       lists[key] = this.patch(key, lists[key], removed.get(key), added.get(key));
     }
-    const baby = babyChanged ? this.pickBaby() : this.snapshot.baby;
-    const unchanged =
-      baby === this.snapshot.baby &&
-      this.dirtyCount === this.snapshot.pendingCount &&
-      listKeys.every((key) => lists[key] === (this.snapshot as unknown as Lists)[key]);
-    if (unchanged) return;
-    this.snapshot = {
-      ...(lists as unknown as Omit<Snapshot, 'baby' | 'pendingCount'>),
-      baby,
-      pendingCount: this.dirtyCount,
-    };
+    this.publish(lists as unknown as Lists, babyChanged);
   }
 
   /** 在排好序的列表里去掉、加上几条，返回新数组。原数组不能动：页面可能还拿着它。 */
@@ -556,6 +701,7 @@ export class RecordStore {
 
   async clear(): Promise<void> {
     await this.db.clear();
+    this.chosenBabyId = null;
     this.reset([]);
     this.rebuild();
   }

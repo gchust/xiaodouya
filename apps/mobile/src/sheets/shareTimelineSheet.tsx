@@ -17,6 +17,7 @@ import { localDayBounds } from '../lib/dates';
 import { deviceTimezone } from '../lib/device';
 import {
   nicknameProblem,
+  shareBabyField,
   shareLinkUrl,
   shareTimelinePending,
   shareTimelineRange,
@@ -89,6 +90,7 @@ export function ShareTimelineSheet() {
       timezone: deviceTimezone() ?? app.prefs.timezone,
       ttlDays,
       display,
+      ...shareBabyField(app.store.getSnapshot()),
     };
     try {
       const share = await app.api.createTimelineShare(body);

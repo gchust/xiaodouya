@@ -1405,7 +1405,7 @@ describe('取消后从记录里去掉引用', () => {
     data: { title: '', text: '', at: 1, milestone: false, media, ...over },
   });
   const records = (over: Partial<Parameters<typeof cancelUploads>[1]['records']> = {}) =>
-    ({ moments: [], documents: [], baby: null, ...over }) as Parameters<
+    ({ moments: [], documents: [], babies: [], ...over }) as Parameters<
       typeof cancelUploads
     >[1]['records'];
 
@@ -1475,10 +1475,9 @@ describe('取消后从记录里去掉引用', () => {
     const d = deps(
       records({
         documents: [{ id: 'd1', data: { name: '虚构证件', files: [ref(file)] } }] as never,
-        baby: {
-          id: 'b1',
-          data: { name: '小豆', birthAt: 1, avatar: ref(avatar), region: 'SG' },
-        } as never,
+        babies: [
+          { id: 'b1', data: { name: '小豆', birthAt: 1, avatar: ref(avatar), region: 'SG' } },
+        ] as never,
       }),
     );
     await cancelUploads([file, avatar], d.value);
@@ -1513,16 +1512,22 @@ describe('取消后从记录里去掉引用', () => {
     const a = randomUUID();
     const f = randomUUID();
     const v = randomUUID();
+    const w = randomUUID();
     const owners = uploadOwners(
       records({
         moments: [moment('m1', [ref(a)], { title: '第一次' })] as never,
         documents: [{ id: 'd1', data: { name: '虚构证件', files: [ref(f)] } }] as never,
-        baby: { id: 'b1', data: { name: '小豆', birthAt: 1, avatar: ref(v) } } as never,
+        babies: [
+          { id: 'b1', data: { name: '小豆', birthAt: 1, avatar: ref(v) } },
+          { id: 'b2', data: { name: '二宝', birthAt: 2, avatar: ref(w) } },
+        ] as never,
       }),
     );
     expect(owners.get(a)).toMatchObject({ kind: 'moment', title: '第一次' });
     expect(owners.get(f)).toMatchObject({ kind: 'document', title: '虚构证件' });
     expect(owners.get(v)).toEqual({ kind: 'avatar' });
+    // 不是当前宝宝的头像也要认得（issue #106），否则会被当成记录已经删了。
+    expect(owners.get(w)).toEqual({ kind: 'avatar' });
   });
 
   it('shared 的两个函数：没有引用时返回 null', () => {

@@ -9,6 +9,7 @@ import {
   momentsLeftEmpty,
   type UploadOwner,
   uploadOwners,
+  uploadRecordsOf,
 } from '../data/uploadCancel';
 import type { UploadItem } from '../data/uploadQueue';
 import { useApp, useRecords, useUploadProgress } from '../lib/app';
@@ -140,7 +141,7 @@ const ItemRow = memo(
 
 function CancelSheet({ ids }: { ids: string[] }) {
   const app = useApp();
-  const records = useRecords();
+  const records = uploadRecordsOf(useRecords());
   const sheet = useSheet();
   const { toast } = useFeedback();
   const emptied = momentsLeftEmpty(records, new Set(ids));
@@ -182,8 +183,8 @@ export function UploadsScreen() {
   const sheet = useSheet();
   const app = useApp();
   const progress = useUploadProgress();
-  const records = useRecords();
-  const owners = useMemo(() => uploadOwners(records), [records]);
+  const snapshot = useRecords();
+  const owners = useMemo(() => uploadOwners(uploadRecordsOf(snapshot)), [snapshot]);
   const { items } = progress;
   const hasFailed = progress.failedCount > 0;
   const percent = Math.round(progress.fraction * 100);

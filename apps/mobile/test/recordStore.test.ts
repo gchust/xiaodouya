@@ -7,6 +7,7 @@ import {
   type DocumentData,
   defaultBaby,
   type EventData,
+  firstBabyId,
   isFavoriteData,
   isFavoriteFolderData,
   isFormulaData,
@@ -15,7 +16,9 @@ import {
   isVaccinePlanData,
   type LetterData,
   type MomentData,
+  orderBabies,
   parseCollectionData,
+  recordBabyId,
   type ServerRecord,
 } from '@xiaodouya/shared';
 import { describe, expect, it, vi } from 'vitest';
@@ -83,25 +86,27 @@ class MemoryDb implements LocalDb {
  * 改之前的全量重建，原样抄过来当对照：增量更新的结果（包括同一时间的先后顺序）必须和它一模一样。
  * 它按 Map 的插入顺序遍历、用稳定排序，所以同一时间的记录按插入先后排。
  */
-function fullSnapshot(records: Iterable<StoredRecord>): Snapshot {
-  const next: Snapshot = {
-    baby: null,
-    events: [],
-    vaccinePlans: [],
-    formulas: [],
-    money: [],
-    resources: [],
-    favorites: [],
-    favoriteFolders: [],
-    moments: [],
-    letters: [],
-    documents: [],
-    pendingCount: 0,
+function fullSnapshot(
+  records: Iterable<StoredRecord>,
+  chosenBabyId: string | null = null,
+): Snapshot {
+  const next = {
+    events: [] as Snapshot['events'],
+    vaccinePlans: [] as Snapshot['vaccinePlans'],
+    formulas: [] as Snapshot['formulas'],
+    money: [] as Snapshot['money'],
+    resources: [] as Snapshot['resources'],
+    favorites: [] as Snapshot['favorites'],
+    favoriteFolders: [] as Snapshot['favoriteFolders'],
+    moments: [] as Snapshot['moments'],
+    letters: [] as Snapshot['letters'],
+    documents: [] as Snapshot['documents'],
   };
+  let pendingCount = 0;
   // 删除的、读不懂的档案也参与排序，谁是第一个宝宝不能因此改变（issue #106）；它们只是不显示。
   const babies: (BabyRef & { entry: Entry<'baby'> | null })[] = [];
   for (const record of records) {
-    if (record.dirty) next.pendingCount += 1;
+    if (record.dirty) pendingCount += 1;
     if (record.collection === 'baby') {
       const data = record.deleted ? null : parseCollectionData('baby', record.data);
       const entry = data && {
@@ -138,7 +143,6 @@ function fullSnapshot(records: Iterable<StoredRecord>): Snapshot {
         break;
     }
   }
-  next.baby = defaultBaby(babies)?.entry ?? null;
   const atOf = (data: unknown) => (data as { at?: number }).at ?? 0;
   const byAtDesc = (a: { data: unknown }, b: { data: unknown }) => atOf(b.data) - atOf(a.data);
   next.events.sort(byAtDesc);
@@ -151,8 +155,40 @@ function fullSnapshot(records: Iterable<StoredRecord>): Snapshot {
   next.favoriteFolders.sort(
     (a, b) => a.data.createdAt - b.data.createdAt || a.id.localeCompare(b.id),
   );
-  return next;
+  // 多个宝宝（issue #106 第二步）：当前宝宝是选的那个，否则是第一个能显示的；有不止一份档案时，
+  // 属于宝宝的列表只留当前宝宝的。
+  const shown = orderBabies(babies.filter((b) => b.entry !== null && !b.deleted));
+  const shownEntries = shown.map((b) => b.entry as Entry<'baby'>);
+  const baby =
+    shownEntries.find((e) => e.id === chosenBabyId) ?? defaultBaby(babies)?.entry ?? null;
+  const multiBaby = babies.length > 1;
+  const firstId = firstBabyId(babies);
+  const mine = <T extends { data: unknown }>(collection: Collection, list: T[]) =>
+    multiBaby
+      ? list.filter((e) => {
+          const owner = recordBabyId(collection, e.data, firstId);
+          return owner === null || owner === (baby?.id ?? null);
+        })
+      : list;
+  return {
+    ...next,
+    events: mine('event', next.events),
+    vaccinePlans: mine('event', next.vaccinePlans),
+    money: mine('event', next.money),
+    moments: mine('moment', next.moments),
+    letters: mine('letter', next.letters),
+    documents: mine('document', next.documents),
+    all: next,
+    baby,
+    babies: shownEntries,
+    multiBaby,
+    pendingCount,
+  };
 }
+
+/** 测试里读私有的选择：这台手机选的宝宝。 */
+const chosenOf = (store: RecordStore) =>
+  (store as unknown as { chosenBabyId: string | null }).chosenBabyId;
 
 /** 测试里读私有的记录表：对照要按 Map 的插入顺序重建。 */
 const recordsOf = (store: RecordStore) =>
@@ -216,6 +252,166 @@ async function filledStore(events: number, moments: number) {
   await store.load();
   return { db, store };
 }
+
+describe('多个宝宝：按当前宝宝过滤（issue #106 第二步）', () => {
+  const FIRST = '11111111-1111-4111-8111-111111111111';
+  const SECOND = '22222222-2222-4222-8222-222222222222';
+  const UNKNOWN = '33333333-3333-4333-8333-333333333333';
+  const PERSON = '44444444-4444-4444-8444-444444444444';
+
+  function seed(records: [string, Collection, unknown, boolean?][]) {
+    const db = new MemoryDb();
+    for (const [id, collection, data, deleted] of records) {
+      db.records.set(id, {
+        id,
+        collection,
+        data,
+        deleted: deleted ?? false,
+        updatedAt: 1,
+        dirty: false,
+      });
+    }
+    return db;
+  }
+  const first = { name: '大宝', birthAt: 1 };
+  const second = { name: '二宝', birthAt: 2, createdAt: 5000 };
+  const ids = (list: readonly { id: string }[]) => list.map((e) => e.id).sort();
+
+  it('只有一份档案时什么都不过滤：写着别的宝宝的记录照样显示，列表就是原来的数组', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      ['e1', 'event', feed(10)],
+      ['e2', 'event', { ...feed(20), babyId: UNKNOWN }],
+      ['m1', 'moment', { ...moment(30), babyId: UNKNOWN }],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    const snapshot = store.getSnapshot();
+    expect(snapshot.multiBaby).toBe(false);
+    expect(ids(snapshot.events)).toEqual(['e1', 'e2']);
+    expect(ids(snapshot.moments)).toEqual(['m1']);
+    for (const key of listKeys) expect(snapshot[key]).toBe(snapshot.all[key]);
+    expect(snapshot.babies.map((b) => b.id)).toEqual([FIRST]);
+    expect(snapshot.baby?.id).toBe(FIRST);
+  });
+
+  it('两份档案：照护记录、疫苗本配置、小金库、回忆、信、宝宝的证件只有当前宝宝的，全家共用的都在', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      [SECOND, 'baby', second],
+      ['legacy', 'event', feed(10)],
+      ['mine', 'event', { ...feed(11), babyId: FIRST }],
+      ['theirs', 'event', { ...feed(12), babyId: SECOND }],
+      [
+        'plan2',
+        'event',
+        { type: 'vaccine-plan', vaccineId: 'sg:bcg', hidden: true, babyId: SECOND },
+      ],
+      [
+        'money1',
+        'event',
+        { type: 'money', flow: 'in', amountMinor: 100, currency: 'SGD', happenedAt: 1 },
+      ],
+      ['formula', 'event', { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} }],
+      ['m2', 'moment', { ...moment(30), babyId: SECOND }],
+      ['l1', 'letter', { title: '', text: '虚构', at: 1 }],
+      ['doc2', 'document', { name: '虚构证件', files: [], babyId: SECOND }],
+      ['own', 'document', { name: '护照', files: [], owner: PERSON }],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    let snapshot = store.getSnapshot();
+    expect(snapshot.multiBaby).toBe(true);
+    expect(snapshot.babies.map((b) => b.id)).toEqual([FIRST, SECOND]);
+    expect(snapshot.baby?.id).toBe(FIRST);
+    expect(ids(snapshot.events)).toEqual(['legacy', 'mine']);
+    expect(ids(snapshot.vaccinePlans)).toEqual([]);
+    expect(ids(snapshot.money)).toEqual(['money1']);
+    expect(ids(snapshot.moments)).toEqual([]);
+    expect(ids(snapshot.letters)).toEqual(['l1']);
+    expect(ids(snapshot.documents)).toEqual(['own']);
+    expect(ids(snapshot.formulas)).toEqual(['formula']);
+    expect(ids(snapshot.all.events)).toEqual(['legacy', 'mine', 'theirs']);
+
+    await store.setCurrentBaby(SECOND);
+    snapshot = store.getSnapshot();
+    expect(snapshot.baby?.id).toBe(SECOND);
+    expect(ids(snapshot.events)).toEqual(['theirs']);
+    expect(ids(snapshot.vaccinePlans)).toEqual(['plan2']);
+    expect(ids(snapshot.money)).toEqual([]);
+    expect(ids(snapshot.moments)).toEqual(['m2']);
+    expect(ids(snapshot.letters)).toEqual([]);
+    expect(ids(snapshot.documents)).toEqual(['doc2', 'own']);
+    expect(ids(snapshot.formulas)).toEqual(['formula']);
+  });
+
+  it('新记录写给当前宝宝；切换后选的宝宝记在手机上，重新打开还是它', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      [SECOND, 'baby', second],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    await store.setCurrentBaby(SECOND);
+    await store.write('event', 'new', feed(50));
+    expect(db.records.get('new')?.data).toMatchObject({ babyId: SECOND });
+    expect(ids(store.getSnapshot().events)).toEqual(['new']);
+
+    const reopened = new RecordStore(db);
+    await reopened.load();
+    expect(reopened.getSnapshot().baby?.id).toBe(SECOND);
+    expect(ids(reopened.getSnapshot().events)).toEqual(['new']);
+  });
+
+  it('选的宝宝删了或还没同步到时回到第一个宝宝；删了的宝宝的记录不显示', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      [SECOND, 'baby', second],
+      ['theirs', 'event', { ...feed(12), babyId: SECOND }],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    await store.setCurrentBaby(UNKNOWN);
+    expect(store.getSnapshot().baby?.id).toBe(FIRST);
+    await store.setCurrentBaby(SECOND);
+    expect(ids(store.getSnapshot().events)).toEqual(['theirs']);
+    await store.remove(SECOND);
+    const snapshot = store.getSnapshot();
+    expect(snapshot.baby?.id).toBe(FIRST);
+    expect(snapshot.babies.map((b) => b.id)).toEqual([FIRST]);
+    expect(snapshot.multiBaby).toBe(true);
+    expect(ids(snapshot.events)).toEqual([]);
+  });
+
+  it('切换宝宝只换按宝宝过滤的列表，奶粉、收藏这些还是原来的数组', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      [SECOND, 'baby', second],
+      ['formula', 'event', { type: 'formula', name: '虚构奶粉', basis: 'per100ml', values: {} }],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    const before = store.getSnapshot();
+    await store.setCurrentBaby(SECOND);
+    const after = store.getSnapshot();
+    expect(after.formulas).toBe(before.formulas);
+    expect(after.favorites).toBe(before.favorites);
+    expect(after.all).toBe(before.all);
+  });
+
+  it('全部档案（删除的也在）给加宝宝用', async () => {
+    const db = seed([
+      [FIRST, 'baby', first],
+      [SECOND, 'baby', second, true],
+    ]);
+    const store = new RecordStore(db);
+    await store.load();
+    expect(store.babyRefs()).toEqual([
+      { id: FIRST, deleted: false },
+      { id: SECOND, createdAt: 5000, deleted: true },
+    ]);
+  });
+});
 
 describe('写一条记录只更新变了的部分（issue #111）', () => {
   it('写一条喂奶后，回忆和其他没变的列表还是原来的数组', async () => {
@@ -322,8 +518,11 @@ describe('增量更新和全量重建结果一致', () => {
         moment: Array.from({ length: 6 }, () => randomUUID()),
         letter: Array.from({ length: 4 }, () => randomUUID()),
         document: Array.from({ length: 4 }, () => randomUUID()),
-        baby: Array.from({ length: 2 }, () => randomUUID()),
+        baby: Array.from({ length: 3 }, () => randomUUID()),
       };
+      // 多个宝宝（issue #106 第二步）：记录有的写了 babyId，有的没写（属于第一个宝宝）。
+      const owned = <T extends object>(data: T): T =>
+        rand() < 0.5 ? data : { ...data, babyId: pick(ids.baby) };
       const eventData = (): EventData | Record<string, unknown> =>
         pick([
           () => feed(small()),
@@ -359,13 +558,17 @@ describe('增量更新和全量重建结果一致', () => {
       const dataFor = (collection: keyof typeof ids): unknown => {
         switch (collection) {
           case 'event':
-            return eventData();
+            return owned(eventData());
           case 'moment':
-            return rand() < 0.1 ? { at: small() } : moment(small());
+            return rand() < 0.1 ? { at: small() } : owned(moment(small()));
           case 'letter':
-            return { title: '', text: 'x', at: small() };
+            return owned({ title: '', text: 'x', at: small() });
           case 'document':
-            return { name: pick(['d', 'e']), files: [] };
+            return owned(
+              rand() < 0.2
+                ? { name: pick(['d', 'e']), files: [], owner: randomUUID() }
+                : { name: pick(['d', 'e']), files: [] },
+            );
           case 'baby':
             // 第一个宝宝按建档先后排（issue #106），一样时按 id。
             return rand() < 0.5
@@ -380,7 +583,7 @@ describe('增量更新和全量重建结果一致', () => {
       let stale = false;
       const check = (step: string) => {
         if (stale) return;
-        expect(store.getSnapshot(), step).toEqual(fullSnapshot(recordsOf(store)));
+        expect(store.getSnapshot(), step).toEqual(fullSnapshot(recordsOf(store), chosenOf(store)));
       };
       const notified = () => {
         let count = 0;
@@ -464,12 +667,18 @@ describe('增量更新和全量重建结果一致', () => {
         } else if (roll < 0.95) {
           label = 'clear';
           await store.clear();
+        } else if (rand() < 0.5) {
+          const id = pick(ids.baby);
+          label = `choose ${id}`;
+          await store.setCurrentBaby(id);
         } else {
-          // 重启：从落盘的数据重新加载，结果也要一致。
+          // 重启：从落盘的数据重新加载，结果也要一致。选的宝宝也记在手机上。
           label = 'reload';
           const reloaded = new RecordStore(db);
           await reloaded.load();
-          expect(reloaded.getSnapshot(), label).toEqual(fullSnapshot(recordsOf(reloaded)));
+          expect(reloaded.getSnapshot(), label).toEqual(
+            fullSnapshot(recordsOf(reloaded), chosenOf(store)),
+          );
           done();
           continue;
         }

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { canShare, shareDayPending, shareDayRange, shareLinkUrl } from '../src/lib/share';
+import {
+  canShare,
+  shareBabyField,
+  shareDayPending,
+  shareDayRange,
+  shareLinkUrl,
+} from '../src/lib/share';
 
 const HOUR = 3_600_000;
 const originalTz = process.env.TZ;
@@ -160,5 +166,16 @@ describe('现在打开页面还缺什么', () => {
         new Set(['a']),
       ),
     ).toEqual({ records: 0, files: 0 });
+  });
+});
+
+describe('链接属于哪个宝宝（issue #106）', () => {
+  const baby = { id: '22222222-2222-4222-8222-222222222222' };
+  it('只有一个宝宝时不带，请求和以前一样', () => {
+    expect(shareBabyField({ multiBaby: false, baby })).toEqual({});
+  });
+  it('有几个宝宝时是当前宝宝', () => {
+    expect(shareBabyField({ multiBaby: true, baby })).toEqual({ babyId: baby.id });
+    expect(shareBabyField({ multiBaby: true, baby: null })).toEqual({});
   });
 });

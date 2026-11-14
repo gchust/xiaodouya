@@ -8,6 +8,7 @@ import {
   isBabyScoped,
   MULTI_BABY_CLIENT_LEVEL,
   needsMultiBabyUpgrade,
+  nextBabyCreatedAt,
   orderBabies,
   parseClientLevel,
   parseCollectionData,
@@ -240,6 +241,25 @@ describe('服务端收到档案时的 createdAt（只在建档时定一次）', 
     expect(settleBabyCreatedAt({ id: FAMILY }, undefined, another)).toEqual({
       createdAt: undefined,
     });
+  });
+});
+
+describe('加宝宝时的 createdAt', () => {
+  it('一般是现在', () => {
+    expect(nextBabyCreatedAt([{ id: FAMILY }], 9000)).toBe(9000);
+    expect(nextBabyCreatedAt([], 9000)).toBe(9000);
+  });
+
+  it('手机时钟慢了也排在已有的宝宝后面，删除的也算', () => {
+    const babies = [
+      { id: FAMILY },
+      { id: SECOND, createdAt: 5000 },
+      { id: THIRD, createdAt: 7000, deleted: true },
+    ];
+    expect(nextBabyCreatedAt(babies, 100)).toBe(7001);
+    const after = { id: OTHER_USER, createdAt: nextBabyCreatedAt(babies, 100) };
+    expect(orderBabies([...babies, after]).at(-1)?.id).toBe(OTHER_USER);
+    expect(firstBabyId([...babies, after])).toBe(FAMILY);
   });
 });
 

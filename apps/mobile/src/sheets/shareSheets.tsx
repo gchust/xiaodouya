@@ -20,6 +20,7 @@ import { deviceTimezone } from '../lib/device';
 import {
   canShare,
   nicknameProblem,
+  shareBabyField,
   shareDayPending,
   shareDayRange,
   shareDayTitle,
@@ -81,6 +82,7 @@ export function ShareDaySheet({ at }: { at: number }) {
       units,
       ttlDays,
       display,
+      ...shareBabyField(app.store.getSnapshot()),
     };
     try {
       const share = await app.api.createShare(body);

@@ -56,6 +56,18 @@ export function defaultBaby<T extends BabyRef>(babies: readonly T[]): T | null {
 }
 
 /**
+ * 加宝宝时写的 `createdAt`：“现在”和“已有最大的 `createdAt` 加 1”中较大的那个。`babies` 是全部档案，
+ * 删除的也算。手机时钟慢了也排在已有的宝宝后面，不会抢走第一个宝宝的旧记录。
+ */
+export function nextBabyCreatedAt(babies: readonly BabyRef[], now: number): number {
+  let latest = -1;
+  for (const baby of babies) {
+    if (baby.createdAt !== undefined && baby.createdAt > latest) latest = baby.createdAt;
+  }
+  return Math.max(Math.floor(now), latest + 1, 0);
+}
+
+/**
  * 分享链接属于哪个宝宝。创建时选了就是那个；没选的（旧版 App 建的）是旧版界面上显示的宝宝，
  * 档案全删了时是第一个宝宝：那时它的旧记录还在，旧链接照样能看到。
  */
