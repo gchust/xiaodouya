@@ -23,12 +23,14 @@ import {
   isCustomVaccineId,
   isOpenBreastFeed,
   lastFeedDefaults,
+  lastPumpDefaults,
   medicineSuggestions,
   mergeEdit,
   metricToSave,
   newCustomVaccineId,
   nextVaccine,
   optionalStartText,
+  type PumpSide,
   planSchedule,
   scaleFor,
   stepDisplay,
@@ -62,7 +64,13 @@ import {
   TimeCheckText,
   useRecordTime,
 } from '../ui/TimeField';
-import { BreastForm, BreastStart, BreastTimer, FeedMethodSwitch } from './breastSheets';
+import {
+  BreastForm,
+  BreastStart,
+  BreastTimer,
+  FeedMethodSwitch,
+  SegmentSwitch,
+} from './breastSheets';
 import { AddFormulaFlow, MilkChooser } from './formulaSheets';
 import { DosePlanBar, VaccinePlanForm } from './vaccineSheets';
 
@@ -558,6 +566,12 @@ export function MoreSheet({ birthAt, backfill }: { birthAt: number; backfill?: b
         onPress: () => open(t().records.bath, () => <BathSheet backfill={backfill} />),
       },
       {
+        key: 'pump',
+        label: t().records.pump,
+        color: colors.pump,
+        onPress: () => open(t().records.pump, () => <PumpSheet backfill={backfill} />),
+      },
+      {
         key: 'growth',
         label: t().records.growth,
         color: colors.growth,
@@ -748,6 +762,104 @@ export function BathSheet({ initial, id, backfill }: SheetMode<'bath'> = {}) {
         onPress={() =>
           void save(
             { ...initial, type: 'bath', at: time.resolve(), note: note.trim() || undefined },
+            id,
+            initial,
+          )
+        }
+      />
+    </>
+  );
+}
+
+/**
+ * 吸奶（issue #104）：哪一侧、吸了多少。默认跟上一次吸奶，不跟喂奶的奶量。
+ * 记的是大人，不是宝宝的喂奶，所以不在喂奶弹层里，也不算喂奶次数。
+ */
+export function PumpSheet({ initial, id, backfill }: SheetMode<'pump'> = {}) {
+  const events = useRecordsOf('events');
+  const save = useSaveEvent();
+  const { volume } = useUnits();
+  const scale = scaleFor('volume', volume);
+  const time = useRecordTime({ at: initial?.at, backfill });
+  const [defaults] = useState(() =>
+    lastPumpDefaults(
+      events.map((e) => e.data),
+      Date.now(),
+    ),
+  );
+  const original = initial ? initial.ml : defaults.ml;
+  const [amount, setAmount] = useState(() => toDisplay('volume', original ?? 90, volume));
+  const [side, setSide] = useState<PumpSide>(
+    () => (initial ? initial.side : defaults.side) ?? 'both',
+  );
+  const [note, setNote] = useState(initial?.note ?? '');
+  const sideLabels: Record<PumpSide, string> = {
+    left: t().records.pumpLeft,
+    right: t().records.pumpRight,
+    both: t().records.pumpBoth,
+  };
+  return (
+    <>
+      <RecordTimeField time={time} />
+      <SegmentSwitch
+        value={side}
+        onChange={setSide}
+        options={(['left', 'right', 'both'] as const).map((value) => ({
+          value,
+          label: sideLabels[value],
+          testID: `pump-side-${value}`,
+        }))}
+      />
+      <Stepper
+        testPrefix="pump-ml"
+        value={amount.toFixed(scale.decimals)}
+        unit={scale.label}
+        onDec={() => setAmount((v) => stepDisplay('volume', v, -1, volume))}
+        onInc={() => setAmount((v) => stepDisplay('volume', v, 1, volume))}
+      />
+      <View style={s.mlChips}>
+        {chipsFor(volume).map((v) => {
+          const on = amount === v;
+          return (
+            <Pressable
+              key={v}
+              testID={`pump-${volume}-chip-${v}`}
+              accessibilityRole="button"
+              accessibilityLabel={`${v} ${scale.name}`}
+              accessibilityState={{ selected: on }}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              onPress={() => setAmount(v)}
+              style={[s.mlChip, { backgroundColor: on ? colors.ink : colors.paper }]}
+            >
+              <Mono weight="medium" style={{ fontSize: 13, color: on ? colors.paper : colors.ink }}>
+                {v}
+              </Mono>
+            </Pressable>
+          );
+        })}
+      </View>
+      <SoftInput
+        testID="pump-note"
+        value={note}
+        onChangeText={setNote}
+        placeholder={t().records.pumpNotePlaceholder}
+        maxLength={200}
+      />
+      {id ? null : <Muted style={s.hint}>{t().records.pumpHint}</Muted>}
+      <Button
+        testID="pump-save"
+        label={id ? t().common.save : t().records.record}
+        disabled={Boolean(time.check.error)}
+        onPress={() =>
+          void save(
+            {
+              ...initial,
+              type: 'pump',
+              at: time.resolve(),
+              ml: metricToSave('volume', original, amount, volume),
+              side,
+              note: note.trim() || undefined,
+            },
             id,
             initial,
           )
@@ -1182,6 +1294,8 @@ function eventEditor(
       return { title: t().records.editMed, render: () => <MedSheet initial={event} id={id} /> };
     case 'bath':
       return { title: t().records.editBath, render: () => <BathSheet initial={event} id={id} /> };
+    case 'pump':
+      return { title: t().records.editPump, render: () => <PumpSheet initial={event} id={id} /> };
     case 'solids':
       return {
         title: t().records.editSolids,

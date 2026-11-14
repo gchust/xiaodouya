@@ -10,6 +10,7 @@ export const confirm = {
   event: {
     feed: '删除这条喂奶记录？',
     diaper: '删除这条换尿布记录？',
+    pump: '删除这条吸奶记录？',
     sleep: '删除这条睡眠记录？',
     temp: '删除这条体温记录？',
     med: '删除这条吃药记录？',

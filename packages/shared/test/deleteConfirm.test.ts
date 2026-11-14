@@ -8,6 +8,7 @@ const at = Date.UTC(2026, 10, 5, 1, 30);
 const events: Record<EventData['type'], EventData> = {
   feed: { type: 'feed', at, ml: 90 },
   diaper: { type: 'diaper', at, kind: 'wee' },
+  pump: { type: 'pump', at, ml: 120, side: 'both' },
   sleep: { type: 'sleep', at, endAt: at + 3_600_000 },
   temp: { type: 'temp', at, celsius: 37.2 },
   med: { type: 'med', at, name: 'Vitamin D', dose: '1 drop' },
@@ -21,6 +22,7 @@ const words: Record<Locale, Record<EventData['type'], string>> = {
   zh: {
     feed: '喂奶',
     diaper: '尿布',
+    pump: '吸奶',
     sleep: '睡眠',
     temp: '体温',
     med: '吃药',
@@ -32,6 +34,7 @@ const words: Record<Locale, Record<EventData['type'], string>> = {
   en: {
     feed: 'feed',
     diaper: 'diaper',
+    pump: 'pumping',
     sleep: 'sleep',
     temp: 'temperature',
     med: 'medicine',

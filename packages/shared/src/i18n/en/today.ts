@@ -44,6 +44,7 @@ export const today: Catalog['today'] = {
   filterTemp: 'Temp',
   filterMed: 'Medicine',
   filterBath: 'Bath',
+  filterPump: 'Pumping',
   filterSolids: 'Solids',
   filterGrowth: 'Growth',
   filterVaccine: 'Vaccines',

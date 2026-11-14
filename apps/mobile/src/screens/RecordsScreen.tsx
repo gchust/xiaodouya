@@ -31,6 +31,7 @@ const filters = (): { key: Filter; label: string }[] => [
   { key: 'temp', label: t().today.filterTemp },
   { key: 'med', label: t().today.filterMed },
   { key: 'bath', label: t().today.filterBath },
+  { key: 'pump', label: t().today.filterPump },
   { key: 'solids', label: t().today.filterSolids },
   { key: 'growth', label: t().today.filterGrowth },
   { key: 'vaccine', label: t().today.filterVaccine },

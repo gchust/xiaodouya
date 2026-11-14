@@ -114,6 +114,8 @@ type Semantic = {
   onSleep: Hex;
   // 记录类型的色点，和 packages/shared 的 eventColors 一致（分享页用那一份，不跟主题）。
   feed: Hex;
+  /** 吸奶，和喂奶同色。 */
+  pump: Hex;
   diaper: Hex;
   temp: Hex;
   med: Hex;
@@ -161,6 +163,7 @@ const semanticLight: Semantic = {
   sleepFill: '#5f709a',
   onSleep: '#ffffff',
   feed: '#c0714f',
+  pump: '#c0714f',
   diaper: '#c9a24a',
   temp: '#b8645e',
   med: '#8a7a9e',
@@ -190,6 +193,7 @@ const semanticDark: Semantic = {
   sleepFill: '#4c5a80',
   onSleep: '#e3e8f5',
   feed: '#d9876a',
+  pump: '#d9876a',
   diaper: '#d1ad5a',
   temp: '#d9837b',
   med: '#a796bb',

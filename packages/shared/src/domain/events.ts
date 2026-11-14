@@ -16,6 +16,8 @@ import { vaccineRecordName } from './vaccines';
 export const eventColors: Record<EventData['type'], string> = {
   feed: '#c0714f',
   diaper: '#c9a24a',
+  // 吸奶和喂奶都是奶，用同一个颜色，靠文字区分（和辅食、尿布同色一样）。
+  pump: '#c0714f',
   sleep: '#7d8fb8',
   temp: '#b8645e',
   med: '#8a7a9e',
@@ -33,6 +35,11 @@ export function describeEvent(event: EventData, now: number, units: Units = metr
       return text.feed(formatVolume(event.ml, units.volume));
     case 'diaper':
       return text.diaper(text[event.kind]);
+    case 'pump':
+      return text.pump(
+        formatVolume(event.ml, units.volume),
+        event.side ? text.pumpSide(event.side) : undefined,
+      );
     case 'sleep':
       return event.endAt
         ? text.slept(formatDuration(event.endAt - event.at))

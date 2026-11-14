@@ -43,6 +43,7 @@ export const today = {
   filterTemp: '体温',
   filterMed: '吃药',
   filterBath: '洗澡',
+  filterPump: '吸奶',
   filterSolids: '辅食',
   filterGrowth: '身高体重',
   filterVaccine: '疫苗',
