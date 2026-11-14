@@ -532,6 +532,7 @@ export function FamilySetup() {
     return (
       <Page testID="join-family-screen">
         <Pressable
+          testID="join-back"
           accessibilityRole="button"
           accessibilityLabel={t().common.back}
           hitSlop={12}

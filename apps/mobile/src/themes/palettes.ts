@@ -138,6 +138,8 @@ const media = {
   mediaMask: 'rgba(0,0,0,0.62)',
   mediaLine: 'rgba(255,255,255,0.55)',
   mediaFill: 'rgba(255,255,255,0.14)',
+  /** 黑底查看器上的点缀（`已是封面` 的圆点）。取原型的 accentLight：主题的 accentLight 在深色下是深色，黑底上看不见。 */
+  mediaAccent: '#e9a585',
   /** 回忆封面上的时长、`共 N 项`、封面标签的底。 */
   veilSoft: 'rgba(43,38,34,0.55)',
   veil: 'rgba(43,38,34,0.6)',

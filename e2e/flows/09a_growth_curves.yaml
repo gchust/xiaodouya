@@ -36,9 +36,10 @@ appId: com.gchust.xiaodouya
 - assertVisible: 曲线只是参考，生长情况请以医生判断为准。
 - assertVisible: 早产的宝宝请按医生的方法看。
 - takeScreenshot: .artifacts/e2e-09a-weight-curves
-# 点前一个点，下面换成那一次。先滚回整张卡片的顶上
+# 点前一个点，下面换成那一次。滚回去时把这个点放到中间：滚的目标是卡片顶上的 growth-add 并居中的话，
+# 点会被推到底部标签栏下面，找不到（run 43573089117）。
 - scrollUntilVisible:
-    element: { id: growth-add }
+    element: { id: growth-point-0 }
     direction: UP
     centerElement: true
 - waitForAnimationToEnd

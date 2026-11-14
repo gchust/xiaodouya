@@ -6,6 +6,10 @@
 //    样式表用 themedStyles(() => ({...}))，见 apps/mobile/src/themes/runtime.ts。
 // 3. Reanimated 的 worklet 里不能直接读 colors：worklet 会把捕获的对象冻结，之后换主题改不了它。
 //    先在组件里读成局部变量再在 worklet 里用。
+// 4. RefreshControl 要写 progressBackgroundColor：Android 下拉刷新的圆盘默认是白的，深色模式下是一块亮斑（issue #105）。
+// 5. 黑底的全屏查看器和裁剪头像只能用不随主题和深浅变的颜色（white、black、media*，SPEC“主题配色”）：
+//    主题的 paper、accentLight 在深色下是深色，黑底上看不见（issue #105 走查时的视频加载转圈）。
+//    收到的反馈的附件全屏和列表在同一个文件里，没法按文件拦，那里的颜色要自己看。
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -25,6 +29,15 @@ const EXEMPT = new Set([
   // 导出的成长册是要打印的 PDF，永远是白纸黑字，不跟主题和深色模式。
   'apps/mobile/src/lib/bookHtml.ts',
 ]);
+
+/** 整页是黑底查看器的文件。 */
+/** 整页是黑底的文件，以及各自额外允许的主题令牌。 */
+const BLACK_VIEWERS = new Map([
+  ['apps/mobile/src/screens/ViewerScreen.tsx', new Set()],
+  // 裁剪头像：黑底上的 `保存` 按钮是主题的实心按钮，字和底一起换，深色下也读得清。
+  ['apps/mobile/src/ui/AvatarEditor.tsx', new Set(['accentFill', 'onAccent'])],
+]);
+const FIXED_TOKEN = /^(?:white|black|media[A-Z]\w*)$/;
 
 const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FUNC = /^\s*(?:rgba?|hsla?)\(/i;
@@ -73,6 +86,7 @@ function ownerName(node) {
 }
 
 function check(file) {
+  const blackViewer = BLACK_VIEWERS.get(path.relative(root, file).split(path.sep).join('/'));
   const source = fs.readFileSync(file, 'utf8');
   const tree = ts.createSourceFile(
     file,
@@ -104,6 +118,26 @@ function check(file) {
     }
     if (readsColors && insideWorklet) {
       report(node, `worklet 里读 ${node.getText()}，先在组件里读成局部变量`);
+    }
+    if (
+      readsColors &&
+      blackViewer &&
+      !FIXED_TOKEN.test(node.name.text) &&
+      !blackViewer.has(node.name.text)
+    ) {
+      report(
+        node,
+        `黑底查看器里读 ${node.getText()}，用 white、black 或 media*（不随主题和深浅变）`,
+      );
+    }
+    if (
+      (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) &&
+      node.tagName.getText() === 'RefreshControl' &&
+      !node.attributes.properties.some(
+        (attr) => ts.isJsxAttribute(attr) && attr.name.getText() === 'progressBackgroundColor',
+      )
+    ) {
+      report(node, 'RefreshControl 没写 progressBackgroundColor，Android 上是白色的圆盘');
     }
     const worklet =
       insideWorklet ||

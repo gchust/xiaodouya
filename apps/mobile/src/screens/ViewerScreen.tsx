@@ -521,7 +521,7 @@ function VideoPage({ media }: { media: MediaRef }) {
   if (!source) {
     return (
       <View style={s.center}>
-        <ActivityIndicator color={colors.paper} />
+        <ActivityIndicator color={colors.white} />
         <Text style={s.loading}>{t().ui.preparingVideo}</Text>
       </View>
     );
@@ -570,7 +570,7 @@ const s = themedStyles(() => ({
     justifyContent: 'center',
   },
   coverState: { minHeight: 26, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  coverDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accentLight },
+  coverDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.mediaAccent },
   coverText: { color: colors.white, fontSize: 12 },
   center: {
     position: 'absolute',
