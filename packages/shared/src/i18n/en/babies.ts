@@ -14,6 +14,8 @@ export const babies: Catalog['babies'] = {
   addA11y: 'Add another baby',
   addTitle: 'Add another baby',
   addIntro: 'A name and birth time are enough. You can fill in the rest under Info later.',
+  addWarning:
+    "Once added, a baby can't be removed for now. Others in your family need to update Xiaodouya to the latest version to keep syncing.",
   addSubmit: 'Add',
   added: (name) => `Added ${name}. Now showing ${name}`,
   regionThisBaby: "This baby's region",

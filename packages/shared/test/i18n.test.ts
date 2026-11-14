@@ -97,3 +97,14 @@ describe('当前语言', () => {
     setLocale('zh');
   });
 });
+
+describe('加宝宝前说清楚后果（issue #106）', () => {
+  it('两种语言都说明加了暂时删不掉、家人要更新到最新版', () => {
+    const zh = messagesFor('zh').babies.addWarning;
+    const en = messagesFor('en').babies.addWarning;
+    expect(zh).toContain('不能删除');
+    expect(zh).toContain('更新到最新版');
+    expect(en).toContain("can't be removed");
+    expect(en).toContain('latest version');
+  });
+});

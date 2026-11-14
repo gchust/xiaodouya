@@ -23,13 +23,20 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: add-baby-name }
     timeout: 10000
-- assertVisible: 这个宝宝的地区
+# 加了暂时删不掉、家人要更新 App，加之前说清楚。
+- assertVisible: { id: add-baby-warning }
+- assertVisible:
+    text: 加好后暂时不能删除.*
 - tapOn: { id: add-baby-name }
 - inputText: Bean
 - hideKeyboard
 - takeScreenshot: .artifacts/e2e-26-add-baby
 - scrollUntilVisible:
+    element: 这个宝宝的地区
+- assertVisible: 这个宝宝的地区
+- scrollUntilVisible:
     element: { id: add-baby-submit }
+- takeScreenshot: .artifacts/e2e-26-add-baby-region
 - tapOn: { id: add-baby-submit }
 - extendedWaitUntil:
     notVisible: { id: add-baby-submit }

@@ -14,6 +14,7 @@ export const babies = {
   addA11y: '再加一个宝宝',
   addTitle: '再加一个宝宝',
   addIntro: '只填名字和出生时间就够了，其他的以后在资料里补。',
+  addWarning: '加好后暂时不能删除。家里其他人要把小豆芽更新到最新版，才能继续同步。',
   addSubmit: '加好了',
   added: (name: Text) => `已加上${name}，现在看的是${name}`,
   regionThisBaby: '这个宝宝的地区',

@@ -195,6 +195,10 @@ export function AddBabySheet() {
   return (
     <>
       <Muted style={{ fontSize: 13, lineHeight: 21 }}>{t().babies.addIntro}</Muted>
+      {/* 加了删不掉，旧版 App 也会被服务端挡住（issue #106），加之前要说清楚。 */}
+      <View testID="add-baby-warning" style={s.tip}>
+        <Text style={s.tipText}>{t().babies.addWarning}</Text>
+      </View>
       <Field
         testID="add-baby-name"
         label={t().auth.babyName}
@@ -241,4 +245,11 @@ const s = themedStyles(() => ({
   name: { fontSize: 15, color: colors.ink },
   current: { fontSize: 12, color: colors.greenText },
   error: { fontSize: 13, color: colors.dangerText },
+  tip: {
+    backgroundColor: colors.sand,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  tipText: { fontSize: 13, lineHeight: 21, color: colors.inkSoft },
 }));
