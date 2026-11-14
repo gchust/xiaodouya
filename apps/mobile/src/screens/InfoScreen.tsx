@@ -628,8 +628,8 @@ function SexSheet({ id, baby }: { id: string; baby: BabyData }) {
   ];
 
   const save = async () => {
-    // 弹层开着时家人可能改了别的项，按最新的档案写。
-    const latest = app.store.getSnapshot().baby ?? { id, data: baby };
+    // 弹层开着时家人可能改了别的项，按最新的档案写。按 id 找：弹层开着时可能换了宝宝（issue #106）。
+    const latest = app.store.getSnapshot().babies.find((b) => b.id === id) ?? { id, data: baby };
     const { sex: _old, ...rest } = latest.data;
     await app.write('baby', sex ? { ...rest, sex } : rest, latest.id);
     sheet.close();
