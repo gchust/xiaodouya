@@ -211,6 +211,7 @@ export function TodayScreen() {
           refreshing={refreshing}
           tintColor={colors.accent}
           colors={[colors.accent]}
+          progressBackgroundColor={colors.card}
           onRefresh={() => {
             setRefreshing(true);
             void app.syncNow().finally(() => setRefreshing(false));

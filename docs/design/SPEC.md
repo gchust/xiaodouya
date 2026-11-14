@@ -374,7 +374,9 @@
 | `wee` | `#d9c06a` | `#ddc77a` |
 | `poo` | `#a07a3a` | `#b48a48` |
 
-照片、视频和黑底查看器上的颜色（白字、半透明黑底、裁剪框）不随主题也不随深浅变。
+照片、视频和黑底查看器上的颜色（白字、半透明黑底、裁剪框、视频加载时的转圈、`已是封面` 的赤陶色圆点 `#e9a585`）不随主题也不随深浅变：主题的 `paper`、`accentLight` 在深色下是深色，放在黑底上就看不见了（issue #105 走查）。`scripts/check-colors.mjs` 只许全屏查看器用 `white`、`black` 和 `media*`。
+
+系统画的下拉刷新圆盘（Android 默认近白）用 `card` 底、`accent` 箭头，深色下不是一块亮斑。
 
 **对比度（`apps/mobile/test/themes.test.ts`）：** 每套主题的浅色和深色，`ink`、`inkSoft`、`muted`、`accentText`、`dangerText`、`greenText`、`warnText`、`sleepText` 写在 `paper`、`card`、`sand` 上都至少 4.5:1；按钮的字和底（`onAccent`/`accentFill` 等四组，`ink` 底上的 `onInkMuted`、`accentLight`）至少 4.5:1，App 的按钮字是 14–16 号，不算 WCAG 的大字；导航短条、开关、进度条（`accent`、`danger` 对 `paper`/`card`）至少 3:1。最低的一组是雾蓝浅色的 `muted` 写在 `sand` 上，4.58:1。另外用 CIE76 色差检查两组颜色分不分得开：发烧的红和 37.5–38℃ 的赤陶（`dangerText`/`warnText`、`danger`/`warn`）至少 20；点缀色和成功的绿（`accentText`/`greenText`、`accent`/`green`）在每套主题里至少 20。
 

@@ -129,6 +129,7 @@ export function FeedbackInboxScreen() {
           refreshing={refreshing}
           onRefresh={() => void refresh()}
           colors={[colors.accent]}
+          progressBackgroundColor={colors.card}
         />
       }
     >
