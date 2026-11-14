@@ -28,6 +28,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: action-feed }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: action-feed }
 - tapOn: { id: ml-chip-90 }
 - tapOn: { id: feed-save }
@@ -72,6 +74,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: action-feed }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: action-feed }
 - tapOn: { id: feed-method-breast }
 - tapOn: { id: breast-left }
@@ -149,6 +153,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: trends-range-30 }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: trends-range-30 }
 - assertVisible: { id: trend-feed-count-29 }
 - assertNotVisible: { id: trend-feed-count-0-value }
@@ -162,6 +168,8 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: trends-back }
     direction: UP
+    centerElement: true
+- waitForAnimationToEnd
 - tapOn: { id: trends-back }
 - extendedWaitUntil:
     visible: { id: today-screen }
