@@ -215,6 +215,36 @@ describe('小工具写入', () => {
   });
 });
 
+describe('有几个宝宝时小工具跟着当前宝宝（issue #106）', () => {
+  const SECOND = '22222222-2222-4222-8222-222222222222';
+
+  it('亲喂计时只看当前宝宝的，开始和结束都写给当前宝宝', async () => {
+    const { store, db } = await setup();
+    await store.write('baby', SECOND, { name: '二宝', birthAt: 2, createdAt: 5000 });
+    // 大宝开着一段亲喂：换到二宝后小工具不能把它当成二宝的计时。
+    await runWidgetAction(
+      { type: 'breastStart', id: 'first', side: 'left' },
+      store,
+      session,
+      now - HOUR,
+    );
+    expect(db.records.get('first')?.data).toMatchObject({ babyId: BABY_ID });
+    await store.setCurrentBaby(SECOND);
+    const start = await runWidgetAction(
+      { type: 'breastStart', id: 'second', side: 'right' },
+      store,
+      session,
+      now - 600_000,
+    );
+    expect(start.kind).toBe('write');
+    expect(db.records.get('second')?.data).toMatchObject({ babyId: SECOND, side: 'right' });
+    await runWidgetAction({ type: 'breastEnd', feedId: 'second' }, store, session, now);
+    expect(db.records.get('second')?.data).toMatchObject({ babyId: SECOND, endAt: now });
+    // 大宝那段还开着，没被结束。
+    expect(db.records.get('first')?.data).not.toHaveProperty('endAt');
+  });
+});
+
 describe('小工具记尿布', () => {
   it('写一条尿布进发件箱，点同一个按钮重试不会多记', async () => {
     const { db, store } = await setup();
