@@ -9,7 +9,8 @@ import {
   formatBirthMeasures,
   formatFullDate,
   formatMoney,
-  formatMonthDay,
+  type GrowthSex,
+  growthSexes,
   inertPlanCount,
   knowledgeForAge,
   moneyTotals,
@@ -21,17 +22,13 @@ import {
   otherVaccineRecords,
   planSchedule,
   regionFor,
-  scaleFor,
   t,
-  toDisplay,
-  type Units,
   type VaccineStatus,
   vaccineStatuses,
 } from '@xiaodouya/shared';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useApp, useRecordsOf, useRegion, useUnits } from '../lib/app';
 import { formatBirthTime, isBirthInFuture } from '../lib/dates';
@@ -44,9 +41,11 @@ import { HiddenDosesSheet, VaccineBackfillSheet } from '../sheets/vaccineSheets'
 import { colors, spacing, themedStyles } from '../theme';
 import { BirthPicker } from '../ui/BirthPicker';
 import { DocumentCard } from '../ui/DocumentCard';
+import { GrowthChart } from '../ui/GrowthChart';
 import { useFeedback, useSheet } from '../ui/overlays';
 import {
   Button,
+  Chip,
   Dot,
   ListCard,
   Mono,
@@ -147,6 +146,12 @@ export function InfoScreen() {
             testID="birth-measures"
           />
           <Row
+            label={t().growth.sexRow}
+            value={baby.data.sex ? t().growth.sexValue[baby.data.sex] : t().info.toAdd}
+            onPress={() => openSex(sheet, baby.id, baby.data)}
+            testID="birth-sex"
+          />
+          <Row
             label={t().info.hospital}
             value={baby.data.hospital || t().info.toAdd}
             onPress={() => openEdit(sheet, baby.id, baby.data, 'hospital')}
@@ -211,20 +216,24 @@ export function InfoScreen() {
 
       <View style={s.section}>
         <View style={s.sectionHead}>
-          <SectionTitle>
-            {t().info.weightTitle(scaleFor('weight', units.weight).label)}
-          </SectionTitle>
+          <SectionTitle>{t().growth.title}</SectionTitle>
           <Pressable
             testID="growth-add"
             accessibilityRole="button"
-            accessibilityLabel={t().info.recordGrowth}
+            accessibilityLabel={t().growth.addA11y}
             hitSlop={LINK_HIT_SLOP}
             onPress={() => sheet.open(t().records.growth, () => <GrowthSheet />)}
           >
-            <Text style={s.link}>{t().info.addGrowth}</Text>
+            <Text style={s.link}>{t().growth.add}</Text>
           </Pressable>
         </View>
-        <GrowthChart baby={baby.data} events={data} units={units} />
+        <GrowthChart
+          baby={baby.data}
+          events={data}
+          units={units}
+          now={now}
+          onSetSex={() => openSex(sheet, baby.id, baby.data)}
+        />
       </View>
 
       <View style={s.section}>
@@ -584,58 +593,47 @@ function RegionSheet({ id, baby }: { id: string; baby: BabyData }) {
   );
 }
 
-function GrowthChart({
-  baby,
-  events,
-  units,
-}: {
-  baby: BabyData;
-  events: EventData[];
-  units: Units;
-}) {
-  const shown = (kg: number) => toDisplay('weight', kg, units.weight);
-  const points = [
-    ...(baby.birthWeightKg ? [{ w: shown(baby.birthWeightKg), label: t().info.birthPoint }] : []),
-    ...events
-      .filter((e): e is Extract<EventData, { type: 'growth' }> => e.type === 'growth')
-      .sort((a, b) => a.at - b.at)
-      .map((e) => ({ w: shown(e.weightKg), label: formatMonthDay(e.at) })),
-  ].slice(-5);
-  if (points.length === 0) {
-    return (
-      <View style={[s.chart, { alignItems: 'center', justifyContent: 'center' }]}>
-        <Muted style={{ fontSize: 13 }}>{t().info.chartEmpty}</Muted>
-      </View>
-    );
-  }
-  const max = Math.max(...points.map((p) => p.w));
-  return (
-    <View style={s.chart} testID="growth-chart">
-      {points.map((p, i) => (
-        <View key={`${p.label}-${p.w}`} style={s.barColumn}>
-          <Mono weight="medium" style={{ fontSize: 11 }}>
-            {p.w.toFixed(1)}
-          </Mono>
-          <GrowthBar
-            height={Math.round((p.w / max) * 78)}
-            opacity={i === points.length - 1 ? 1 : 0.45}
-          />
-          <Muted style={{ fontSize: 10 }} numberOfLines={1}>
-            {p.label}
-          </Muted>
-        </View>
-      ))}
-    </View>
-  );
+function openSex(sheet: ReturnType<typeof useSheet>, id: string, baby: BabyData) {
+  sheet.open(t().growth.sexRow, () => <SexSheet id={id} baby={baby} />);
 }
 
-function GrowthBar({ height, opacity }: { height: number; opacity: number }) {
-  const animated = useSharedValue(height);
-  useEffect(() => {
-    animated.value = withTiming(height, { duration: 400 });
-  }, [height, animated]);
-  const style = useAnimatedStyle(() => ({ height: animated.value }));
-  return <Animated.View style={[s.bar, { opacity }, style]} />;
+/** 性别（用于生长曲线，F-148）：女孩、男孩或不填。不填时曲线只画宝宝自己的线。 */
+function SexSheet({ id, baby }: { id: string; baby: BabyData }) {
+  const app = useApp();
+  const sheet = useSheet();
+  const { toast } = useFeedback();
+  const [sex, setSex] = useState<GrowthSex | undefined>(baby.sex);
+  const options: Array<{ key: string; value: GrowthSex | undefined; label: string }> = [
+    ...growthSexes.map((value) => ({ key: value, value, label: t().growth.sexValue[value] })),
+    { key: 'unset', value: undefined, label: t().growth.sexUnset },
+  ];
+
+  const save = async () => {
+    // 弹层开着时家人可能改了别的项，按最新的档案写。
+    const latest = app.store.getSnapshot().baby ?? { id, data: baby };
+    const { sex: _old, ...rest } = latest.data;
+    await app.write('baby', sex ? { ...rest, sex } : rest, latest.id);
+    sheet.close();
+    toast(t().records.saved);
+  };
+
+  return (
+    <>
+      <View style={s.sexChips}>
+        {options.map((o) => (
+          <Chip
+            key={o.key}
+            testID={`sex-${o.key}`}
+            label={o.label}
+            selected={o.value === sex}
+            onPress={() => setSex(o.value)}
+          />
+        ))}
+      </View>
+      <Muted style={{ fontSize: 12, lineHeight: 19 }}>{t().growth.sexNote}</Muted>
+      <Button testID="sex-save" label={t().common.save} onPress={() => void save()} />
+    </>
+  );
 }
 
 function BirthTimeSheet({ id, baby }: { id: string; baby: BabyData }) {
@@ -795,33 +793,7 @@ const s = themedStyles(() => ({
   hiddenLink: { alignSelf: 'flex-end', paddingVertical: 2 },
   subTitle: { fontSize: 13, fontWeight: '500', color: colors.ink, marginTop: 4 },
   docGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: DOC_GAP },
-  chart: {
-    flexDirection: 'row',
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 14,
-    padding: 16,
-    alignItems: 'flex-end',
-    gap: 10,
-    height: 150,
-  },
-  barColumn: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 6,
-    height: '100%',
-  },
-  bar: {
-    width: '100%',
-    maxWidth: 34,
-    backgroundColor: colors.accent,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    borderBottomLeftRadius: 2,
-    borderBottomRightRadius: 2,
-  },
+  sexChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   vaccineRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 11 },
   divider: { borderBottomWidth: 1, borderBottomColor: colors.rule },
   knowledge: {

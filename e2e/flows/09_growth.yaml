@@ -1,4 +1,5 @@
-# 身高体重：今天页不进时间线，要在资料页的柱状图里看到。
+# 身高体重：今天页不进时间线，要在资料页的生长曲线里看到（F-148 之前是柱状图）。
+# 流程 01 建档时没填性别，这里只画宝宝自己的线、不说百分位；参考线和百分位见流程 09a。
 appId: com.gchust.xiaodouya
 ---
 - launchApp
@@ -34,10 +35,18 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: { id: growth-chart }
 # 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
+# 曲线下面一行是选中的点（默认最新的一个）：月龄 · 数值，没填性别时没有百分位。
 - scrollUntilVisible:
-    element: "3.6"
-- assertVisible: "3.6"
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 3\\.6 kg"
+- scrollUntilVisible:
+    element: { id: growth-no-sex }
 # 第二次从资料页记，默认值接着上一次
+- scrollUntilVisible:
+    element: { id: growth-add }
+    direction: UP
 - tapOn: { id: growth-add }
 - assertVisible: 3.6 kg
 - tapOn: { id: weight-inc }
@@ -47,6 +56,18 @@ appId: com.gchust.xiaodouya
     notVisible: { id: growth-save }
     timeout: 10000
 - assertVisible: { id: growth-chart }
-- assertVisible: "3.6"
-- assertVisible: "3.7"
+- scrollUntilVisible:
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 3\\.7 kg"
+# 点第一个点，下面换成那一次的数值。两个点都在线上（原来是两根柱子都在）。
+# 两次是一分钟内记的，点叠在一起：点到的是上面的那个（已选中），会换成叠在下面的前一个。
+- tapOn: { id: growth-point-0 }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 3\\.6 kg"
+- assertVisible: { id: growth-point-1 }
+- assertNotVisible:
+    text: ".*P[0-9]+.*"
 - takeScreenshot: .artifacts/e2e-09-growth-chart

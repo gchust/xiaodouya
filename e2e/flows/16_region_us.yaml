@@ -25,14 +25,16 @@ appId: com.gchust.xiaodouya
     notVisible: { id: region-confirm }
     timeout: 10000
 - assertVisible: 美国
-# 体重柱状图换成磅：流程 09 记的 3.7kg 是 8.2lb
+# 生长曲线换成磅：流程 09 记的 3.7kg 是 8.2lb
 - scrollUntilVisible:
     element: { id: growth-chart }
 - assertVisible: 体重（lb）
 # 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
 - scrollUntilVisible:
-    element: "8.2"
-- assertVisible: "8.2"
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 8\\.2 lb.*"
 # 美国的表
 - scrollUntilVisible:
     element: { id: vaccine-row-hepb-1 }

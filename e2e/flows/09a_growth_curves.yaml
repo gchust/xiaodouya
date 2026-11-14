@@ -1,0 +1,105 @@
+# 生长曲线（F-148）：填了性别才有 WHO 参考线和百分位；体重、身长、头围三张切换；记身高体重时可以选填头围；
+# 把性别改回不填后不再说百分位。依赖流程 09 记的 3.6kg、3.7kg（身长 50.5cm）。
+# 跑完留下一条带头围的记录（3.7kg、50.5cm、头围 35.5cm），体重和身长不变，性别还是不填。
+appId: com.gchust.xiaodouya
+---
+- launchApp
+- extendedWaitUntil:
+    visible: { id: tab-info }
+    timeout: 30000
+- tapOn: { id: tab-info }
+- extendedWaitUntil:
+    visible: { id: info-screen }
+    timeout: 10000
+# 没填性别：只画宝宝自己的线，说明怎么才能看到参考线
+- scrollUntilVisible:
+    element: { id: growth-set-sex }
+- assertVisible: { id: growth-no-sex }
+- assertVisible: 曲线只是参考，生长情况请以医生判断为准。
+- tapOn: { id: growth-set-sex }
+- assertVisible: 只用来选 WHO 生长曲线的女孩表或男孩表.*
+- assertVisible: { id: sex-unset, selected: true }
+- tapOn: { id: sex-female }
+- tapOn: { id: sex-save }
+- extendedWaitUntil:
+    notVisible: { id: sex-save }
+    timeout: 10000
+# 填了性别：参考线的说明和百分位
+- scrollUntilVisible:
+    element: { id: growth-point-text }
+- assertNotVisible: { id: growth-no-sex }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 3\\.7 kg · 约 P[0-9]+"
+- scrollUntilVisible:
+    element: 浅色的线是 WHO 儿童生长标准（女孩）的第 3、15、50、85、97 百分位。
+- assertVisible: 曲线只是参考，生长情况请以医生判断为准。
+- assertVisible: 早产的宝宝请按医生的方法看。
+- takeScreenshot: .artifacts/e2e-09a-weight-curves
+# 点前一个点，下面换成那一次。先滚回整张卡片的顶上
+- scrollUntilVisible:
+    element: { id: growth-add }
+    direction: UP
+- tapOn: { id: growth-point-0 }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 3\\.6 kg · 约 P[0-9]+"
+# 身长
+- tapOn: { id: growth-tab-length }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 50\\.5 cm · 约 P[0-9]+"
+# 流程 09 第二次只改了体重，身长 50.5 是弹层沿用的：身长曲线只画第一次，不画成一段没长的平线。
+- assertVisible: { id: growth-point-0 }
+- assertNotVisible: { id: growth-point-1 }
+- takeScreenshot: .artifacts/e2e-09a-length-curves
+# 头围：还没记过
+- tapOn: { id: growth-tab-head }
+- assertVisible: { id: growth-empty }
+- assertVisible: 记身高体重时可以顺便记头围，这里就会画出来。
+# 记一次头围：默认不记，点了才出现
+- tapOn: { id: growth-add }
+- assertVisible: 3.7 kg
+- assertNotVisible: { id: head-value }
+- tapOn: { id: head-add }
+- assertVisible:
+    id: head-value
+    text: 35.0 cm
+- tapOn: { id: head-inc }
+- assertVisible:
+    id: head-value
+    text: 35.5 cm
+- takeScreenshot: .artifacts/e2e-09a-head-sheet
+- tapOn: { id: growth-save }
+- extendedWaitUntil:
+    notVisible: { id: growth-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 35\\.5 cm · 约 P[0-9]+"
+- takeScreenshot: .artifacts/e2e-09a-head-curves
+# 性别改回不填：不再说百分位
+# 滚到行里的值本身并放到屏幕中间：只滚到这一行“可见”时，它可能还压在屏幕顶边（CI run 43460180233）。
+- scrollUntilVisible:
+    element: 女孩
+    direction: UP
+    centerElement: true
+- assertVisible: 女孩
+- tapOn: { id: birth-sex }
+- tapOn: { id: sex-unset }
+- tapOn: { id: sex-save }
+- extendedWaitUntil:
+    notVisible: { id: sex-save }
+    timeout: 10000
+- scrollUntilVisible:
+    element: { id: growth-no-sex }
+- assertNotVisible:
+    text: ".*P[0-9]+.*"
+# 还停在头围这张，只是没有百分位了
+- scrollUntilVisible:
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: ".* · 35\\.5 cm"

@@ -3,6 +3,7 @@ import { MULTIPART_URL_BATCH } from './domain/multipart';
 import { lengthUnits, temperatureUnits, volumeUnits, weightUnits } from './domain/units';
 import { parseWebUrl } from './domain/webUrl';
 import type { FeedbackConfig } from './feedback';
+import { growthSexes } from './health/growth';
 import { t } from './i18n';
 import { locales } from './i18n/locale';
 import { SharePrefs } from './shareSettings';
@@ -144,6 +145,8 @@ export const EventData = z.discriminatedUnion('type', [
     type: z.literal('growth'),
     weightKg: z.number().min(0.3).max(100),
     lengthCm: z.number().min(20).max(250),
+    /** 头围（F-148），可选。格式不对只丢这一项，旧版本保存时原样带着（looseObject）。 */
+    headCm: z.number().min(20).max(70).optional().catch(undefined),
   }),
   z.looseObject({
     ...eventBase,
@@ -388,6 +391,11 @@ export const BabyData = z.looseObject({
    * 家庭建档时的第一个宝宝不写，缺失排最前；以后加的宝宝才写。格式不对只丢这一项。
    */
   createdAt: timestamp.optional().catch(undefined),
+  /**
+   * 性别，只用来选 WHO 生长曲线的女孩表或男孩表（F-148）。可选：没填就不画参考线、不说百分位。
+   * 不认识的值当没填，不能让整份档案校验失败。
+   */
+  sex: z.enum(growthSexes).optional().catch(undefined),
 });
 export type BabyData = z.infer<typeof BabyData>;
 

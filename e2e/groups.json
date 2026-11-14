@@ -24,6 +24,7 @@
       "flows": [
         "02b_breastfeeding",
         "09_growth",
+        "09a_growth_curves",
         "10_vaccine",
         "10a_vaccine_config",
         "11a2_backfill_sleep_growth",
@@ -81,6 +82,7 @@
   },
   "requires": {
     "11a1_edit_feed": ["02_records"],
+    "09a_growth_curves": ["09_growth"],
     "11a2_backfill_sleep_growth": ["09_growth"],
     "11a5_edit_vaccine": ["10_vaccine|record-bcg"],
     "11b_share_day": ["02_records"],

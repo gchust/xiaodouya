@@ -83,18 +83,22 @@ const round = (value: number, decimals: number) => Number(value.toFixed(decimals
 
 /** 公制 → 显示单位，按该单位的小数位取整。 */
 export function toDisplay(dimension: Dimension, metric: number, unit: string): number {
-  const { decimals } = scaleFor(dimension, unit);
+  return round(toDisplayExact(metric, unit), scaleFor(dimension, unit).decimals);
+}
+
+/** 公制 → 显示单位，不取整。画图用：生长曲线的参考线取整到 0.1 会画成台阶。 */
+export function toDisplayExact(metric: number, unit: string): number {
   switch (unit) {
     case 'oz':
-      return round(metric / ML_PER_OZ, decimals);
+      return metric / ML_PER_OZ;
     case 'f':
-      return round((metric * 9) / 5 + 32, decimals);
+      return (metric * 9) / 5 + 32;
     case 'lb':
-      return round(metric * LB_PER_KG, decimals);
+      return metric * LB_PER_KG;
     case 'in':
-      return round(metric / CM_PER_IN, decimals);
+      return metric / CM_PER_IN;
     default:
-      return round(metric, decimals);
+      return metric;
   }
 }
 

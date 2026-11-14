@@ -56,6 +56,7 @@ export function describeEvent(event: EventData, now: number, units: Units = metr
       return text.growth(
         formatWeight(event.weightKg, units.weight),
         formatLength(event.lengthCm, units.length),
+        event.headCm === undefined ? undefined : formatLength(event.headCm, units.length),
       );
     case 'vaccine':
       return text.vaccine(vaccineRecordName(event.vaccineId, event.name));

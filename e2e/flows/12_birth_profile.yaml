@@ -65,13 +65,15 @@ appId: com.gchust.xiaodouya
     timeout: 10000
 - assertVisible: AB
 - takeScreenshot: .artifacts/e2e-12-profile-after
-# 出生体重也会成为柱状图的第一根。“出生”两个字疫苗本里也有，所以看数值。
+# 出生体重也会成为生长曲线的第一个点。只有这一个点时下面写的就是它。
 - scrollUntilVisible:
     element: { id: growth-chart }
 # 容器只露一点也算看到了（见 PITFALLS“滚动区里只露一点”），要滚到断言的内容。
 - scrollUntilVisible:
-    element: "3.2"
-- assertVisible: "3.2"
+    element: { id: growth-point-text }
+- assertVisible:
+    id: growth-point-text
+    text: "出生 · 3\\.2 kg"
 - takeScreenshot: .artifacts/e2e-12-chart-with-birth
 # 重启后还在，今天页的标题也跟着变
 - launchApp

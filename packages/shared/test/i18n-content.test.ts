@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ageText,
   assessTemperature,
+  DAYS_PER_MONTH,
   dayLabel,
   describeEvent,
   doseStatus,
@@ -10,6 +11,10 @@ import {
   formatDuration,
   formatFullDate,
   formatMonthDay,
+  growthChartEndDays,
+  growthChartNotes,
+  growthMeasures,
+  growthPointText,
   knowledgeForAge,
   type Locale,
   messagesFor,
@@ -20,6 +25,7 @@ import {
   optionalStartText,
   optionalVaccineBook,
   otherVaccineRecords,
+  percentileText,
   regionFor,
   regionList,
   roleLabels,
@@ -128,6 +134,76 @@ describe('健康提示：两种语言完全一致', () => {
     const normal = withLocale('en', () => todayInsight(scenarios.记满一天正常 ?? [], birthAt, NOW));
     expect(normal?.tone).toBe('neutral');
     expect(normal?.text).not.toMatch(/\b(enough|plenty|sufficient)\b/i);
+  });
+
+  describe('生长曲线（F-148）', () => {
+    const DAY = 86_400_000;
+    const birthAt = new Date(2026, 0, 10, 8).getTime();
+    const sexes = ['female', 'male', undefined] as const;
+    const ZH_JUDGEMENT = /偏瘦|偏胖|太瘦|太胖|偏小|偏大|偏矮|偏高|正常|不足|超重|发育迟缓|营养不良/;
+    const EN_JUDGEMENT =
+      /\b(normal|healthy|underweight|overweight|thin|fat|small for|too (small|big|short|tall)|stunted|malnourished)\b/i;
+
+    it('图下的说明一一对应、数字一样，免责声明和早产提示一直在，不评价好坏', () => {
+      for (const measure of growthMeasures) {
+        for (const sex of sexes) {
+          for (const months of [3, 36, 72]) {
+            const { zh, en } = both(() =>
+              growthChartNotes(measure, sex, growthChartEndDays(months * DAYS_PER_MONTH)),
+            );
+            expect(en).toHaveLength(zh.length);
+            en.forEach((note, i) => {
+              expect(numbers(note)).toEqual(numbers(zh[i] ?? ''));
+              expect(note).not.toMatch(CJK);
+              expect(note).not.toMatch(EN_JUDGEMENT);
+              expect(zh[i]).not.toMatch(ZH_JUDGEMENT);
+            });
+            expect(zh).toContain('曲线只是参考，生长情况请以医生判断为准。');
+            expect(zh.join('')).toContain('早产');
+            expect(en.join('')).toContain('born early');
+            expect(en.join('')).toContain("doctor's judgment");
+            // 没填性别时不提参考线和百分位。
+            if (!sex) for (const note of [...zh, ...en]) expect(note).not.toMatch(/P\d|WHO/);
+          }
+        }
+      }
+    });
+
+    it('点开一个点：两种语言的月龄、数值、百分位一样；没填性别时不说百分位', () => {
+      const point = { at: birthAt + 102 * DAY, ageDays: 102, value: 6.2, birth: false };
+      for (const measure of growthMeasures) {
+        for (const sex of sexes) {
+          for (const units of [
+            metricUnits,
+            { ...metricUnits, weight: 'lb', length: 'in' } as const,
+          ]) {
+            const { zh, en } = both(() => growthPointText(point, birthAt, measure, sex, units));
+            expect(numbers(en.text)).toEqual(numbers(zh.text));
+            expect(numbers(en.a11y)).toEqual(numbers(zh.a11y));
+            expect(en.percentile).toBe(zh.percentile);
+            expect(en.text).not.toMatch(CJK);
+            expect(`${en.text}${en.a11y}`).not.toMatch(EN_JUDGEMENT);
+            expect(`${zh.text}${zh.a11y}`).not.toMatch(ZH_JUDGEMENT);
+            if (!sex) {
+              expect(zh.percentile).toBeNull();
+              expect(`${zh.text}${en.text}${zh.a11y}${en.a11y}`).not.toMatch(/P\d/);
+            } else {
+              expect(zh.text).toMatch(/P\d/);
+            }
+          }
+        }
+      }
+      expect(growthPointText(point, birthAt, 'weight', 'female', metricUnits).text).toMatch(
+        /^3 个月零 \d+ 天 · 6\.2 kg · 约 P\d+$/,
+      );
+    });
+
+    it('P1 以下、P99 以上两种语言都只说低于、高于', () => {
+      for (const p of [0.3, 1, 50.4, 99, 99.7]) {
+        const { zh, en } = both(() => percentileText(p));
+        expect(numbers(en)).toEqual(numbers(zh));
+      }
+    });
   });
 
   it('按月龄的常识卡一一对应，数字一样', () => {
