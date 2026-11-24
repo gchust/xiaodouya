@@ -254,6 +254,8 @@ export type WidgetView =
       lastFeed: { id: string; at: number; ml: number } | null;
       /** 上次喂奶写什么：瓶喂是奶量，亲喂是“亲喂”“亲喂中”（不写 0ml）。 */
       lastFeedAmount: string | null;
+      /** 上一次是不是亲喂。小工具不写上次喂了多少，只分“上次喂奶”和“上次亲喂”。 */
+      lastFeedBreast: boolean;
       canQuickFeed: boolean;
       /** 记喂奶小工具的按钮是开始还是结束亲喂，见 `WidgetBreast`。 */
       breast: WidgetBreast;
@@ -371,6 +373,7 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     showSync: syncedAt === null || now - syncedAt > WIDGET_SYNC_STALE_MS,
     lastFeed: last && lastEntry ? { id: lastEntry.id, at: last.at, ml: last.ml } : null,
     lastFeedAmount,
+    lastFeedBreast: Boolean(last && isBreastFeed(last)),
     canQuickFeed: quickMl !== null,
     breast: widgetBreast(entries, last, now),
     quickFeedAmount: quickMl === null ? null : formatVolume(quickMl, units.volume),
@@ -385,6 +388,28 @@ export function buildWidgetView(input: WidgetViewInput): WidgetView {
     dayStart,
     syncedAt,
   };
+}
+
+/**
+ * 时钟过了 24 小时会从 0 重新走。离 24 小时留 4 小时：系统的定时重画（30 分钟一次，
+ * 省电模式下会更晚）来得及在绕回之前把它换成写死的钟点。
+ */
+export const WIDGET_ELAPSED_MAX_MS = 20 * 3_600_000;
+
+/**
+ * “过了多久”要自己走字：小工具是一张图，最快 30 分钟重画一次，画上去的“2 小时前”
+ * 过一会儿就是错的，而有人会照着它决定喂不喂。桌面上放的是系统的时钟控件（每分钟自己更新），
+ * 把它的时区设成“这条记录在 UTC 的几点几分”的负数，它读出来的就是过了几小时几分。
+ * 用的是日历时间，手机重启后也不用重画。原生部分见 `patches/react-native-android-widget.patch`。
+ *
+ * 太久以前（见 `WIDGET_ELAPSED_MAX_MS`）和将来的记录返回 null，改写钟点。
+ */
+export function widgetElapsedClock(since: number, now: number): { timeZone: string } | null {
+  if (since > now || now - since >= WIDGET_ELAPSED_MAX_MS) return null;
+  const minutes = Math.floor(since / 60_000) % 1440;
+  if (minutes === 0) return { timeZone: 'GMT' };
+  const two = (n: number) => String(n).padStart(2, '0');
+  return { timeZone: `GMT-${two(Math.floor(minutes / 60))}:${two(minutes % 60)}` };
 }
 
 /** 小工具上的称呼最多几个字。再长小工具的上排也放不下，显示时还会按宽度截短（`shortBabyName`）。 */

@@ -30,6 +30,17 @@ export const widgetUi = {
   feedsCount: (_n: number) => '次',
   withAmount: (label: Text, amount: Text) => `${label} · ${amount}`,
   lastFeedOn: (date: Text) => `上次喂奶 · ${date}`,
+  /**
+   * 说明里写钟点，下面的大字是过了多久（`0:17`，自己走字，见 `widgetElapsedClock`）。
+   * “距”字不能少：大字和钟点长得一样，要让人一眼看出它是时长。和今天页的“距上次喂奶”同一个读法。
+   */
+  sinceLastFeed: (clock: Text) => `距上次喂奶 · ${clock}`,
+  sinceLastBreast: (clock: Text) => `距上次亲喂 · ${clock}`,
+  lastBreastOn: (date: Text) => `上次亲喂 · ${date}`,
+  awakeSinceAt: (clock: Text) => `醒着 · 从 ${clock}`,
+  asleepSinceAt: (clock: Text) => `睡着了 · 从 ${clock}`,
+  breastRunningSinceAt: (clock: Text) => `亲喂中 · 从 ${clock}`,
+  sinceLastDiaper: (kind: Text, clock: Text) => `距上次 · ${kind} ${clock}`,
   nextFeedAt: (clock: Text) => `约 ${clock} 该喂了`,
   plusAmount: (amount: Text) => `＋ ${amount}`,
   /** 小工具上亲喂的那几个字，放得进 2×2 的说明和快捷记录的一行。 */
