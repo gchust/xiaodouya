@@ -7,10 +7,18 @@ import {
   t,
   type WidgetAction,
   type WidgetView,
+  widgetElapsedClock,
 } from '@xiaodouya/shared';
 import type { ReactElement } from 'react';
-import { FlexWidget, ImageWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
+import {
+  FlexWidget,
+  ImageWidget,
+  SvgWidget,
+  TextWidget,
+  type TextWidgetProps,
+} from 'react-native-android-widget';
 import { DAYLINE_HEIGHT, daylineSvg } from './dayline';
+import { quickLayout, scaler, type WidgetSize, widgetScale } from './layout';
 import { eventLink, FEED_LINK, TODAY_LINK } from './links';
 import { type WidgetPalette, widgetPalettes } from './palette';
 import { buttonOf } from './pending';
@@ -39,10 +47,10 @@ export interface WidgetFeedback {
   button: WidgetButton;
 }
 
-export interface WidgetSize {
-  width: number;
-  height: number;
-}
+export type { WidgetSize };
+
+/** 把设计稿上的数字换成这个小工具现在的大小，见 `layout.ts`。 */
+type Scale = (n: number) => number;
 
 type Hex = `#${string}`;
 
@@ -60,7 +68,55 @@ const AVATAR_WIDE = 22;
 const SERIF = 'NotoSerifSC-Bold.subset';
 const MONO = 'DMMono-Medium';
 const RECORD_ACTION = 'RECORD';
+/** 大字的字号：钟点和“过了多久”一样大。 */
+const HERO_SIZE = 34;
 const PADDING_X = 14;
+
+/**
+ * 字号跟小工具的大小（`layout.ts`），不再跟手机的字体大小：库默认按 sp 算，
+ * 手机字体调大以后字变大而格子不变，按钮就被挤出卡片。
+ */
+function Txt(props: TextWidgetProps) {
+  return <TextWidget allowFontScaling={false} {...props} />;
+}
+
+/** 大字上自己走的“过了多久”：时区来自 `widgetElapsedClock`。 */
+interface Elapsed {
+  timeZone: string;
+}
+
+/**
+ * 系统时钟控件的格式（`android.text.format.DateFormat`）：小时不补零、分钟两位，`0:17`、`2:05`，
+ * 和今天页的“距上次喂奶”一样。不写成“2小时5分前”：格式里去不掉小时，不到 1 小时会是“0小时5分前”。
+ */
+const ELAPSED_FORMAT = 'H:mm';
+
+/**
+ * 给系统的时钟控件占位置：这段文字本身不画，补丁（`ClockView.java`）按它的位置、字号和颜色
+ * 在上面放一个 TextClock。库的 `convertProps` 会丢掉不认识的属性，所以借 `TextWidget` 的名字自己转。
+ * 不指定字体：控件用的是系统字体，占位的高度要和它一样。
+ */
+function ElapsedText(_: { clock: Elapsed; fontSize: number; color: Hex }) {
+  return null;
+}
+ElapsedText.__name__ = TextWidget.__name__;
+ElapsedText.convertProps = ({
+  clock,
+  fontSize,
+  color,
+}: {
+  clock: Elapsed;
+  fontSize: number;
+  color: Hex;
+}) => ({
+  ...TextWidget.convertProps({
+    text: '0',
+    maxLines: 1,
+    allowFontScaling: false,
+    style: { fontSize, color },
+  }),
+  clock: { ...clock, format: ELAPSED_FORMAT },
+});
 
 function click(action?: WidgetAction, link?: string) {
   return action
@@ -83,12 +139,17 @@ const diaperLabel = (kind: DiaperKind) =>
 const sleptHours = (view: Ready) => (view.today.sleepMs / 3_600_000).toFixed(1);
 
 function Card({
+  s,
   children,
   link,
   label,
   background,
+  tight,
 }: {
-  children: (ReactElement | null)[];
+  s: Scale;
+  /** 一排按钮的样子：四边留得少，内容居中。 */
+  tight?: boolean;
+  children: (ReactElement | null)[] | ReactElement;
   link: string | null;
   label: string;
   background: Hex;
@@ -101,12 +162,12 @@ function Card({
         width: 'match_parent',
         height: 'match_parent',
         flexDirection: 'column',
-        justifyContent: 'space-between',
+        justifyContent: tight ? 'center' : 'space-between',
         backgroundColor: background,
-        borderRadius: 20,
-        paddingHorizontal: PADDING_X,
-        paddingTop: 13,
-        paddingBottom: 12,
+        borderRadius: s(20),
+        paddingHorizontal: s(tight ? 8 : PADDING_X),
+        paddingTop: s(tight ? 0 : 13),
+        paddingBottom: s(tight ? 0 : 12),
       }}
     >
       {children}
@@ -114,60 +175,82 @@ function Card({
   );
 }
 
-function Dot({ color, size = 7, gap = 6 }: { color: Hex; size?: number; gap?: number }) {
+function Dot({
+  s,
+  color,
+  size = 7,
+  gap = 6,
+}: {
+  s: Scale;
+  color: Hex;
+  size?: number;
+  gap?: number;
+}) {
   return (
     <FlexWidget
       style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
+        width: s(size),
+        height: s(size),
+        borderRadius: s(size) / 2,
         backgroundColor: color,
-        marginRight: gap,
+        marginRight: s(gap),
       }}
     />
   );
 }
 
 /** 圆形头像。原生先把图拉成 size×size 再画，缓存里已经裁成正方形，所以不会变形。 */
-function Avatar({ uri, size, gap }: { uri: WidgetAvatarUri; size: number; gap: number }) {
+function Avatar({
+  s,
+  uri,
+  size,
+  gap,
+}: {
+  s: Scale;
+  uri: WidgetAvatarUri;
+  size: number;
+  gap: number;
+}) {
   return (
     <ImageWidget
       image={uri}
-      imageWidth={size}
-      imageHeight={size}
-      radius={size / 2}
-      style={{ marginRight: gap }}
+      imageWidth={s(size)}
+      imageHeight={s(size)}
+      radius={s(size) / 2}
+      style={{ marginRight: s(gap) }}
     />
   );
 }
 
 /** 同步时间平时不显示；旧了才出现，提醒家人的记录可能还没到（见 `WIDGET_SYNC_STALE_MS`）。 */
-function SyncPill({ view, p }: { view: Ready; p: WidgetPalette }) {
+function SyncPill({ s, view, p }: { s: Scale; view: Ready; p: WidgetPalette }) {
   return (
     <FlexWidget
       style={{
         backgroundColor: p.staleBg,
-        borderRadius: 8,
-        paddingHorizontal: 7,
-        paddingVertical: 1,
+        borderRadius: s(8),
+        paddingHorizontal: s(7),
+        paddingVertical: s(1),
       }}
     >
-      <TextWidget
+      <Txt
         text={formatSyncedAt(view.syncedAt, view.dayStart)}
         maxLines={1}
-        style={{ fontSize: 10, color: p.staleText }}
+        style={{ fontSize: s(10), color: p.staleText }}
       />
     </FlexWidget>
   );
 }
 
 function Header({
+  s,
   view,
   p,
   dot,
   ink,
   right,
 }: {
+  s: Scale;
   view: Ready;
   p: WidgetPalette;
   dot: Hex;
@@ -187,23 +270,24 @@ function Header({
       {/* 头像比色点宽 10dp 左右，名字少放两格（约一个汉字）。 */}
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
         {view.avatar ? (
-          <Avatar uri={view.avatar} size={AVATAR_SMALL} gap={6} />
+          <Avatar s={s} uri={view.avatar} size={AVATAR_SMALL} gap={6} />
         ) : (
-          <Dot color={dot} />
+          <Dot s={s} color={dot} />
         )}
-        <TextWidget
+        <Txt
           text={shortBabyName(view.babyName, (view.showSync ? 8 : 14) - (view.avatar ? 2 : 0))}
           maxLines={1}
-          style={{ fontSize: 12, fontWeight: '700', color: ink }}
+          style={{ fontSize: s(12), fontWeight: '700', color: ink }}
         />
       </FlexWidget>
-      {view.showSync ? <SyncPill view={view} p={p} /> : (right ?? null)}
+      {view.showSync ? <SyncPill s={s} view={view} p={p} /> : (right ?? null)}
     </FlexWidget>
   );
 }
 
 /** 数字是主角：上面一行小字说这是什么，中间是等宽的大钟点，下面一行补充。 */
 function Hero({
+  s,
   label,
   time,
   sub,
@@ -212,8 +296,10 @@ function Hero({
   labelColor,
   subColor,
 }: {
+  s: Scale;
   label: string;
-  time: string;
+  /** 写死的钟点，或者自己走的“过了多久”。 */
+  time: string | Elapsed;
   sub?: string;
   ink: Hex;
   muted: Hex;
@@ -222,19 +308,27 @@ function Hero({
 }) {
   return (
     <FlexWidget style={{ width: 'match_parent', flexDirection: 'column' }}>
-      <TextWidget
+      <Txt
         text={label}
         maxLines={1}
         truncate="END"
-        style={{ fontSize: 11, color: labelColor ?? muted }}
+        style={{ fontSize: s(11), color: labelColor ?? muted }}
       />
-      <TextWidget text={time} maxLines={1} style={{ fontSize: 34, fontFamily: MONO, color: ink }} />
+      {typeof time === 'string' ? (
+        <Txt
+          text={time}
+          maxLines={1}
+          style={{ fontSize: s(HERO_SIZE), fontFamily: MONO, color: ink }}
+        />
+      ) : (
+        <ElapsedText clock={time} fontSize={s(HERO_SIZE)} color={ink} />
+      )}
       {sub ? (
-        <TextWidget
+        <Txt
           text={sub}
           maxLines={1}
           truncate="END"
-          style={{ fontSize: 12, color: subColor ?? muted }}
+          style={{ fontSize: s(12), color: subColor ?? muted }}
         />
       ) : null}
     </FlexWidget>
@@ -242,15 +336,23 @@ function Hero({
 }
 
 /** 还没有记录时没有钟点可放，用一句衬线标题代替。 */
-function Empty({ title, sub, ink, muted }: { title: string; sub: string; ink: Hex; muted: Hex }) {
+function Empty({
+  s,
+  title,
+  sub,
+  ink,
+  muted,
+}: {
+  s: Scale;
+  title: string;
+  sub: string;
+  ink: Hex;
+  muted: Hex;
+}) {
   return (
     <FlexWidget style={{ width: 'match_parent', flexDirection: 'column' }}>
-      <TextWidget
-        text={title}
-        maxLines={2}
-        style={{ fontSize: 16, fontFamily: SERIF, color: ink }}
-      />
-      <TextWidget text={sub} maxLines={2} style={{ fontSize: 12, color: muted, marginTop: 2 }} />
+      <Txt text={title} maxLines={2} style={{ fontSize: s(16), fontFamily: SERIF, color: ink }} />
+      <Txt text={sub} maxLines={2} style={{ fontSize: s(12), color: muted, marginTop: s(2) }} />
     </FlexWidget>
   );
 }
@@ -260,6 +362,7 @@ const isPending = (action?: WidgetAction, pending?: WidgetButton) =>
   Boolean(action && pending && buttonOf(action) === pending);
 
 function Button({
+  s,
   text,
   background,
   color,
@@ -268,6 +371,7 @@ function Button({
   label,
   pending,
 }: {
+  s: Scale;
   text: string;
   background: Hex;
   color: Hex;
@@ -283,24 +387,22 @@ function Button({
       accessibilityLabel={label}
       style={{
         width: 'match_parent',
-        height: 38,
+        height: s(38),
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: background,
-        borderRadius: 19,
+        borderRadius: s(19),
       }}
     >
-      <TextWidget
-        text={shownText}
-        maxLines={1}
-        style={{ fontSize: 14, fontWeight: '700', color }}
-      />
+      <Txt text={shownText} maxLines={1} style={{ fontSize: s(14), fontWeight: '700', color }} />
     </FlexWidget>
   );
 }
 
 /** 方形的小按钮：尿布三个，快捷记录五个。上面一个色点或一行小字，下面是字。 */
 function Chip({
+  s,
+  rawHeight,
   top,
   text,
   background,
@@ -312,6 +414,9 @@ function Chip({
   mono,
   pending,
 }: {
+  s: Scale;
+  /** 已经算好的高度（dp）。快捷记录只有一排按钮时按小工具的高度给，不给就是 46。 */
+  rawHeight?: number;
   top: ReactElement;
   text: string;
   background: Hex;
@@ -330,23 +435,23 @@ function Chip({
       accessibilityLabel={label}
       style={{
         flex,
-        height: 46,
+        height: rawHeight ?? s(46),
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: background,
-        borderRadius: 14,
+        borderRadius: s(14),
       }}
     >
       {top}
-      <TextWidget
+      <Txt
         text={busy ? t().widgetUi.recording : text}
         maxLines={1}
         style={{
-          fontSize: mono && !busy ? 15 : 13,
+          fontSize: s(mono && !busy ? 15 : 13),
           fontWeight: '700',
           color,
-          marginTop: 4,
+          marginTop: s(4),
           ...(mono && !busy ? { fontFamily: MONO } : {}),
         }}
       />
@@ -354,16 +459,18 @@ function Chip({
   );
 }
 
-function SmallText({ text, color }: { text: string; color: Hex }) {
-  return <TextWidget text={text} maxLines={1} style={{ fontSize: 11, fontWeight: '600', color }} />;
+function SmallText({ s, text, color }: { s: Scale; text: string; color: Hex }) {
+  return <Txt text={text} maxLines={1} style={{ fontSize: s(11), fontWeight: '600', color }} />;
 }
 
 /** 直接调用拿到数组，不当成组件用：小工具的渲染只认一层层的元素，组件不能返回数组。 */
 function diaperChips(
+  s: Scale,
   p: WidgetPalette,
   ids: WidgetIds,
   shown?: WidgetFeedback,
   pending?: WidgetButton,
+  rawHeight?: number,
 ): ReactElement[] {
   const kinds: { kind: DiaperKind; dot: Hex }[] = [
     { kind: 'wee', dot: p.wee },
@@ -373,8 +480,10 @@ function diaperChips(
   return kinds.map(({ kind, dot }) =>
     shown?.button === kind ? (
       <Chip
+        s={s}
+        rawHeight={rawHeight}
         key={kind}
-        top={<SmallText text={t().widgetUi.chipDone} color={p.white} />}
+        top={<SmallText s={s} text={t().widgetUi.chipDone} color={p.white} />}
         text={t().widgetUi.chipEdit}
         background={p.okButton}
         color={p.white}
@@ -383,8 +492,10 @@ function diaperChips(
       />
     ) : (
       <Chip
+        s={s}
+        rawHeight={rawHeight}
         key={kind}
-        top={<Dot color={dot} gap={0} />}
+        top={<Dot s={s} color={dot} gap={0} />}
         text={diaperLabel(kind)}
         background={p.chip}
         color={p.chipText}
@@ -396,15 +507,16 @@ function diaperChips(
   );
 }
 
-function Row({ children, gap = 6 }: { children: ReactElement[]; gap?: number }) {
+function Row({ s, children, gap = 6 }: { s: Scale; children: ReactElement[]; gap?: number }) {
   return (
-    <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: gap }}>
+    <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: s(gap) }}>
       {children}
     </FlexWidget>
   );
 }
 
 interface CardProps {
+  s: Scale;
   view: Ready;
   p: WidgetPalette;
   ids: WidgetIds;
@@ -422,17 +534,18 @@ function nextFeedLine(view: Ready, p: WidgetPalette): { text: string; color?: He
 }
 
 /**
- * 正在亲喂或者忘了关时，记喂奶小工具整张换成计时（issue #104）。不能走字，只写开始的钟点；
+ * 正在亲喂或者忘了关时，记喂奶小工具整张换成计时（issue #104）。大字是喂了多久（自己走字），说明里写开始的钟点；
  * 点卡片打开 App 的喂奶弹层，那里能换边。忘了关的不能一点就结束，和睡眠一样去 App 里确认。
  */
-function BreastTimerCard({ view, p, pending }: Pick<CardProps, 'view' | 'p' | 'pending'>) {
+function BreastTimerCard({ s, view, p, pending }: Pick<CardProps, 's' | 'view' | 'p' | 'pending'>) {
   const { breast } = view;
   if (breast.status === 'forgotten') {
     const since = breast.since >= view.dayStart ? '' : formatShortDate(breast.since);
     return (
-      <Card background={p.card} link={FEED_LINK} label={t().widgetUi.breastConfirmA11y}>
-        <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+      <Card s={s} background={p.card} link={FEED_LINK} label={t().widgetUi.breastConfirmA11y}>
+        <Header s={s} view={view} p={p} dot={p.feedDot} ink={p.ink} />
         <Hero
+          s={s}
           label={t().widgetUi.breastForgottenSince(since)}
           labelColor={p.accentText}
           time={formatClock(breast.since)}
@@ -441,6 +554,7 @@ function BreastTimerCard({ view, p, pending }: Pick<CardProps, 'view' | 'p' | 'p
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.breastConfirm}
           background={p.confirmButton}
           color={p.confirmText}
@@ -451,22 +565,30 @@ function BreastTimerCard({ view, p, pending }: Pick<CardProps, 'view' | 'p' | 'p
     );
   }
   if (breast.status !== 'running') return null;
+  const running = widgetElapsedClock(breast.since, view.now);
   return (
     <Card
+      s={s}
       background={p.card}
       link={FEED_LINK}
       label={t().widgetUi.breastRunningA11y(t().widgetUi.breastRunningSub(breast.side))}
     >
-      <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+      <Header s={s} view={view} p={p} dot={p.feedDot} ink={p.ink} />
       <Hero
-        label={t().widgetUi.breastRunningSince}
+        s={s}
+        label={
+          running
+            ? t().widgetUi.breastRunningSinceAt(formatClock(breast.since))
+            : t().widgetUi.breastRunningSince
+        }
         labelColor={p.accentText}
-        time={formatClock(breast.since)}
+        time={running ?? formatClock(breast.since)}
         sub={t().widgetUi.breastRunningSub(breast.side)}
         ink={p.ink}
         muted={p.muted}
       />
       <Button
+        s={s}
         text={t().widgetUi.breastEnd}
         background={p.accent}
         color={p.white}
@@ -478,20 +600,22 @@ function BreastTimerCard({ view, p, pending }: Pick<CardProps, 'view' | 'p' | 'p
   );
 }
 
-function FeedCard({ view, p, ids, shown, pending }: CardProps) {
+function FeedCard({ s, view, p, ids, shown, pending }: CardProps) {
   const { lastFeed, lastFeedAmount, breast } = view;
   if (!shown && (breast.status === 'running' || breast.status === 'forgotten')) {
-    return <BreastTimerCard view={view} p={p} pending={pending} />;
+    return <BreastTimerCard s={s} view={view} p={p} pending={pending} />;
   }
   if (shown) {
     return (
       <Card
+        s={s}
         background={p.card}
         link={eventLink(shown.eventId)}
         label={t().widgetUi.tapToEdit(shown.title)}
       >
-        <Header view={view} p={p} dot={p.okDot} ink={p.ink} />
+        <Header s={s} view={view} p={p} dot={p.okDot} ink={p.ink} />
         <Hero
+          s={s}
           label={t().widgetUi.logged(shown.title)}
           labelColor={p.okText}
           time={formatClock(shown.at)}
@@ -500,6 +624,7 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.editOrUndo}
           background={p.okButton}
           color={p.white}
@@ -511,15 +636,17 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
   }
   if (!lastFeed || !lastFeedAmount) {
     return (
-      <Card background={p.card} link={FEED_LINK} label={t().widgetUi.pickAmountA11y}>
-        <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+      <Card s={s} background={p.card} link={FEED_LINK} label={t().widgetUi.pickAmountA11y}>
+        <Header s={s} view={view} p={p} dot={p.feedDot} ink={p.ink} />
         <Empty
+          s={s}
           title={t().widgetUi.noFeed}
           sub={t().widgetUi.noFeedHint}
           ink={p.ink}
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.pickAmount}
           background={p.accent}
           color={p.white}
@@ -529,28 +656,31 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
       </Card>
     );
   }
-  const label =
-    lastFeed.at >= view.dayStart
-      ? t().widgetUi.withAmount(t().widgetUi.lastFeed, lastFeedAmount)
-      : t().widgetUi.withAmount(
-          t().widgetUi.lastFeedOn(formatShortDate(lastFeed.at)),
-          lastFeedAmount,
-        );
+  // 不写上次喂了多少：要看的是过了多久。按钮上的奶量是这一下要记的，留着。
+  const text = t().widgetUi;
+  const elapsed = widgetElapsedClock(lastFeed.at, view.now);
+  const label = elapsed
+    ? (view.lastFeedBreast ? text.sinceLastBreast : text.sinceLastFeed)(formatClock(lastFeed.at))
+    : lastFeed.at >= view.dayStart
+      ? view.lastFeedBreast
+        ? text.breastShort
+        : text.lastFeed
+      : (view.lastFeedBreast ? text.lastBreastOn : text.lastFeedOn)(formatShortDate(lastFeed.at));
   const next = nextFeedLine(view, p);
   // 上一次是亲喂：按钮从另一侧开始计时；点卡片打开喂奶弹层，那里也能改成瓶喂。
   const nextSide = breast.status === 'next' ? breast.side : null;
   return (
     <Card
+      s={s}
       background={p.card}
       link={nextSide ? FEED_LINK : eventLink(lastFeed.id)}
-      label={t().widgetUi.lastFeedA11y(
-        `${clockOn(lastFeed.at, view.dayStart)} · ${lastFeedAmount}`,
-      )}
+      label={t().widgetUi.lastFeedA11y(clockOn(lastFeed.at, view.dayStart))}
     >
-      <Header view={view} p={p} dot={p.feedDot} ink={p.ink} />
+      <Header s={s} view={view} p={p} dot={p.feedDot} ink={p.ink} />
       <Hero
+        s={s}
         label={label}
-        time={formatClock(lastFeed.at)}
+        time={elapsed ?? formatClock(lastFeed.at)}
         sub={next?.text}
         subColor={next?.color}
         ink={p.ink}
@@ -558,6 +688,7 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
       />
       {nextSide ? (
         <Button
+          s={s}
           text={t().widgetUi.breastStart(nextSide)}
           background={p.accent}
           color={p.white}
@@ -567,6 +698,7 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
         />
       ) : view.quickFeedAmount ? (
         <Button
+          s={s}
           text={t().widgetUi.plusAmount(view.quickFeedAmount)}
           background={p.accent}
           color={p.white}
@@ -576,6 +708,7 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
         />
       ) : (
         <Button
+          s={s}
           text={t().widgetUi.pickAmount}
           background={p.accent}
           color={p.white}
@@ -587,29 +720,39 @@ function FeedCard({ view, p, ids, shown, pending }: CardProps) {
   );
 }
 
-function SleepCard({ view, p, ids, shown, pending }: CardProps) {
+function SleepCard({ s, view, p, ids, shown, pending }: CardProps) {
   const { sleep } = view;
   const slept = t().widgetUi.sleptToday(sleptHours(view));
   // 睡着时整块变成夜蓝色，远远一看就知道宝宝在不在睡。
   if (sleep.status === 'asleep') {
     const edit = shown ? eventLink(shown.eventId) : eventLink(sleep.id);
+    const asleep = shown ? null : widgetElapsedClock(sleep.since, view.now);
     return (
       <Card
+        s={s}
         background={p.nightCard}
         link={edit}
         label={t().widgetUi.sleepingA11y(t().widgetUi.fellAsleepAt(formatClock(sleep.since)))}
       >
-        <Header view={view} p={p} dot={p.nightDot} ink={p.nightInk} />
+        <Header s={s} view={view} p={p} dot={p.nightDot} ink={p.nightInk} />
         <Hero
-          label={shown ? t().widgetUi.logged(shown.title) : t().widgetUi.asleepSince}
+          s={s}
+          label={
+            shown
+              ? t().widgetUi.logged(shown.title)
+              : asleep
+                ? t().widgetUi.asleepSinceAt(formatClock(sleep.since))
+                : t().widgetUi.asleepSince
+          }
           labelColor={shown ? p.nightInk : p.nightMuted}
-          time={formatClock(sleep.since)}
+          time={asleep ?? formatClock(sleep.since)}
           sub={shown ? t().widgetUi.fixHint : slept}
           ink={p.nightInk}
           muted={p.nightMuted}
         />
         {shown ? (
           <Button
+            s={s}
             text={t().widgetUi.editOrUndo}
             background={p.okButton}
             color={p.white}
@@ -618,6 +761,7 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
           />
         ) : (
           <Button
+            s={s}
             text={t().widgetUi.awake}
             background={p.nightButton}
             color={p.nightButtonText}
@@ -634,12 +778,14 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
     const since = sleep.since >= view.dayStart ? '' : formatShortDate(sleep.since);
     return (
       <Card
+        s={s}
         background={p.card}
         link={eventLink(sleep.id)}
         label={t().widgetUi.timerOnA11y(clockOn(sleep.since, view.dayStart))}
       >
-        <Header view={view} p={p} dot={p.sleepDot} ink={p.ink} />
+        <Header s={s} view={view} p={p} dot={p.sleepDot} ink={p.ink} />
         <Hero
+          s={s}
           label={t().widgetUi.timerOnSince(since)}
           time={formatClock(sleep.since)}
           sub={t().widgetUi.over12h}
@@ -647,6 +793,7 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.confirmWake}
           background={p.confirmButton}
           color={p.confirmText}
@@ -658,6 +805,7 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
   }
   const start = (
     <Button
+      s={s}
       text={t().widgetUi.fellAsleep}
       background={p.sleepButton}
       color={p.white}
@@ -669,12 +817,14 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
   if (shown) {
     return (
       <Card
+        s={s}
         background={p.card}
         link={eventLink(shown.eventId)}
         label={t().widgetUi.tapToEdit(shown.title)}
       >
-        <Header view={view} p={p} dot={p.okDot} ink={p.ink} />
+        <Header s={s} view={view} p={p} dot={p.okDot} ink={p.ink} />
         <Hero
+          s={s}
           label={t().widgetUi.logged(shown.title)}
           labelColor={p.okText}
           time={formatClock(shown.at)}
@@ -683,6 +833,7 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.editOrUndo}
           background={p.okButton}
           color={p.white}
@@ -695,12 +846,14 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
   if (!sleep.lastEnd) {
     return (
       <Card
+        s={s}
         background={p.card}
         link={TODAY_LINK}
         label={t().widgetUi.notAsleepA11y(t().widgetUi.noSleep)}
       >
-        <Header view={view} p={p} dot={p.awakeDot} ink={p.ink} />
+        <Header s={s} view={view} p={p} dot={p.awakeDot} ink={p.ink} />
         <Empty
+          s={s}
           title={t().widgetUi.noSleep}
           sub={t().widgetUi.noSleepHint}
           ink={p.ink}
@@ -710,16 +863,21 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
       </Card>
     );
   }
+  const awake = widgetElapsedClock(sleep.lastEnd, view.now);
   return (
     <Card
+      s={s}
       background={p.card}
       link={TODAY_LINK}
       label={t().widgetUi.notAsleepA11y(t().widgetUi.wokeAt(clockOn(sleep.lastEnd, view.dayStart)))}
     >
-      <Header view={view} p={p} dot={p.awakeDot} ink={p.ink} />
+      <Header s={s} view={view} p={p} dot={p.awakeDot} ink={p.ink} />
       <Hero
-        label={t().widgetUi.awakeSince}
-        time={formatClock(sleep.lastEnd)}
+        s={s}
+        label={
+          awake ? t().widgetUi.awakeSinceAt(formatClock(sleep.lastEnd)) : t().widgetUi.awakeSince
+        }
+        time={awake ?? formatClock(sleep.lastEnd)}
         sub={slept}
         ink={p.ink}
         muted={p.muted}
@@ -729,23 +887,25 @@ function SleepCard({ view, p, ids, shown, pending }: CardProps) {
   );
 }
 
-function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
+function DiaperCard({ s, view, p, ids, shown, pending }: CardProps) {
   const count = (
-    <TextWidget
+    <Txt
       text={t().widgetUi.diapersToday(view.today.diapers)}
       maxLines={1}
-      style={{ fontSize: 11, color: p.muted }}
+      style={{ fontSize: s(11), color: p.muted }}
     />
   );
   if (shown) {
     return (
       <Card
+        s={s}
         background={p.card}
         link={eventLink(shown.eventId)}
         label={t().widgetUi.tapToEdit(shown.title)}
       >
-        <Header view={view} p={p} dot={p.okDot} ink={p.ink} right={count} />
+        <Header s={s} view={view} p={p} dot={p.okDot} ink={p.ink} right={count} />
         <Hero
+          s={s}
           label={t().widgetUi.logged(shown.title)}
           labelColor={p.okText}
           time={formatClock(shown.at)}
@@ -754,6 +914,7 @@ function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
           muted={p.muted}
         />
         <Button
+          s={s}
           text={t().widgetUi.editOrUndo}
           background={p.okButton}
           color={p.white}
@@ -764,12 +925,13 @@ function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
     );
   }
   const last = view.lastDiaper;
-  const chips = <Row>{diaperChips(p, ids, undefined, pending)}</Row>;
+  const chips = <Row s={s}>{diaperChips(s, p, ids, undefined, pending)}</Row>;
   if (!last) {
     return (
-      <Card background={p.card} link={TODAY_LINK} label={t().widgetUi.noDiaper}>
-        <Header view={view} p={p} dot={p.diaperDot} ink={p.ink} right={count} />
+      <Card s={s} background={p.card} link={TODAY_LINK} label={t().widgetUi.noDiaper}>
+        <Header s={s} view={view} p={p} dot={p.diaperDot} ink={p.ink} right={count} />
         <Empty
+          s={s}
           title={t().widgetUi.noDiaper}
           sub={t().widgetUi.noDiaperHint}
           ink={p.ink}
@@ -779,8 +941,10 @@ function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
       </Card>
     );
   }
-  const label =
-    last.at >= view.dayStart
+  const since = widgetElapsedClock(last.at, view.now);
+  const label = since
+    ? t().widgetUi.sinceLastDiaper(diaperLabel(last.kind), formatClock(last.at))
+    : last.at >= view.dayStart
       ? t().widgetUi.withAmount(t().widgetUi.lastDiaper, diaperLabel(last.kind))
       : t().widgetUi.withAmount(
           t().widgetUi.withAmount(t().widgetUi.lastDiaper, formatShortDate(last.at)),
@@ -788,25 +952,28 @@ function DiaperCard({ view, p, ids, shown, pending }: CardProps) {
         );
   return (
     <Card
+      s={s}
       background={p.card}
       link={eventLink(last.id)}
       label={t().widgetUi.lastDiaperA11y(
         `${clockOn(last.at, view.dayStart)} · ${diaperLabel(last.kind)}`,
       )}
     >
-      <Header view={view} p={p} dot={p.diaperDot} ink={p.ink} right={count} />
-      <Hero label={label} time={formatClock(last.at)} ink={p.ink} muted={p.muted} />
+      <Header s={s} view={view} p={p} dot={p.diaperDot} ink={p.ink} right={count} />
+      <Hero s={s} label={label} time={since ?? formatClock(last.at)} ink={p.ink} muted={p.muted} />
       {chips}
     </Card>
   );
 }
 
 function StatusItem({
+  s,
   dot,
   time,
   text,
   p,
 }: {
+  s: Scale;
   dot: Hex;
   time: string;
   text: string;
@@ -814,19 +981,18 @@ function StatusItem({
 }) {
   return (
     <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-      <Dot color={dot} gap={5} />
-      <TextWidget
-        text={time}
-        maxLines={1}
-        style={{ fontSize: 12, fontFamily: MONO, color: p.ink }}
-      />
-      <TextWidget text={text} maxLines={1} style={{ fontSize: 12, color: p.ink, marginLeft: 4 }} />
+      <Dot s={s} color={dot} gap={5} />
+      <Txt text={time} maxLines={1} style={{ fontSize: s(12), fontFamily: MONO, color: p.ink }} />
+      <Txt text={text} maxLines={1} style={{ fontSize: s(12), color: p.ink, marginLeft: s(4) }} />
     </FlexWidget>
   );
 }
 
-function QuickCard({ view, p, ids, shown, pending }: CardProps) {
+function QuickCard({ s, view, p, ids, shown, size, pending }: CardProps) {
   const { lastFeed, lastFeedAmount, sleep, lastDiaper } = view;
+  // 一格高：只有一排按钮，按钮跟着小工具的高度，上下各留 8。两格高才有标题和最近的记录。
+  const row = quickLayout(size) === 'row';
+  const chipHeight = row ? Math.max(s(40), Math.min(size.height - s(16), s(60))) : undefined;
   // 这一行和今天页的时间线一样只写钟点，所以只放过去 24 小时里的，更早的会被看成今天的。
   // 一行放不下日期：三项都带上日期时最后一项会被挤出卡片。
   const recent = (at: number) => at > view.now - 86_400_000;
@@ -834,10 +1000,12 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   if (lastFeed && lastFeedAmount && recent(lastFeed.at)) {
     items.push(
       <StatusItem
+        s={s}
         key="feed"
         dot={p.feedDot}
         time={formatClock(lastFeed.at)}
-        text={lastFeedAmount}
+        // 不写奶量；亲喂照旧写“亲喂”“亲喂中”，和瓶喂分得开。
+        text={view.lastFeedBreast ? lastFeedAmount : t().today.feed}
         p={p}
       />,
     );
@@ -845,6 +1013,7 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   if (sleep.status !== 'awake' && recent(sleep.since)) {
     items.push(
       <StatusItem
+        s={s}
         key="sleep"
         dot={p.sleepDot}
         time={formatClock(sleep.since)}
@@ -855,6 +1024,7 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   } else if (sleep.status === 'awake' && sleep.lastEnd && recent(sleep.lastEnd)) {
     items.push(
       <StatusItem
+        s={s}
         key="sleep"
         dot={p.awakeDot}
         time={formatClock(sleep.lastEnd)}
@@ -866,6 +1036,7 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   if (lastDiaper && recent(lastDiaper.at)) {
     items.push(
       <StatusItem
+        s={s}
         key="diaper"
         dot={p.diaperDot}
         time={formatClock(lastDiaper.at)}
@@ -875,21 +1046,23 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
     );
   }
   const status = shown ? (
-    <TextWidget
+    <Txt
       text={t().widgetUi.quickLogged(shown.title)}
       maxLines={1}
       truncate="END"
-      style={{ fontSize: 12, color: p.okText }}
+      style={{ fontSize: s(12), color: p.okText }}
     />
   ) : (
-    <FlexWidget style={{ flexDirection: 'row', flexGap: 12 }}>{items}</FlexWidget>
+    <FlexWidget style={{ flexDirection: 'row', flexGap: s(12) }}>{items}</FlexWidget>
   );
 
   const feedChip =
     shown?.button === 'feed' ? (
       <Chip
+        s={s}
+        rawHeight={chipHeight}
         flex={1.35}
-        top={<SmallText text={t().widgetUi.chipDone} color={p.white} />}
+        top={<SmallText s={s} text={t().widgetUi.chipDone} color={p.white} />}
         text={t().widgetUi.chipEdit}
         background={p.okButton}
         color={p.white}
@@ -898,8 +1071,10 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     ) : view.quickFeedAmount ? (
       <Chip
+        s={s}
+        rawHeight={chipHeight}
         flex={1.35}
-        top={<SmallText text={t().today.feed} color={p.white} />}
+        top={<SmallText s={s} text={t().today.feed} color={p.white} />}
         text={view.quickFeedAmount}
         mono
         background={p.accent}
@@ -910,8 +1085,10 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     ) : (
       <Chip
+        s={s}
+        rawHeight={chipHeight}
         flex={1.35}
-        top={<SmallText text={t().today.feed} color={p.white} />}
+        top={<SmallText s={s} text={t().today.feed} color={p.white} />}
         text={t().widgetUi.pickAmount}
         background={p.accent}
         color={p.white}
@@ -923,7 +1100,9 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
   const sleepChip =
     shown?.button === 'sleep' ? (
       <Chip
-        top={<SmallText text={t().widgetUi.chipDone} color={p.white} />}
+        s={s}
+        rawHeight={chipHeight}
+        top={<SmallText s={s} text={t().widgetUi.chipDone} color={p.white} />}
         text={t().widgetUi.chipEdit}
         background={p.okButton}
         color={p.white}
@@ -932,7 +1111,9 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     ) : sleep.status === 'asleep' ? (
       <Chip
-        top={<Dot color={p.white} gap={0} />}
+        s={s}
+        rawHeight={chipHeight}
+        top={<Dot s={s} color={p.white} gap={0} />}
         text={t().widgetUi.awake}
         background={p.sleepButton}
         color={p.white}
@@ -942,7 +1123,9 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     ) : sleep.status === 'forgotten' ? (
       <Chip
-        top={<Dot color={p.confirmText} gap={0} />}
+        s={s}
+        rawHeight={chipHeight}
+        top={<Dot s={s} color={p.confirmText} gap={0} />}
         text={t().widgetUi.confirm}
         background={p.confirmButton}
         color={p.confirmText}
@@ -951,7 +1134,9 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     ) : (
       <Chip
-        top={<Dot color={p.white} gap={0} />}
+        s={s}
+        rawHeight={chipHeight}
+        top={<Dot s={s} color={p.white} gap={0} />}
         text={t().widgetUi.fellAsleep}
         background={p.sleepButton}
         color={p.white}
@@ -961,8 +1146,25 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
       />
     );
 
+  const chips = (
+    <Row s={s}>{[feedChip, ...diaperChips(s, p, ids, shown, pending, chipHeight), sleepChip]}</Row>
+  );
+  if (row) {
+    return (
+      <Card
+        s={s}
+        tight
+        background={p.card}
+        link={shown ? eventLink(shown.eventId) : TODAY_LINK}
+        label={t().widgetUi.quickA11y(view.babyName)}
+      >
+        {chips}
+      </Card>
+    );
+  }
   return (
     <Card
+      s={s}
       background={p.card}
       link={shown ? eventLink(shown.eventId) : TODAY_LINK}
       label={t().widgetUi.quickA11y(view.babyName)}
@@ -976,40 +1178,42 @@ function QuickCard({ view, p, ids, shown, pending }: CardProps) {
         }}
       >
         <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {view.avatar ? <Avatar uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
-          <TextWidget
+          {view.avatar ? <Avatar s={s} uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
+          <Txt
             text={t().widgetUi.quickTitle(
               // 4×2 横向还很宽，放了头像也不用少放字（模拟器上 “Little Bean · 第 1 天” 加头像只占一半）。
               shortBabyName(view.babyName, 12),
               view.dayNumber,
             )}
             maxLines={1}
-            style={{ fontSize: 14, fontFamily: SERIF, color: p.ink }}
+            style={{ fontSize: s(14), fontFamily: SERIF, color: p.ink }}
           />
         </FlexWidget>
         {view.showSync ? (
-          <SyncPill view={view} p={p} />
+          <SyncPill s={s} view={view} p={p} />
         ) : (
-          <TextWidget
+          <Txt
             text={formatShortDate(view.dayStart)}
             maxLines={1}
-            style={{ fontSize: 11, color: p.muted }}
+            style={{ fontSize: s(11), color: p.muted }}
           />
         )}
       </FlexWidget>
       {status}
-      <Row>{[feedChip, ...diaperChips(p, ids, shown, pending), sleepChip]}</Row>
+      {chips}
     </Card>
   );
 }
 
 function Stat({
+  s,
   dot,
   label,
   value,
   unit,
   p,
 }: {
+  s: Scale;
   dot: Hex;
   label: string;
   value: string;
@@ -1019,31 +1223,32 @@ function Stat({
   return (
     <FlexWidget style={{ flex: 1, flexDirection: 'column' }}>
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Dot color={dot} size={6} gap={5} />
-        <TextWidget text={label} maxLines={1} style={{ fontSize: 11, color: p.muted }} />
+        <Dot s={s} color={dot} size={6} gap={5} />
+        <Txt text={label} maxLines={1} style={{ fontSize: s(11), color: p.muted }} />
       </FlexWidget>
       <FlexWidget style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-        <TextWidget
+        <Txt
           text={value}
           maxLines={1}
-          style={{ fontSize: 24, fontFamily: MONO, color: p.ink }}
+          style={{ fontSize: s(24), fontFamily: MONO, color: p.ink }}
         />
-        <TextWidget
+        <Txt
           text={unit}
           maxLines={1}
-          style={{ fontSize: 12, color: p.muted, marginLeft: 3, marginBottom: 4 }}
+          style={{ fontSize: s(12), color: p.muted, marginLeft: s(3), marginBottom: s(4) }}
         />
       </FlexWidget>
     </FlexWidget>
   );
 }
 
-function SummaryCard({ view, p, size }: CardProps) {
+function SummaryCard({ s, view, p, size }: CardProps) {
   const { today } = view;
   const hours = sleptHours(view);
-  const width = Math.round(size.width - 2 * PADDING_X);
+  const width = Math.round(size.width - 2 * s(PADDING_X));
   return (
     <Card
+      s={s}
       background={p.card}
       link={TODAY_LINK}
       label={t().widgetUi.todayA11y(
@@ -1063,21 +1268,21 @@ function SummaryCard({ view, p, size }: CardProps) {
         }}
       >
         <FlexWidget style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {view.avatar ? <Avatar uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
-          <TextWidget
+          {view.avatar ? <Avatar s={s} uri={view.avatar} size={AVATAR_WIDE} gap={7} /> : null}
+          <Txt
             text={t().widgetUi.todayOf(shortBabyName(view.babyName, view.avatar ? 14 : 16))}
             maxLines={1}
-            style={{ fontSize: 15, fontFamily: SERIF, color: p.ink }}
+            style={{ fontSize: s(15), fontFamily: SERIF, color: p.ink }}
           />
         </FlexWidget>
         {view.showSync ? (
-          <SyncPill view={view} p={p} />
+          <SyncPill s={s} view={view} p={p} />
         ) : (
-          <TextWidget
+          <Txt
             // 系统定时刷新可能晚于 0 点，写明日期，显示的永远是这一天的真实数字。
             text={formatShortDate(view.dayStart)}
             maxLines={1}
-            style={{ fontSize: 11, color: p.muted }}
+            style={{ fontSize: s(11), color: p.muted }}
           />
         )}
       </FlexWidget>
@@ -1090,16 +1295,17 @@ function SummaryCard({ view, p, size }: CardProps) {
           style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'space-between' }}
         >
           {['0', '6', '12', '18', '24'].map((hour) => (
-            <TextWidget
+            <Txt
               key={hour}
               text={hour}
-              style={{ fontSize: 10, fontFamily: MONO, color: p.muted }}
+              style={{ fontSize: s(10), fontFamily: MONO, color: p.muted }}
             />
           ))}
         </FlexWidget>
       </FlexWidget>
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row' }}>
         <Stat
+          s={s}
           dot={p.feedDot}
           // 今天还没喂过就不写“· 0ml”。
           label={
@@ -1112,6 +1318,7 @@ function SummaryCard({ view, p, size }: CardProps) {
           p={p}
         />
         <Stat
+          s={s}
           dot={p.diaperDot}
           label={t().today.diaper}
           value={`${today.diapers}`}
@@ -1119,6 +1326,7 @@ function SummaryCard({ view, p, size }: CardProps) {
           p={p}
         />
         <Stat
+          s={s}
           dot={p.sleepDot}
           label={t().today.sleep}
           value={hours}
@@ -1131,15 +1339,12 @@ function SummaryCard({ view, p, size }: CardProps) {
 }
 
 /** 未登录、没有宝宝、只看回忆：不写数据也不显示记录，温和地请人点开 App。 */
-function Blocked({ message, p }: { message: string; p: WidgetPalette }) {
+function Blocked({ s, message, p }: { s: Scale; message: string; p: WidgetPalette }) {
   return (
-    <Card background={p.card} link={null} label={t().widgetUi.a11yApp(message)}>
-      <TextWidget
-        text={t().common.appName}
-        style={{ fontSize: 15, fontFamily: SERIF, color: p.ink }}
-      />
-      <TextWidget text={message} maxLines={3} style={{ fontSize: 12, color: p.muted }} />
-      <TextWidget text={t().widgetUi.openApp} style={{ fontSize: 12, color: p.accentText }} />
+    <Card s={s} background={p.card} link={null} label={t().widgetUi.a11yApp(message)}>
+      <Txt text={t().common.appName} style={{ fontSize: s(15), fontFamily: SERIF, color: p.ink }} />
+      <Txt text={message} maxLines={3} style={{ fontSize: s(12), color: p.muted }} />
+      <Txt text={t().widgetUi.openApp} style={{ fontSize: s(12), color: p.accentText }} />
     </Card>
   );
 }
@@ -1149,7 +1354,8 @@ const DEFAULT_SIZES: Record<WidgetName, WidgetSize> = {
   SleepWidget: { width: 168, height: 168 },
   DiaperWidget: { width: 168, height: 168 },
   SummaryWidget: { width: 352, height: 168 },
-  QuickWidget: { width: 352, height: 168 },
+  // 快捷记录默认是一格高的一排按钮。
+  QuickWidget: { width: 352, height: 84 },
 };
 
 function renderWith(
@@ -1161,8 +1367,17 @@ function renderWith(
   size: WidgetSize,
   pending: WidgetButton | undefined,
 ): ReactElement {
-  if (view.kind === 'blocked') return <Blocked message={view.message} p={p} />;
-  const props = { view, p, ids, shown, size, pending };
+  const shape =
+    name === 'SummaryWidget'
+      ? 'wide'
+      : name !== 'QuickWidget'
+        ? 'small'
+        : view.kind === 'ready' && quickLayout(size) === 'row'
+          ? 'quickRow'
+          : 'wide';
+  const s = scaler(widgetScale(shape, size));
+  if (view.kind === 'blocked') return <Blocked s={s} message={view.message} p={p} />;
+  const props = { s, view, p, ids, shown, size, pending };
   switch (name) {
     case 'FeedWidget':
       return <FeedCard {...props} />;

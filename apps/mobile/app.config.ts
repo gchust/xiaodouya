@@ -237,9 +237,10 @@ const appConfig = ({ config }: ConfigContext): ExpoConfig => ({
             description: 'Feeds, diapers and sleep in one row',
             previewImage: './assets/widgets/quick-preview.png',
             minWidth: '250dp',
-            minHeight: '110dp',
+            // 默认一格高，只有一排按钮；拉到两格高才有标题和最近的记录。
+            minHeight: '40dp',
             targetCellWidth: 4,
-            targetCellHeight: 2,
+            targetCellHeight: 1,
             resizeMode: 'horizontal|vertical',
             updatePeriodMillis: 1_800_000,
             widgetCategory: WIDGET_CATEGORY,
