@@ -1,0 +1,18 @@
+# Google Drive 存储代理：对服务端和 App 说 S3 协议，家庭文件存进 Drive，其余前缀转发到 R2。
+# 这里不写账号 ID、域名和数据库 ID，都在部署时配置；Secret 用 `wrangler secret put`，见 src/worker.ts 的 Env。
+# 原型阶段：还没有部署过。
+name = "xiaodouya-drive-proxy"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+# workers.dev 在中国大陆打不开，用自己的域名。
+workers_dev = false
+
+[triggers]
+crons = ["* * * * *"]
+
+# 部署前：wrangler d1 create xiaodouya-drive-proxy，再把 database_id 写进部署时的配置，
+# 用 schema.sql 建表（node -e "import('./src/db.ts')" 导出的 SCHEMA）。
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "xiaodouya-drive-proxy"
+# database_id = "<部署时填>"
