@@ -12,7 +12,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
-import { BlobNotFound, type BlobStore, SESSION_ALIGN } from '../src/blobs';
+import { type BlobLabel, BlobNotFound, type BlobStore, SESSION_ALIGN } from '../src/blobs';
 import { type Db, SCHEMA, type Statement } from '../src/db';
 import { countedStream } from '../src/fixed';
 
@@ -53,21 +53,26 @@ async function readAll(body: ReadableStream<Uint8Array>): Promise<Uint8Array> {
 }
 
 /** 本机目录当块存储，行为照 Drive：续传段必须按 256 KiB 对齐。 */
-export function fsBlobs(dir: string): BlobStore & { count(): number; calls: string[] } {
+export function fsBlobs(
+  dir: string,
+): BlobStore & { count(): number; calls: string[]; labels: Map<string, BlobLabel> } {
   mkdirSync(dir, { recursive: true });
   const calls: string[] = [];
   const path = (id: string) => join(dir, id);
-  const sessions = new Map<string, { id: string; received: number }>();
+  const sessions = new Map<string, { id: string; received: number; done: boolean }>();
+  const labels = new Map<string, BlobLabel>();
   return {
     calls,
+    labels,
     count: () => {
       return readdirSync(dir).length;
     },
-    async put(body, size) {
+    async put(body, size, label) {
       calls.push('put');
       const bytes = await readAll(body);
       if (bytes.length !== size) throw new Error('size mismatch');
       const id = randomUUID();
+      labels.set(id, label);
       writeFileSync(path(id), bytes);
       return id;
     },
@@ -85,22 +90,24 @@ export function fsBlobs(dir: string): BlobStore & { count(): number; calls: stri
       calls.push('delete');
       rmSync(path(id), { force: true });
     },
-    async startSession(total) {
+    async startSession(_total, label) {
       calls.push('startSession');
       const session = randomUUID();
       const id = randomUUID();
       writeFileSync(path(id), new Uint8Array());
-      sessions.set(session, { id, received: 0 });
-      void total;
+      labels.set(id, label);
+      sessions.set(session, { id, received: 0, done: false });
       return session;
     },
     async sessionOffset(session) {
-      return sessions.get(session)?.received ?? null;
+      const s = sessions.get(session);
+      if (!s) return null;
+      return s.done ? { blobId: s.id } : s.received;
     },
     async append(session, body, offset, size, total) {
       calls.push('append');
       const s = sessions.get(session);
-      if (!s) throw new Error('session gone');
+      if (!s || s.done) throw new Error('session gone');
       if (offset !== s.received) throw new Error(`offset ${offset} != ${s.received}`);
       const last = offset + size === total;
       if (!last && size % SESSION_ALIGN !== 0) throw new Error('unaligned');
@@ -111,7 +118,7 @@ export function fsBlobs(dir: string): BlobStore & { count(): number; calls: stri
       closeSync(fd);
       s.received += size;
       if (!last) return null;
-      sessions.delete(session);
+      s.done = true;
       if (statSync(path(s.id)).size !== total) throw new Error('total mismatch');
       return s.id;
     },

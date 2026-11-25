@@ -1,4 +1,4 @@
-import { BlobNotFound, type BlobStore } from './blobs';
+import { type BlobLabel, BlobNotFound, type BlobStore } from './blobs';
 import type { Db } from './db';
 
 /**
@@ -132,7 +132,7 @@ export function driveBlobs(config: DriveConfig, deps: DriveDeps): BlobStore {
     return folder(name, root);
   }
 
-  async function startUpload(total: number): Promise<string> {
+  async function startUpload(total: number, label: BlobLabel): Promise<string> {
     const parent = await shard();
     const response = await call('start', `${UPLOAD}?uploadType=resumable&fields=id`, {
       method: 'POST',
@@ -141,7 +141,7 @@ export function driveBlobs(config: DriveConfig, deps: DriveDeps): BlobStore {
         'x-upload-content-type': 'application/octet-stream',
         'x-upload-content-length': String(total),
       },
-      body: JSON.stringify({ name: crypto.randomUUID(), parents: [parent] }),
+      body: JSON.stringify({ ...fileMetadata(label), parents: [parent] }),
     });
     await response.body?.cancel();
     const location = response.headers.get('location');
@@ -177,8 +177,8 @@ export function driveBlobs(config: DriveConfig, deps: DriveDeps): BlobStore {
   }
 
   return {
-    async put(body, size) {
-      const session = await startUpload(size);
+    async put(body, size, label) {
+      const session = await startUpload(size, label);
       const id = await sendRange(session, body, 0, size, size);
       if (!id) throw new DriveError('put', 308);
       return id;
@@ -199,12 +199,15 @@ export function driveBlobs(config: DriveConfig, deps: DriveDeps): BlobStore {
       return response.body;
     },
 
+    // 放进回收站而不是永久删除：Drive 30 天后自己清掉，这期间元数据写错了还能救回来。
     async delete(id) {
-      const response = await call('delete', `${API}/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
+      const response = await call('delete', `${API}/${encodeURIComponent(id)}?fields=id`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify({ trashed: true }),
       });
       await response.body?.cancel();
-      if (response.status !== 204 && response.status !== 200 && response.status !== 404) {
+      if (response.status !== 200 && response.status !== 404) {
         throw new DriveError('delete', response.status);
       }
     },
@@ -216,17 +219,35 @@ export function driveBlobs(config: DriveConfig, deps: DriveDeps): BlobStore {
         method: 'PUT',
         headers: { 'content-range': `bytes */${total}` },
       });
-      await response.body?.cancel();
       if (response.status === 308) {
+        await response.body?.cancel();
         const range = response.headers.get('range');
         const m = range ? /^bytes=0-(\d+)$/.exec(range) : null;
         return m ? Number(m[1]) + 1 : 0;
       }
-      // 404/410：会话过期了；200/201：已经传完但没记下来。都从头再来，后者多出的那个文件见 PROGRESS 的已知问题。
-      return null;
+      // 上次已经传完、只是没来得及记下：响应里有文件 id，直接用，不重新合并。
+      if (response.status === 200 || response.status === 201) {
+        return { blobId: idOf(await response.json(), 'status') };
+      }
+      await response.body?.cancel();
+      // 404/410：会话过期了，从头再来。
+      if (response.status === 404 || response.status === 410) return null;
+      throw new DriveError('status', response.status);
     },
 
     append: sendRange,
+  };
+}
+
+/**
+ * 文件自己带着它是谁：description 是 object key，名字是版本和片号，appProperties 标明是这个代理建的。
+ * 元数据库没了的时候，按这些能把文件对回 object key。
+ */
+function fileMetadata(label: BlobLabel) {
+  return {
+    name: `${label.version.replace(/"/g, '')}-${label.part ?? 'all'}`,
+    description: label.key,
+    appProperties: { xdy: '1', part: String(label.part ?? 'all') },
   };
 }
 

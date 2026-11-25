@@ -132,6 +132,70 @@ describe('compaction', () => {
   });
 });
 
+describe('failures', () => {
+  it('a compaction stuck on a missing block does not stop cleanup or other compactions', async () => {
+    const broken = 'families/f/memory/broken/original';
+    const fine = 'families/f/memory/fine/original';
+    await multipart(broken, [bytes(PART, 1), bytes(10, 2)]);
+    clock += 1;
+    await multipart(fine, [bytes(PART, 3), bytes(10, 4)]);
+    const lost = (
+      deps.db.raw.prepare('SELECT blob_id FROM chunks WHERE key = ? AND idx = 0').get(broken) as {
+        blob_id: string;
+      }
+    ).blob_id;
+    await deps.blobs.delete(lost);
+    deps.db.raw.prepare("INSERT INTO orphans (blob_id, delete_after) VALUES ('old', 0)").run();
+    const report = await runMaintenance(deps);
+    expect(report.compactFailures).toBe(1);
+    expect(report.compacted).toBe(1);
+    expect(report.failedSteps).toEqual([]);
+    expect(count("SELECT COUNT(*) n FROM orphans WHERE blob_id = 'old'")).toBe(0);
+    expect(count('SELECT COUNT(*) n FROM chunks WHERE key = ?', fine)).toBe(1);
+    // 坏的那个留在队列里、原来的块不动，下一轮再试。
+    expect(count('SELECT COUNT(*) n FROM compactions WHERE key = ?', broken)).toBe(1);
+    expect(count('SELECT COUNT(*) n FROM chunks WHERE key = ?', broken)).toBe(2);
+  });
+
+  it('uses the finished file when the last append landed but was not recorded', async () => {
+    const key = 'families/f/memory/landed/original';
+    const parts = [bytes(PART, 5), bytes(10, 6)];
+    await multipart(key, parts);
+    // 最后一段传上去了，然后这一轮在记下来之前死掉。
+    const append = deps.blobs.append;
+    deps.blobs.append = async (session, body, offset, size, total) => {
+      const id = await append(session, body, offset, size, total);
+      if (id) throw new Error('worker killed');
+      return id;
+    };
+    expect((await runMaintenance(deps)).compactFailures).toBe(1);
+    deps.blobs.append = append;
+    clock += 10 * 60 * 1000 + 1;
+    const appendsBefore = deps.blobs.calls.filter((c) => c === 'append').length;
+    const report = await runMaintenance(deps);
+    expect(report.compacted).toBe(1);
+    expect(deps.blobs.calls.filter((c) => c === 'append').length).toBe(appendsBefore);
+    expect(count('SELECT COUNT(*) n FROM chunks WHERE key = ?', key)).toBe(1);
+    expect((await download(key)).equals(Buffer.concat(parts))).toBe(true);
+  });
+
+  it('labels parts and merged blocks with their object key', async () => {
+    const key = 'families/f/memory/label/original';
+    const uploadId = await multipart(key, [bytes(PART, 7), bytes(10, 8)]);
+    expect([...deps.blobs.labels.values()]).toEqual([
+      { key, part: 1, version: uploadId },
+      { key, part: 2, version: uploadId },
+    ]);
+    await runMaintenance(deps);
+    const merged = (
+      deps.db.raw.prepare('SELECT blob_id FROM chunks WHERE key = ?').get(key) as {
+        blob_id: string;
+      }
+    ).blob_id;
+    expect(deps.blobs.labels.get(merged)).toMatchObject({ key, part: null });
+  });
+});
+
 describe('cleanup', () => {
   it('never deletes a block that is still referenced', async () => {
     const key = 'families/f/memory/r/thumb';

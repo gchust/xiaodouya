@@ -1,4 +1,4 @@
-import { BlobNotFound, type BlobStore, SESSION_ALIGN } from './blobs';
+import { type BlobLabel, BlobNotFound, type BlobStore, SESSION_ALIGN } from './blobs';
 import type { Db } from './db';
 import { countedStream, LengthMismatch } from './fixed';
 import {
@@ -138,6 +138,7 @@ async function storeBody(
   request: Request,
   payloadHash: string,
   deps: Deps,
+  label: BlobLabel,
 ): Promise<{ blobId: string; size: number }> {
   const lengthHeader = request.headers.get('content-length');
   if (lengthHeader === null || !/^\d+$/.test(lengthHeader)) {
@@ -169,7 +170,7 @@ async function storeBody(
     mismatch = true;
   });
   try {
-    const blobId = await deps.blobs.put(deps.fixedLength(counted, size), size);
+    const blobId = await deps.blobs.put(deps.fixedLength(counted, size), size, label);
     return { blobId, size };
   } catch (error) {
     if (mismatch || error instanceof LengthMismatch) {
@@ -180,8 +181,12 @@ async function storeBody(
 }
 
 async function putObject(request: Request, key: string, payloadHash: string, deps: Deps) {
-  const { blobId, size } = await storeBody(request, payloadHash, deps);
   const etag = `"${randomHex(16)}"`;
+  const { blobId, size } = await storeBody(request, payloadHash, deps, {
+    key,
+    part: null,
+    version: etag,
+  });
   const contentType = request.headers.get('content-type') ?? 'binary/octet-stream';
   const now = deps.now();
   const { db } = deps;
@@ -259,7 +264,11 @@ async function uploadPart(
     return s3Error(400, 'InvalidArgument', 'Part number must be an integer between 1 and 10000');
   }
   if (!(await findUpload(key, uploadId, deps))) return noSuchUpload();
-  const { blobId, size } = await storeBody(request, payloadHash, deps);
+  const { blobId, size } = await storeBody(request, payloadHash, deps, {
+    key,
+    part: partNumber,
+    version: uploadId,
+  });
   const etag = `"${randomHex(16)}"`;
   const now = deps.now();
   const { db } = deps;

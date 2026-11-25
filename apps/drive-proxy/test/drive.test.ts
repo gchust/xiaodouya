@@ -17,6 +17,11 @@ function setup(refreshToken = `refresh`) {
   return { drive, db, blobs };
 }
 
+const label = (key = 'families/f/memory/a/original', part: number | null = null) => ({
+  key,
+  part,
+  version: '"v1"',
+});
 const stream = (data: Uint8Array<ArrayBuffer>) => new Response(data).body!;
 const text = async (s: ReadableStream<Uint8Array>) =>
   new Uint8Array(await new Response(s).arrayBuffer());
@@ -26,7 +31,7 @@ describe('driveBlobs', () => {
     const { drive, blobs } = setup();
     const data = new Uint8Array(1000).map((_, i) => i % 256);
     const ids = [];
-    for (let i = 0; i < 20; i++) ids.push(await blobs.put(stream(data), data.length));
+    for (let i = 0; i < 20; i++) ids.push(await blobs.put(stream(data), data.length, label()));
     expect(await text(await blobs.get(ids[0]!, 10, 19))).toEqual(data.slice(10, 20));
     const folders = [...drive.files.values()].filter((f) => f.folder);
     // 一个根文件夹，加上用到的分桶文件夹，每个只建一次。
@@ -36,22 +41,39 @@ describe('driveBlobs', () => {
       [...drive.files.entries()].filter(([, f]) => !f.folder).map(([, f]) => f.parents[0]),
     );
     expect(folders.length).toBe(1 + shardIds.size);
+    // 删除是放进回收站，不是永久删除；删两次、删不存在的都算成功。
     await blobs.delete(ids[0]!);
     await blobs.delete(ids[0]!);
-    await expect(blobs.get(ids[0]!, 0, 1)).rejects.toBeInstanceOf(BlobNotFound);
+    expect(drive.files.get(ids[0]!)?.trashed).toBe(true);
+    await blobs.delete('missing');
+    await expect(blobs.get('missing', 0, 1)).rejects.toBeInstanceOf(BlobNotFound);
+  });
+
+  it('labels every file with its object key so the index can be rebuilt from Drive', async () => {
+    const { drive, blobs } = setup();
+    const key = 'families/f/memory/b/original';
+    const one = await blobs.put(stream(new Uint8Array(3)), 3, label(key, 2));
+    expect(drive.files.get(one)?.meta).toMatchObject({
+      description: key,
+      name: 'v1-2',
+      appProperties: { xdy: '1', part: '2' },
+    });
+    const session = await blobs.startSession(1, label(key));
+    const merged = await blobs.append(session, stream(new Uint8Array(1)), 0, 1, 1);
+    expect(drive.files.get(merged!)?.meta).toMatchObject({ description: key, name: 'v1-all' });
   });
 
   it('refreshes the access token once per hour, not per request', async () => {
     const { drive, blobs } = setup('refresh');
     const data = new Uint8Array(10);
-    await blobs.put(stream(data), 10);
-    await blobs.put(stream(data), 10);
+    await blobs.put(stream(data), 10, label());
+    await blobs.put(stream(data), 10, label());
     expect(drive.tokens.refreshes).toBeLessThanOrEqual(1);
   });
 
   it('reports a revoked authorization without leaking anything', async () => {
     const { blobs } = setup('revoked');
-    const error = await blobs.put(stream(new Uint8Array(1)), 1).catch((e) => e);
+    const error = await blobs.put(stream(new Uint8Array(1)), 1, label()).catch((e) => e);
     expect(error).toBeInstanceOf(DriveError);
     expect(String(error.message)).toBe('drive token failed: 400');
   });
@@ -60,7 +82,7 @@ describe('driveBlobs', () => {
     const { blobs } = setup();
     const total = SESSION_ALIGN * 2 + 5;
     const data = new Uint8Array(total).map((_, i) => (i * 13) % 256);
-    const session = await blobs.startSession(total);
+    const session = await blobs.startSession(total, label());
     expect(await blobs.sessionOffset(session, total)).toBe(0);
     expect(
       await blobs.append(session, stream(data.slice(0, SESSION_ALIGN)), 0, SESSION_ALIGN, total),
@@ -75,7 +97,8 @@ describe('driveBlobs', () => {
     );
     expect(id).toBeTruthy();
     expect(await text(await blobs.get(id!, 0, total - 1))).toEqual(data);
-    expect(await blobs.sessionOffset(session, total)).toBeNull();
+    // 传完后再问，拿到的是那个文件：合并没来得及记下时直接用它，不再传一遍。
+    expect(await blobs.sessionOffset(session, total)).toEqual({ blobId: id });
   });
 });
 
@@ -134,5 +157,46 @@ describe('proxy on top of Drive', () => {
     const after = new Uint8Array(await (await call('GET', key)).arrayBuffer());
     expect(Buffer.from(after).equals(Buffer.from(file))).toBe(true);
     expect(drive.requests.filter((r) => r.method === 'GET')).toHaveLength(1);
+  });
+});
+
+describe('body length on the Drive path', () => {
+  it('rejects a body shorter or longer than the signed Content-Length and stores nothing', async () => {
+    const { drive, db, blobs } = setup();
+    const credentials = { accessKeyId: 'k', secretAccessKey: 's' };
+    const deps: Deps = {
+      config: {
+        bucket: 'b',
+        credentials,
+        drivePrefix: 'families/',
+        upstream: null,
+        maxPutBytes: 1 << 20,
+      },
+      db,
+      blobs,
+      fetch: drive.fetch,
+      fixedLength,
+      now: Date.now,
+    };
+    for (const actual of [5, 15]) {
+      const url = new URL('http://proxy.test/b/families/f/memory/z/original');
+      const headers = new Headers({ 'content-length': '10' });
+      await signRequest({ method: 'PUT', url, headers, credentials, region: 'auto' });
+      // 流式正文，fetch 不会替我们核对长度：只能靠代理自己数。
+      const body = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new Uint8Array(actual));
+          c.close();
+        },
+      });
+      const response = await handle(
+        new Request(url, { method: 'PUT', headers, body, duplex: 'half' } as RequestInit),
+        deps,
+      );
+      expect(response.status).toBe(400);
+      expect(await response.text()).toContain('IncompleteBody');
+    }
+    expect([...drive.files.values()].filter((f) => !f.folder)).toHaveLength(0);
+    expect(db.raw.prepare('SELECT COUNT(*) AS n FROM objects').get()).toEqual({ n: 0 });
   });
 });

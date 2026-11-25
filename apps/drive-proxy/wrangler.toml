@@ -11,7 +11,9 @@ workers_dev = false
 crons = ["* * * * *"]
 
 # 部署前：wrangler d1 create xiaodouya-drive-proxy，再把 database_id 写进部署时的配置，
-# 用 schema.sql 建表（node -e "import('./src/db.ts')" 导出的 SCHEMA）。
+# 建表：pnpm --filter @xiaodouya/drive-proxy -s schema > schema.sql，再 wrangler d1 execute --remote --file schema.sql。
+# D1 是 object key 到 Drive 文件的索引，要开 Time Travel 并定期导出（wrangler d1 export）；
+# 真的丢了，每个 Drive 文件的 description 和名字里也记着它属于哪个对象，能重建（重建命令还没写）。
 # [[d1_databases]]
 # binding = "DB"
 # database_name = "xiaodouya-drive-proxy"

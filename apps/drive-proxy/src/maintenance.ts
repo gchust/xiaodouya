@@ -13,6 +13,9 @@ export interface MaintenanceLimits {
 
 export const FREE_PLAN_LIMITS: MaintenanceLimits = { appends: 15, deletes: 10 };
 
+/** 合并失败后多久再试。 */
+const COMPACTION_RETRY_MS = 10 * 60 * 1000;
+
 /** 放弃的分片上传多久后清掉。服务端 24 小时就会中止，这里是兜底，和存储的生命周期规则一样。 */
 const STALE_UPLOAD_MS = 7 * 24 * 3600 * 1000;
 
@@ -21,7 +24,10 @@ export interface MaintenanceReport {
   deleteFailures: number;
   appended: number;
   compacted: number;
+  compactFailures: number;
   staleUploads: number;
+  /** 整步失败（比如 D1 暂时不可用）的步骤名，下一轮再来。 */
+  failedSteps: string[];
 }
 
 export async function runMaintenance(
@@ -33,11 +39,23 @@ export async function runMaintenance(
     deleteFailures: 0,
     appended: 0,
     compacted: 0,
+    compactFailures: 0,
     staleUploads: 0,
+    failedSteps: [],
   };
-  await abortStaleUploads(deps, report);
-  await compact(deps, limits.appends, report);
-  await deleteOrphans(deps, limits.deletes, report);
+  // 每一步单独兜住：合并卡在一个坏掉的块上，也不能让清理停下来。
+  const steps: [string, () => Promise<void>][] = [
+    ['staleUploads', () => abortStaleUploads(deps, report)],
+    ['compact', () => compact(deps, limits.appends, report)],
+    ['deleteOrphans', () => deleteOrphans(deps, limits.deletes, report)],
+  ];
+  for (const [name, step] of steps) {
+    try {
+      await step();
+    } catch {
+      report.failedSteps.push(name);
+    }
+  }
   return report;
 }
 
@@ -126,61 +144,95 @@ async function compact(
   budget: number,
   report: MaintenanceReport,
 ) {
-  const { db, blobs } = deps;
-  let remaining = budget;
-  while (remaining > 0) {
+  const { db } = deps;
+  const left = { remaining: budget };
+  while (left.remaining > 0) {
     const job = await db
-      .prepare('SELECT key, etag, session FROM compactions ORDER BY updated_at LIMIT 1')
+      .prepare(
+        'SELECT key, etag, session FROM compactions WHERE updated_at <= ? ORDER BY updated_at LIMIT 1',
+      )
+      .bind(deps.now())
       .first<CompactionRow>();
     if (!job) return;
-    const object = await db
-      .prepare('SELECT size, etag FROM objects WHERE key = ?')
-      .bind(job.key)
-      .first<{ size: number; etag: string }>();
-    if (!object || object.etag !== job.etag) {
-      await db.prepare('DELETE FROM compactions WHERE key = ?').bind(job.key).run();
-      continue;
+    try {
+      if ((await compactOne(deps, job, left, report)) === 'paused') return;
+    } catch {
+      // 这一个推迟一会儿，下一个接着做。至少扣一份预算，保证这一轮会结束。
+      report.compactFailures++;
+      left.remaining--;
+      await db
+        .prepare('UPDATE compactions SET updated_at = ? WHERE key = ?')
+        .bind(deps.now() + COMPACTION_RETRY_MS, job.key)
+        .run();
     }
-    const { results: chunks } = await db
-      .prepare('SELECT blob_id, size FROM chunks WHERE key = ? ORDER BY idx')
-      .bind(job.key)
-      .all<{ blob_id: string; size: number }>();
-    if (chunks.length <= 1) {
-      await db.prepare('DELETE FROM compactions WHERE key = ?').bind(job.key).run();
-      continue;
-    }
-    const total = object.size;
-    let session = job.session;
-    let offset = session ? await blobs.sessionOffset(session, total) : null;
-    if (session === null || offset === null) {
-      session = await blobs.startSession(total);
-      offset = 0;
-      remaining--;
-    }
-    await db
-      .prepare('UPDATE compactions SET session = ?, updated_at = ? WHERE key = ?')
-      .bind(session, deps.now(), job.key)
-      .run();
-
-    let newId: string | null = null;
-    let start = 0;
-    for (const chunk of chunks) {
-      const end = start + chunk.size;
-      if (offset < end && remaining >= 2) {
-        const from = offset - start;
-        const size = chunk.size - from;
-        const body = await blobs.get(chunk.blob_id, from, chunk.size - 1);
-        newId = await blobs.append(session, body, offset, size, total);
-        offset += size;
-        remaining -= 2;
-        report.appended++;
-      }
-      start = end;
-    }
-    if (newId === null) return;
-    await commitCompaction(deps, job, newId);
-    report.compacted++;
   }
+}
+
+/** 做一个对象的合并。预算用完时返回 'paused'，下一轮从 Drive 确认收到的位置接着传。 */
+async function compactOne(
+  deps: { db: Db; blobs: BlobStore; now(): number },
+  job: CompactionRow,
+  budget: { remaining: number },
+  report: MaintenanceReport,
+): Promise<'done' | 'paused'> {
+  const { db, blobs } = deps;
+  const object = await db
+    .prepare('SELECT size, etag FROM objects WHERE key = ?')
+    .bind(job.key)
+    .first<{ size: number; etag: string }>();
+  if (!object || object.etag !== job.etag) {
+    await db.prepare('DELETE FROM compactions WHERE key = ?').bind(job.key).run();
+    return 'done';
+  }
+  const { results: chunks } = await db
+    .prepare('SELECT blob_id, size FROM chunks WHERE key = ? ORDER BY idx')
+    .bind(job.key)
+    .all<{ blob_id: string; size: number }>();
+  if (chunks.length <= 1) {
+    await db.prepare('DELETE FROM compactions WHERE key = ?').bind(job.key).run();
+    return 'done';
+  }
+  const total = object.size;
+  let session = job.session;
+  let status: Awaited<ReturnType<BlobStore['sessionOffset']>> = null;
+  // 问一次状态只是一个子请求，不算进预算：算进去的话预算小的时候每轮都只够问状态，永远传不完。
+  if (session) status = await blobs.sessionOffset(session, total);
+  if (status !== null && typeof status === 'object') {
+    await commitCompaction(deps, job, status.blobId);
+    report.compacted++;
+    return 'done';
+  }
+  let offset = status ?? 0;
+  if (session === null || status === null) {
+    session = await blobs.startSession(total, { key: job.key, part: null, version: job.etag });
+    offset = 0;
+    budget.remaining--;
+  }
+  await db
+    .prepare('UPDATE compactions SET session = ?, updated_at = ? WHERE key = ?')
+    .bind(session, deps.now(), job.key)
+    .run();
+
+  let newId: string | null = null;
+  let start = 0;
+  for (const chunk of chunks) {
+    const end = start + chunk.size;
+    if (offset < end) {
+      if (budget.remaining < 2) return 'paused';
+      const from = offset - start;
+      const size = chunk.size - from;
+      const body = await blobs.get(chunk.blob_id, from, chunk.size - 1);
+      newId = await blobs.append(session, body, offset, size, total);
+      offset += size;
+      budget.remaining -= 2;
+      report.appended++;
+    }
+    start = end;
+  }
+  if (newId === null) return 'paused';
+  await commitCompaction(deps, job, newId);
+  report.compacted++;
+  return 'done';
 }
 
 async function commitCompaction(

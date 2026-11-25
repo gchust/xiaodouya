@@ -5,10 +5,20 @@ import { SESSION_ALIGN } from '../src/blobs';
  * 见 PROGRESS。
  */
 export function fakeDrive() {
-  const files = new Map<string, { data: Uint8Array; parents: string[]; folder: boolean }>();
+  interface FileMeta {
+    name?: string;
+    description?: string;
+    appProperties?: Record<string, string>;
+    parents: string[];
+    mimeType?: string;
+  }
+  const files = new Map<
+    string,
+    { data: Uint8Array; parents: string[]; folder: boolean; trashed: boolean; meta: FileMeta }
+  >();
   const sessions = new Map<
     string,
-    { total: number; parents: string[]; data: Uint8Array; received: number }
+    { total: number; meta: FileMeta; data: Uint8Array; received: number; fileId?: string }
   >();
   const tokens = { issued: 0, refreshes: 0 };
   const requests: { method: string; url: string }[] = [];
@@ -32,12 +42,14 @@ export function fakeDrive() {
       return json(401, { error: 'unauthenticated' });
     }
     if (url.pathname === '/drive/v3/files' && request.method === 'POST') {
-      const meta = (await request.json()) as { mimeType?: string; parents: string[] };
+      const meta = (await request.json()) as FileMeta;
       const fid = id();
       files.set(fid, {
         data: new Uint8Array(),
         parents: meta.parents,
         folder: meta.mimeType === 'application/vnd.google-apps.folder',
+        trashed: false,
+        meta,
       });
       return json(200, { id: fid });
     }
@@ -46,10 +58,10 @@ export function fakeDrive() {
       url.searchParams.get('uploadType') === 'resumable' &&
       !url.searchParams.has('upload_id')
     ) {
-      const meta = (await request.json()) as { parents: string[] };
+      const meta = (await request.json()) as FileMeta;
       const total = Number(request.headers.get('x-upload-content-length'));
       const sid = `s${++next}`;
-      sessions.set(sid, { total, parents: meta.parents, data: new Uint8Array(total), received: 0 });
+      sessions.set(sid, { total, meta, data: new Uint8Array(total), received: 0 });
       return new Response(null, {
         status: 200,
         headers: {
@@ -61,6 +73,8 @@ export function fakeDrive() {
     if (sid && request.method === 'PUT') {
       const s = sessions.get(sid);
       if (!s) return json(404, { error: 'session' });
+      // 传完的会话再问状态，Drive 返回 200 和文件的元数据。
+      if (s.fileId) return json(200, { id: s.fileId });
       const range = request.headers.get('content-range') ?? '';
       const status = /^bytes \*\/(\d+)$/.exec(range);
       const rangeHeader = (): Record<string, string> =>
@@ -78,18 +92,25 @@ export function fakeDrive() {
       s.data.set(body, start);
       s.received = end + 1;
       if (!last) return new Response(null, { status: 308, headers: rangeHeader() });
-      sessions.delete(sid);
       const fid = id();
-      files.set(fid, { data: s.data, parents: s.parents, folder: false });
+      s.fileId = fid;
+      files.set(fid, {
+        data: s.data,
+        parents: s.meta.parents,
+        folder: false,
+        trashed: false,
+        meta: s.meta,
+      });
       return json(200, { id: fid });
     }
     const file = /^\/drive\/v3\/files\/([^/]+)$/.exec(url.pathname);
     if (file) {
       const f = files.get(decodeURIComponent(file[1]!));
-      if (request.method === 'DELETE') {
+      if (request.method === 'PATCH') {
         if (!f) return json(404, {});
-        files.delete(decodeURIComponent(file[1]!));
-        return new Response(null, { status: 204 });
+        const patch = (await request.json()) as { trashed?: boolean };
+        if (patch.trashed) f.trashed = true;
+        return json(200, { id: file[1] });
       }
       if (request.method === 'GET' && url.searchParams.get('alt') === 'media') {
         if (!f) return json(404, {});

@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "serve:local": "tsx test/serve.ts"
+    "serve:local": "tsx test/serve.ts",
+    "schema": "tsx -e \"import('./src/db.ts').then((m) => process.stdout.write(m.SCHEMA))\""
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "3.1156.0",
