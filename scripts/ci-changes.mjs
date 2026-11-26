@@ -23,6 +23,8 @@ const NO_APP_IMPACT = [
   /^supabase\//,
   // 分享网页：App 只拿它的地址，E2E 不打开它，它自己的测试在 pnpm test 里。
   /^apps\/share-web\//,
+  // Google Drive 存储代理（Cloudflare Worker）：App 和 E2E 都不经过它，它自己的测试在 pnpm test 里。
+  /^apps\/drive-proxy\//,
   // 发版用的脚本只在 release.yml 和 auto-release.yml 里跑。
   /^scripts\/(adb-ui\.py|android-signing(\.test)?\.mjs|build-edge\.mjs|check-(?:i18n|colors)\.mjs|codemod-themed-styles\.mjs|release-(apk|plan)(\.test)?\.mjs|screenshot\.sh|subset-fonts\.py)$/,
 ];

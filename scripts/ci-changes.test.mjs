@@ -51,6 +51,7 @@ for (const file of [
   'deploy/Caddyfile',
   'supabase/config.toml',
   'apps/share-web/src/index.ts',
+  'apps/drive-proxy/src/s3.ts',
   'scripts/build-edge.mjs',
   'scripts/android-signing.mjs',
   'scripts/check-i18n.mjs',
