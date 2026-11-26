@@ -1,8 +1,9 @@
 import { t } from '@xiaodouya/shared';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   type HostInstance,
+  Keyboard,
   Modal,
   Pressable,
   Text,
@@ -20,6 +21,9 @@ const ROW = 44;
 const VISIBLE_ROWS = 5.5;
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
+/** 键盘收起后底部弹层还要 220ms 滑回原位（overlays.tsx），等它落稳再量按钮坐标。 */
+const KEYBOARD_SETTLE_MS = 260;
+const KEYBOARD_HIDE_FALLBACK_MS = 350;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -49,15 +53,48 @@ export function ClockSelect({
 }) {
   const hourRef = useRef<HostInstance>(null);
   const minuteRef = useRef<HostInstance>(null);
+  const pendingRef = useRef<(() => void) | null>(null);
   const [open, setOpen] = useState<Anchor | null>(null);
   const d = new Date(value);
   const current: Record<Part, number> = { hour: d.getHours(), minute: d.getMinutes() };
 
-  const show = (part: Part) => {
+  useEffect(() => () => pendingRef.current?.(), []);
+
+  const measureAndOpen = (part: Part) => {
     const ref = part === 'hour' ? hourRef : minuteRef;
     ref.current?.measureInWindow((x, y, width, height) => {
-      setOpen({ part, x, y, width, height });
+      if (width > 0 && height > 0) setOpen({ part, x, y, width, height });
     });
+  };
+
+  const show = (part: Part) => {
+    pendingRef.current?.();
+    pendingRef.current = null;
+    if (!Keyboard.isVisible()) {
+      measureAndOpen(part);
+      return;
+    }
+    // 键盘开着时底部弹层被顶上去了，Modal 抢焦点会收起键盘让弹层滑下去，提前量的坐标会悬在半空。
+    let settled = false;
+    const afterHide = () => {
+      if (settled) return;
+      settled = true;
+      sub.remove();
+      clearTimeout(fallback);
+      const timer = setTimeout(() => {
+        pendingRef.current = null;
+        measureAndOpen(part);
+      }, KEYBOARD_SETTLE_MS);
+      pendingRef.current = () => clearTimeout(timer);
+    };
+    const sub = Keyboard.addListener('keyboardDidHide', afterHide);
+    const fallback = setTimeout(afterHide, KEYBOARD_HIDE_FALLBACK_MS);
+    pendingRef.current = () => {
+      settled = true;
+      sub.remove();
+      clearTimeout(fallback);
+    };
+    Keyboard.dismiss();
   };
 
   const button = (part: Part) => {
@@ -76,7 +113,9 @@ export function ClockSelect({
         style={[s.button, expanded ? { borderColor: colors.accent } : null]}
       >
         <Text style={s.buttonText}>{text}</Text>
-        <Text style={s.caret}>{expanded ? '▴' : '▾'}</Text>
+        <Text maxFontSizeMultiplier={1.2} style={s.caret}>
+          {expanded ? '▴' : '▾'}
+        </Text>
       </Pressable>
     );
   };
@@ -125,10 +164,11 @@ function Dropdown({
   const below = anchor.y + anchor.height + 4;
   const fitsBelow = below + listHeight <= screenHeight - insets.bottom - 8;
   const top = fitsBelow ? below : Math.max(insets.top + 8, anchor.y - 4 - listHeight);
-  // 选中的那一项放在第二行，上面留一行看得出还能往回滑。
+  // 选中的那一项放在第二行，上面留一行看得出还能往回滑；
+  // 末尾用 ceil 算上限让 ScrollView 贴底停住，23 和 59 不会只露半行。
   const initialIndex = Math.max(
     0,
-    Math.min(selected - 1, Math.floor(options.length - VISIBLE_ROWS)),
+    Math.min(selected - 1, Math.ceil(options.length - VISIBLE_ROWS)),
   );
 
   return (
@@ -189,11 +229,12 @@ const s = themedStyles(() => ({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 4,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.card,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 13,
   },
   buttonText: { fontFamily: fonts.monoRegular, fontSize: 14, color: colors.ink },
