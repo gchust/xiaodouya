@@ -10,7 +10,7 @@ import {
   plannedDayTimestamp,
   plannedNextMonth,
   resolveTimeChoice,
-  withClock,
+  withClockPart,
   withDate,
   withDaysAgo,
 } from '../src/lib/dates';
@@ -51,11 +51,17 @@ describe('选记录时间', () => {
     expect(withDate(at, new Date(2026, 2, 10), now)).toBe(now);
   });
 
-  it('换时刻保留日期，选到未来也不改，由校验提示', () => {
+  it('只换小时或只换分钟，日期和另一半不动，选到未来也不改，由校验提示', () => {
     const at = new Date(2026, 2, 10, 9, 5, 33).getTime();
-    expect(withClock(at, new Date(2000, 0, 1, 20, 15))).toBe(
-      new Date(2026, 2, 10, 20, 15).getTime(),
-    );
+    expect(withClockPart(at, 'hour', 20)).toBe(new Date(2026, 2, 10, 20, 5).getTime());
+    expect(withClockPart(at, 'minute', 35)).toBe(new Date(2026, 2, 10, 9, 35).getTime());
+    expect(withClockPart(at, 'minute', 0)).toBe(new Date(2026, 2, 10, 9, 0).getTime());
+  });
+
+  it('跨月末也不会滚到下一天', () => {
+    const at = new Date(2026, 0, 31, 23, 59).getTime();
+    expect(withClockPart(at, 'hour', 0)).toBe(new Date(2026, 0, 31, 0, 59).getTime());
+    expect(withClockPart(at, 'minute', 0)).toBe(new Date(2026, 0, 31, 23, 0).getTime());
   });
 
   it('今天、昨天、前天', () => {

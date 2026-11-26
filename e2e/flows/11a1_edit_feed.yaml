@@ -1,5 +1,6 @@
 # 喂奶：时间能改到以前再改回来，补记早于最后一次时“距上次喂奶”不变。
-# 系统日期和时刻选择器不好自动化，这里用“今天 / 昨天 / 前天”胶囊，系统选择器在模拟器上手动看过。
+# 系统日历不好自动化，日期用“今天 / 昨天 / 前天”胶囊，系统日历在模拟器上手动看过。
+# 时刻是 App 自己的时、分下拉：补记时直接选 03 点、07 分，存好后详情里是 03:07。
 # 要有今天更晚的喂奶：否则改到昨天的那条还是“上次喂奶”，卡片上看得到它。
 # 测试用的记录最后都删掉。
 appId: com.gchust.xiaodouya
@@ -28,7 +29,8 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: event-edit }
 - assertVisible: 修改喂奶
 - assertVisible: { id: time-date }
-- assertVisible: { id: time-clock }
+- assertVisible: { id: time-hour }
+- assertVisible: { id: time-minute }
 - tapOn: { id: time-day-1 }
 - takeScreenshot: .artifacts/e2e-11a-feed-edit-time
 - tapOn: { id: feed-save }
@@ -88,6 +90,34 @@ appId: com.gchust.xiaodouya
 - tapOn: { id: more-feed }
 - assertVisible: 补记喂奶
 - tapOn: { id: time-day-1 }
+# 打开时选中的那一项在最上面附近，要的那一项可能在下面看不到，往回滑到它出现为止。
+- tapOn: { id: time-hour }
+- assertVisible: { id: time-hour-list }
+- repeat:
+    while:
+      notVisible: { id: time-hour-03 }
+    times: 6
+    commands:
+      - swipe:
+          from: { id: time-hour-list }
+          direction: DOWN
+- tapOn: { id: time-hour-03 }
+- assertNotVisible: { id: time-hour-list }
+- tapOn: { id: time-minute }
+- takeScreenshot: .artifacts/e2e-11a-minute-dropdown
+- repeat:
+    while:
+      notVisible: { id: time-minute-07 }
+    times: 15
+    commands:
+      - swipe:
+          from: { id: time-minute-list }
+          direction: DOWN
+- tapOn: { id: time-minute-07 }
+- assertNotVisible: { id: time-minute-list }
+- assertVisible:
+    id: time-minute
+    text: .*07.*
 - tapOn: { id: ml-chip-120 }
 - tapOn: { id: ml-inc }
 - tapOn: { id: ml-inc }
@@ -118,6 +148,9 @@ appId: com.gchust.xiaodouya
 - scrollUntilVisible:
     element: 喂奶 150ml
 - tapOn: 喂奶 150ml
+- assertVisible:
+    id: event-detail
+    text: .*03:07.*
 - tapOn: { id: event-delete }
 - tapOn: { id: delete-sheet-confirm }
 - extendedWaitUntil:
