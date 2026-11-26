@@ -1,13 +1,14 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { formatClock, formatFullDate, t } from '@xiaodouya/shared';
+import { formatFullDate, t } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { colors, fonts, themedStyles } from '../theme';
+import { ClockSelect } from './ClockSelect';
 import { Muted } from './primitives';
 
 /** 出生日期和时刻：建档页和资料页共用。 */
 export function BirthPicker({ value, onChange }: { value: Date; onChange: (next: Date) => void }) {
-  const [picker, setPicker] = useState<'date' | 'time' | null>(null);
+  const [picking, setPicking] = useState(false);
   return (
     <>
       <View style={{ gap: 5 }}>
@@ -17,30 +18,26 @@ export function BirthPicker({ value, onChange }: { value: Date; onChange: (next:
             testID="birth-date"
             accessibilityRole="button"
             accessibilityLabel={t().ui.pickBirthDate}
-            onPress={() => setPicker('date')}
+            onPress={() => setPicking(true)}
             style={s.button}
           >
             <Text style={s.text}>{formatFullDate(value.getTime())}</Text>
           </Pressable>
-          <Pressable
+          <ClockSelect
             testID="birth-time"
-            accessibilityRole="button"
-            accessibilityLabel={t().ui.pickBirthClock}
-            onPress={() => setPicker('time')}
-            style={s.button}
-          >
-            <Text style={s.text}>{formatClock(value.getTime())}</Text>
-          </Pressable>
+            label={t().ui.birthTime}
+            value={value.getTime()}
+            onChange={(at) => onChange(new Date(at))}
+          />
         </View>
       </View>
-      {picker ? (
+      {picking ? (
         <DateTimePicker
           value={value}
-          mode={picker}
-          is24Hour
-          maximumDate={picker === 'date' ? new Date() : undefined}
+          mode="date"
+          maximumDate={new Date()}
           onChange={(_event, date) => {
-            setPicker(null);
+            setPicking(false);
             if (date) onChange(date);
           }}
         />

@@ -1,23 +1,11 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import {
-  checkRecordTime,
-  formatClock,
-  formatFullDate,
-  type RecordTimeCheck,
-  t,
-} from '@xiaodouya/shared';
+import { checkRecordTime, formatFullDate, type RecordTimeCheck, t } from '@xiaodouya/shared';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { useRecordsOf } from '../lib/app';
-import {
-  isDaysAgo,
-  resolveTimeChoice,
-  type TimeChoice,
-  withClock,
-  withDate,
-  withDaysAgo,
-} from '../lib/dates';
+import { isDaysAgo, resolveTimeChoice, type TimeChoice, withDate, withDaysAgo } from '../lib/dates';
 import { colors, fonts, themedStyles } from '../theme';
+import { ClockSelect } from './ClockSelect';
 import { Chip, Muted } from './primitives';
 
 const HOUR = 3_600_000;
@@ -154,7 +142,7 @@ export function DayChips({
   );
 }
 
-/** 一个具体的日期和时刻。 */
+/** 一个具体的日期和时刻。日期用系统日历，时刻用时、分两个下拉（系统的表盘要先选小时再选分钟）。 */
 export function DateTimeRow({
   label,
   testID,
@@ -166,7 +154,7 @@ export function DateTimeRow({
   value: number;
   onChange: (next: number) => void;
 }) {
-  const [picker, setPicker] = useState<'date' | 'time' | null>(null);
+  const [picking, setPicking] = useState(false);
   return (
     <View style={{ gap: 8 }}>
       {label ? <Muted style={{ fontSize: 12 }}>{label}</Muted> : null}
@@ -175,35 +163,23 @@ export function DateTimeRow({
           testID={`${testID}-date`}
           accessibilityRole="button"
           accessibilityLabel={t().ui.pickDateOf(label ?? '', formatFullDate(value))}
-          onPress={() => setPicker('date')}
+          onPress={() => setPicking(true)}
           style={s.button}
         >
           <Text style={s.buttonText}>{formatFullDate(value)}</Text>
         </Pressable>
-        <Pressable
-          testID={`${testID}-clock`}
-          accessibilityRole="button"
-          accessibilityLabel={t().ui.pickClockOf(label ?? '', formatClock(value))}
-          onPress={() => setPicker('time')}
-          style={s.button}
-        >
-          <Text style={s.buttonText}>{formatClock(value)}</Text>
-        </Pressable>
+        <ClockSelect testID={testID} label={label} value={value} onChange={onChange} />
       </View>
       <DayChips testID={testID} value={value} onChange={onChange} />
-      {picker ? (
+      {picking ? (
         <DateTimePicker
           value={new Date(value)}
-          mode={picker}
-          is24Hour
-          // 只管得了日期：系统的时刻选择器不支持上限，今天选到未来的时刻靠 checkRecordTime。
-          maximumDate={picker === 'date' ? new Date() : undefined}
+          mode="date"
+          maximumDate={new Date()}
           onChange={(event, date) => {
-            setPicker(null);
+            setPicking(false);
             if (event.type !== 'set' || !date) return;
-            onChange(
-              picker === 'date' ? withDate(value, date, Date.now()) : withClock(value, date),
-            );
+            onChange(withDate(value, date, Date.now()));
           }}
         />
       ) : null}

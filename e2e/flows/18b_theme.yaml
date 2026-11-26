@@ -44,13 +44,19 @@ appId: com.gchust.xiaodouya
     visible: { id: today-screen }
     timeout: 10000
 - takeScreenshot: .artifacts/e2e-18b-today-lavender-dark
-# 手机是浅色、App 固定深色时，系统的时刻选择框也要是深色（issue #105），看截图。
+# 手机是浅色、App 固定深色时，系统的日历也要是深色（issue #105），看截图。
+# 时刻换成了 App 自己的下拉，跟着 App 的配色，一并截图。
 - tapOn: { id: action-feed }
 - tapOn: { id: offset-custom }
-- tapOn: { id: time-clock }
+- tapOn: { id: time-date }
 - waitForAnimationToEnd
 - takeScreenshot: .artifacts/e2e-18b-time-picker-dark
 - back
+- tapOn: { id: time-minute }
+- assertVisible: { id: time-minute-list }
+- takeScreenshot: .artifacts/e2e-18b-minute-dropdown-dark
+- back
+- assertNotVisible: { id: time-minute-list }
 - assertVisible: { id: feed-save }
 - back
 - extendedWaitUntil:
@@ -62,10 +68,10 @@ appId: com.gchust.xiaodouya
 - extendedWaitUntil:
     visible: { id: today-screen }
     timeout: 30000
-# 半夜冷启动时已经存着深色：时刻选择框一打开就是深色，看截图。
+# 半夜冷启动时已经存着深色：系统日历一打开就是深色，看截图。
 - tapOn: { id: action-feed }
 - tapOn: { id: offset-custom }
-- tapOn: { id: time-clock }
+- tapOn: { id: time-date }
 - waitForAnimationToEnd
 - takeScreenshot: .artifacts/e2e-18b-time-picker-dark-cold
 - back

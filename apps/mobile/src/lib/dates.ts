@@ -69,10 +69,11 @@ export function withDate(at: number, picked: Date, now: number): number {
   return Math.min(d.getTime(), now);
 }
 
-/** 换时刻时保留日期。时刻可能选到未来，由 checkRecordTime 提示，这里不改用户选的值。 */
-export function withClock(at: number, picked: Date): number {
+/** 只换小时或只换分钟，日期和另一半不动。选到未来也不改，由 checkRecordTime 提示。 */
+export function withClockPart(at: number, part: 'hour' | 'minute', value: number): number {
   const d = new Date(at);
-  d.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+  if (part === 'hour') d.setHours(value, d.getMinutes(), 0, 0);
+  else d.setMinutes(value, 0, 0);
   return d.getTime();
 }
 
